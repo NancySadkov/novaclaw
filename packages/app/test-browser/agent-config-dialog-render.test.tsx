@@ -326,16 +326,31 @@ describe("AgentConfigDialog renders", () => {
     // missing instead of reporting a bare `false`. Asserting on booleans, never on the nodes.
     expect({
       pause: document.querySelector('[data-action="agent-pause"]') !== null,
-      // ⚠️ Found by its LABEL, not by a `data-action`: the ordinary footer's Save has never carried
-      // one (only the deleted governing screen did), and inventing an attribute to satisfy a test is
-      // the tail wagging the dog. `saveButton()` is the helper the rest of this file already uses.
       save: saveButton() !== undefined,
       clearChat: document.querySelector('[data-action="agent-clear-chat"]') !== null,
-    }).toEqual({ pause: true, save: true, clearChat: true })
+    }).toEqual({ pause: true, save: true, clearChat: false })
     // The claim VR-001 was always about: a Save may exist, but the dialog wrote nothing merely for
     // being opened.
     expect(writes).toEqual([])
     expect(dialogText()).not.toContain("NOTHING was written")
+  })
+
+  test("officer actions share the header and Pause remains immediately reversible", async () => {
+    const writes: unknown[] = []
+    mount({ agents: [AGENT], write: (patch) => writes.push(patch) })
+    await settle()
+    const header = document.querySelector('[data-slot="agent-settings-header"]')
+    expect(header !== null).toBe(true)
+    for (const action of ["agent-pause", "agent-clone", "agent-retire", "agent-config-cancel", "agent-config-save"]) {
+      const buttons = document.querySelectorAll(`[data-action="${action}"]`)
+      expect(buttons.length).toBe(1)
+      expect(header?.contains(buttons[0]!)).toBe(true)
+    }
+    expect(labelCount("agentConfig.close")).toBe(0)
+    expect(document.querySelector('[data-action="agent-clear-chat"]') === null).toBe(true)
+    document.querySelector<HTMLButtonElement>('[data-action="agent-pause"]')!.click()
+    await settle()
+    expect(writes).toEqual([{ agents: { theron: { disabled: true } } }])
   })
 
   test("memory actions live in the Memory tab instead of the lifecycle footer", async () => {

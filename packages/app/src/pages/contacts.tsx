@@ -1,15 +1,16 @@
-import { A, useNavigate } from "@solidjs/router"
-import { Dynamic } from "solid-js/web"
+import { useNavigate } from "@solidjs/router"
+import { ContextMenu } from "@kobalte/core/context-menu"
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
-import type { JSX } from "solid-js"
 import {
   DragDropProvider,
-  DragDropSensors,
   SortableProvider,
   closestCenter,
   createSortable,
   type DragEvent,
 } from "@thisbeyond/solid-dnd"
+import { OfficerTileSensor } from "@/components/officer-tile-sensor"
+import { useConfirm } from "@/components/dialog-confirm"
+import { useTabs } from "@/context/tabs"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useGlobal } from "@/context/global"
@@ -107,6 +108,12 @@ export function ContactsPage() {
   const global = useGlobal()
   const server = useServer()
   const language = useLanguage()
+  const confirm = useConfirm()
+  const tabs = useTabs()
+  const [menuOpen, setMenuOpen] = createSignal(false)
+  const [acting, setActing] = createSignal(false)
+  let cancelledDrag = false
+  let suppressOpenUntil = 0
   const [query, setQuery] = createSignal("")
   const [hiring, setHiring] = createSignal(false)
   const [starting, setStarting] = createSignal<string | undefined>()
@@ -235,6 +242,45 @@ export function ContactsPage() {
     }
   }
 
+  const actOnColleague = async (view: ContactView, action: "pause" | "retire") => {
+    const current = ctx()
+    if (!current || acting() || (action === "retire" && !view.removable)) return
+    if (
+      action === "retire" &&
+      !(await confirm({
+        title: language.t("agentConfig.retire.confirm.title", { name: view.name }),
+        description: language.t("agentConfig.retire.confirm.description"),
+        confirmLabel: language.t("agentConfig.retire.confirm.action"),
+        destructive: true,
+      }))
+    )
+      return
+    setActing(true)
+    try {
+      if (action === "pause") {
+        await sync().updateConfig({ agents: { [view.id]: { disabled: !view.paused } } } as never)
+      } else {
+        const response = await current.sdk.client.v2.agent.remove({ agentID: view.id })
+        if (response.error) throw response.error
+        const key = serverKey()
+        if (key)
+          for (const session of liveSessions()) {
+            if (session.agent === view.id) tabs.closeSessionTab(key, session.id)
+          }
+      }
+      await refetchAgents()
+      await refetchSessions()
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: language.t(action === "pause" ? "agentConfig.pauseFailed" : "agentConfig.retireFailed"),
+        description: String(error),
+      })
+    } finally {
+      setActing(false)
+    }
+  }
+
   /** Open a colleague who has no chat yet: create theirs, then go to it. */
   const startTheirChat = async (agentID: string, name: string) => {
     const current = ctx()
@@ -341,10 +387,16 @@ ${copy.detail}`
     const target = at + direction
     if (at < 0 || target < 0 || target >= ids.length) return
     const next = moveOfficerOrder(ids, id, ids[target]!)
-    if (next) void persistOrder(next)
+    if (next)
+      void persistOrder(next).then(() => {
+        requestAnimationFrame(() =>
+          document.querySelector<HTMLElement>(`[data-contact-id="${CSS.escape(id)}"]`)?.focus(),
+        )
+      })
   }
   const onDragEnd = (event: DragEvent) => {
-    if (savingOrder()) return
+    suppressOpenUntil = Date.now() + 300
+    if (savingOrder() || cancelledDrag) return
     const { draggable, droppable } = event
     if (!draggable || !droppable) return
     const next = moveOfficerOrder(officerIDs(), String(draggable.id), String(droppable.id))
@@ -421,65 +473,79 @@ ${copy.detail}`
               </p>
             }
           >
-            <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>
-              <DragDropSensors />
+            <DragDropProvider
+              onDragStart={() => {
+                cancelledDrag = false
+              }}
+              onDragEnd={onDragEnd}
+              collisionDetector={closestCenter}
+            >
+              <OfficerTileSensor
+                disabled={menuOpen() || savingOrder()}
+                onCancel={() => {
+                  cancelledDrag = true
+                }}
+              />
               <SortableProvider
                 ids={shown()
                   .filter((view) => view.kind === "officer")
                   .map((view) => view.id)}
               >
-                <div class="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2 xl:grid-cols-3">
-                <For each={shown()}>
-                  {(view) => {
-                    const row = {
-                      get view() {
-                        return view
-                      },
-                      get sessions() {
-                        return liveSessions()
-                      },
-                      get starting() {
-                        return starting() === view.id
-                      },
-                      get cloning() {
-                        return cloning() === view.id
-                      },
-                      get cloneDisabled() {
-                        return cloning() !== undefined
-                      },
-                      onStart: () => void startTheirChat(view.id, view.name),
-                      onClone: () => void cloneColleague(view.id),
-                      get usage() {
-                        return usage()?.[view.id] ?? []
-                      },
-                      get executions() {
-                        return executionBySession()
-                      },
-                      get serverKey() {
-                        return serverKey()
-                      },
-                      get server() {
-                        return conn()?.http
-                      },
-                      onOpen: () => openConfig(view.id),
-                    } satisfies ContactRowProps
-                    return view.kind === "governing" ? (
-                      <ContactRow {...row} />
-                    ) : (
-                      <SortableContactRow
-                        {...row}
-                        saving={savingOrder()}
-                        onKeyboardMove={(direction) => moveByKeyboard(view.id, direction)}
-                      />
-                    )
-                  }}
-                </For>
+                <div class="officer-roster-grid">
+                  <For each={shown()}>
+                    {(view) => {
+                      const row = {
+                        get view() {
+                          return view
+                        },
+                        get sessions() {
+                          return liveSessions()
+                        },
+                        get starting() {
+                          return starting() === view.id
+                        },
+                        onStart: () => void startTheirChat(view.id, view.name),
+                        onClone: () => void cloneColleague(view.id),
+                        onPause: () => void actOnColleague(view, "pause"),
+                        onRetire: () => void actOnColleague(view, "retire"),
+                        get busy() {
+                          return acting() || cloning() !== undefined
+                        },
+                        onMenuChange: (open: boolean) => {
+                          setMenuOpen(open)
+                          suppressOpenUntil = Date.now() + 300
+                        },
+                        suppressOpen: () => menuOpen() || Date.now() < suppressOpenUntil,
+                        get usage() {
+                          return usage()?.[view.id] ?? []
+                        },
+                        get executions() {
+                          return executionBySession()
+                        },
+                        get serverKey() {
+                          return serverKey()
+                        },
+                        get server() {
+                          return conn()?.http
+                        },
+                        onOpen: () => openConfig(view.id),
+                      } satisfies ContactRowProps
+                      return view.kind === "governing" ? (
+                        <ContactRow {...row} />
+                      ) : (
+                        <SortableContactRow
+                          {...row}
+                          saving={savingOrder()}
+                          onKeyboardMove={(direction) => moveByKeyboard(view.id, direction)}
+                        />
+                      )
+                    }}
+                  </For>
                 </div>
               </SortableProvider>
             </DragDropProvider>
           </Show>
         </Show>
-
       </div>
     </AppPage>
   )
@@ -495,14 +561,17 @@ type ContactRowProps = {
   usage: readonly UsageMinute[]
   executions: ReadonlyMap<string, SessionExecutionInfo>
   starting: boolean
-  cloning: boolean
-  cloneDisabled: boolean
   onStart: () => void
   onClone: () => void
   serverKey: ServerConnection.Key | undefined
   server: ServerConnection.HttpBase | undefined
   onOpen: () => void
-  dragHandle?: JSX.Element
+  onPause: () => void
+  onRetire: () => void
+  busy: boolean
+  onMenuChange: (open: boolean) => void
+  suppressOpen: () => boolean
+  onKeyboardMove?: (direction: -1 | 1) => void
 }
 
 function SortableContactRow(
@@ -513,55 +582,31 @@ function SortableContactRow(
 ) {
   // eslint-disable-next-line solid/reactivity -- an officer id is stable for this keyed row's lifetime
   const sortable = createSortable(props.view.id)
-  const language = useLanguage()
-  let dragTarget: HTMLButtonElement | undefined
-
-  // Only the explicit handle activates sorting. The rest of the row remains an ordinary chat link
-  // with independent worker/clone/settings buttons, so reordering never steals those clicks.
+  let dragTarget: HTMLDivElement | undefined
   createEffect(() => {
-    if (!dragTarget) return
+    const target = dragTarget
+    if (!target || props.saving) return
     const listeners = Object.entries(sortable.dragActivators).map(
       ([name, listener]) => [name.startsWith("on") ? name.slice(2) : name, listener as EventListener] as const,
     )
-    for (const [name, listener] of listeners) dragTarget.addEventListener(name, listener)
+    for (const [name, listener] of listeners) target.addEventListener(name, listener)
     onCleanup(() => {
-      if (!dragTarget) return
-      for (const [name, listener] of listeners) dragTarget.removeEventListener(name, listener)
+      for (const [name, listener] of listeners) target.removeEventListener(name, listener)
     })
   })
-
-  const onKeyDown = (event: KeyboardEvent) => {
-    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return
-    event.preventDefault()
-    props.onKeyboardMove(event.key === "ArrowUp" ? -1 : 1)
-  }
-
   return (
     <div
-      ref={sortable.ref}
+      ref={(element) => {
+        dragTarget = element
+        sortable.ref(element)
+      }}
       data-component="contacts-officer-sortable"
       data-officer-id={props.view.id}
       data-dragging={sortable.isActiveDraggable ? "true" : undefined}
-      classList={{ "opacity-50": sortable.isActiveDraggable }}
+      class="officer-sortable"
       style={{ transform: `translate3d(${sortable.transform.x}px, ${sortable.transform.y}px, 0)` }}
     >
-      <ContactRow
-        {...props}
-        dragHandle={
-          <button
-            ref={dragTarget}
-            type="button"
-            data-action="contacts-reorder"
-            class="shrink-0 touch-none cursor-grab rounded-md p-1 text-v2-text-text-faint hover:bg-v2-background-bg-layer-03 hover:text-v2-text-text-base active:cursor-grabbing disabled:cursor-default disabled:opacity-40"
-            aria-label={language.t("contacts.order.drag", { name: props.view.name })}
-            title={language.t("contacts.order.hint")}
-            disabled={props.saving}
-            onKeyDown={onKeyDown}
-          >
-            <Icon name="outline-dots" class="size-4 rotate-90" />
-          </button>
-        }
-      />
+      <ContactRow {...props} />
     </div>
   )
 }
@@ -660,130 +705,119 @@ function ContactRow(props: ContactRowProps) {
     const sessionID = live().sessionID
     return sessionID && props.serverKey ? sessionHref(props.serverKey, sessionID) : undefined
   })
+  let tile: HTMLDivElement | undefined
+  const openChat = () => {
+    if (props.suppressOpen() || props.starting) return
+    const href = chatHref()
+    if (href) navigate(href)
+    else props.onStart()
+  }
   return (
-    <div
-      data-contact-id={props.view.id}
-      role="link"
-      tabIndex={0}
-      onClick={(event) => {
-        if ((event.target as HTMLElement).closest("button,a")) return
-        const href = chatHref()
-        if (href) navigate(href)
-        else props.onStart()
-      }}
-      onKeyDown={(event) => {
-        if (event.key !== "Enter" && event.key !== " ") return
-        event.preventDefault()
-        const href = chatHref()
-        if (href) navigate(href)
-        else props.onStart()
-      }}
-      class="group flex min-h-44 w-full flex-col rounded-xl border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3 shadow-sm transition hover:border-v2-border-border-strong hover:bg-v2-background-bg-layer-02 focus:outline-none focus:ring-2 focus:ring-v2-border-border-strong"
-    >
-      <div class="flex items-start gap-3">
-        {props.dragHandle}
-        <AgentPortrait
-          id={props.view.id}
-          name={props.view.name}
-          avatar={props.view.avatar}
-          background={agentColor(props.view.id, props.view.color)}
-          class="size-14 border-2 border-v2-border-border-strong text-lg"
-        />
-      <Dynamic
-        component={chatHref() ? A : "button"}
-        {...(chatHref()
-          ? { href: chatHref()! }
-          : // No chat yet, so opening STARTS one — the row says so in words, and a button that did
-            // something else would make its own label a lie.
-            { type: "button" as const, onClick: props.onStart, disabled: props.starting })}
-        class="min-w-0 flex-1 text-left"
+    <ContextMenu onOpenChange={props.onMenuChange}>
+      <ContextMenu.Trigger
+        ref={tile}
+        data-contact-id={props.view.id}
+        class="officer-card"
+        data-paused={props.view.paused}
+        data-governing={props.view.kind === "governing"}
+        style={{ "--officer-accent": agentColor(props.view.id, props.view.color) }}
+        role="link"
+        tabIndex={0}
+        aria-label={props.view.name}
+        aria-description={language.t("contacts.order.hint")}
+        onDragStart={(event: Event) => event.preventDefault()}
+        onClick={(event: MouseEvent) => {
+          if ((event.target as HTMLElement).closest("button")) return
+          openChat()
+        }}
+        onKeyDown={(event: KeyboardEvent) => {
+          if (event.target !== event.currentTarget) return
+          if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+            event.preventDefault()
+            const bounds = tile!.getBoundingClientRect()
+            tile!.dispatchEvent(
+              new MouseEvent("contextmenu", { bubbles: true, clientX: bounds.left + 24, clientY: bounds.top + 32 }),
+            )
+          } else if (event.altKey && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) {
+            event.preventDefault()
+            props.onKeyboardMove?.(event.key === "ArrowUp" || event.key === "ArrowLeft" ? -1 : 1)
+          } else if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault()
+            openChat()
+          }
+        }}
       >
-        <span class="flex items-center gap-2">
-          <span class="truncate text-sm font-medium">{props.view.name}</span>
-          <Show when={props.view.kind === "governing"}>
-            <span class="rounded-full bg-v2-background-bg-layer-02 px-2 py-0.5 text-[10px] uppercase tracking-wide text-v2-text-text-muted">
-              {language.t("contacts.governing")}
-            </span>
-          </Show>
-          {/* ⚠️ A BADGE, not a dimmed or hidden row. A paused colleague is set aside, not gone —
-              and the row is the only door to its chat, so anything that makes it harder to find
-              recreates the problem pausing was built to solve. It reads as a state, beside the
-              name, in the same place the governing badge sits. */}
-          <Show when={props.view.paused}>
-            <span
-              data-state="paused"
-              class="rounded-full bg-v2-state-bg-warning px-2 py-0.5 text-[10px] uppercase tracking-wide text-v2-state-fg-warning"
-              title={language.t("contacts.pausedHint")}
-            >
-              {language.t("contacts.paused")}
-            </span>
-          </Show>
-          <span class="truncate text-xs text-v2-text-text-muted">
-            {props.view.title ?? language.t("contacts.noTitle")}
+        <div class="officer-card-art">
+          <AgentPortrait
+            id={props.view.id}
+            name={props.view.name}
+            avatar={props.view.avatar}
+            background={`color-mix(in srgb, ${agentColor(props.view.id, props.view.color)} 28%, var(--v2-background-bg-layer-02))`}
+            class="officer-card-portrait"
+          />
+          <span class="officer-card-status" data-working={state() === "working"} data-paused={props.view.paused}>
+            <i />
+            {props.view.paused ? language.t("contacts.paused") : language.t(`contacts.state.${state()}`)}
           </span>
-        </span>
-      </Dynamic>
-      </div>
-      <div class="mt-3 flex items-center justify-between gap-2 border-t border-v2-border-border-muted pt-2 text-xs">
-        <span class={state() === "working" ? "text-v2-state-fg-success" : "text-v2-text-text-faint"}>
+        </div>
+        <div class="officer-card-identity">
+          <strong title={props.view.name}>{props.view.name}</strong>
+          <span title={props.view.title}>{props.view.title ?? language.t("contacts.noTitle")}</span>
+        </div>
+        <div class="officer-card-task" title={task()}>
           {task() ?? language.t("contacts.state.idle")}
-        </span>
-        <span class="shrink-0 font-mono tabular-nums text-v2-text-text-muted">
-          {perSecond() ?? "0"} t/s
-        </span>
-      </div>
-      {/* Spend, rolled up over this colleague's chat AND the nameless staff it spawned — they spend
-          on their officer's behalf. Absent rather than "0" when nothing has been produced: a zero
-          reads as a measurement, and no work is not a measurement. */}
-      {/* The RATE, when there is one. Absent — never "0/min" — when the colleague produced nothing
-          in the window: the series is sparse, so no rows means not working, and a zero badge would
-          read as a measurement of its speed rather than of our decision to render it. */}
-      <Show when={rate()}>
-        {(perMinute) => (
-          <span
-            class="shrink-0 text-[11px] tabular-nums text-v2-text-text-base"
-            title={language.t("contacts.rateTitle", { window: RATE_WINDOW_MINUTES })}
-          >
-            {language.t("contacts.rate", { tokens: formatRate(perMinute()) })}
+        </div>
+        <div class="officer-card-stats">
+          <span title={language.t("contacts.rateTitle", { window: RATE_WINDOW_MINUTES })}>
+            <b>{perSecond() ?? "—"}</b>
+            <small>t/s</small>
           </span>
-        )}
-      </Show>
-      <Show when={live().tokens.generated > 0}>
-        <span class="shrink-0 text-[11px] tabular-nums text-v2-text-text-faint" title={language.t("contacts.spend")}>
-          {compactTokens(live().tokens.generated)}
-        </span>
-      </Show>
-      <Show when={workers().length > 0 && props.serverKey !== undefined}>
-        <button
-          type="button"
-          data-action="contacts-workers"
-          onClick={openWorkers}
-          class="shrink-0 rounded-md px-2 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-03 hover:text-v2-text-text-base"
-          title={language.t("contacts.workers.openAll", { name: props.view.name })}
-        >
-          {language.plural("contacts.workers.count", workers().length)}
-        </button>
-      </Show>
-      <button
-        type="button"
-        data-action="contacts-clone"
-        onClick={props.onClone}
-        disabled={props.cloneDisabled}
-        class="shrink-0 rounded-md px-2 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-03 hover:text-v2-text-text-base disabled:opacity-40"
-        title={language.t("contacts.clone", { name: props.view.name })}
-        aria-label={language.t("contacts.clone", { name: props.view.name })}
-      >
-        {props.cloning ? language.t("agentConfig.cloning") : language.t("agentConfig.clone")}
-      </button>
-      <button
-        type="button"
-        onClick={props.onOpen}
-        class="shrink-0 rounded-md p-1.5 text-v2-text-text-faint hover:bg-v2-background-bg-layer-03 hover:text-v2-text-text-base"
-        title={language.t("contacts.configure")}
-        aria-label={language.t("contacts.configure")}
-      >
-        <Icon name="settings-gear" class="size-4" />
-      </button>
-    </div>
+          <span
+            title={rate() ? language.t("contacts.rate", { tokens: formatRate(rate()!) }) : language.t("contacts.spend")}
+          >
+            <b>{compactTokens(live().tokens.generated)}</b>
+            <small>tokens</small>
+          </span>
+          <Show when={workers().length > 0 && props.serverKey !== undefined}>
+            <button
+              type="button"
+              data-action="contacts-workers"
+              onClick={openWorkers}
+              title={language.t("contacts.workers.openAll", { name: props.view.name })}
+            >
+              {language.plural("contacts.workers.count", workers().length)}
+            </button>
+          </Show>
+        </div>
+      </ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content class="officer-context-menu">
+          <ContextMenu.Item class="officer-context-item" onSelect={props.onOpen}>
+            <Icon name="settings-gear" class="size-4" />
+            {language.t("command.category.settings")}
+          </ContextMenu.Item>
+          <ContextMenu.Item class="officer-context-item" disabled={props.busy} onSelect={props.onPause}>
+            {language.t(props.view.paused ? "agentConfig.resume" : "agentConfig.pause")}
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            data-action="contacts-clone"
+            class="officer-context-item"
+            disabled={props.busy || !props.view.removable}
+            onSelect={props.onClone}
+          >
+            {language.t("agentConfig.clone")}
+          </ContextMenu.Item>
+          <ContextMenu.Separator class="officer-context-separator" />
+          <ContextMenu.Item
+            class="officer-context-item"
+            data-danger
+            disabled={props.busy || !props.view.removable}
+            onSelect={props.onRetire}
+          >
+            {language.t("agentConfig.retire")}
+          </ContextMenu.Item>
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu>
   )
 }

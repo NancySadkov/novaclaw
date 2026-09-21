@@ -1,0 +1,224 @@
+.officer-roster-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 224px);
+  align-content: start;
+  gap: 16px;
+  padding: 20px;
+}
+
+.officer-sortable {
+  position: relative;
+  width: 224px;
+  height: 276px;
+}
+.officer-sortable[data-dragging] {
+  z-index: 20;
+}
+.officer-sortable[data-dragging] .officer-card {
+  border-color: #e4bf75;
+  box-shadow:
+    0 20px 40px #08051099,
+    0 0 0 1px #e4bf7570;
+  cursor: grabbing;
+}
+
+.officer-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 224px;
+  height: 276px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--v2-text-text-base) 15%, transparent);
+  border-radius: 14px;
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--v2-background-bg-layer-02) 92%, #8b65c4),
+    var(--v2-background-bg-base)
+  );
+  box-shadow:
+    inset 0 1px 0 #fff1,
+    0 5px 16px #09041425;
+  color: var(--v2-text-text-base);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.officer-card:hover,
+.officer-card:focus-visible {
+  outline: none;
+  border-color: #bd945b;
+  box-shadow:
+    inset 0 1px 0 #fff2,
+    0 8px 24px #09041440,
+    0 0 0 2px #c3a16c20;
+}
+
+.officer-card-art {
+  position: relative;
+  display: flex;
+  flex: 0 0 132px;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(ellipse at 50% 45%, color-mix(in srgb, var(--officer-accent) 30%, transparent), transparent 72%),
+    linear-gradient(120deg, #b78a4c10, #6e42a510);
+}
+.officer-card-art::before {
+  content: "";
+  position: absolute;
+  inset: 15px 44px 12px;
+  border: 1px solid #cba76525;
+  border-radius: 50%;
+  box-shadow: 0 0 0 8px #b9955c08;
+}
+.officer-card .officer-card-portrait {
+  width: 90px;
+  height: 90px;
+  border: 2px solid #c2a575;
+  box-shadow:
+    0 4px 20px #08031170,
+    inset 0 1px 1px #fff3;
+  font-size: 28px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.officer-card-status {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: var(--v2-background-bg-base);
+  color: var(--v2-text-text-muted);
+  font-size: 9px;
+  line-height: 12px;
+}
+.officer-card-status i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.officer-card-status[data-working="true"] {
+  color: var(--v2-state-fg-success);
+}
+.officer-card-status[data-paused="true"] {
+  color: var(--v2-state-fg-warning);
+}
+.officer-card-identity {
+  padding: 0 14px;
+  text-align: center;
+}
+.officer-card-identity strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  line-height: 24px;
+  letter-spacing: 0.015em;
+}
+.officer-card-identity > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--v2-text-text-muted);
+  font-size: 11px;
+  line-height: 20px;
+}
+.officer-card-task {
+  height: 40px;
+  padding: 8px 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  font-size: 11px;
+  color: var(--v2-text-text-muted);
+}
+.officer-card-stats {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: auto;
+  height: 52px;
+  padding: 8px 14px;
+  border-top: 1px solid #cba76520;
+  background: #8874af08;
+}
+.officer-card-stats > span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.officer-card-stats b {
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.officer-card-stats small {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--v2-text-text-faint);
+}
+.officer-card-stats button {
+  margin-left: auto;
+  max-width: 82px;
+  font-size: 10px;
+  color: var(--v2-text-text-muted);
+  border-radius: 4px;
+  padding: 4px;
+}
+.officer-card-stats button:hover {
+  background: var(--v2-background-bg-layer-03);
+}
+.officer-context-menu {
+  min-width: 180px;
+  padding: 5px;
+  border: 1px solid #b9955c66;
+  border-radius: 10px;
+  background: var(--v2-background-bg-layer-01);
+  color: var(--v2-text-text-base);
+  box-shadow: 0 12px 36px #08041170;
+  z-index: 100;
+}
+.officer-context-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 7px 10px;
+  border-radius: 5px;
+  outline: none;
+  font-size: 12px;
+  cursor: pointer;
+}
+.officer-context-item[data-highlighted] {
+  background: var(--v2-background-bg-layer-03);
+}
+.officer-context-item[data-danger] {
+  color: var(--v2-state-fg-danger);
+}
+.officer-context-item[data-disabled] {
+  opacity: 0.35;
+  cursor: default;
+}
+.officer-context-separator {
+  height: 1px;
+  margin: 4px 5px;
+  background: var(--v2-border-border-base);
+}
+@media (prefers-reduced-motion: reduce) {
+  .officer-card {
+    transition: none;
+  }
+}

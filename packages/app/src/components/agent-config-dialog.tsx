@@ -21,15 +21,8 @@ import { OfficerPrompt } from "@novaclaw/core/officer-prompt"
 import { modelRef, parseModelRef } from "@/apps/agent-model"
 import { useModels } from "@/context/models"
 import { cloneAgent, isNovaCloneRefusal } from "@/apps/agent-clone"
-import { chatFor, chatToClear, rootsToClear } from "@/apps/roster-live"
-import {
-  GOVERNING_ID,
-  displayName,
-  isColleague,
-  memoryKey,
-  superiorCandidates,
-  type AgentLike,
-} from "@/apps/contacts"
+import { chatFor, chatToClear } from "@/apps/roster-live"
+import { GOVERNING_ID, displayName, isColleague, memoryKey, superiorCandidates, type AgentLike } from "@/apps/contacts"
 import { ownerRoute } from "@/apps/memory-owner"
 import { worldMemoryClearScopeVerified } from "@/utils/memory-api"
 import { useLocation, useNavigate } from "@solidjs/router"
@@ -38,7 +31,7 @@ import { AGENT_AVATAR_TYPES, removeAgentAvatar, uploadAgentAvatar } from "@/apps
 import { isAgentPortraitURL } from "@/apps/agent-portrait"
 import { AgentHelpDialog } from "@/components/agent-help-dialog"
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import { tabHref, useTabs } from "@/context/tabs"
+import { useTabs } from "@/context/tabs"
 import { ServerConnection } from "@/context/server"
 import { SettingsNudgesV2 } from "@/components/settings-v2/nudges"
 import { PresetFieldV2 } from "@/components/settings-v2/parts/preset-field"
@@ -795,7 +788,7 @@ export function AgentConfigScreen(props: {
     avatarFile() !== undefined ||
     avatarRemoved()
 
-  const [busy, setBusy] = createSignal<"clone" | "clear" | "clear-memory" | "retire" | "pause" | "copy" | undefined>()
+  const [busy, setBusy] = createSignal<"clone" | "clear-memory" | "retire" | "pause" | "copy" | undefined>()
 
   // The shared roster is also used by render/offline states that deliberately have no SDK yet.
   // Treat that as "not connected", not as a component crash during construction.
@@ -976,129 +969,6 @@ export function AgentConfigScreen(props: {
             }
           : { variant: "error", title: language.t("agentConfig.cloneFailed"), description: String(error) },
       )
-    } finally {
-      setBusy(undefined)
-    }
-  }
-
-  /**
-   * Clear this colleague's chat: the conversation is removed and the NEXT one starts empty. The
-   * colleague, its brief and its memory all survive — this is a new session, not a retirement.
-   *
-   * 🔴 **It used to announce a clearing the user could still see had not happened** (owner,
-   * 2026-08-27: *"it say chat cleared, but all the messages are still in chat window"*). The archive
-   * itself worked; what was missing is that this dialog is opened FROM the composer as well as from
-   * the roster, so the common path is Tune → Clear inside the very chat being cleared. The dialog
-   * closed, the toast said *"Chat cleared"*, and the transcript underneath was untouched — the route
-   * still names that session, so the view keeps rendering it. Ruling 2 cuts here: a fault is never
-   * described falsely, and neither is a success. The cleared conversation must LEAVE the screen, or
-   * the sentence is a lie about the thing the user is looking at.
-   *
-   * ⚠️ Navigating only when the route actually names the cleared session, rather than always: from
-   * Contacts the user is not in that chat, and yanking them home from a roster they were working
-   * through would be its own small betrayal.
-   *
-   * 🔴 **CONFIRMED.** Not because bytes are destroyed — the row survives with a `time_archived` — but
-   * because no surface a user has can bring the conversation back, which is the test `retire` already
-   * applies one control over. `setPaused` deliberately does NOT confirm, and that asymmetry is the
-   * point: confirming reversible acts is what teaches people to click through the ones that matter.
-   */
-  const clearChat = async () => {
-    const id = props.agentID
-    const client = sdk()
-    if (id === undefined || client === undefined) return
-    if (
-      !(await confirm({
-        title: language.t("agentConfig.clear.confirm.title", { name: name() }),
-        description: language.t("agentConfig.clear.confirm.description", { name: name() }),
-        confirmLabel: language.t("agentConfig.clear.confirm.action"),
-        destructive: true,
-      }))
-    )
-      return
-    setBusy("clear")
-    try {
-      const sessions = await listSessions(client)
-      /**
-       * 🔴 **Not `chatFor`.** It answers "which chat is this colleague's now" and excludes archived
-       * rows, which is right for the roster and wrong here: the owner's `umbris` had four root chats,
-       * every one of them archived, and the newest was the transcript in the open tab. Clear reported
-       * *"There is no chat to clear yet"* about a conversation on screen. See `chatToClear`.
-       *
-       * 🔴 And not `chatToClear` ALONE either (owner, 2026-09-16). Clearing one chat while another
-       * live root exists does not give the user a fresh chat — `createSessionRecord` is idempotent on
-       * the canonical `ses_<agent>` id, so the "successor" is that other conversation, handed back
-       * with its transcript, tokens and cost still on screen. `rootsToClear` takes every live root of
-       * the colleague, which is what "Clear chat" promises and what the one-chat-per-colleague rule
-       * makes safe.
-       */
-      const targets = rootsToClear(sessions, id, location.pathname)
-      if (targets.length === 0) {
-        showToast({ variant: "default", title: language.t("agentConfig.clearNothing") })
-        return
-      }
-      /**
-       * 🔴 **Clearing DELETES the chat; it used to archive it** (2026-08-28). Two reasons, and they
-       * are the same reason:
-       *
-       * · An archived chat is still in the chats picker, dimmed — so a conversation the user cleared,
-       *   behind a destructive confirmation, was one click away from being read again. That is the
-       *   same complaint as the tab that kept rendering it, one surface further out.
-       * · A colleague's chat now carries the colleague's ID (`createSessionRecord`). An archived row
-       *   holding that id would push the replacement onto a generated one, so the very act of asking
-       *   for a fresh chat would cost the colleague the id that says the chat is theirs.
-       *
-       * `session.remove` is not a bare row delete: it takes the children, the session-scoped
-       * memories and the Strict artifacts with it. That is what "Clear chat" promises.
-       */
-      for (const target of targets) {
-        const removed = await client.session.remove({ sessionID: target.id })
-        if (removed.error) throw removed.error
-      }
-      // WHICH of the cleared chats the open tab was seated on — there can now be more than one, and
-      // the tab is seated on at most one of them (`AGENTS.md`: one chat per colleague, one tab per
-      // colleague). `undefined` means the user was looking at something else entirely.
-      const seated = targets.find((target) => location.pathname.includes(target.id))?.id
-      const viewingCleared = seated !== undefined
-      // No success toast: the tab keeps its seat and opens the fresh (empty) chat below, which is
-      // the confirmation. A "Chat cleared" notice is a second announcement of what the user is
-      // already looking at (owner, 2026-09-18).
-      props.onChanged?.()
-      props.onDismiss()
-      /**
-       * ⚠️ **The tab KEEPS ITS SEAT and opens the fresh chat** (owner, 2026-09-03: *"it for some
-       * reason closed the existing chat tab, instead of replacing it with a blank one"*).
-       *
-       * The 2026-08-28 ruling this replaces was right about the defect it fixed — a cleared
-       * conversation must not stay one click away in the strip — and wrong about the remedy. Closing
-       * the tab treats the chat as the thing the tab is FOR, but under the ECS lens the colleague is
-       * the entity and the chat is a component reached through it: clearing replaces the component,
-       * it does not retire the colleague. Taking the tab away makes the user re-open a colleague they
-       * never dismissed, and on the last tab it drops them at Home.
-       *
-       * `addSessionTab` already holds the one-tab-per-colleague invariant and RE-POINTS that tab at
-       * the id it is given, in place, so the seat and its position survive — the same mechanism a
-       * reassignment's successor already travels through.
-       *
-       * ⚠️ Order is forced: remove, THEN create. A colleague may hold only one live root chat
-       * (`session_agent_live_root_idx`), so creating first would either collide or hand back the very
-       * chat being cleared.
-       */
-      const key = serverKey()
-      const successor = await startChat(client, { agentID: id, title: name() })
-      if (key === undefined) {
-        if (viewingCleared) navigate("/")
-      } else if (successor === undefined) {
-        // No successor to sit in the seat. Closing beats stranding the tab on a deleted chat, which
-        // is the dead end this whole path exists to avoid. With nothing seated there is nothing to
-        // strand, so the close is skipped rather than aimed at an id from another screen.
-        if (seated !== undefined) tabs.closeSessionTab(key, seated)
-      } else {
-        const tab = tabs.addSessionTab({ server: key, sessionId: successor, agent: id })
-        if (viewingCleared) navigate(tabHref(tab))
-      }
-    } catch (error) {
-      showToast({ variant: "error", title: language.t("agentConfig.clearFailed"), description: String(error) })
     } finally {
       setBusy(undefined)
     }
@@ -1539,7 +1409,10 @@ export function AgentConfigScreen(props: {
       data-component="agent-settings"
       class="flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden bg-v2-background-bg-base text-v2-text-text-base"
     >
-      <div class="flex min-w-0 items-center gap-3 border-b border-v2-border-border-base px-3 py-3 sm:px-4">
+      <div
+        data-slot="agent-settings-header"
+        class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-v2-border-border-base px-3 py-2 sm:px-4"
+      >
         {/* BACK, not just an X. This panel is opened from a list you were reading a moment ago —
               the roster, or the chat you were tuning — so the gesture out of it is "return", and
               labelling it that way is the difference between a dead end and a step. */}
@@ -1568,8 +1441,6 @@ export function AgentConfigScreen(props: {
         <span class="hidden sm:block">
           <ControlScope kind="colleague" />
         </span>
-        {/* HELP, beside Close: the one door to everything this screen used to explain inline. It sits
-              in the header rather than by a control because it explains the MODEL, not this field. */}
         <button
           type="button"
           class="shrink-0 rounded-md p-1.5 text-v2-text-text-faint hover:bg-v2-background-bg-layer-03 hover:text-v2-text-text-base"
@@ -1579,9 +1450,77 @@ export function AgentConfigScreen(props: {
         >
           <Icon name="help" class="size-4" />
         </button>
-        <button type="button" class="text-xs text-v2-text-text-muted hover:underline" onClick={props.onDismiss}>
-          {language.t("agentConfig.close")}
-        </button>
+        <div
+          data-slot="agent-settings-actions"
+          class="flex w-full flex-wrap items-center justify-end gap-1 sm:w-auto sm:shrink-0"
+        >
+          <button
+            type="button"
+            data-action="agent-pause"
+            class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
+            disabled={saving() || busy() !== undefined || agent() === undefined}
+            onClick={() => void setPaused(agent()?.paused !== true)}
+          >
+            {busy() === "pause"
+              ? language.t("agentConfig.pausing")
+              : language.t(agent()?.paused === true ? "agentConfig.resume" : "agentConfig.pause")}
+          </button>
+          <Show when={!governing()}>
+            <button
+              type="button"
+              data-action="agent-clone"
+              class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
+              disabled={saving() || busy() !== undefined || agent() === undefined}
+              onClick={() => void clone()}
+            >
+              {busy() === "clone" ? language.t("agentConfig.cloning") : language.t("agentConfig.clone")}
+            </button>
+            <button
+              type="button"
+              data-action="agent-retire"
+              class="rounded-md px-2.5 py-1.5 text-xs text-v2-state-fg-danger hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
+              disabled={saving() || busy() !== undefined || agent() === undefined}
+              onClick={() => void retire()}
+            >
+              {busy() === "retire" ? language.t("agentConfig.retiring") : language.t("agentConfig.retire")}
+            </button>
+          </Show>
+          <span aria-hidden="true" class="mx-1 h-4 border-l border-v2-border-border-base" />
+          <button
+            type="button"
+            data-action="agent-config-cancel"
+            class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
+            onClick={props.onDismiss}
+          >
+            {language.t("agentConfig.cancel")}
+          </button>
+          <button
+            type="button"
+            data-action="agent-config-save"
+            class="rounded-md border border-v2-border-border-strong bg-v2-background-bg-layer-03 px-3 py-1.5 text-xs font-semibold text-v2-text-text-base shadow-sm hover:brightness-110 disabled:opacity-40"
+            disabled={
+              !dirty() ||
+              !reasoningBudgetValid() ||
+              !maxToolTimeoutValid() ||
+              !strictAttemptsValid() ||
+              !strictWallMinutesValid() ||
+              !strictExecutionTokensValid() ||
+              !strictReasoningTokensValid() ||
+              !affTemperatureValid() ||
+              !intrCadenceValid() ||
+              Number.isNaN(parsedMaxWorkers()) ||
+              Number.isNaN(parsedSpawnDepth()) ||
+              Number.isNaN(parsedRuntimeHeartbeatMinutes()) ||
+              saving() ||
+              busy() !== undefined ||
+              props.agentID === undefined ||
+              agent() === undefined
+            }
+            onClick={() => void save()}
+          >
+            {saving() ? language.t("agentConfig.saving") : language.t("agentConfig.save")}
+          </button>
+        </div>
       </div>
 
       <KobalteTabs
@@ -1788,9 +1727,7 @@ export function AgentConfigScreen(props: {
                   />
                   <span>{language.t("agentConfig.memoryRag")}</span>
                 </label>
-                <p class="text-[11px] text-v2-text-text-faint">
-                  {language.t(memoryKey(memoryValue()))}
-                </p>
+                <p class="text-[11px] text-v2-text-text-faint">{language.t(memoryKey(memoryValue()))}</p>
                 {/* The filing cabinet and its destructive action belong beside the switch that
                     governs it. On a phone these stack into two full-width, easy targets; from `sm`
                     upward they collapse into one quiet action row. */}
@@ -2818,105 +2755,6 @@ export function AgentConfigScreen(props: {
           </div>
         </KobalteTabs.Content>
       </KobalteTabs>
-
-      {/* Lifecycle, kept apart from the profile fields: these do something the moment they are
-            pressed, while everything above waits for Save. */}
-      <div class="flex min-w-0 flex-wrap items-center gap-1 border-t border-v2-border-border-muted px-2 py-2 sm:gap-2 sm:px-4 sm:py-2.5">
-        <button
-          type="button"
-          data-action="agent-clear-chat"
-          class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
-          disabled={busy() !== undefined || props.agentID === undefined}
-          onClick={() => void clearChat()}
-        >
-          {busy() === "clear" ? language.t("agentConfig.clearing") : language.t("agentConfig.clearChat")}
-        </button>
-        {/* 🔴 CLONE IS NOT OFFERED FOR THE GOVERNING AGENT (owner ruling 2026-09-15: the user cannot
-              clone Nova). `planClone` has always refused it server-side, and the button used to stay
-              visible on purpose so pressing it taught *why* a second Nova is a second instance. That
-              teaching now lives in the note at the top of Nova's Profile tab, and a control whose only
-              outcome is a refusal is worse than the sentence that replaces it. */}
-        <Show when={!governing()}>
-          <button
-            type="button"
-            class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
-            disabled={busy() !== undefined || agent() === undefined}
-            onClick={() => void clone()}
-          >
-            {busy() === "clone" ? language.t("agentConfig.cloning") : language.t("agentConfig.clone")}
-          </button>
-        </Show>
-        {/* ⚠️ Ordinary weight, NOT danger red, and separated from Retire — the two must not read
-              as the same kind of act. Pausing is reversible and keeps everything; retiring
-              archives the chats and sets the cabinet aside.
-              ⚠️ Pause IS offered for the governing agent: the owner's exceptions are exactly three —
-              no project folder, no clone, no retire — and `AgentV2`'s own note has always said the
-              user "may still pause or ignore Nova". */}
-        <button
-          type="button"
-          data-action="agent-pause"
-          class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
-          disabled={busy() !== undefined || agent() === undefined}
-          onClick={() => void setPaused(agent()?.paused !== true)}
-        >
-          {busy() === "pause"
-            ? language.t("agentConfig.pausing")
-            : agent()?.paused === true
-              ? language.t("agentConfig.resume")
-              : language.t("agentConfig.pause")}
-        </button>
-        {/* 🔴 RETIRE IS THE THIRD THING THE USER CANNOT DO TO THE TREE ROOT. `DELETE /api/agent/:id`
-              answers 400 for it, so this is the control being told the truth rather than a hole in
-              the UI. */}
-        <Show when={!governing()}>
-          <button
-            type="button"
-            class="ml-auto rounded-md px-2.5 py-1.5 text-xs text-v2-state-fg-danger hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
-            disabled={busy() !== undefined || props.agentID === undefined}
-            onClick={() => void retire()}
-          >
-            {busy() === "retire" ? language.t("agentConfig.retiring") : language.t("agentConfig.retire")}
-          </button>
-        </Show>
-      </div>
-      {/* The Save/Cancel row is unconditional now: the governing agent's profile is edited on this
-            surface like any other officer's, so it needs the same door out and the same commit. */}
-      <div class="flex items-center justify-end gap-2 border-t border-v2-border-border-base px-4 py-2.5">
-        <button
-          type="button"
-          class="rounded-md px-3 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
-          onClick={props.onDismiss}
-        >
-          {language.t("agentConfig.cancel")}
-        </button>
-        <button
-          type="button"
-          class="rounded-md bg-v2-background-bg-layer-03 px-3 py-1.5 text-xs font-medium disabled:opacity-40"
-          // ⚠️ `agent() === undefined` is the same clause the Clone button beside this one carries,
-          // and Save was the one that lacked it (review D3). `dirty()` needs ONE touched field, so
-          // without it a save fired before the roster landed wrote the fields it had not read yet.
-          disabled={
-            !dirty() ||
-            !reasoningBudgetValid() ||
-            !maxToolTimeoutValid() ||
-            !strictAttemptsValid() ||
-            !strictWallMinutesValid() ||
-            !strictExecutionTokensValid() ||
-            !strictReasoningTokensValid() ||
-            !affTemperatureValid() ||
-            !intrCadenceValid() ||
-            Number.isNaN(parsedMaxWorkers()) ||
-            Number.isNaN(parsedSpawnDepth()) ||
-            Number.isNaN(parsedRuntimeHeartbeatMinutes()) ||
-            saving() ||
-            props.agentID === undefined ||
-            agent() === undefined
-          }
-          onClick={() => void save()}
-        >
-          {saving() ? language.t("agentConfig.saving") : language.t("agentConfig.save")}
-        </button>
-      </div>
     </div>
   )
 }

@@ -68,7 +68,9 @@ test("the addressable settings screen opens the selected colleague and returns t
     },
     server: { http: connection.http },
   }
-  const session = { data: { info: {}, session_status: {}, session_live: () => undefined } }
+  const session = {
+    data: { info: {}, session_status: {}, session_live: () => undefined, session_working: () => false },
+  }
   const globalStub = {
     servers: { list: () => [connection] },
     ensureServerCtx: () => ({
@@ -140,7 +142,7 @@ test("the addressable settings screen opens the selected colleague and returns t
   expect(history.get()).toBe("/tasks")
 })
 
-test("officer order starts in stored config, saves from the keyboard drag handle, and never moves Nova", async () => {
+test("officer tiles reorder from the keyboard and open their actions by right click or touch hold", async () => {
   host = document.createElement("div")
   document.body.appendChild(host)
 
@@ -247,13 +249,36 @@ test("officer order starts in stored config, saves from the keyboard drag handle
   expect(ids()).toEqual(["nova", "theron", "aris"])
   expect(document.querySelector('[data-contact-id="nova"] [data-action="contacts-reorder"]')).toBeNull()
 
-  const handle = document.querySelector<HTMLButtonElement>(
-    '[data-officer-id="theron"] [data-action="contacts-reorder"]',
-  )!
-  handle.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
+  let tile = document.querySelector<HTMLElement>('[data-contact-id="theron"]')!
+  tile.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", altKey: true, bubbles: true }))
   await settle(12)
 
   expect(writes).toEqual([{ officer_order: ["aris", "theron"] }])
   expect(config.officer_order).toEqual(["aris", "theron"])
   expect(ids()).toEqual(["nova", "aris", "theron"])
+  tile = document.querySelector<HTMLElement>('[data-contact-id="theron"]')!
+
+  tile.dispatchEvent(
+    new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: 30, clientY: 30 }),
+  )
+  await settle()
+  const menu = document.querySelector('[role="menu"]')!
+  expect(menu).not.toBeNull()
+  expect([...menu.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)).toEqual([
+    "command.category.settings",
+    "agentConfig.pause",
+    "agentConfig.clone",
+    "agentConfig.retire",
+  ])
+  tile.click()
+  expect(history.get()).toBe("/tasks")
+  menu.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))
+  await settle()
+  tile.dispatchEvent(
+    new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "touch", isPrimary: true, button: 0 }),
+  )
+  await new Promise((resolve) => setTimeout(resolve, 750))
+  expect(document.querySelector('[role="menu"]')).not.toBeNull()
+  document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "touch" }))
+  expect(writes).toHaveLength(1)
 })

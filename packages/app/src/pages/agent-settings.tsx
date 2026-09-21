@@ -2,6 +2,7 @@ import { useNavigate, useParams, useSearchParams } from "@solidjs/router"
 import { AgentConfigScreen } from "@/components/agent-config-dialog"
 import { useGlobal } from "@/context/global"
 import { useServer } from "@/context/server"
+import { Show } from "solid-js"
 
 export function AgentSettingsPage() {
   const params = useParams<{ agentID: string }>()
@@ -14,13 +15,17 @@ export function AgentSettingsPage() {
     navigate(target?.startsWith("/") && !target.startsWith("//") ? target : "/tasks")
   }
   return (
-    <AgentConfigScreen
-      agentID={params.agentID}
-      onDismiss={dismiss}
-      onChanged={() => {
-        const conn = server.current ?? global.servers.list()[0]
-        if (conn) global.ensureServerCtx(conn).agents.refetch()
-      }}
-    />
+    <Show when={`${server.key}\n${params.agentID}`} keyed>
+      {(_identity) => (
+        <AgentConfigScreen
+          agentID={params.agentID}
+          onDismiss={dismiss}
+          onChanged={() => {
+            const conn = server.current ?? global.servers.list()[0]
+            if (conn) global.ensureServerCtx(conn).agents.refetch()
+          }}
+        />
+      )}
+    </Show>
   )
 }

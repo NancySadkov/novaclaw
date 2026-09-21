@@ -29,6 +29,7 @@
   "countsCompactOfficerUiAndRecovery": "2026-09-20: app:unit 1761->1778. The previous two rate-formatting commits already measured 1766 without updating this ledger. This slice adds net 12: +1 portrait initials, -1 retired review-tooltip helper, +5 transcript recovery, +5 reconnect lifecycle/SDK stream, +2 cancellation deadline. app:browser 250->254 adds +1 officer settings keyboard orientation, +1 model settings draft retention, +2 focused-tab/nested-dialog Escape regressions. The tab-retention browser case now exercises the seventh officer against the intentional six-tab limit. No tests were skipped.",
   "countsRecoveryStateDiscriminator": "2026-09-20: app:unit 1778->1779 adds one guard that an internal settlement handoff without a failure classification cannot masquerade as failed-worker recovery. Classified automatic recovery remains visible. Nothing moved down.",
   "countsOpenAiMissingUserQuery": "2026-09-20: llm 497->498 adds one exact-wire guard for a colleague delivery followed by a local tool exchange when the transcript contains no owner message. OpenAI Chat and the OpenAI-compatible route now insert one provenance-marked harness query before the conversation; ordinary requests with an existing user turn are unchanged. Nothing moved down.",
+  "countsOfficerTiles": "2026-09-21: app:unit 1779->1781: prior ba3fce31f removed 7 tests without updating this baseline; this slice adds 4 settings-tab routing and 5 clear-chat replacement tests. app:browser 254->260 adds 5 pointer-sensor behavior tests and 1 settings-header action test. Existing roster test now exercises context menu and touch hold. No new skips.",
   "units": {
     "llm": 28,
     "core": 9,
@@ -62,8 +63,8 @@
     "session-ui": 231,
     "ui": 67,
     "core": 7367,
-    "app:unit": 1779,
-    "app:browser": 254,
+    "app:unit": 1781,
+    "app:browser": 260,
     "desktop": 239,
     "server": 114,
     "novaclaw:server": 428,

@@ -25,7 +25,8 @@ import {
 } from "@/components/titlebar-session-events"
 import { useGlobal } from "@/context/global"
 import { ServerConnection, useServer } from "@/context/server"
-import { tabKey, useTabs } from "@/context/tabs"
+import { tabKey, useTabs, type Tab } from "@/context/tabs"
+import { officerSettingsDestination, officerSettingsTab, settingsOfficerID } from "./titlebar-officer-settings"
 
 const v2TitlebarHeight = 36
 const minTitlebarZoom = 0.25
@@ -202,7 +203,22 @@ export function Titlebar() {
          */
         const collapsesIntoParent = (s: { type?: string | undefined }) => s.type === "sub-agent"
 
-        const currentTab = () => matchRoute(layout.route())
+        const currentTab = () => {
+          const officer = settingsOfficerID(location.pathname)
+          if (officer !== undefined) return tabsStore.find((tab) => officerSettingsTab(tab, officer, server.key))
+          return matchRoute(layout.route())
+        }
+
+        const selectTab = (tab: Tab) => {
+          const destination = officerSettingsDestination(location.pathname, location.search, tab)
+          if (destination) {
+            server.setActive(tab.server)
+            tabs.remember(tab)
+            navigate(destination)
+            return
+          }
+          tabs.select(tab)
+        }
 
         createEffect(() => {
           const route = layout.route()
@@ -291,7 +307,7 @@ export function Titlebar() {
                 if (index === -1) index = tabsStore.length - 1
 
                 const next = tabsStore[index]
-                if (next) tabs.select(next)
+                if (next) selectTab(next)
               },
             },
             {
@@ -308,7 +324,7 @@ export function Titlebar() {
                 if (index === tabsStore.length) index = 0
 
                 const next = tabsStore[index]
-                if (next) tabs.select(next)
+                if (next) selectTab(next)
               },
             },
           ].filter((v) => v !== undefined)
@@ -327,7 +343,7 @@ export function Titlebar() {
               forceTruncate={tabsAreOverflowing()}
               onOverflowChange={setTabsAreOverflowing}
               onNavigate={(tab, el) => {
-                tabs.select(tab)
+                selectTab(tab)
                 revealTabInStrip(el)
               }}
               onReorder={(keys) => tabsStoreActions.reorder(keys)}

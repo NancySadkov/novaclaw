@@ -1,6 +1,6 @@
 import { createMemo, createEffect, createSignal, on, onCleanup, For, Show } from "solid-js"
 import type { JSX } from "solid-js"
-import { useNavigate } from "@solidjs/router"
+import { useLocation, useNavigate } from "@solidjs/router"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { SessionPortability } from "@novaclaw/core/session/portability"
 import { createQuery } from "@tanstack/solid-query"
@@ -28,6 +28,9 @@ import { downloadPlainText, serializeContextSegment, sessionExportFilename } fro
 import { createSessionContextFormatter } from "./session-context-format"
 import { sessionCompactionEvents } from "./session-compaction-events"
 import { showToast } from "@/utils/toast"
+import { useConfirm } from "@/components/dialog-confirm"
+import { tabHref, useTabs } from "@/context/tabs"
+import { clearOfficerChat } from "./session-clear-chat"
 
 const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
   system: "var(--syntax-info)",
@@ -60,6 +63,10 @@ export function SessionContextTab() {
   const sdk = useSDK()
   const global = useGlobal()
   const server = useServer()
+  const tabs = useTabs()
+  const location = useLocation()
+  const confirm = useConfirm()
+  const [clearing, setClearing] = createSignal(false)
   const providers = useProviders(() => sdk().directory)
   const models = useModels()
   const local = useLocal()
@@ -277,6 +284,47 @@ export function SessionContextTab() {
   // the result. `message.recorded` is not folded by the live transcript store, so opening the session
   // (rather than trusting the current view to update) is what makes the imported history visible.
   const navigate = useNavigate()
+  const clearChat = async () => {
+    const agentID = officerID()
+    const name = officerName()
+    const sessionID = params.id
+    const pathname = location.pathname
+    const key = server.key
+    const client = sdk().client.v2
+    if (!agentID || !sessionID || !key || clearing()) return
+    setClearing(true)
+    try {
+      if (
+        !(await confirm({
+          title: language.t("agentConfig.clear.confirm.title", { name }),
+          description: language.t("agentConfig.clear.confirm.description", { name }),
+          confirmLabel: language.t("agentConfig.clear.confirm.action"),
+          destructive: true,
+        }))
+      )
+        return
+      const successor = await clearOfficerChat({
+        client,
+        agentID,
+        name,
+        pathname,
+        onReplacementFailed: (sessionIDs) => {
+          for (const id of sessionIDs) tabs.closeSessionTab(key, id)
+          if (server.key === key && params.id === sessionID) navigate("/")
+        },
+      })
+      if (successor === undefined) {
+        showToast({ variant: "default", title: language.t("agentConfig.clearNothing") })
+        return
+      }
+      const tab = tabs.addSessionTab({ server: key, sessionId: successor, agent: agentID })
+      if (server.key === key && params.id === sessionID) navigate(tabHref(tab))
+    } catch (error) {
+      showToast({ variant: "error", title: language.t("agentConfig.clearFailed"), description: String(error) })
+    } finally {
+      setClearing(false)
+    }
+  }
   const [importing, setImporting] = createSignal(false)
   let importInput: HTMLInputElement | undefined
   const importSession = async (file: File | undefined) => {
@@ -522,11 +570,25 @@ export function SessionContextTab() {
 
         <div class="flex flex-col gap-3">
           <div class="flex flex-wrap gap-2">
-            <ButtonV2 type="button" variant="gold" disabled={compacting()} onClick={() => void compactNow()}>
+            <ButtonV2
+              type="button"
+              variant="gold"
+              disabled={compacting() || clearing()}
+              onClick={() => void compactNow()}
+            >
               {language.t(compacting() ? "context.compactions.compacting" : "context.compactions.compactNow")}
             </ButtonV2>
             <ButtonV2 type="button" variant="outline" onClick={() => setShowCompactions((value) => !value)}>
               {language.t("context.compactions.button")} ({compactions().length.toLocaleString(language.intl())})
+            </ButtonV2>
+            <ButtonV2
+              type="button"
+              variant="outline"
+              data-action="agent-clear-chat"
+              disabled={clearing() || compacting() || !officerID() || !params.id}
+              onClick={() => void clearChat()}
+            >
+              {language.t(clearing() ? "agentConfig.clearing" : "agentConfig.clearChat")}
             </ButtonV2>
           </div>
           <Show when={showCompactions()}>

@@ -21,6 +21,7 @@
 @import "./pages/session/file-tabs.css" layer(components);
 @import "./pages/session/session-surface.css" layer(components);
 @import "./pages/home-screen/home-screen.css" layer(components);
+@import "./pages/contacts.css" layer(components);
 
 @font-face {
   font-family: "JetBrainsMono Nerd Font Mono";
