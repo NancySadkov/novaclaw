@@ -1,6 +1,8 @@
 export * as ProviderSession from "./provider-session"
 
+import { Effect } from "effect"
 import { InstallationVersion } from "../../installation/version"
+import { SettingsConfigStore } from "../../settings-config-store"
 import { endpointKey } from "./endpoint"
 
 /**
@@ -104,6 +106,46 @@ export const affinityHeaderFor = (url: string | undefined, persisted: string | u
   if (key === undefined) return persisted
   return affinityHeaders.get(key) ?? persisted
 }
+
+/**
+ * The session header this endpoint requires, from this process's memory or the persisted store.
+ *
+ * One reader for both request sites that must agree about an endpoint — the runner's route defaults
+ * and the Settings generation probe. Best-effort by construction: a store that will not read means
+ * "not known yet", which leaves the endpoint exactly as it was before the row — the request goes
+ * without the header, the endpoint refuses once, and the caller's recovery arm learns it.
+ */
+export const storedAffinityHeader = (
+  settings: Pick<SettingsConfigStore.Interface, "all" | "set">,
+  url: string | undefined,
+): Effect.Effect<string | undefined> =>
+  Effect.gen(function* () {
+    const key = endpointKey(url)
+    if (key === undefined) return undefined
+    const all = yield* settings.all().pipe(Effect.orElseSucceed(() => ({}) as Record<string, unknown>))
+    const stored = all["provider_session_affinity"]
+    const persisted = typeof stored === "object" && stored !== null ? (stored as Record<string, unknown>)[key] : undefined
+    return affinityHeaderFor(url, typeof persisted === "string" ? persisted : undefined)
+  })
+
+/**
+ * Persist one endpoint's required session header, merging rather than replacing the other endpoints'
+ * rows. Keyed by normalized URL, like the runner's own write; a malformed URL has no identity and is
+ * not written. Best-effort: a store that will not write must not fail the request that just recovered.
+ */
+export const persistAffinityHeader = (
+  settings: Pick<SettingsConfigStore.Interface, "all" | "set">,
+  url: string | undefined,
+  header: string,
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    const key = endpointKey(url)
+    if (key === undefined) return
+    const all = yield* settings.all().pipe(Effect.orElseSucceed(() => ({}) as Record<string, unknown>))
+    const current = all["provider_session_affinity"]
+    const rows = typeof current === "object" && current !== null ? (current as Record<string, unknown>) : {}
+    yield* settings.set("provider_session_affinity", { ...rows, [key]: header }).pipe(Effect.ignore)
+  })
 
 /** Test seam: module state must not leak between cases. */
 export const clearAffinity = (): void => affinityHeaders.clear()

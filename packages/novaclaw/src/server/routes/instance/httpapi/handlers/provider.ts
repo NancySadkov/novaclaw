@@ -21,6 +21,8 @@ import type { ProbePayload } from "../groups/provider"
 import { ConfigProviderPreset } from "@novaclaw/core/config/provider-preset"
 import { ProviderCapability } from "@novaclaw/core/provider-capability"
 import { ProviderCapabilityStore } from "@novaclaw/core/provider-capability-store"
+import { ProviderSession } from "@novaclaw/core/session/runner/provider-session"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { ProviderV2 } from "@novaclaw/core/provider"
 
 /** How long one probe may take end to end (connect + headers + body). */
@@ -576,6 +578,67 @@ export const probeCompletion = (
     )
 }
 
+/**
+ * Exercise the generation route, applying this endpoint's session affinity when it is known and
+ * LEARNING it from the endpoint's own 400 when it is not.
+ *
+ * The Settings Test is the one provider caller outside the runner, and it used to send neither the
+ * header nor the recovery: an endpoint the runner had already learned — or would learn on its own
+ * first turn — still reported `Generation returned HTTP 400: MissingSessionID` here. That is the
+ * diagnostic contradicting the product. This is the same lesson the runner learns, at the second
+ * site that needs it; the runner's own route-default application is in
+ * `core/src/session/runner/model.ts`.
+ *
+ * Bounded at two requests: one to hear the refusal, one to prove the named header answers it. A
+ * second refusal after that header is a different fault and is reported, not retried — the same
+ * news-only rule the runner uses.
+ */
+export const probeCompletionWithAffinity = (
+  client: HttpClient.HttpClient,
+  input: {
+    baseURL: string
+    modelID: string
+    authStyle: ConfigProviderPreset.AuthStyle
+    headers: Record<string, string>
+    settings: Pick<SettingsConfigStore.Interface, "all" | "set">
+    timeoutMs?: number
+  },
+): Effect.Effect<{
+  readonly probe: CompletionProbe
+  readonly attempts: number
+  readonly latencyMs: number
+  readonly header: string | undefined
+}> =>
+  Effect.gen(function* () {
+    const withAffinity = (header: string | undefined) => ({
+      ...input.headers,
+      ...(ProviderSession.headersFor({ header, sessionID: undefined }) ?? {}),
+    })
+    const attempt = (header: string | undefined) =>
+      probeCompletion(client, {
+        baseURL: input.baseURL,
+        modelID: input.modelID,
+        authStyle: input.authStyle,
+        headers: withAffinity(header),
+        ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
+      })
+    const stored = yield* ProviderSession.storedAffinityHeader(input.settings, input.baseURL)
+    const first = yield* attempt(stored)
+    const unchanged = { probe: first, attempts: 1, latencyMs: first.latencyMs, header: stored }
+    if (
+      first.kind !== "failed" ||
+      !ProviderSession.rejectsMissingSession(first.detail) ||
+      ProviderSession.isAffinityKnown(input.baseURL)
+    )
+      return unchanged
+    const learned = ProviderSession.requiredHeaderFrom(first.detail) ?? ProviderSession.FALLBACK_AFFINITY_HEADER
+    if (learned === stored) return unchanged
+    ProviderSession.rememberAffinity(input.baseURL, learned)
+    yield* ProviderSession.persistAffinityHeader(input.settings, input.baseURL, learned)
+    const second = yield* attempt(learned)
+    return { probe: second, attempts: 2, latencyMs: first.latencyMs + second.latencyMs, header: learned }
+  })
+
 /** Context-window spellings emitted by the OpenAI-compatible servers we support. */
 export function modelContextWindow(model: Record<string, unknown>): number | undefined {
   const direct = positiveInteger(
@@ -737,6 +800,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       // Read THROUGH to the store, once per probe: every bound below is a property of the user's
       // hardware, and a settings change must not need a restart to take effect (ruling 3).
       const connection = (yield* cfg.get()).provider_connection
+      const settings = yield* SettingsConfigStore.Service
       const started = Date.now()
 
       // ── The address on screen is not necessarily a base URL: normalize before probing ───────
@@ -781,27 +845,25 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       // A listing proves routing/auth only. Exercise the actual generation route as well, using the
       // configured upstream model id. This deliberately bypasses
       // the agent harness: Settings must remain able to diagnose a model that cannot run the harness.
+      // `probeCompletionWithAffinity` also carries the endpoint's session-affinity lesson, so a
+      // gateway the runner already knows about is diagnosed here the same way the runner treats it.
       let completionLatencyMs: number | undefined
       let completionAttempts: number | undefined
       if (ctx.payload.modelID) {
         const wireModelID = savedModel?.api?.id ?? ctx.payload.modelID
-        const completionTries = 1
-        let completion: CompletionProbe | undefined
-        for (let attempt = 1; attempt <= completionTries; attempt++) {
-          completionAttempts = attempt
-          completion = yield* probeCompletion(http, {
-            baseURL,
-            modelID: wireModelID,
-            authStyle,
-            headers: authHeaders,
-            timeoutMs: ConfigProviderConnection.completionTimeoutMs(connection),
-          })
-          completionLatencyMs = (completionLatencyMs ?? 0) + completion.latencyMs
-          if (completion.kind === "ok" || completion.status === "auth" || completion.status === "error") break
-        }
-        if (completion?.kind === "failed")
+        const completion = yield* probeCompletionWithAffinity(http, {
+          baseURL,
+          modelID: wireModelID,
+          authStyle,
+          headers: authHeaders,
+          settings,
+          timeoutMs: ConfigProviderConnection.completionTimeoutMs(connection),
+        })
+        completionAttempts = completion.attempts
+        completionLatencyMs = completion.latencyMs
+        if (completion.probe.kind === "failed")
           return {
-            status: completion.status,
+            status: completion.probe.status,
             latencyMs: Date.now() - started,
             baseURL,
             discoveryLatencyMs: latencyMs,
@@ -811,10 +873,10 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
             models,
             ...(Object.keys(limits).length === 0 ? {} : { limits }),
             ...(window === undefined ? {} : { window }),
-            detail: `Model discovery is healthy. ${completion.detail}`,
+            detail: `Model discovery is healthy. ${completion.probe.detail}`,
             ...(configuredIDUnlisted
               ? {
-                  detail: `The configured id "${ctx.payload.modelID}" is not advertised by /models. Generation also failed: ${completion.detail}`,
+                  detail: `The configured id "${ctx.payload.modelID}" is not advertised by /models. Generation also failed: ${completion.probe.detail}`,
                 }
               : {}),
           }
@@ -825,11 +887,17 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       let capabilities: (ProviderCapability.Report & { readonly servedBy?: string }) | undefined
       if (ctx.payload.capabilities === true && ctx.payload.modelID) {
         const wireModel = savedModel?.api?.id ?? ctx.payload.modelID
+        // The same affinity the completion probe just resolved (in-process memory wins over the
+        // store), so a negotiation that follows a learned header is not asked without it.
+        const affinity = yield* ProviderSession.storedAffinityHeader(settings, baseURL)
         capabilities = yield* probeCapabilities(http, {
           baseURL,
           modelID: wireModel,
           authStyle,
-          headers: authHeaders,
+          headers: {
+            ...authHeaders,
+            ...(ProviderSession.headersFor({ header: affinity, sessionID: undefined }) ?? {}),
+          },
           // Chat is not re-asked: `probeCompletion` above already proved it, and a second identical
           // request would be a second chance to disagree with the first.
           chat: { kind: "supported" },

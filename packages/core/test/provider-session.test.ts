@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import fs from "node:fs"
+import path from "node:path"
+import { Effect } from "effect"
 import { ProviderSession } from "@novaclaw/core/session/runner/provider-session"
+import { stripComments } from "./lib/source-scan"
 
 /**
  * The seam is BRAND-FREE on purpose: the header name and the endpoint come from the endpoint's own
@@ -9,6 +13,19 @@ import { ProviderSession } from "@novaclaw/core/session/runner/provider-session"
 
 const MISSING = (header: string) =>
   `{"type":"error","error":{"type":"MissingSessionID","message":"Request is missing ${header} and cannot be routed efficiently. Please see https://gateway.example/docs"}}`
+
+/** An in-memory stand-in for the settings store, the boundary these helpers read and write. */
+const memorySettings = (initial: Record<string, unknown> = {}) => {
+  const rows: Record<string, unknown> = { ...initial }
+  return {
+    rows,
+    all: () => Effect.succeed(rows),
+    set: (key: string, value: unknown) => {
+      rows[key] = value
+      return Effect.void
+    },
+  }
+}
 
 describe("ProviderSession", () => {
   afterEach(() => ProviderSession.clearAffinity())
@@ -71,5 +88,61 @@ describe("ProviderSession", () => {
     expect(ProviderSession.affinityHeaderFor("https://gateway.example/v1", undefined)).toBe("x-learned")
     // A malformed URL has no identity and never inherits a row.
     expect(ProviderSession.affinityHeaderFor("not a url", "x-persisted")).toBe("x-persisted")
+  })
+
+  test("reads the persisted row, and this process's memory still wins over it", async () => {
+    const settings = memorySettings({ provider_session_affinity: { "https://gateway.example/v1": "x-persisted" } })
+    expect(await Effect.runPromise(ProviderSession.storedAffinityHeader(settings, "https://gateway.example/v1"))).toBe(
+      "x-persisted",
+    )
+    ProviderSession.rememberAffinity("https://gateway.example/v1", "x-learned")
+    expect(await Effect.runPromise(ProviderSession.storedAffinityHeader(settings, "https://gateway.example/v1"))).toBe(
+      "x-learned",
+    )
+  })
+
+  test("persisting merges the sibling endpoints rather than replacing the whole map", async () => {
+    const settings = memorySettings({ provider_session_affinity: { "https://other.example/v1": "x-other" } })
+    await Effect.runPromise(ProviderSession.persistAffinityHeader(settings, "https://gateway.example/v1/", "x-acme-session"))
+    expect(settings.rows["provider_session_affinity"]).toEqual({
+      "https://other.example/v1": "x-other",
+      "https://gateway.example/v1": "x-acme-session",
+    })
+    // Normalized on the way out too: the trailing slash is the same endpoint.
+    expect(await Effect.runPromise(ProviderSession.storedAffinityHeader(settings, "https://gateway.example/v1"))).toBe(
+      "x-acme-session",
+    )
+  })
+
+  test("a malformed URL has no identity, so nothing is read or written for it", async () => {
+    const settings = memorySettings()
+    expect(await Effect.runPromise(ProviderSession.storedAffinityHeader(settings, "not a url"))).toBeUndefined()
+    await Effect.runPromise(ProviderSession.persistAffinityHeader(settings, "not a url", "x-acme-session"))
+    expect(settings.rows["provider_session_affinity"]).toBeUndefined()
+  })
+
+  test("the persisted row has ONE reader/writer in core/src, so every request site gets the same answer", () => {
+    // 🔴 The bug this pins: the row was read and written only inside `SessionRunnerModel`'s layer, so
+    // the Settings Test — a second request site — could neither send the header nor learn it, and
+    // reported `MissingSessionID` for an endpoint the runner already knew. The store access now lives
+    // here, and a third site must call these helpers rather than re-open the row. A second entry means
+    // a caller grew its own copy and can silently disagree with the runner.
+    const core = path.resolve(import.meta.dir, "..")
+    const scan = (dir: string): string[] =>
+      fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const full = path.join(dir, entry.name)
+        if (entry.isDirectory()) return entry.name === "node_modules" ? [] : scan(full)
+        return entry.isFile() && entry.name.endsWith(".ts") ? [full] : []
+      })
+    const files = scan(path.join(core, "src"))
+    // Non-vacuity: without this the filter below is over an empty set and passes forever.
+    expect(files.length).toBeGreaterThan(200)
+    const readers = files
+      .filter((file) => {
+        const source = stripComments(fs.readFileSync(file, "utf8"))
+        return source.includes('["provider_session_affinity"]') || source.includes('set("provider_session_affinity"')
+      })
+      .map((file) => path.relative(core, file).replaceAll("\\", "/"))
+    expect(readers).toEqual(["src/session/runner/provider-session.ts"])
   })
 })

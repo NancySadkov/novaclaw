@@ -1181,13 +1181,7 @@ export const locationLayer = Layer.effect(
      * without the header, the endpoint refuses once, and the recovery arm learns it.
      */
     const sessionAffinityHeader = Effect.fnUntraced(function* (url: string | undefined) {
-      const key = Endpoint.endpointKey(url)
-      if (key === undefined) return undefined
-      const all: Record<string, unknown> = yield* settings.all().pipe(Effect.orElseSucceed(() => ({})))
-      const stored = all["provider_session_affinity"]
-      const persisted =
-        typeof stored === "object" && stored !== null ? (stored as Record<string, unknown>)[key] : undefined
-      return ProviderSession.affinityHeaderFor(url, typeof persisted === "string" ? persisted : undefined)
+      return yield* ProviderSession.storedAffinityHeader(settings, url)
     })
 
     /**
@@ -1439,14 +1433,7 @@ export const locationLayer = Layer.effect(
        * no identity and is not written.
        */
       rememberSessionAffinity: Effect.fn("SessionRunnerModel.rememberSessionAffinity")(function* (endpoint, header) {
-        const key = Endpoint.endpointKey(endpoint)
-        if (key === undefined) return
-        const all: Record<string, unknown> = yield* settings
-          .all()
-          .pipe(Effect.orElseSucceed(() => ({}) as Record<string, unknown>))
-        const current = all["provider_session_affinity"]
-        const rows = typeof current === "object" && current !== null ? (current as Record<string, unknown>) : {}
-        yield* settings.set("provider_session_affinity", { ...rows, [key]: header }).pipe(Effect.ignore)
+        yield* ProviderSession.persistAffinityHeader(settings, endpoint, header)
       }),
       capabilities: Effect.fn("SessionRunnerModel.capabilities")(function* (session) {
         return (yield* turnModel(session).pipe(Effect.orElseSucceed(() => undefined)))?.capabilities
