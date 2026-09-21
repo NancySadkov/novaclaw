@@ -19,6 +19,7 @@ import { isEgressBlocked } from "@novaclaw/llm"
 import { InstanceHttpApi } from "../api"
 import type { ProbePayload } from "../groups/provider"
 import { ConfigProviderPreset } from "@novaclaw/core/config/provider-preset"
+import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { ProviderCapability } from "@novaclaw/core/provider-capability"
 import { ProviderCapabilityStore } from "@novaclaw/core/provider-capability-store"
 import { ProviderSession } from "@novaclaw/core/session/runner/provider-session"
@@ -661,6 +662,74 @@ export const probeCompletionWithAffinity = (
     return { probe: second, attempts: 2, latencyMs: first.latencyMs + second.latencyMs, header: learned }
   })
 
+/** The package a wire is written as, when the endpoint teaches us which one it serves. */
+const PACKAGE_FOR_WIRE: Readonly<Record<ProbeWire, ConfigProviderPreset.ApiChannel>> = {
+  "openai-chat": "@ai-sdk/openai-compatible",
+  "openai-responses": "@ai-sdk/openai",
+  "anthropic-messages": "@ai-sdk/anthropic",
+}
+
+/**
+ * Exercise the generation route, applying this endpoint's session affinity and — when the CONFIGURED
+ * wire is refused — learning the wire the endpoint actually serves this model on.
+ *
+ * 🔴 Some gateways serve different models on different protocols: measured 2026-09-21, one answers
+ * `muse-spark-1.3-contributor` only on `/responses` and its sibling `glm-5.3-flash` only on
+ * `/chat/completions`. NovaClaw cannot know which without being told, and a provider-wide channel
+ * cannot express a mixed gateway — so the endpoint's own refusal is the evidence, exactly as it is
+ * for the session header beside this. The owner re-added such a model and Test still failed for
+ * want of a channel nobody could guess.
+ *
+ * Bounded: the configured wire (at most twice for affinity), then each other wire once. Only an
+ * `error` refusal is treated as evidence about the WIRE; an auth failure or a dead socket is not.
+ * `learn` is false for an UNSAVED endpoint, which has no model row to write a channel onto.
+ */
+export const probeCompletionLearningWire = (
+  client: HttpClient.HttpClient,
+  input: {
+    baseURL: string
+    modelID: string
+    wire: ProbeWire
+    headers: Record<string, string>
+    settings: Pick<SettingsConfigStore.Interface, "all" | "set">
+    timeoutMs?: number
+    learn: boolean
+  },
+): Effect.Effect<{
+  readonly probe: CompletionProbe
+  readonly attempts: number
+  readonly latencyMs: number
+  readonly wire: ProbeWire
+  readonly learned?: ConfigProviderPreset.ApiChannel
+}> =>
+  Effect.gen(function* () {
+    const attempt = (wire: ProbeWire) =>
+      probeCompletionWithAffinity(client, {
+        baseURL: input.baseURL,
+        modelID: input.modelID,
+        wire,
+        headers: input.headers,
+        settings: input.settings,
+        ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
+      })
+    const first = yield* attempt(input.wire)
+    const unchanged = { probe: first.probe, attempts: first.attempts, latencyMs: first.latencyMs, wire: input.wire }
+    if (first.probe.kind !== "failed" || first.probe.status !== "error" || !input.learn) return unchanged
+    // The configured wire was refused. Ask the others; the first that answers is the one this
+    // endpoint serves the model on.
+    const others = (Object.keys(PACKAGE_FOR_WIRE) as ProbeWire[]).filter((candidate) => candidate !== input.wire)
+    let attempts = first.attempts
+    let latencyMs = first.latencyMs
+    for (const candidate of others) {
+      const next = yield* attempt(candidate)
+      attempts += next.attempts
+      latencyMs += next.latencyMs
+      if (next.probe.kind === "ok")
+        return { probe: next.probe, attempts, latencyMs, wire: candidate, learned: PACKAGE_FOR_WIRE[candidate] }
+    }
+    return { probe: first.probe, attempts, latencyMs, wire: input.wire }
+  })
+
 /** Context-window spellings emitted by the OpenAI-compatible servers we support. */
 export function modelContextWindow(model: Record<string, unknown>): number | undefined {
   const direct = positiveInteger(
@@ -885,18 +954,45 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       // gateway the runner already knows about is diagnosed here the same way the runner treats it.
       let completionLatencyMs: number | undefined
       let completionAttempts: number | undefined
+      // The wire generation actually ran on: the configured one, or the one the endpoint taught us
+      // when it refused the configured wire. Capabilities and the stored fingerprint both follow it.
+      let effectiveWire = wire
+      let learnedPackage: ConfigProviderPreset.ApiChannel | undefined
       if (ctx.payload.modelID) {
-        const wireModelID = savedModel?.api?.id ?? ctx.payload.modelID
-        const completion = yield* probeCompletionWithAffinity(http, {
+        const wireModelID = ModelV2.ID.make(savedModel?.api?.id ?? ctx.payload.modelID)
+        const completion = yield* probeCompletionLearningWire(http, {
           baseURL,
           modelID: wireModelID,
           wire,
           headers: authHeaders,
           settings,
           timeoutMs: ConfigProviderConnection.completionTimeoutMs(connection),
+          // Only a SAVED model has a row to carry the learned channel; the New-Model discovery flow
+          // probes an endpoint that has none.
+          learn: ctx.payload.baseURL === undefined,
         })
         completionAttempts = completion.attempts
         completionLatencyMs = completion.latencyMs
+        effectiveWire = completion.wire
+        learnedPackage = completion.learned
+        // Persist what the endpoint taught us, or the Test would pass while the very next TURN went
+        // out on the wire that was refused. Best-effort: a store that will not write must not fail
+        // the probe the user asked for.
+        if (learnedPackage !== undefined)
+          yield* ConfigStoreWrite.apply(
+            {
+              providers: {
+                [ctx.params.providerID]: {
+                  models: {
+                    [ctx.payload.modelID]: {
+                      api: { id: wireModelID, type: "aisdk" as const, package: learnedPackage },
+                    },
+                  },
+                },
+              },
+            },
+            { writer: "instance" },
+          ).pipe(Effect.ignore)
         if (completion.probe.kind === "failed")
           return {
             status: completion.probe.status,
@@ -929,7 +1025,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
         capabilities = yield* probeCapabilities(http, {
           baseURL,
           modelID: wireModel,
-          wire,
+          wire: effectiveWire,
           headers: {
             ...authHeaders,
             ...(ProviderSession.headersFor({ header: affinity, sessionID: undefined }) ?? {}),
@@ -964,7 +1060,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
                 model: wireModel,
                 // The SAME wire the rungs used — a verdict recorded under one protocol name and
                 // measured over another would compare as stale on every later lookup.
-                protocol: wire,
+                protocol: effectiveWire,
               }),
             })
             // A store that will not write must not fail the probe: the user asked what this endpoint
@@ -978,6 +1074,16 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       // the saved provider id would poison the runtime override.
       if (window !== undefined && ctx.payload.modelID !== undefined && ctx.payload.baseURL === undefined)
         ProbeWindow.remember(ctx.params.providerID, ctx.payload.modelID, window)
+      const detail = [
+        learnedPackage === undefined
+          ? undefined
+          : `The endpoint refused this model's configured API, so Nova switched it to ${learnedPackage}. Generation and every later turn now use that route.`,
+        configuredIDUnlisted
+          ? `Generation succeeded with configured id "${ctx.payload.modelID}", although /models advertises ${models.length ? models.map((id) => `"${id}"`).join(", ") : "no model ids"}. The server is accepting an alias.`
+          : undefined,
+      ]
+        .filter((note): note is string => note !== undefined)
+        .join(" ")
       return {
         status: "ok" as const,
         latencyMs: Date.now() - started,
@@ -1004,11 +1110,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
                 ),
               },
             }),
-        ...(configuredIDUnlisted
-          ? {
-              detail: `Generation succeeded with configured id "${ctx.payload.modelID}", although /models advertises ${models.length ? models.map((id) => `"${id}"`).join(", ") : "no model ids"}. The server is accepting an alias.`,
-            }
-          : {}),
+        ...(detail === "" ? {} : { detail }),
         models,
         ...(Object.keys(limits).length === 0 ? {} : { limits }),
         ...(window === undefined ? {} : { window }),

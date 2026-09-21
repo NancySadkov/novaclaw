@@ -4,6 +4,7 @@ import { HttpClient, HttpClientResponse } from "effect/unstable/http"
 import { ProviderSession } from "@novaclaw/core/session/runner/provider-session"
 import {
   probeCompletion,
+  probeCompletionLearningWire,
   probeCompletionWithAffinity,
 } from "../../src/server/routes/instance/httpapi/handlers/provider"
 
@@ -179,5 +180,83 @@ describe("provider completion probe session affinity", () => {
     expect(result.attempts).toBe(2)
     expect(result.probe).toMatchObject({ kind: "failed", status: "error" })
     expect(sent).toHaveLength(2)
+  })
+})
+
+/**
+ * 🔴 Some gateways serve different models on different protocols: measured 2026-09-21, one answers
+ * `muse-spark-1.3-contributor` only on `/responses` while its sibling answers only on
+ * `/chat/completions`. The owner re-added such a model and Test still failed for want of a channel
+ * nobody could guess — so the endpoint's own refusal is now the evidence, exactly as it is for the
+ * session header.
+ */
+describe("provider completion probe — learning the model's wire", () => {
+  afterEach(() => ProviderSession.clearAffinity())
+
+  const settings = { all: () => Effect.succeed({}), set: () => Effect.void }
+  const ok = (url: string) =>
+    new Response(
+      JSON.stringify(url.includes("/responses") ? { output: [] } : { choices: [{ message: { content: "OK" } }] }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    )
+  const unavailable = () =>
+    new Response(
+      JSON.stringify({ error: { type: "server_error", message: "Upstream request failed: Endpoint is unavailable." } }),
+      { status: 503, headers: { "content-type": "application/json" } },
+    )
+
+  const runLearning = async (respond: (url: string) => Response, learn = true) => {
+    const seen: string[] = []
+    const client = HttpClient.make((request) => {
+      seen.push(request.url)
+      return Effect.succeed(HttpClientResponse.fromWeb(request, respond(request.url)))
+    })
+    const result = await Effect.runPromise(
+      probeCompletionLearningWire(client, {
+        baseURL: "http://gateway.test/v1",
+        modelID: "muse",
+        wire: "openai-chat",
+        headers: {},
+        settings,
+        timeoutMs: 1000,
+        learn,
+      }),
+    )
+    return { result, seen }
+  }
+
+  test("🔴 a refused configured wire finds the wire the model actually serves, and names it", async () => {
+    const { result, seen } = await runLearning((url) => (url.includes("/responses") ? ok(url) : unavailable()))
+    expect(result.probe.kind).toBe("ok")
+    expect(result.wire).toBe("openai-responses")
+    expect(result.learned).toBe("@ai-sdk/openai")
+    expect(seen).toEqual(["http://gateway.test/v1/chat/completions", "http://gateway.test/v1/responses"])
+  })
+
+  test("a working configured wire is not second-guessed: one request, no learning", async () => {
+    const { result, seen } = await runLearning((url) => (url.includes("/chat/completions") ? ok(url) : unavailable()))
+    expect(result.probe.kind).toBe("ok")
+    expect(result.wire).toBe("openai-chat")
+    expect(result.learned).toBeUndefined()
+    expect(seen).toEqual(["http://gateway.test/v1/chat/completions"])
+  })
+
+  test("auth is not a wire problem: no other wire is tried", async () => {
+    const { result, seen } = await runLearning(() => new Response("denied", { status: 401 }))
+    expect(result.probe).toMatchObject({ kind: "failed", status: "auth" })
+    expect(seen).toEqual(["http://gateway.test/v1/chat/completions"])
+  })
+
+  test("an UNSAVED endpoint never learns: `learn: false` tries only the configured wire", async () => {
+    const { result, seen } = await runLearning((url) => (url.includes("/responses") ? ok(url) : unavailable()), false)
+    expect(result.probe.kind).toBe("failed")
+    expect(seen).toEqual(["http://gateway.test/v1/chat/completions"])
+  })
+
+  test("every wire refused reports the configured wire's failure, bounded at three requests", async () => {
+    const { result, seen } = await runLearning(() => unavailable())
+    expect(result.probe).toMatchObject({ kind: "failed", status: "error" })
+    expect(result.wire).toBe("openai-chat")
+    expect(seen).toHaveLength(3)
   })
 })
