@@ -12,7 +12,7 @@ import { Location } from "@novaclaw/core/location"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { InstanceState } from "@/effect/instance-state"
 
-import { Duration, Effect, Layer } from "effect"
+import { Duration, Effect, Layer, Schema } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { HttpBody, HttpClient, HttpClientError, HttpClientRequest } from "effect/unstable/http"
 import { isEgressBlocked } from "@novaclaw/llm"
@@ -20,6 +20,7 @@ import { InstanceHttpApi } from "../api"
 import type { ProbePayload } from "../groups/provider"
 import { ConfigProviderPreset } from "@novaclaw/core/config/provider-preset"
 import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
+import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { ProviderCapability } from "@novaclaw/core/provider-capability"
 import { ProviderCapabilityStore } from "@novaclaw/core/provider-capability-store"
 import { ProviderSession } from "@novaclaw/core/session/runner/provider-session"
@@ -980,7 +981,10 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
         // the probe the user asked for.
         if (learnedPackage !== undefined)
           yield* ConfigStoreWrite.apply(
-            {
+            // ⚠️ DECODED, not a raw literal: `apply` encodes its argument to store it, and a raw
+            // partial encodes to a SchemaError (a 500 from this probe — measured live 2026-09-22).
+            // `PATCH /config` and every test decode first; this path must too.
+            Schema.decodeUnknownSync(ConfigV2.Info)({
               providers: {
                 [ctx.params.providerID]: {
                   models: {
@@ -990,7 +994,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
                   },
                 },
               },
-            },
+            }),
             { writer: "instance" },
           ).pipe(Effect.ignore)
         if (completion.probe.kind === "failed")

@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { ConfigProvider, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Effect, Exit, Layer, Schema } from "effect"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { Catalog } from "@novaclaw/core/catalog"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
@@ -275,6 +275,19 @@ describe("a direct store DELETE re-materialises the catalog too", () => {
       expect(seen).toEqual(["catalog"])
     })
   })
+})
+
+describe("a config write takes a DECODED Config.Info", () => {
+  it.effect("🔴 a RAW literal is refused, so a probe cannot ship a 500 through apply", () =>
+    Effect.gen(function* () {
+      // Measured live 2026-09-22: the generation probe wrote a raw literal and the server answered
+      // 500 (SchemaError: Expected Config.Info). `apply` ENCODES its argument to store it, and an
+      // undecoded partial is not a Config.Info VALUE. Every caller decodes first — `PATCH /config`
+      // through the HttpApi, the tests through `decodeInfo` — and this pins that requirement.
+      const exit = yield* ConfigStoreWrite.apply({ providers: { [PROBE]: { name: "raw" } } } as never).pipe(Effect.exit)
+      expect(Exit.isFailure(exit)).toBe(true)
+    }),
+  )
 })
 
 describe("the catalog reload is per-key, like every other domain", () => {
