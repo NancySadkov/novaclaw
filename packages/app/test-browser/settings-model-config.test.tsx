@@ -299,3 +299,31 @@ test("device concurrency round-trips through the endpoint's Device entry", async
     locality: "local",
   })
 })
+
+test("🔴 API type round-trips onto the MODEL's api, and inherit removes the override", async () => {
+  // The runner dispatches on the resolved model's `api.package`; a model override is how one
+  // gateway's models ride different wires (a gateway serving `/responses` for one model and
+  // `/chat/completions` for its siblings — measured 2026-09-21).
+  const saved = mount()
+  click(button("Configure test"))
+  await settle()
+  const select = document.querySelector<HTMLElement>('[data-action="settings-model-api-type"]')!
+  // Defaults to the provider's own channel, stated rather than left blank.
+  expect(selectText(select)).toBe("Same as provider")
+
+  await choose(select, "@ai-sdk/openai")
+  click(button("Save"))
+  await settle()
+  expect(saved().api).toEqual({ id: "test", type: "aisdk", package: "@ai-sdk/openai" })
+
+  click(button("Configure test"))
+  await settle()
+  const reopened = document.querySelector<HTMLElement>('[data-action="settings-model-api-type"]')!
+  expect(selectText(reopened)).toBe("OpenAI")
+  // Back to inherit: the override must be GONE, not merely unwritten — PATCH merges, so a stale
+  // `package` would keep the model on a wire the user just turned off.
+  await choose(reopened, "inherit")
+  click(button("Save"))
+  await settle()
+  expect(saved().api).toEqual({ id: "test" })
+})

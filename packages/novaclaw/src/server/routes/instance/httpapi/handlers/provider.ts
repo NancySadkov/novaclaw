@@ -339,17 +339,25 @@ const malformed = (): ProviderCapability.Outcome => ({
   detail: "The response did not match this endpoint's expected response shape.",
 })
 
+/** The protocols a probe can speak — the keys of the capability module's wire table. */
+export type ProbeWire = keyof typeof ProviderCapability.WIRES
+
 /**
- * Which wire each auth style speaks.
+ * Which wire each API channel speaks.
  *
- * ⚠️ A TOTAL record, not a ternary. Auth style is how this handler learns which protocol an endpoint
- * expects, so a third style added later must be given a wire deliberately — with a ternary it would
- * silently inherit the OpenAI envelope and every rung would measure our own wrong request. The
- * exhaustiveness is the guard; the compiler names the omission.
+ * ⚠️ A TOTAL record over the closed channel set, not a ternary. The channel is how this handler
+ * learns which protocol a model expects, so a channel added later must be given a wire deliberately
+ * — with a ternary it would silently inherit the OpenAI-chat envelope and every rung would measure
+ * our own wrong request. The exhaustiveness is the guard; the compiler names the omission.
+ *
+ * ⚠️ `@ai-sdk/openai` is the RESPONSES wire in this tree (`session/runner/model.ts`), which is why
+ * the package name and the protocol name disagree: the SDK routes that package to `/responses`, and
+ * a model on a gateway that serves only `/responses` is configured with it.
  */
-const WIRE_FOR_AUTH: Readonly<Record<ConfigProviderPreset.AuthStyle, keyof typeof ProviderCapability.WIRES>> = {
-  bearer: "openai-chat",
-  anthropic: "anthropic-messages",
+const WIRE_FOR_CHANNEL: Readonly<Record<ConfigProviderPreset.ApiChannel, ProbeWire>> = {
+  "@ai-sdk/openai-compatible": "openai-chat",
+  "@ai-sdk/openai": "openai-responses",
+  "@ai-sdk/anthropic": "anthropic-messages",
 }
 
 export const probeCapabilities = (
@@ -357,7 +365,7 @@ export const probeCapabilities = (
   input: {
     baseURL: string
     modelID: string
-    authStyle: ConfigProviderPreset.AuthStyle
+    wire: ProbeWire
     headers: Record<string, string>
     chat: ProviderCapability.Outcome
     /** Read from `provider_connection` by the caller — see `probeLimits`. */
@@ -377,36 +385,36 @@ export const probeCapabilities = (
     // anyway would measure the same failure three more times and report it as three capabilities.
     if (input.chat.kind !== "supported") return skip("the endpoint did not return a plain completion")
 
-    const wire = ProviderCapability.WIRES[WIRE_FOR_AUTH[input.authStyle]]
+    const spec = ProviderCapability.WIRES[input.wire]
     // ⚠️ Not 64. A reasoning model spends its budget BEFORE the first content token, and at 64 the
     // JSON rung came back empty and scored `unsupported` for a format the endpoint handles. It is
     // also the room the whole tool call needs: a budget too small truncates the arguments, and the
     // probe would then measure OUR budget and record it as the endpoint's failure.
     const limits = input.limits ?? probeLimits(undefined)
-    const base = wire.base(input.modelID, limits.maxTokens)
+    const base = spec.base(input.modelID, limits.maxTokens)
     const ask = (body: Record<string, unknown>) =>
-      capabilityAsk(client, { ...input, path: wire.path, body, timeout: limits.timeout })
+      capabilityAsk(client, { ...input, path: spec.path, body, timeout: limits.timeout })
 
     const json =
-      wire.jsonMode === undefined
+      spec.jsonMode === undefined
         ? // Not `unsupported`: this wire has no response-format parameter, so there is nothing for the
           // endpoint to have refused. Blaming a server for its wire's vocabulary would be a permanent
           // wrong verdict about a capability nobody asked it for.
-          ProviderCapability.notAttempted(`the ${wire.path} wire has no response-format parameter to ask with`)
+          ProviderCapability.notAttempted(`the ${spec.path} wire has no response-format parameter to ask with`)
         : ProviderCapability.outcomeOf(
             yield* ask({
               ...base,
-              ...wire.jsonMode.request,
-              ...wire.ask('Reply with only this JSON object: {"ok":true}'),
+              ...spec.jsonMode.request,
+              ...spec.ask('Reply with only this JSON object: {"ok":true}'),
             }),
             {
-              parameter: wire.jsonMode.parameter,
+              parameter: spec.jsonMode.parameter,
               read: (payload) => {
-                if (!wire.answered(payload)) return malformed()
-                const spent = budgetFault(wire, payload)
+                if (!spec.answered(payload)) return malformed()
+                const spent = budgetFault(spec, payload)
                 if (spent) return spent
                 try {
-                  JSON.parse(wire.text(payload))
+                  JSON.parse(spec.text(payload))
                   return { kind: "supported" }
                 } catch {
                   return {
@@ -421,18 +429,18 @@ export const probeCapabilities = (
     const nativeTools = ProviderCapability.outcomeOf(
       yield* ask({
         ...base,
-        ...wire.offerCaptureTool(),
-        ...wire.ask(`Call ${ProviderCapability.CAPTURE_TOOL.name} once with all three arguments filled in.`),
+        ...spec.offerCaptureTool(),
+        ...spec.ask(`Call ${ProviderCapability.CAPTURE_TOOL.name} once with all three arguments filled in.`),
       }),
       {
-        parameter: wire.toolsParameter,
+        parameter: spec.toolsParameter,
         read: (payload) => {
-          if (!wire.answered(payload)) return malformed()
+          if (!spec.answered(payload)) return malformed()
           // ⚠️ AFTER the tool-call check, not before: a native call arrives with empty text on both
           // wires, so a budget test first would score every healthy native answer as a fault.
-          const call = wire.toolCall(payload)
+          const call = spec.toolCall(payload)
           if (call === undefined) {
-            const spent = budgetFault(wire, payload)
+            const spent = budgetFault(spec, payload)
             if (spent) return spent
           }
           return ProviderCapability.readToolCall(call, [ProviderCapability.CAPTURE_TOOL.name])
@@ -441,14 +449,14 @@ export const probeCapabilities = (
     )
 
     const textTools = ProviderCapability.outcomeOf(
-      yield* ask({ ...base, ...wire.ask(ProviderCapability.TEXT_TOOL_PROMPT) }),
+      yield* ask({ ...base, ...spec.ask(ProviderCapability.TEXT_TOOL_PROMPT) }),
       {
         read: (payload) => {
-          if (!wire.answered(payload)) return malformed()
-          const spent = budgetFault(wire, payload)
+          if (!spec.answered(payload)) return malformed()
+          const spent = budgetFault(spec, payload)
           if (spent) return spent
           return ProviderCapability.readToolCall(
-            ProviderCapability.recoverTextToolCall(wire.text(payload), [ProviderCapability.CAPTURE_TOOL.name]),
+            ProviderCapability.recoverTextToolCall(spec.text(payload), [ProviderCapability.CAPTURE_TOOL.name]),
             [ProviderCapability.CAPTURE_TOOL.name],
           )
         },
@@ -479,24 +487,35 @@ export const probeCompletion = (
   input: {
     baseURL: string
     modelID: string
-    authStyle: ConfigProviderPreset.AuthStyle
+    wire: ProbeWire
     headers: Record<string, string>
     /** From `provider_connection.completion_timeout_ms`; defaulted when a caller has no config. */
     timeoutMs?: number
   },
 ): Effect.Effect<CompletionProbe> => {
   const timeoutMs = input.timeoutMs ?? ConfigProviderConnection.DEFAULT_COMPLETION_TIMEOUT_MS
-  const anthropic = input.authStyle === "anthropic"
-  const url = `${input.baseURL.replace(/\/+$/, "")}/${anthropic ? "messages" : "chat/completions"}`
-  const body = anthropic
-    ? { model: input.modelID, messages: [{ role: "user", content: "Reply OK" }], max_tokens: 1, stream: false }
-    : {
-        model: input.modelID,
-        messages: [{ role: "user", content: "Reply OK" }],
-        max_tokens: 1,
-        temperature: 0,
-        stream: false,
-      }
+  const path =
+    input.wire === "anthropic-messages" ? "messages" : input.wire === "openai-responses" ? "responses" : "chat/completions"
+  const url = `${input.baseURL.replace(/\/+$/, "")}/${path}`
+  const body =
+    input.wire === "anthropic-messages"
+      ? { model: input.modelID, messages: [{ role: "user", content: "Reply OK" }], max_tokens: 1, stream: false }
+      : input.wire === "openai-responses"
+        ? {
+            model: input.modelID,
+            input: [{ role: "user", content: [{ type: "input_text", text: "Reply OK" }] }],
+            // A reasoning model spends this before its first output item, so 16 may come back empty —
+            // still a 200 with the right envelope, which is all this probe claims to prove.
+            max_output_tokens: 16,
+            stream: false,
+          }
+        : {
+            model: input.modelID,
+            messages: [{ role: "user", content: "Reply OK" }],
+            max_tokens: 1,
+            temperature: 0,
+            stream: false,
+          }
   const started = Date.now()
   return client
     .execute(
@@ -528,9 +547,12 @@ export const probeCompletion = (
           )
         return response.json.pipe(
           Effect.map((value): CompletionProbe => {
-            const valid = anthropic
-              ? typeof value === "object" && value !== null && Array.isArray((value as { content?: unknown }).content)
-              : typeof value === "object" && value !== null && Array.isArray((value as { choices?: unknown }).choices)
+            const valid =
+              input.wire === "anthropic-messages"
+                ? typeof value === "object" && value !== null && Array.isArray((value as { content?: unknown }).content)
+                : input.wire === "openai-responses"
+                  ? typeof value === "object" && value !== null && Array.isArray((value as { output?: unknown }).output)
+                  : typeof value === "object" && value !== null && Array.isArray((value as { choices?: unknown }).choices)
             return valid
               ? { kind: "ok", latencyMs }
               : {
@@ -598,7 +620,7 @@ export const probeCompletionWithAffinity = (
   input: {
     baseURL: string
     modelID: string
-    authStyle: ConfigProviderPreset.AuthStyle
+    wire: ProbeWire
     headers: Record<string, string>
     settings: Pick<SettingsConfigStore.Interface, "all" | "set">
     timeoutMs?: number
@@ -618,7 +640,7 @@ export const probeCompletionWithAffinity = (
       probeCompletion(client, {
         baseURL: input.baseURL,
         modelID: input.modelID,
-        authStyle: input.authStyle,
+        wire: input.wire,
         headers: withAffinity(header),
         ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
       })
@@ -784,12 +806,26 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       const apiKey =
         (ctx.payload.apiKey && ctx.payload.apiKey.length > 0 ? ctx.payload.apiKey : undefined) ??
         (typeof options.apiKey === "string" && options.apiKey.length > 0 ? options.apiKey : undefined)
-      // Discovery auth style: explicit payload wins (the import flow passes the preset's style);
-      // else infer from the saved provider's API channel; default bearer. Anthropic's /models
-      // requires x-api-key + anthropic-version instead of a Bearer header.
-      const authStyle =
-        ctx.payload.authStyle ??
-        (entry?.api?.type === "aisdk" && entry.api.package === "@ai-sdk/anthropic" ? "anthropic" : "bearer")
+      // The MODEL's channel decides the wire, not a two-valued auth style: one provider can carry
+      // models on different protocols (a gateway serves some on `/responses` and others on
+      // `/chat/completions`), and the model's own `api.package` override is how that is expressed.
+      // The saved model's merged channel wins; the provider entry is the fallback when the model is
+      // not in the catalog yet (the New Model discovery flow, which carries no generation probe).
+      const savedPackage = savedModel?.api?.type === "aisdk" ? savedModel.api.package : undefined
+      const entryPackage = entry?.api?.type === "aisdk" ? entry.api.package : undefined
+      const channel = savedPackage ?? entryPackage
+      // Discovery auth style: an explicit payload wins (the import flow passes the preset's style);
+      // else inferred from the channel; default bearer. Anthropic's /models requires x-api-key +
+      // anthropic-version instead of a Bearer header.
+      const authStyle = channel === "@ai-sdk/anthropic" ? "anthropic" : (ctx.payload.authStyle ?? "bearer")
+      // ⚠️ `channel` is a free-form string on the wire; only the closed set the runner dispatches on
+      // selects a wire, and anything else keeps the auth style's own wire rather than inventing one.
+      const wire: ProbeWire =
+        channel !== undefined && channel in WIRE_FOR_CHANNEL
+          ? WIRE_FOR_CHANNEL[channel as ConfigProviderPreset.ApiChannel]
+          : authStyle === "anthropic"
+            ? "anthropic-messages"
+            : "openai-chat"
       const authHeaders: Record<string, string> = apiKey
         ? authStyle === "anthropic"
           ? { "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
@@ -854,7 +890,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
         const completion = yield* probeCompletionWithAffinity(http, {
           baseURL,
           modelID: wireModelID,
-          authStyle,
+          wire,
           headers: authHeaders,
           settings,
           timeoutMs: ConfigProviderConnection.completionTimeoutMs(connection),
@@ -893,7 +929,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
         capabilities = yield* probeCapabilities(http, {
           baseURL,
           modelID: wireModel,
-          authStyle,
+          wire,
           headers: {
             ...authHeaders,
             ...(ProviderSession.headersFor({ header: affinity, sessionID: undefined }) ?? {}),
@@ -926,9 +962,9 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
               fingerprint: ProviderCapability.fingerprint({
                 endpoint: baseURL,
                 model: wireModel,
-                // The SAME table the rungs used — a verdict recorded under one protocol name and
+                // The SAME wire the rungs used — a verdict recorded under one protocol name and
                 // measured over another would compare as stale on every later lookup.
-                protocol: WIRE_FOR_AUTH[authStyle],
+                protocol: wire,
               }),
             })
             // A store that will not write must not fail the probe: the user asked what this endpoint

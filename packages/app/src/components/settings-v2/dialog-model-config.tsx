@@ -16,6 +16,7 @@ import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { TextareaV2 } from "@novaclaw/ui/v2/textarea-v2"
 import { useLanguage } from "@/context/language"
+import type { Translator } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import type { ProbeResult } from "@/utils/fs-api"
@@ -30,6 +31,31 @@ import { DEFAULT_TAXONOMY, TAXONOMIES, type Taxonomy, taxonomyLabel } from "../m
 // Use the HTTP contract directly: obsolete model fields must fail the typecheck, not vanish on Save.
 const MODALITIES = ["text", "image", "audio"] as const
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+/**
+ * The API channels a model may override, in the order the picker lists them.
+ *
+ * A model override exists because ONE provider can serve different models on different protocols:
+ * the Go gateway answers `/chat/completions` for `glm-5.3-flash` and only `/responses` for
+ * `muse-spark-1.3-contributor` (measured 2026-09-21). The provider's own channel is the default,
+ * expressed as `inherit` — the model's stored `api` is then `{id}` alone, so it follows the provider
+ * rather than freezing the choice onto the model.
+ */
+const API_CHANNELS = ["@ai-sdk/openai-compatible", "@ai-sdk/openai", "@ai-sdk/anthropic"] as const
+type ApiChannel = (typeof API_CHANNELS)[number]
+const INHERIT_CHANNEL = "inherit"
+type ApiType = ApiChannel | typeof INHERIT_CHANNEL
+const API_TYPES: readonly ApiType[] = [INHERIT_CHANNEL, ...API_CHANNELS]
+
+/** The plain-language name of a channel — the wire is a detail for the explanation, not the label. */
+const apiTypeLabel = (t: Translator, value: ApiType): string =>
+  value === INHERIT_CHANNEL
+    ? t("settings.models.config.apiType.inherit")
+    : value === "@ai-sdk/openai"
+      ? t("settings.models.config.apiType.openai")
+      : value === "@ai-sdk/anthropic"
+        ? t("settings.models.config.apiType.anthropic")
+        : t("settings.models.config.apiType.openaiCompatible")
 
 type DeviceConfig = {
   readonly endpoints: readonly string[]
@@ -174,6 +200,11 @@ export const ModelConfigScreen: Component<{
     providerName: customProviderName(),
     modelID: init.api?.id ?? props.apiModelID,
     modelName: init.name ?? props.modelName,
+    apiType: ((): ApiType => {
+      const api = init.api
+      if (api === undefined || !("type" in api) || api.type !== "aisdk") return INHERIT_CHANNEL
+      return (API_CHANNELS as readonly string[]).includes(api.package) ? (api.package as ApiChannel) : INHERIT_CHANNEL
+    })(),
     temperature: optNum("temperature"),
     top_p: optNum("top_p"),
     top_k: optNum("top_k"),
@@ -310,7 +341,17 @@ export const ModelConfigScreen: Component<{
     const model: ExtendedModelConfig = {
       ...savedWithoutRetry,
       name: form.modelName.trim() || props.modelName,
-      api: { ...(saved.api ?? {}), id: form.modelID.trim() || props.apiModelID },
+      // A channel override rides the model's own `api`; `inherit` writes the third union arm
+      // (`{id}`) so the model follows the provider instead of freezing its channel onto this row.
+      api:
+        form.apiType === INHERIT_CHANNEL
+          ? { id: form.modelID.trim() || props.apiModelID }
+          : {
+              ...(saved.api ?? {}),
+              id: form.modelID.trim() || props.apiModelID,
+              type: "aisdk" as const,
+              package: form.apiType,
+            },
       limit,
       capabilities: { tools: form.tool_call, input, output },
       request: { ...(savedRequest ?? {}), body },
@@ -418,6 +459,14 @@ export const ModelConfigScreen: Component<{
         // `tier` row is a second, contradictory rating that a later reader could still pick up.
         [...base, "tier"],
         [...base, "benchmark"],
+        // `inherit` must REMOVE a stored channel override, not merely stop writing one: PATCH
+        // patch-merges, so omitting `package`/`type` would leave the old override in place.
+        ...(form.apiType === INHERIT_CHANNEL
+          ? [
+              [...base, "api", "type"],
+              [...base, "api", "package"],
+            ]
+          : []),
         ...(prefixCacheTtlMinutes === undefined ? [[...base, "prefixCache", "ttlMinutes"]] : []),
         ...(deviceID !== undefined && concurrency === undefined ? [["devices", deviceID, "concurrency"]] : []),
         ...(deviceID !== undefined && minRunMs === undefined ? [["devices", deviceID, "minRunMs"]] : []),
@@ -680,6 +729,26 @@ export const ModelConfigScreen: Component<{
                     value={form.modelName}
                     onInput={(event) => setForm("modelName", event.currentTarget.value)}
                     aria-label={language.t("settings.models.config.modelName.name")}
+                  />
+                </SettingsRowV2>
+                {/* Which protocol Nova speaks to THIS model. The provider owns the default; a model
+                override exists because one gateway can serve different models on different wires. */}
+                <SettingsRowV2
+                  title={language.t("settings.models.config.apiType.name")}
+                  info={
+                    <>
+                      {language.t("settings.models.config.apiType.desc")}{" "}
+                      {language.t("settings.models.config.apiType.desc.more")}
+                    </>
+                  }
+                >
+                  <SelectV2
+                    data-action="settings-model-api-type"
+                    options={API_TYPES}
+                    current={form.apiType}
+                    value={(option) => option}
+                    label={(option) => apiTypeLabel(language.t, option)}
+                    onSelect={(option) => setForm("apiType", (option ?? INHERIT_CHANNEL) as ApiType)}
                   />
                 </SettingsRowV2>
                 {/* 🔴 The rating, and the ONLY one: the retired Terminal-Bench percentage sat here. A

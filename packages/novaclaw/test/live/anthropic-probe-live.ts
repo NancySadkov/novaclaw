@@ -27,7 +27,7 @@ const MODEL = process.env.PROBE_MODEL ?? "qwen3.5-4b-q4-k-m"
 
 const main = Effect.gen(function* () {
   const client = yield* HttpClient.HttpClient
-  const input = { baseURL: BASE, modelID: MODEL, authStyle: "anthropic" as const, headers: {} }
+  const input = { baseURL: BASE, modelID: MODEL, wire: "anthropic-messages" as const, headers: {} }
 
   // The chat rung first, exactly as the handler orders it — the capability rungs are not asked
   // unless a plain completion already came back.

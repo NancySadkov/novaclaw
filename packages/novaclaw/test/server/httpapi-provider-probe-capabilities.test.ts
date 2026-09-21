@@ -17,7 +17,7 @@ import { probeCapabilities, probeLimits } from "../../src/server/routes/instance
 const run = async (
   replies: ReadonlyArray<Response>,
   options: {
-    readonly authStyle?: "bearer" | "anthropic"
+    readonly wire?: "openai-chat" | "openai-responses" | "anthropic-messages"
     readonly chat?: ProviderCapability.Outcome
     readonly limits?: { readonly timeout: Duration.Duration; readonly maxTokens: number }
   } = {},
@@ -48,7 +48,7 @@ const run = async (
     probeCapabilities(client, {
       baseURL: "http://model.test/v1",
       modelID: "served-id",
-      authStyle: options.authStyle ?? "bearer",
+      wire: options.wire ?? "openai-chat",
       headers: {},
       chat: options.chat ?? { kind: "supported" },
       ...(options.limits === undefined ? {} : { limits: options.limits }),
@@ -269,7 +269,7 @@ describe("the Anthropic messages wire", () => {
     })
   const say = (text: string, stop = "end_turn") => block([{ type: "text", text }], stop)
   const useTool = (name: string, input: unknown) => block([{ type: "tool_use", id: "tu_1", name, input }], "tool_use")
-  const anth = { authStyle: "anthropic" as const }
+  const anth = { wire: "anthropic-messages" as const }
 
   test("🔴 it posts to /messages — the OpenAI path would 404 and read as a dead endpoint", async () => {
     const { urls } = await run([useTool(ProviderCapability.CAPTURE_TOOL.name, GOOD_ARGS), say("{}")], anth)
@@ -349,6 +349,75 @@ describe("the Anthropic messages wire", () => {
   test("no chat still means the rungs are not asked, on this wire too", async () => {
     const { report, sent } = await run([], { ...anth, chat: { kind: "unknown", fault: "transport", detail: "x" } })
     expect(sent).toHaveLength(0)
+    expect(report.choice).toBe("unknown")
+  })
+})
+
+/**
+ * THE THIRD WIRE, and the reason it exists: a gateway may serve one model only on `/responses`
+ * while its siblings answer on `/chat/completions` (measured 2026-09-21 — the plan repo's
+ * `doc/oc-session.md`). The runner already dispatches on the model's `api.package`; the probe did
+ * not, so its Test reported a 503 that read as a dead endpoint.
+ *
+ * Assembly only: the shapes are the ones measured live against that gateway, but no verdict here
+ * was taken from the vendor's own server.
+ */
+describe("the OpenAI responses wire", () => {
+  const responses = (output: ReadonlyArray<unknown>, extra: Record<string, unknown> = {}) =>
+    json({ object: "response", status: "completed", output, ...extra })
+  const say = (text: string) => responses([{ type: "message", content: [{ type: "output_text", text }] }])
+  const useTool = (name: string, args: unknown) =>
+    responses([{ type: "function_call", name, arguments: JSON.stringify(args) }])
+  const res = { wire: "openai-responses" as const }
+
+  test("posts to /responses, offers the FLAT tool shape, and asks JSON via text.format", async () => {
+    const { urls, sent } = await run([say('{"ok":true}'), useTool(ProviderCapability.CAPTURE_TOOL.name, GOOD_ARGS), say("{}")], res)
+    for (const url of urls) expect(url).toBe("http://model.test/v1/responses")
+    expect(sent[0]?.["text"]).toEqual({ format: { type: "json_object" } })
+    const tools = sent[1]?.["tools"] as Array<Record<string, unknown>>
+    expect(tools).toHaveLength(1)
+    expect(tools[0]?.["type"]).toBe("function")
+    expect(tools[0]?.["name"]).toBe(ProviderCapability.CAPTURE_TOOL.name)
+    // Flat, not nested under `function` — the shape this wire measured.
+    expect(tools[0]?.["function"]).toBeUndefined()
+    expect(tools[0]?.["parameters"]).toEqual(ProviderCapability.CAPTURE_TOOL.parameters)
+    // `max_output_tokens`, not `max_tokens`, and room for a reasoning pass.
+    for (const body of sent) expect(body["max_output_tokens"]).toBeGreaterThanOrEqual(256)
+  })
+
+  test("a function_call output item reads as native support", async () => {
+    const { report } = await run([say('{"ok":true}'), useTool(ProviderCapability.CAPTURE_TOOL.name, GOOD_ARGS), say("{}")], res)
+    expect(report.outcomes["native-tools"].kind).toBe("supported")
+    expect(report.choice).toBe("native")
+  })
+
+  test("🔴 a spent reasoning pass is a budget FAULT, not a missing capability", async () => {
+    // Measured: a reasoning model spends `max_output_tokens` before its first output item —
+    // `status:"incomplete"`, `incomplete_details.reason:"max_output_tokens"`, empty `output`.
+    const spent = responses([], { status: "incomplete", incomplete_details: { reason: "max_output_tokens" } })
+    const { report } = await run([spent, useTool(ProviderCapability.CAPTURE_TOOL.name, GOOD_ARGS), say("{}")], res)
+    expect(report.outcomes.json).toMatchObject({ kind: "unknown", fault: "budget" })
+    // And it does not drag the other rungs down with it.
+    expect(report.choice).toBe("native")
+  })
+
+  test("the prompted rung recovers a bare-JSON call out of the output text", async () => {
+    const { report } = await run(
+      [
+        say('{"ok":true}'),
+        say("I would rather not."),
+        say(`{"name":"${ProviderCapability.CAPTURE_TOOL.name}","arguments":${JSON.stringify(GOOD_ARGS)}}`),
+      ],
+      res,
+    )
+    expect(report.outcomes["native-tools"].kind).toBe("unsupported")
+    expect(report.outcomes["text-tools"].kind).toBe("supported")
+    expect(report.choice).toBe("prompted")
+  })
+
+  test("🔴 an OpenAI-chat-shaped body from this route is MALFORMED, not a missing capability", async () => {
+    const { report } = await run([message("hi"), message("hi"), message("hi")], res)
+    expect(report.outcomes["native-tools"]).toMatchObject({ kind: "unknown", fault: "malformed" })
     expect(report.choice).toBe("unknown")
   })
 })

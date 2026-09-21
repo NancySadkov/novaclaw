@@ -273,28 +273,56 @@ describe("reading the serving identity off a finished turn", () => {
   })
 })
 
-describe("the two wires read their own envelope and nobody else's", () => {
+describe("each wire reads its own envelope and nobody else's", () => {
   const openai = ProviderCapability.WIRES["openai-chat"]
   const anthropic = ProviderCapability.WIRES["anthropic-messages"]
+  const responses = ProviderCapability.WIRES["openai-responses"]
   const chatBody = { choices: [{ message: { content: "hi" }, finish_reason: "stop" }] }
   const messagesBody = { content: [{ type: "text", text: "hi" }], stop_reason: "end_turn" }
+  const responsesBody = { object: "response", status: "completed", output: [{ type: "message" }] }
 
-  test("🔴 each wire REFUSES the other's envelope — a gateway's reply is not the model's answer", () => {
-    // If either accepted the other's shape, a proxy answering in the wrong format would be scored as
+  test("🔴 each wire REFUSES the others' envelopes — a gateway's reply is not the model's answer", () => {
+    // If any accepted another's shape, a proxy answering in the wrong format would be scored as
     // a capability instead of landing as `malformed`.
     expect(openai.answered(chatBody)).toBe(true)
     expect(openai.answered(messagesBody)).toBe(false)
+    expect(openai.answered(responsesBody)).toBe(false)
     expect(anthropic.answered(messagesBody)).toBe(true)
     expect(anthropic.answered(chatBody)).toBe(false)
+    expect(anthropic.answered(responsesBody)).toBe(false)
+    expect(responses.answered(responsesBody)).toBe(true)
+    expect(responses.answered(chatBody)).toBe(false)
+    expect(responses.answered(messagesBody)).toBe(false)
   })
 
   test("🔴 'stopped at the ceiling' is a different WORD on each wire", () => {
-    // One rule, two vocabularies. Reading `length` on the Anthropic wire would miss every budget
+    // One rule, three vocabularies. Reading `length` on the Anthropic wire would miss every budget
     // fault there and record it as a missing capability instead.
     expect(openai.exhausted({ choices: [{ message: {}, finish_reason: "length" }] })).toBe(true)
     expect(openai.exhausted({ choices: [{ message: {}, finish_reason: "max_tokens" }] })).toBe(false)
     expect(anthropic.exhausted({ content: [], stop_reason: "max_tokens" })).toBe(true)
     expect(anthropic.exhausted({ content: [], stop_reason: "length" })).toBe(false)
+    // Measured: a reasoning model spends its budget before the first output item, and the envelope
+    // says so with `status:"incomplete"` and a reason rather than a finish_reason.
+    expect(responses.exhausted({ status: "incomplete", incomplete_details: { reason: "max_output_tokens" } })).toBe(true)
+    expect(responses.exhausted({ status: "completed", incomplete_details: null })).toBe(false)
+    expect(responses.exhausted({ status: "incomplete", incomplete_details: { reason: "content_filter" } })).toBe(false)
+  })
+
+  test("Responses text is JOINED across message parts — one part is not the answer", () => {
+    const split = {
+      output: [
+        { type: "reasoning", summary: [] },
+        {
+          type: "message",
+          content: [
+            { type: "output_text", text: '{"ok":' },
+            { type: "output_text", text: "true}" },
+          ],
+        },
+      ],
+    }
+    expect(responses.text(split)).toBe('{"ok":true}')
   })
 
   test("Anthropic text is JOINED across blocks — one block is not the answer", () => {
@@ -323,8 +351,19 @@ describe("the two wires read their own envelope and nobody else's", () => {
     expect(JSON.parse(call?.rawArguments ?? "{}")).toEqual({ label: "x" })
   })
 
-  test("🔴 only ONE wire has a JSON-mode parameter, and that asymmetry is the point", () => {
+  test("a Responses function_call item carries its arguments as a JSON string, like the chat wire", () => {
+    const call = responses.toolCall({
+      output: [{ type: "function_call", name: "nova_probe_capture", arguments: '{"label":"x"}' }],
+    })
+    expect(call?.name).toBe("nova_probe_capture")
+    expect(JSON.parse(call?.rawArguments ?? "{}")).toEqual({ label: "x" })
+    // A reasoning item is not a call.
+    expect(responses.toolCall({ output: [{ type: "reasoning", summary: [] }] })).toBeUndefined()
+  })
+
+  test("🔴 only the Anthropic wire LACKS a JSON-mode parameter, and that asymmetry is the point", () => {
     expect(openai.jsonMode?.parameter).toBe("response_format")
+    expect(responses.jsonMode?.parameter).toBe("text.format")
     expect(anthropic.jsonMode).toBeUndefined()
   })
 })

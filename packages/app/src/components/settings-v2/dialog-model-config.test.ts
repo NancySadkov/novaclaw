@@ -33,7 +33,8 @@ describe("Model Configure — Provider", () => {
 
   test("saves the wire ID and name without renaming the stable catalog key", () => {
     expect(source).toContain("name: form.modelName.trim() || props.modelName")
-    expect(source).toContain("api: { ...(saved.api ?? {}), id: form.modelID.trim() || props.apiModelID }")
+    // `inherit` keeps the model on the provider's channel by writing the `{id}` union arm.
+    expect(source).toContain("? { id: form.modelID.trim() || props.apiModelID }")
     expect(source).toContain("[props.modelID]: model")
     expect(source).not.toContain("[form.modelID]: model")
     // The instance default names that same catalog identity. A clone deliberately uses a different
@@ -84,6 +85,33 @@ describe("Model Configure — Provider", () => {
     expect(source).toContain("availableDeviceID(props.providerID, devices)")
     expect(source).toContain("concurrency: Math.max(1, Math.floor(concurrency))")
     expect(en["settings.models.config.section.identity"]).toBe("Provider")
+  })
+})
+
+describe("Model Configure — API type", () => {
+  test("lists the API types and defaults to the provider's own channel", () => {
+    expect(source).toContain(
+      'const API_CHANNELS = ["@ai-sdk/openai-compatible", "@ai-sdk/openai", "@ai-sdk/anthropic"]',
+    )
+    expect(source).toContain("const API_TYPES: readonly ApiType[] = [INHERIT_CHANNEL, ...API_CHANNELS]")
+    expect(source).toContain('data-action="settings-model-api-type"')
+    expect(source).toContain("current={form.apiType}")
+    for (const key of ["inherit", "openai", "openaiCompatible", "anthropic"])
+      expect(typeof en[`settings.models.config.apiType.${key}` as keyof typeof en]).toBe("string")
+    expect(en["settings.models.config.apiType.openai"]).toBe("OpenAI")
+    expect(en["settings.models.config.apiType.desc.more"]).toContain("/responses")
+  })
+
+  test("🔴 a channel override is written onto the MODEL's api, and inherit removes it", () => {
+    // The runner dispatches on the resolved model's `api.package`, so a model override is how one
+    // gateway's models ride different wires (a gateway serving `/responses` for one model and
+    // `/chat/completions` for its siblings — measured 2026-09-21).
+    expect(source).toContain('type: "aisdk" as const')
+    expect(source).toContain("package: form.apiType")
+    // PATCH merges, so switching back to inherit must REMOVE a stored override, not just stop
+    // writing one.
+    expect(source).toContain('[...base, "api", "package"]')
+    expect(source).toContain('[...base, "api", "type"]')
   })
 })
 

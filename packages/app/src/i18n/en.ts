@@ -1661,6 +1661,14 @@ export const dict = {
   "settings.models.config.modelID.desc": "The exact model identifier Nova sends to the API.",
   "settings.models.config.modelName.name": "Model name",
   "settings.models.config.modelName.desc": "The friendly name shown in Nova.",
+  "settings.models.config.apiType.name": "API type",
+  "settings.models.config.apiType.desc": "How Nova talks to this model.",
+  "settings.models.config.apiType.desc.more":
+    "Same as provider uses the endpoint's own protocol. OpenAI is the /responses API, OpenAI-compatible is /chat/completions, and Anthropic is /messages. Change this only when a provider serves some models on a different API than its siblings.",
+  "settings.models.config.apiType.inherit": "Same as provider",
+  "settings.models.config.apiType.openai": "OpenAI",
+  "settings.models.config.apiType.openaiCompatible": "OpenAI-compatible",
+  "settings.models.config.apiType.anthropic": "Anthropic",
   "settings.models.config.taxonomy.name": "Model class",
   "settings.models.config.taxonomy.desc": "What this model is for.",
   "settings.models.config.taxonomy.desc.more":

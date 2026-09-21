@@ -397,8 +397,29 @@ const anthropicBlocks = (payload: unknown): ReadonlyArray<Record<string, unknown
   return Array.isArray(content) ? (content.filter((b) => typeof b === "object" && b !== null) as never) : []
 }
 
+/** The `output` items of a Responses envelope, filtered to objects. */
+const responsesOutput = (payload: unknown): ReadonlyArray<Record<string, unknown>> => {
+  const output = (payload as { output?: unknown } | null)?.output
+  return Array.isArray(output) ? (output.filter((item) => typeof item === "object" && item !== null) as never) : []
+}
+
+/** The assistant text a Responses envelope carries, joined across its message parts. */
+const responsesText = (payload: unknown): string =>
+  responsesOutput(payload)
+    .filter((item) => item["type"] === "message" && Array.isArray(item["content"]))
+    .flatMap((item) => item["content"] as ReadonlyArray<unknown>)
+    .filter((part): part is Record<string, unknown> => typeof part === "object" && part !== null)
+    .filter((part) => part["type"] === "output_text" && typeof part["text"] === "string")
+    .map((part) => part["text"] as string)
+    .join("")
+
+/** Did a Responses envelope stop because it hit the ceiling, having produced nothing? */
+const responsesExhausted = (payload: unknown): boolean =>
+  (payload as { status?: unknown } | null)?.status === "incomplete" &&
+  (payload as { incomplete_details?: { reason?: unknown } } | null)?.incomplete_details?.reason === "max_output_tokens"
+
 /**
- * The two wires a probe can speak.
+ * The wires a probe can speak.
  *
  * `anthropic-messages` has been driven end to end against a REAL server speaking this envelope:
  * `llama-server` serves `/v1/messages` alongside the OpenAI path, and every designed behaviour fired
@@ -409,8 +430,15 @@ const anthropicBlocks = (payload: unknown): ReadonlyArray<Record<string, unknown
  * ⚠️ What that still does not establish is how **api.anthropic.com** answers. It is unreachable from
  * here, so no verdict has come from the vendor's own server — a different claim, and the one the
  * ledger still tracks.
+ *
+ * `openai-responses` was measured 2026-09-21 against a hosted gateway (the plan repo's
+ * `doc/oc-session.md`): a model that answers 503 on `/chat/completions` answers 200 here, the tool
+ * shape is flat (`{type:"function",name,description,parameters}`, not nested under `function`), the
+ * JSON mode is `text.format`, and a reasoning model spends `max_output_tokens` before its first
+ * output item — `status:"incomplete"` with `incomplete_details.reason:"max_output_tokens"` and an
+ * empty `output`, which is the budget fault rather than a capability.
  */
-export const WIRES: Readonly<Record<"openai-chat" | "anthropic-messages", Wire>> = {
+export const WIRES: Readonly<Record<"openai-chat" | "openai-responses" | "anthropic-messages", Wire>> = {
   "openai-chat": {
     path: "chat/completions",
     base: (modelID, maxTokens) => ({ model: modelID, temperature: 0, stream: false, max_tokens: maxTokens }),
@@ -471,6 +499,36 @@ export const WIRES: Readonly<Record<"openai-chat" | "anthropic-messages", Wire>>
       ],
     }),
     // No JSON-mode parameter exists on this wire.
+  },
+  "openai-responses": {
+    path: "responses",
+    base: (modelID, maxTokens) => ({ model: modelID, stream: false, max_output_tokens: maxTokens }),
+    // The conversation is `input`, and a user turn is a content-part list rather than a bare string.
+    ask: (text) => ({ input: [{ role: "user", content: [{ type: "input_text", text }] }] }),
+    answered: (payload) => Array.isArray((payload as { output?: unknown } | null)?.output),
+    text: responsesText,
+    toolCall: (payload) => {
+      const call = responsesOutput(payload).find((item) => item["type"] === "function_call")
+      if (call === undefined) return undefined
+      return {
+        name: typeof call["name"] === "string" ? call["name"] : "",
+        // The arguments arrive as a JSON string here, like the chat wire — one argument reader.
+        rawArguments: typeof call["arguments"] === "string" ? call["arguments"] : JSON.stringify(call["arguments"] ?? {}),
+      }
+    },
+    exhausted: responsesExhausted,
+    toolsParameter: "tools",
+    offerCaptureTool: () => ({
+      tools: [
+        {
+          type: "function",
+          name: CAPTURE_TOOL.name,
+          description: CAPTURE_TOOL.description,
+          parameters: CAPTURE_TOOL.parameters,
+        },
+      ],
+    }),
+    jsonMode: { parameter: "text.format", request: { text: { format: { type: "json_object" } } } },
   },
 }
 

@@ -7,14 +7,14 @@ import {
   probeCompletionWithAffinity,
 } from "../../src/server/routes/instance/httpapi/handlers/provider"
 
-const run = async (authStyle: "bearer" | "anthropic", response: Response) => {
+const run = async (wire: "openai-chat" | "openai-responses" | "anthropic-messages", response: Response) => {
   const seen: string[] = []
   const client = HttpClient.make((request) => {
     seen.push(request.url)
     return Effect.succeed(HttpClientResponse.fromWeb(request, response))
   })
   const result = await Effect.runPromise(
-    probeCompletion(client, { baseURL: "http://model.test/v1", modelID: "served-id", authStyle, headers: {} }),
+    probeCompletion(client, { baseURL: "http://model.test/v1", modelID: "served-id", wire, headers: {} }),
   )
   return { result, seen }
 }
@@ -22,7 +22,7 @@ const run = async (authStyle: "bearer" | "anthropic", response: Response) => {
 describe("provider completion probe", () => {
   test("uses the OpenAI-compatible generation route and validates choices", async () => {
     const { result, seen } = await run(
-      "bearer",
+      "openai-chat",
       new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content: "OK" } }] }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -34,7 +34,7 @@ describe("provider completion probe", () => {
 
   test("uses Anthropic messages and distinguishes malformed generation from discovery", async () => {
     const { result, seen } = await run(
-      "anthropic",
+      "anthropic-messages",
       new Response(JSON.stringify({ unexpected: true }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -49,8 +49,34 @@ describe("provider completion probe", () => {
   })
 
   test("reports generation authentication separately", async () => {
-    const { result } = await run("bearer", new Response("denied", { status: 401 }))
+    const { result } = await run("openai-chat", new Response("denied", { status: 401 }))
     expect(result).toMatchObject({ kind: "failed", status: "auth", detail: expect.stringContaining("Generation") })
+  })
+
+  test("uses the Responses route and validates the output envelope", async () => {
+    // A gateway that serves this model only on `/responses` answers 503 on the chat route — the
+    // error a user sees when the model's channel is wrong. On the right wire it is a 200 whose
+    // envelope carries `output`, even when a reasoning pass left it empty.
+    const { result, seen } = await run(
+      "openai-responses",
+      new Response(JSON.stringify({ object: "response", status: "incomplete", output: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    )
+    expect(seen).toEqual(["http://model.test/v1/responses"])
+    expect(result.kind).toBe("ok")
+  })
+
+  test("🔴 a chat-shaped body on the Responses route is a format failure, not a success", async () => {
+    const { result } = await run(
+      "openai-responses",
+      new Response(JSON.stringify({ choices: [{ message: { content: "OK" } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    )
+    expect(result).toMatchObject({ kind: "failed", status: "error", detail: expect.stringContaining("response format") })
   })
 })
 
@@ -103,7 +129,7 @@ describe("provider completion probe session affinity", () => {
       probeCompletionWithAffinity(client, {
         baseURL: "http://gateway.test/v1",
         modelID: "served-id",
-        authStyle: "bearer",
+        wire: "openai-chat",
         headers: { authorization: "Bearer key" },
         settings,
         timeoutMs: 1000,
