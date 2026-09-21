@@ -172,12 +172,6 @@ export const ModelConfigScreen: Component<{
   const optNum = (k: string) => nstr(init.request?.body?.[k])
   const inMod = init.capabilities?.input ?? d.capabilities?.input ?? ["text"]
   const outMod = init.capabilities?.output ?? d.capabilities?.output ?? ["text"]
-  const defaultProviderName = () =>
-    providerCfg().name === "local" ? "local" : (providerCfg().api?.url ?? props.providerApi?.url ?? props.providerID)
-  const customProviderName = () => {
-    const name = providerCfg().name?.trim()
-    return name && name !== defaultProviderName() ? name : ""
-  }
 
   /**
    * The key this provider is using, read from where V2 resolution reads it
@@ -197,7 +191,6 @@ export const ModelConfigScreen: Component<{
     // write-only field cannot answer "which key is this provider using?", which is the question
     // somebody opening this dialog actually has.
     apiKey: storedApiKey(),
-    providerName: customProviderName(),
     modelID: init.api?.id ?? props.apiModelID,
     modelName: init.name ?? props.modelName,
     apiType: ((): ApiType => {
@@ -440,7 +433,6 @@ export const ModelConfigScreen: Component<{
       providers: {
         [props.providerID]: {
           ...provider,
-          name: form.providerName.trim() || (provider.name === "local" ? "local" : apiPath || props.providerID),
           ...(api === undefined ? {} : { api }),
           ...(request === undefined ? {} : { request }),
           models: { ...(provider.models ?? {}), [props.modelID]: model },
@@ -632,23 +624,6 @@ export const ModelConfigScreen: Component<{
           <div class="flex flex-col gap-4">
             <div data-settings-tab="identity">
               <SettingsListV2>
-                <SettingsRowV2
-                  title={language.t("settings.models.config.providerName.name")}
-                  info={
-                    <>
-                      {language.t("settings.models.config.providerName.desc")}{" "}
-                      {language.t("settings.models.config.providerName.desc.more")}
-                    </>
-                  }
-                >
-                  <TextInputV2
-                    class="w-64 max-w-full"
-                    value={form.providerName}
-                    onInput={(event) => setForm("providerName", event.currentTarget.value)}
-                    placeholder={defaultProviderName()}
-                    aria-label={language.t("settings.models.config.providerName.name")}
-                  />
-                </SettingsRowV2>
                 <SettingsRowV2
                   title={language.t("settings.models.config.apiPath.name")}
                   info={

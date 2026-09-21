@@ -1642,9 +1642,6 @@ export const dict = {
   "settings.models.config.missing": "No model to configure.",
   "settings.models.config.defaultPlaceholder": "default",
   "settings.models.config.section.identity": "Provider",
-  "settings.models.config.providerName.name": "Connection name (optional)",
-  "settings.models.config.providerName.desc": "A concise name shown in Nova.",
-  "settings.models.config.providerName.desc.more": "Leave it blank to identify this connection by its serving URL.",
   "settings.models.config.apiPath.name": "API path",
   // Owner, 2026-08-24: a row's description is SCANNED, not read — one clause saying what the field
   // is. Anything a person only wants once moves to `hint`, which pops on hover/focus. The rule is

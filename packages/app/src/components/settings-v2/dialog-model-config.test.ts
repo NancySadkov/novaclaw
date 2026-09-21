@@ -13,13 +13,11 @@ const host = fs.readFileSync(path.join(import.meta.dir, "..", "..", "pages", "mo
  *  Affective settings tab could sell temperature the same way. The recovery test below scans this
  *  file, because scanning the dialog would silently pass on a file that no longer holds the table. */
 describe("Model Configure — Provider", () => {
-  test("shows the connection name, resolved API path, wire model ID, and friendly name", () => {
+  test("shows the resolved API path, wire model ID, and friendly name", () => {
     expect(source).toContain('apiPath: providerCfg().api?.url ?? props.providerApi?.url ?? ""')
-    expect(source).toContain("providerName: customProviderName()")
     expect(source).toContain("modelID: init.api?.id ?? props.apiModelID")
     expect(source).toContain("modelName: init.name ?? props.modelName")
     expect(source).toContain("value={form.apiPath}")
-    expect(source).toContain("value={form.providerName}")
     expect(source).toContain("value={form.modelID}")
     expect(source).toContain("value={form.modelName}")
     // The route page resolves the identity from the catalog and hands it to the screen; the LIST
@@ -64,19 +62,19 @@ describe("Model Configure — Provider", () => {
     expect(String(decoded.models?.stable?.api?.id)).toBe("upstream/model-id")
   })
 
-  test("allows a concise connection name later and otherwise falls back to the endpoint", () => {
-    expect(source).toContain(
-      'name: form.providerName.trim() || (provider.name === "local" ? "local" : apiPath || props.providerID)',
-    )
-    expect(en["settings.models.config.providerName.name"]).toContain("optional")
-    // The fallback rule moved behind the row's explain affordance when the descriptions were
-    // shortened (2026-08-24): the row says what the field IS, the `?` says what leaving it blank
-    // does. Still asserted — where it is said changed, whether it is said did not.
-    expect(en["settings.models.config.providerName.desc.more"]).toContain("serving URL")
+  test("🔴 the connection name is GONE — field, helpers and copy — so it cannot creep back", () => {
+    // Owner, 2026-09-22: it served no purpose for the user and cluttered the screen. The provider's
+    // stored `name` (set when the provider was added) is left alone; Configure stops writing it.
+    expect(source).not.toContain("providerName")
+    expect(source).not.toContain("customProviderName")
+    expect(source).not.toContain("defaultProviderName")
+    expect("settings.models.config.providerName.name" in en).toBe(false)
+    expect("settings.models.config.providerName.desc" in en).toBe(false)
+    expect("settings.models.config.providerName.desc.more" in en).toBe(false)
   })
 
   test("has human labels for all provider fields", () => {
-    for (const key of ["providerName", "apiPath", "modelID", "modelName", "deviceConcurrency"])
+    for (const key of ["apiPath", "modelID", "modelName", "deviceConcurrency"])
       for (const suffix of ["name", "desc"]) expect(`settings.models.config.${key}.${suffix}` in en).toBe(true)
   })
 
