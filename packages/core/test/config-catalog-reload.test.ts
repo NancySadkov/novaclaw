@@ -139,6 +139,45 @@ describe("a provider write re-materialises the catalog", () => {
       ),
     ),
   )
+
+  it.live("a learned MODEL channel is live on the same Catalog instance — the runner follows it", () =>
+    Effect.scoped(
+      withLocation((location) =>
+        Effect.gen(function* () {
+          const plugins = yield* PluginV2.Service
+          yield* plugins.ready
+          const catalog = yield* Catalog.Service
+          const muse = ModelV2.ID.make("muse")
+          const packageOf = (model: ModelV2.Info | undefined) =>
+            model?.api.type === "aisdk" ? model.api.package : undefined
+
+          yield* ConfigStoreWrite.apply(
+            decodeInfo({
+              providers: {
+                [PROBE]: { name: "Probe endpoint", api: api("https://learn.test/v1"), models: { muse: { name: "Muse" } } },
+              },
+            }),
+          )
+          // The state the owner's instance was in: the model inherits the provider's chat channel.
+          expect(packageOf(yield* catalog.model.get(PROBE_ID, muse))).toBe("@ai-sdk/openai-compatible")
+
+          // What the generation Test writes when the endpoint refuses the configured wire — the same
+          // shape the Configure picker writes. This is the whole claim of the learned-wire fix: the
+          // Test must not pass while the next TURN goes out on the refused wire.
+          yield* ConfigStoreWrite.apply(
+            decodeInfo({
+              providers: {
+                [PROBE]: {
+                  models: { muse: { api: { id: muse, type: "aisdk", package: "@ai-sdk/openai" } } },
+                },
+              },
+            }),
+          )
+          expect(packageOf(yield* catalog.model.get(PROBE_ID, muse))).toBe("@ai-sdk/openai")
+        }).pipe(Effect.provide(LocationServiceMap.Service.get(location))),
+      ),
+    ),
+  )
 })
 
 // ────────────────────────────────────────────────────────────────────────────────────────────────
