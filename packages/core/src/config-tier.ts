@@ -169,6 +169,10 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // costs one header on one endpoint and is undone by deleting the entry, and a missing row simply
   // re-learns on the next refusal. It grants nothing — the header carries the session's own id.
   provider_session_affinity: "operational",
+  // The lowest reasoning effort a model accepts, learned from its own 400. OPERATIONAL for the same
+  // reason as the image cap: a stale row costs one parameter on one model and is undone by deleting
+  // the entry, and a missing row simply re-learns on the next refusal. It grants nothing.
+  provider_reasoning_effort: "operational",
   // Bounded measurements that make prompt packing conservative for one exact model/server route.
   // A wrong row can only spend extra context or be deleted to restore defaults; it grants nothing.
   provider_route_profile: "operational",

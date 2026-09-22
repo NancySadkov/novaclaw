@@ -11,6 +11,7 @@ import {
   isContextOverflowFailure,
   mediaLimitFailure,
   promptTokensFrom,
+  reasoningEffortFailure,
   type FinishReason,
   type ProviderErrorEvent,
   isModelMissing,
@@ -90,6 +91,7 @@ import { SessionRunnerModel } from "./model"
 import { Endpoint } from "./endpoint"
 import { ProviderSession } from "./provider-session"
 import { RepetitionFloor } from "./repetition-floor"
+import { ReasoningEffortFloor } from "./reasoning-effort"
 import { SessionMaintenance } from "./maintenance"
 import { Scratch } from "../../scratch"
 import { PromptManager } from "./prompt-manager"
@@ -1215,6 +1217,10 @@ export const layer = Layer.effect(
       // The endpoint refused the request for a missing session identity; re-resolve this same turn
       // with the header its own 400 named. Distinct from the repetition arm only in what it ADDS.
       | { readonly _tag: "RetryWithSessionAffinity"; readonly step: number }
+      // The endpoint refused the no-thinking effort value and named its own floor; re-resolve this
+      // same turn so `withoutReasoning` asks for the floor. Distinct from the repetition arm only in
+      // which request field it rewrites.
+      | { readonly _tag: "RetryWithLowerReasoningEffort"; readonly step: number }
       | { readonly _tag: "RetryOnReplacedModel"; readonly step: number }
 
     class TurnTransitionError extends Error {
@@ -1231,6 +1237,9 @@ export const layer = Layer.effect(
     /** Re-resolve the turn with the session header the endpoint's own 400 named. */
     const retryWithSessionAffinity = (step: number) =>
       new TurnTransitionError({ _tag: "RetryWithSessionAffinity", step })
+    /** Re-resolve the turn so `withoutReasoning` asks for this model's accepted effort floor. */
+    const retryWithLowerReasoningEffort = (step: number) =>
+      new TurnTransitionError({ _tag: "RetryWithLowerReasoningEffort", step })
     /** The model this turn asked for is not served; the row now names another one. Re-run so the
      *  user gets an answer instead of a fault they have to act on. */
     const retryOnReplacedModel = (step: number) => new TurnTransitionError({ _tag: "RetryOnReplacedModel", step })
@@ -3553,6 +3562,32 @@ export const layer = Layer.effect(
               })
               return yield* Effect.die(retryWithSessionAffinity(currentStep))
             }
+          }
+          // 🔴 The endpoint refused the no-thinking effort value. `withoutReasoning` asks with the
+          // provider-neutral `"none"`; a gateway whose upstream enum starts at `minimal` answers
+          // `reasoning_effort 'none' is not supported ... Supported values: [...]` (measured
+          // 2026-09-22 on `muse-spark-1.3-contributor`). That is evidence about the MODEL, not a
+          // malformed request: learn the floor its own 400 named, then re-resolve the same turn so
+          // `withoutReasoning` asks for it. The in-process map covers the retry; the durable row
+          // carries it to the next worker, so this costs one extra request ONCE per model.
+          //
+          // ⚠️ Only recover on NEWS. Once this process knows, a second identical refusal is a
+          // different fault (or an upstream disagreeing with its own message); re-running on it
+          // would be an unbounded loop dressed as a recovery, so it falls through and reports it.
+          const effortFloor = reasoningEffortFailure(failure)
+          if (
+            effortFloor !== undefined &&
+            !publisher.hasAssistantStarted() &&
+            modelRef !== undefined &&
+            !ReasoningEffortFloor.isLearned(modelRef)
+          ) {
+            yield* models.rememberReasoningEffortFloor(modelRef, effortFloor).pipe(Effect.ignore)
+            yield* Log.event("session.reasoning.effort.learned", {
+              "session.id": session.id,
+              "provider.model": `${modelRef.providerID}/${modelRef.id}`,
+              "reasoning.effort": effortFloor,
+            })
+            return yield* Effect.die(retryWithLowerReasoningEffort(currentStep))
           }
           const recoveryPlan =
             recoveryFailure === undefined

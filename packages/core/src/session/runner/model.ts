@@ -4,10 +4,11 @@ import { makeLocationNode } from "../../effect/app-node"
 import { Endpoint } from "./endpoint"
 import { splitModelSampling } from "./sampling-split"
 import { RepetitionFloor, withRepetitionFloor } from "./repetition-floor"
+import { ReasoningEffortFloor } from "./reasoning-effort"
 import { ModelHealth } from "./model-health"
 import { ProviderRecovery } from "./provider-recovery"
 import { ProviderSession } from "./provider-session"
-import { type Model } from "@novaclaw/llm"
+import { ReasoningEfforts, type Model, type ReasoningEffort } from "@novaclaw/llm"
 import * as AnthropicMessages from "@novaclaw/llm/protocols/anthropic-messages"
 import * as OpenAICompatibleChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 import * as OpenAIResponses from "@novaclaw/llm/protocols/openai-responses"
@@ -298,6 +299,13 @@ export interface Interface {
   /** Remember a cap learned this run. Best-effort: a failed write must never fail a recovered turn. */
   readonly rememberImageLimit: (model: ModelV2.Ref, limit: number) => Effect.Effect<void>
   /**
+   * Remember the lowest reasoning effort this endpoint accepts, learned from its own refusal.
+   *
+   * Model-keyed like `rememberImageLimit`, and read back by `resolve` from this process's map or the
+   * durable row. Best-effort: a failed write must never fail the turn that just recovered.
+   */
+  readonly rememberReasoningEffortFloor: (model: ModelV2.Ref, floor: ReasoningEffort) => Effect.Effect<void>
+  /**
    * Remember that an ENDPOINT rejects the unattended `repetition_penalty` floor.
    *
    * Endpoint-keyed, not model-keyed, and never written into a model's config: the refusal is a
@@ -554,6 +562,8 @@ export const layerWith = (
   learnedImageLimit: Interface["learnedImageLimit"] = () => Effect.succeed(undefined),
   rememberImageLimit: Interface["rememberImageLimit"] = () => Effect.void,
   /** ⚠️ Added LAST. A seam with no store simply remembers nothing. */
+  rememberReasoningEffortFloor: Interface["rememberReasoningEffortFloor"] = () => Effect.void,
+  /** ⚠️ Added LAST. A seam with no store simply remembers nothing. */
   rememberRepetitionFloor: Interface["rememberRepetitionFloor"] = () => Effect.void,
   /** ⚠️ Added LAST. A seam with no store simply remembers nothing. */
   rememberSessionAffinity: Interface["rememberSessionAffinity"] = () => Effect.void,
@@ -586,6 +596,7 @@ export const layerWith = (
       resolveDefault,
       learnedImageLimit,
       rememberImageLimit,
+      rememberReasoningEffortFloor,
       rememberRepetitionFloor,
       rememberSessionAffinity,
       taxonomy,
@@ -875,6 +886,12 @@ export const fromCatalogModel = (
    * rejects the whole request over the unknown field rather than ignoring it.
    */
   disableRepetitionFloor?: boolean,
+  /**
+   * The lowest reasoning effort this endpoint accepts, when it refused our neutral `"none"` (see
+   * `ReasoningEffortFloor`). Threaded onto compatibility so `withoutReasoning` asks for a value the
+   * endpoint honours instead of one it rejects.
+   */
+  reasoningEffortFloor?: ReasoningEffort,
 ): Effect.Effect<Model, UnsupportedApiError> => {
   const resolved =
     credential?.type !== "key" || credential.metadata === undefined
@@ -899,13 +916,14 @@ export const fromCatalogModel = (
     const reasoningContent =
       configuredReasoningContent(resolved.request.body) ??
       (requiresReasoningContent(resolved.api.url) ? "required" : undefined)
-    return toolChannel === undefined && reasoningContent === undefined
+    return toolChannel === undefined && reasoningContent === undefined && reasoningEffortFloor === undefined
       ? { id }
       : {
           id,
           compatibility: {
             ...(toolChannel === undefined ? {} : { toolChannel }),
             ...(reasoningContent === undefined ? {} : { reasoningContent }),
+            ...(reasoningEffortFloor === undefined ? {} : { reasoningEffortFloor }),
           },
         }
   }
@@ -970,6 +988,8 @@ export const resolve = (
   disableRepetitionFloor?: boolean,
   /** The session header this endpoint's own 400 named (`ProviderSession`), or `undefined`. */
   sessionAffinityHeader?: string,
+  /** The lowest reasoning effort this model accepts (`ReasoningEffortFloor`), or `undefined`. */
+  reasoningEffortFloor?: ReasoningEffort,
 ) =>
   withVariant(model, session.model?.variant).pipe(
     Effect.flatMap((model) =>
@@ -979,6 +999,7 @@ export const resolve = (
         measuredToolChannel,
         ProviderSession.headersFor({ header: sessionAffinityHeader, sessionID: session.id }),
         disableRepetitionFloor,
+        reasoningEffortFloor,
       ),
     ),
   )
@@ -1218,6 +1239,29 @@ export const locationLayer = Layer.effect(
     })
 
     /**
+     * The lowest reasoning effort this MODEL accepts, from this process's memory or the store.
+     *
+     * 🔴 Read the same best-effort way as `repetitionFloorDisabled`: a store that will not read means
+     * "not known yet", which leaves the neutral `none` in place and lets the endpoint's refusal teach
+     * the next turn. The in-process map is consulted FIRST because it is what the recovery that just
+     * learned the floor wrote, before any store round trip — the retry it triggers must see it.
+     */
+    const reasoningEffortFloorFor = Effect.fnUntraced(function* (model: {
+      readonly providerID: string
+      readonly id: string
+    }) {
+      const inProcess = ReasoningEffortFloor.floorFor(model)
+      if (inProcess !== undefined) return inProcess
+      const all: Record<string, unknown> = yield* settings.all().pipe(Effect.orElseSucceed(() => ({})))
+      const stored = all["provider_reasoning_effort"]
+      if (typeof stored !== "object" || stored === null) return undefined
+      const value = (stored as Record<string, unknown>)[`${model.providerID}/${model.id}`]
+      return typeof value === "string" && (ReasoningEfforts as readonly string[]).includes(value)
+        ? (value as ReasoningEffort)
+        : undefined
+    })
+
+    /**
      * ⚠️ `resolve` is WIDER here than on the interface: it hands back the catalog entry beside the
      * route (`Resolution`'s `ran`), and the public member below narrows it to the route. That is
      * deliberate — an in-layer caller (`resolveWithDevice`) must be able to see WHICH model the
@@ -1317,6 +1361,7 @@ export const locationLayer = Layer.effect(
           yield* measuredChannel(selected),
           yield* repetitionFloorDisabled(selected.api.url),
           yield* sessionAffinityHeader(selected.api.url),
+          yield* reasoningEffortFloorFor(selected),
         )
         return {
           model: routed,
@@ -1363,6 +1408,7 @@ export const locationLayer = Layer.effect(
           undefined,
           yield* repetitionFloorDisabled(selected.api.url),
           yield* sessionAffinityHeader(selected.api.url),
+          yield* reasoningEffortFloorFor(selected),
         )
       }),
       // Models item (c): best-effort class lookup for the recall budget and the role/model fit
@@ -1412,6 +1458,28 @@ export const locationLayer = Layer.effect(
           .set("provider_media_limit", { ...rows, [`${model.providerID}/${model.id}`]: limit })
           .pipe(Effect.ignore)
       }),
+      /**
+       * Remember one model's accepted reasoning-effort floor, in this process IMMEDIATELY and in the
+       * store for later turns.
+       *
+       * ⚠️ The in-process write is not an optimisation: the recovery that learned the floor re-runs
+       * the very turn that failed, and that rebuild reads the map through `resolve`. Without it the
+       * retry would ask with `none` again and fail identically. The durable row is what carries it to
+       * the next worker, which starts with a cold map.
+       */
+      rememberReasoningEffortFloor: Effect.fn("SessionRunnerModel.rememberReasoningEffortFloor")(
+        function* (model, floor) {
+          ReasoningEffortFloor.remember(model, floor)
+          const all: Record<string, unknown> = yield* settings
+            .all()
+            .pipe(Effect.orElseSucceed(() => ({}) as Record<string, unknown>))
+          const current = all["provider_reasoning_effort"]
+          const rows = typeof current === "object" && current !== null ? (current as Record<string, unknown>) : {}
+          yield* settings
+            .set("provider_reasoning_effort", { ...rows, [`${model.providerID}/${model.id}`]: floor })
+            .pipe(Effect.ignore)
+        },
+      ),
       /**
        * Remember one endpoint's refusal of the repetition floor, merging rather than replacing the
        * other endpoints' rows. Keyed by normalized URL so two spellings of one server share a row;
@@ -1766,6 +1834,7 @@ export const locationLayer = Layer.effect(
             yield* measuredChannel(placement.model),
             yield* repetitionFloorDisabled(placement.model.api.url),
             yield* sessionAffinityHeader(placement.model.api.url),
+            yield* reasoningEffortFloorFor(placement.model),
           )
           // A pin resolves its own placement, so the catalog entry the route was built from is
           // `placement.model` — which may be a DIFFERENT placement of the same catalog model than

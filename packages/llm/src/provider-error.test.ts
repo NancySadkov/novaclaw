@@ -5,7 +5,9 @@ import {
   imageLimitFrom,
   isContextOverflow,
   isMediaLimit,
+  isReasoningEffortUnsupported,
   promptTokensFrom,
+  reasoningEffortFloorFrom,
 } from "./provider-error"
 
 /**
@@ -19,7 +21,7 @@ import {
  */
 
 /** The exact body vLLM returned, kept verbatim so a wording change here is a deliberate act. */
-const MEASURED = 'At most 3 image(s) may be provided in one prompt. (parameter=image)'
+const MEASURED = "At most 3 image(s) may be provided in one prompt. (parameter=image)"
 
 describe("image-cap refusals", () => {
   test("reads the number out of the message we actually measured", () => {
@@ -70,6 +72,47 @@ describe("classify — one place, so three protocol sites cannot drift", () => {
    */
   test("a message that names BOTH is a media limit, because compaction cannot fix it", () => {
     expect(classify("At most 3 image(s) may be provided; prompt is too long")).toBe("media-limit")
+  })
+})
+
+/**
+ * **The effort enum is drawn tighter than the provider-neutral one, and the endpoint says so.**
+ *
+ * `ProviderDispatch.withoutReasoning` asks for "no thinking" with `"none"`; every other endpoint
+ * accepts it. A gateway whose upstream starts at `minimal` refuses the whole request, and untreated
+ * that is a DEAD-END: every compaction and every zero-budget turn re-fails identically.
+ */
+describe("reasoning-effort refusals", () => {
+  /** The exact body the gateway returned for `muse-spark-1.3-contributor`, 2026-09-22. */
+  const MEASURED =
+    'Provider request failed with HTTP 400: {"model":"muse-spark-1.3-contributor","error":{"param":"reasoning.effort","type":"invalid_request_error","message":"Upstream request failed: [invalid_request_error] reasoning_effort \'none\' is not supported for model \'muse-spark-1.3-contributor\'. Supported values: [minimal, low, medium, high, xhigh, max]"}}'
+
+  test("reads the floor out of the message we actually measured", () => {
+    expect(isReasoningEffortUnsupported(MEASURED)).toBe(true)
+    expect(reasoningEffortFloorFrom(MEASURED)).toBe("minimal")
+    expect(classify(MEASURED)).toBe("reasoning-effort")
+  })
+
+  test("reads the other phrasings, because the endpoint is not ours to standardise", () => {
+    // The OpenAI Responses shape: no brackets, quoted values after "Supported values are".
+    expect(
+      reasoningEffortFloorFrom(
+        "param reasoning.effort: Unsupported value: 'none' is not supported. Supported values are: 'low', 'medium', 'high'.",
+      ),
+    ).toBe("low")
+    // A refusal whose list we cannot read still yields the adjacent lower value.
+    expect(reasoningEffortFloorFrom("reasoning_effort: 'none' is not supported here")).toBe("minimal")
+  })
+
+  test("a refusal is not a floor when nothing names the parameter", () => {
+    expect(isReasoningEffortUnsupported("502 Bad Gateway")).toBe(false)
+    expect(reasoningEffortFloorFrom("502 Bad Gateway")).toBeUndefined()
+    expect(classify("502 Bad Gateway")).toBeUndefined()
+  })
+
+  test("naming the parameter without refusing it is not a refusal", () => {
+    expect(isReasoningEffortUnsupported("reasoning_effort was accepted")).toBe(false)
+    expect(reasoningEffortFloorFrom("reasoning_effort was accepted")).toBeUndefined()
   })
 })
 

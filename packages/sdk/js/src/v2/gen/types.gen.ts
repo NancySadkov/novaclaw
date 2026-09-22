@@ -4437,6 +4437,9 @@ export type ConfigInfo = {
   provider_session_affinity?: {
     [key: string]: string
   }
+  provider_reasoning_effort?: {
+    [key: string]: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
+  }
   provider_route_profile?: {
     [key: string]: {
       promptRatios: Array<number>

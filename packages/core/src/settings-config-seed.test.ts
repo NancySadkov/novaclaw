@@ -72,6 +72,9 @@ const VALID: Record<string, unknown> = {
   // The learned per-request image cap, keyed "providerID/modelID". A plain number: absent means no
   // cap is known, which lowers byte-identically to an endpoint that never had one.
   provider_media_limit: { "spark-holo/holo3.1": 3 },
+  // The learned no-thinking floor per model, keyed "providerID/modelID". A closed enum member:
+  // absent means the neutral "none" is sent, exactly as before the row existed.
+  provider_reasoning_effort: { "spark-holo/holo3.1": "minimal" },
   // Endpoints that refuse the unattended repetition floor, keyed by normalized endpoint URL.
   provider_repetition_floor: { "https://gateway.example/v1": true },
   // Endpoints that require a per-conversation session header, keyed by normalized endpoint URL; the

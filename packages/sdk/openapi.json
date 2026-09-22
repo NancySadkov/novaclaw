@@ -37435,6 +37435,13 @@
               "type": "string"
             }
           },
+          "provider_reasoning_effort": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "enum": ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+            }
+          },
           "provider_route_profile": {
             "type": "object",
             "additionalProperties": {

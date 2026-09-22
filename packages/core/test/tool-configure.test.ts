@@ -185,6 +185,10 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       // request and is undone by deleting the entry, where a wrong TOOL CHANNEL (consequential,
       // below) leaves an agent that silently cannot act.
       "provider_media_limit",
+      // The lowest reasoning effort each model accepts, learned from its own 400. Operational for the
+      // same reason as the image cap above: a stale row costs one parameter on one model and is
+      // undone by deleting the entry, and a missing row simply sends the neutral "none" as before.
+      "provider_reasoning_effort",
       // Durable reconnect deadlines; a malformed row decodes as empty and deleting it restores the
       // built-in 2-second exponential recovery cadence.
       "provider_recovery",

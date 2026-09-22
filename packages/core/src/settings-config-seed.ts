@@ -91,6 +91,10 @@ export const SETTINGS_KEYS = [
   // same reason as the floor above — a declared key cannot crash-loop the boot, and a still-working
   // model can delete the row over HTTP to re-learn it.
   "provider_session_affinity",
+  // Machine-written: the lowest reasoning effort a model accepts, learned from its own 400. Declared
+  // for the same reason as the floor above — an undeclared key crash-loops the boot, and a
+  // still-working model can delete the row over HTTP to re-learn it.
+  "provider_reasoning_effort",
   "provider_route_profile",
   // Machine-written reconnect circuit shared by fresh session workers. A successful request clears
   // its row; failures retain their exponential backoff across processes and app restarts.

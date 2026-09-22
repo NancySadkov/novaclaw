@@ -1028,6 +1028,21 @@ const auth = Auth.none
 
 export const httpTransport = HttpTransport.sseJson.with<OpenAIResponsesBody>()
 
+/**
+ * `store: false` and `include: ["reasoning.encrypted_content"]` are ONE decision, not two.
+ *
+ * 🔴 With `store: false` a reasoning model's items are not kept server-side, so the only way its
+ * reasoning survives into the next request is the opaque `encrypted_content` the response carries.
+ * `lowerMessages` already replays that state (`{type:"reasoning", summary, encrypted_content}`) and
+ * drops reasoning items that lack it. But OpenAI returns `encrypted_content` ONLY when the request
+ * asks for it via `include` — so the store:false half was set and the include half was not, and on a
+ * strict endpoint every reasoning item was silently dropped from the replay.
+ *
+ * Measured 2026-09-22: the gateway serving `muse-spark-1.3-contributor` happens to return
+ * `encrypted_content` unasked, which is why the gap was invisible there; OpenAI proper does not.
+ * A model config or a request may still override `include` (an explicit `include: []` opts out),
+ * because `mergeJsonRecords` lets the later value win.
+ */
 export const route = Route.make({
   id: ADAPTER,
   provider: "openai",
@@ -1035,7 +1050,9 @@ export const route = Route.make({
   endpoint,
   auth,
   transport: httpTransport,
-  defaults: { providerOptions: { openai: { store: false } } },
+  defaults: {
+    providerOptions: { openai: { store: false, include: ["reasoning.encrypted_content"] } },
+  },
 })
 
 export * as OpenAIResponses from "./openai-responses"

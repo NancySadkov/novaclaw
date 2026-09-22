@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { LLMError, ProviderErrorEvent } from "./schema"
+import { LLMError, ProviderErrorEvent, ReasoningEfforts, type ReasoningEffort } from "./schema"
 
 const patterns = [
   /prompt is too long/i,
@@ -167,6 +167,74 @@ const MODEL_MISSING =
 
 export const isModelMissing = (message: string): boolean => MODEL_MISSING.test(message)
 
+/**
+ * The endpoint refused a REASONING EFFORT value, and usually names the ones it does accept.
+ *
+ * 🔴 Measured 2026-09-22 against a hosted gateway serving `muse-spark-1.3-contributor`:
+ *
+ * ```
+ * HTTP 400 {"model":"muse-spark-1.3-contributor","error":{"param":"reasoning.effort",
+ *   "type":"invalid_request_error","message":"Upstream request failed: [invalid_request_error]
+ *   reasoning_effort 'none' is not supported for model 'muse-spark-1.3-contributor'.
+ *   Supported values: [minimal, low, medium, high, xhigh, max]"}}
+ * ```
+ *
+ * `ProviderDispatch.withoutReasoning` sends `"none"` to mean "answer without thinking"; every other
+ * endpoint we drive accepts it. On this one the enum starts at `minimal`, so a no-thinking
+ * compaction and a zero-budget turn both failed identically and forever.
+ *
+ * ⚠️ The offending PARAMETER is what makes this safe to detect — a bare `/not supported/` would fire
+ * on any refusal. Both the `reasoning_effort` field spelling and the `reasoning.effort` dotted path
+ * are matched, because the chat wire names the field and the responses wire names the path.
+ */
+const REASONING_EFFORT_PARAM = /reasoning[_ .]?effort/i
+const REASONING_EFFORT_REFUSAL = /not supported|unsupported|does not support|not valid|unrecognized/i
+
+export const isReasoningEffortUnsupported = (message: string): boolean =>
+  REASONING_EFFORT_PARAM.test(message) && REASONING_EFFORT_REFUSAL.test(message)
+
+/**
+ * The endpoint's own lower bound, read from the same body.
+ *
+ * ⭐ The values are IN the message, so the floor does not have to be guessed. First listed value
+ * wins: a refusal names its accepted set in ascending order, so the head is the least thinking the
+ * endpoint will do — which is the closest thing to "do not think" that it offers.
+ *
+ * Returns `"minimal"` when the refusal is real but its list is missing or unreadable: the value
+ * adjacent to `"none"` is always a legal lower bound, and sending it is strictly better than
+ * repeating a refusal. `undefined` means this is not a reasoning-effort refusal at all.
+ */
+// ⚠️ `\b` before `supported` is load-bearing. Without it the pattern also matches inside
+// "Unsupported value: 'none' …", which names the REJECTED value first — so the parser read the
+// refusal's own "none" back as the floor and learned nothing. `Unsupported` has no word boundary
+// before its `supported`, so the anchor is what keeps the two apart.
+const SUPPORTED_VALUES = /\bsupported values?\s*(?:are)?\s*:?\s*\[([^\]]+)\]/i
+const SUPPORTED_TRAILING = /\bsupported values?\s*(?:are)?\s*:?\s*(.+)$/i
+
+export const reasoningEffortFloorFrom = (message: string): ReasoningEffort | undefined => {
+  if (!isReasoningEffortUnsupported(message)) return undefined
+  const listed = SUPPORTED_VALUES.exec(message)?.[1] ?? SUPPORTED_TRAILING.exec(message)?.[1]
+  if (listed !== undefined) {
+    for (const token of listed.match(/[a-z]+/gi) ?? []) {
+      const value = token.toLowerCase()
+      if ((ReasoningEfforts as readonly string[]).includes(value)) return value as ReasoningEffort
+    }
+  }
+  return "minimal"
+}
+
+export const reasoningEffortFailure = (failure: unknown): ReasoningEffort | undefined => {
+  const classified =
+    failure instanceof LLMError
+      ? failure.reason._tag === "InvalidRequest" && failure.reason.classification === "reasoning-effort"
+        ? failure.reason.message
+        : undefined
+      : Schema.is(ProviderErrorEvent)(failure) && failure.classification === "reasoning-effort"
+        ? failure.message
+        : undefined
+  return classified === undefined ? undefined : reasoningEffortFloorFrom(classified)
+}
+
 export const mediaLimitFailure = (failure: unknown): number | undefined => {
   const classified =
     failure instanceof LLMError
@@ -193,6 +261,11 @@ export const isContextOverflowFailure = (failure: unknown) =>
  * it as an overflow would trigger COMPACTION, which summarises text and removes not one image.
  * The recovery that fits the fault is the budget, so the media test runs first.
  */
-export const classify = (message: string): "context-overflow" | "media-limit" | undefined =>
-  isMediaLimit(message) ? "media-limit" : isContextOverflow(message) ? "context-overflow" : undefined
-
+export const classify = (message: string): "context-overflow" | "media-limit" | "reasoning-effort" | undefined =>
+  isMediaLimit(message)
+    ? "media-limit"
+    : isReasoningEffortUnsupported(message)
+      ? "reasoning-effort"
+      : isContextOverflow(message)
+        ? "context-overflow"
+        : undefined

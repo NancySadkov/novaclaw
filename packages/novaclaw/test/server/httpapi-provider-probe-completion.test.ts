@@ -6,6 +6,7 @@ import {
   probeCompletion,
   probeCompletionLearningWire,
   probeCompletionWithAffinity,
+  probeReasoningEffortFloor,
 } from "../../src/server/routes/instance/httpapi/handlers/provider"
 
 const run = async (wire: "openai-chat" | "openai-responses" | "anthropic-messages", response: Response) => {
@@ -77,7 +78,11 @@ describe("provider completion probe", () => {
         headers: { "content-type": "application/json" },
       }),
     )
-    expect(result).toMatchObject({ kind: "failed", status: "error", detail: expect.stringContaining("response format") })
+    expect(result).toMatchObject({
+      kind: "failed",
+      status: "error",
+      detail: expect.stringContaining("response format"),
+    })
   })
 })
 
@@ -258,5 +263,79 @@ describe("provider completion probe — learning the model's wire", () => {
     expect(result.probe).toMatchObject({ kind: "failed", status: "error" })
     expect(result.wire).toBe("openai-chat")
     expect(seen).toHaveLength(3)
+  })
+})
+
+/**
+ * 🔴 `withoutReasoning` asks for "no thinking" with the neutral `"none"`; a gateway whose upstream
+ * enum starts at `minimal` refuses it, which dead-ends every compaction and every zero-budget turn.
+ * The Test asks the same question so the floor is learned before such a turn can fail on it.
+ */
+describe("provider reasoning-effort probe", () => {
+  /** The exact body the gateway returned, kept verbatim. */
+  const REFUSED = JSON.stringify({
+    model: "muse",
+    error: {
+      param: "reasoning.effort",
+      type: "invalid_request_error",
+      message:
+        "Upstream request failed: [invalid_request_error] reasoning_effort 'none' is not supported for model 'muse'. Supported values: [minimal, low, medium, high, xhigh, max]",
+    },
+  })
+
+  const run = async (wire: "openai-chat" | "openai-responses", response: Response) => {
+    const seen: string[] = []
+    const client = HttpClient.make((request) => {
+      seen.push(request.url)
+      return Effect.succeed(HttpClientResponse.fromWeb(request, response))
+    })
+    const floor = await Effect.runPromise(
+      probeReasoningEffortFloor(client, {
+        baseURL: "http://gateway.test/v1",
+        modelID: "muse",
+        wire,
+        headers: {},
+        timeoutMs: 1000,
+      }),
+    )
+    return { floor, seen }
+  }
+
+  test("learns the floor from the refusal on the wire the model is served on", async () => {
+    const { floor, seen } = await run("openai-responses", new Response(REFUSED, { status: 400 }))
+    expect(seen).toEqual(["http://gateway.test/v1/responses"])
+    expect(floor).toBe("minimal")
+  })
+
+  test("an endpoint that accepts 'none' teaches nothing", async () => {
+    const { floor } = await run(
+      "openai-responses",
+      new Response(JSON.stringify({ output: [] }), { status: 200, headers: { "content-type": "application/json" } }),
+    )
+    expect(floor).toBeUndefined()
+  })
+
+  test("a refusal about something else is not a floor", async () => {
+    const { floor } = await run("openai-chat", new Response('unknown field "repetition_penalty"', { status: 400 }))
+    expect(floor).toBeUndefined()
+  })
+
+  test("anthropic-messages has no effort parameter, so no request is made", async () => {
+    const seen: string[] = []
+    const client = HttpClient.make((request) => {
+      seen.push(request.url)
+      return Effect.succeed(HttpClientResponse.fromWeb(request, new Response("", { status: 400 })))
+    })
+    const floor = await Effect.runPromise(
+      probeReasoningEffortFloor(client, {
+        baseURL: "http://gateway.test/v1",
+        modelID: "muse",
+        wire: "anthropic-messages",
+        headers: {},
+        timeoutMs: 1000,
+      }),
+    )
+    expect(floor).toBeUndefined()
+    expect(seen).toEqual([])
   })
 })

@@ -36,11 +36,16 @@ const thinkingEnabled = (request: LLMRequest): boolean => {
  * this at `ReasoningBudget` would do the opposite of what the Tune control says. */
 export const withoutReasoning = (request: LLMRequest): LLMRequest => {
   const input = LLM.requestInput(request)
+  // The neutral "no thinking" value is `none`, but some endpoints draw the effort enum tighter and
+  // name their floor in the refusal (`provider-error.ts`). The resolver threads that learned floor
+  // onto compatibility, so a zero-budget turn or a compaction asks for the least THIS endpoint will
+  // accept instead of failing identically forever. Absent, `none` remains the answer.
+  const effort = request.model.compatibility?.reasoningEffortFloor ?? "none"
   return LLM.request({
     ...input,
     providerOptions: {
       ...(input.providerOptions ?? {}),
-      openai: { ...(input.providerOptions?.openai ?? {}), reasoningEffort: "none" },
+      openai: { ...(input.providerOptions?.openai ?? {}), reasoningEffort: effort },
       anthropic: { ...(input.providerOptions?.anthropic ?? {}), thinking: { type: "disabled" } },
       gemini: {
         ...(input.providerOptions?.gemini ?? {}),

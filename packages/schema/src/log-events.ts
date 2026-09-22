@@ -2110,6 +2110,25 @@ export const EVENTS = {
     file: "packages/core/src/session/runner/llm.ts",
   },
   /**
+   * The model refused the neutral no-thinking effort value and named its own floor, and we learned it.
+   *
+   * Measured 2026-09-22 on `muse-spark-1.3-contributor`: `withoutReasoning` asks with `"none"`, the
+   * upstream enum starts at `minimal`, and a zero-budget turn or a compaction failed identically and
+   * forever. This event is how a reader sees the model-scoped recovery happen rather than inferring
+   * it from a turn that took two provider attempts.
+   */
+  "session.reasoning.effort.learned": {
+    level: "info",
+    message: "model rejects reasoning effort 'none'; no-thinking requests now use its floor",
+    attributes: {
+      "session.id": "correlate",
+      "provider.model": "text",
+      "reasoning.effort": "text",
+    },
+    content: "user",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
+  /**
    * The per-turn request footprint — what the outgoing request costs, and which part of it grew.
    *
    * `debug`, deliberately: it fires on EVERY turn, so at `info` it would drown the log it is meant

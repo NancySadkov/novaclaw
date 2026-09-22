@@ -1,5 +1,5 @@
 import { Schema } from "effect"
-import { JsonSchema, ModelID, ProviderID } from "./ids"
+import { JsonSchema, ModelID, ProviderID, ReasoningEffort } from "./ids"
 import type { AnyRoute } from "../route/client"
 import { isRecord } from "../utils/record"
 
@@ -195,6 +195,21 @@ export class ModelCompatibility extends Schema.Class<ModelCompatibility>("LLM.Mo
    * endpoints leave it optional.
    */
   reasoningContent: Schema.optional(ModelReasoningContent),
+  /**
+   * The LOWEST reasoning effort this endpoint will accept, when we had to learn it.
+   *
+   * 🔴 Some endpoints draw the effort enum tighter than the provider-neutral one. A hosted gateway
+   * answered a no-thinking request with
+   * `reasoning_effort 'none' is not supported ... Supported values: [minimal, low, medium, high, xhigh, max]`
+   * (measured 2026-09-22 on `muse-spark-1.3-contributor`), where "none" is the value
+   * `ProviderDispatch.withoutReasoning` sends to mean "do not think". Absent, the neutral "none" is
+   * sent and the endpoint's refusal is what fills this in — see `provider-error.ts`.
+   *
+   * ⚠️ It is a COMPATIBILITY fact about the endpoint, not a preference: it belongs here beside
+   * `toolChannel`, and it is what makes a no-thinking compaction or a zero-budget turn work on a
+   * model whose floor is "minimal".
+   */
+  reasoningEffortFloor: Schema.optional(ReasoningEffort),
 }) {}
 
 export namespace ModelCompatibility {

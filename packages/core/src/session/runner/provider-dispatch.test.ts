@@ -162,6 +162,19 @@ describe("ProviderDispatch", () => {
     })
   })
 
+  test("a learned effort floor replaces the neutral 'none' a no-thinking request would send", () => {
+    // 🔴 The model refused "none" and named `minimal`; the resolver threads that onto compatibility
+    // (`model.ts`), and a zero-budget turn must then ask for the floor rather than repeat the refusal.
+    const model = Model.make({
+      id: "muse",
+      provider: "gateway",
+      route: OpenAIChat.route,
+      compatibility: { reasoningEffortFloor: "minimal" },
+    })
+    const request = ProviderDispatch.withoutReasoning(LLM.request({ model, messages: [Message.user("summarise")] }))
+    expect(request.providerOptions?.openai).toMatchObject({ reasoningEffort: "minimal" })
+  })
+
   test("normal and Strict turns consume all three shared dispatch stages", () => {
     for (const name of ["llm.ts", "strict-drain.ts"]) {
       const source = fs.readFileSync(path.join(import.meta.dir, name), "utf8")

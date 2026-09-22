@@ -61,6 +61,7 @@ describe("OpenAI Responses route", () => {
           { role: "user", content: [{ type: "input_text", text: "Say hello." }] },
         ],
         store: false,
+        include: ["reasoning.encrypted_content"],
         stream: true,
         max_output_tokens: 20,
         temperature: 0,
@@ -253,6 +254,7 @@ describe("OpenAI Responses route", () => {
           { type: "function_call_output", call_id: "call_1", output: '{"forecast":"sunny"}' },
         ],
         store: false,
+        include: ["reasoning.encrypted_content"],
         stream: true,
         max_output_tokens: undefined,
         temperature: undefined,
@@ -526,13 +528,16 @@ describe("OpenAI Responses route", () => {
     }),
   )
 
-  it.effect("omits include when no include is set", () =>
+  it.effect("🔴 asks for encrypted reasoning by default, because store:false needs it to replay", () =>
     Effect.gen(function* () {
+      // `store: false` is the route default, and without `include` a strict endpoint returns no
+      // `encrypted_content` — so `lowerMessages` drops every reasoning item on the next request.
+      // The two are one decision; this pins that the include half is set.
       const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
         LLM.request({ model, prompt: "hi", providerOptions: { openai: { store: false } } }),
       )
 
-      expect(prepared.body.include).toBeUndefined()
+      expect(prepared.body.include).toEqual(["reasoning.encrypted_content"])
     }),
   )
 

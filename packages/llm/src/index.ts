@@ -8,8 +8,11 @@ export {
   isContextOverflowFailure,
   isMediaLimit,
   isModelMissing,
+  isReasoningEffortUnsupported,
   mediaLimitFailure,
   promptTokensFrom,
+  reasoningEffortFailure,
+  reasoningEffortFloorFrom,
 } from "./provider-error"
 export type {
   RouteModelInput,

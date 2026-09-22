@@ -668,6 +668,31 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     }),
 
   /**
+   * The lowest reasoning effort each model accepts, keyed "providerID/modelID" — learned from the
+   * model's own 400 when it refuses the neutral `"none"`.
+   *
+   * 🔴 `ProviderDispatch.withoutReasoning` means "answer without thinking" with `"none"`, and every
+   * other endpoint accepts it. One gateway's upstream starts at `minimal`
+   * (`reasoning_effort 'none' is not supported ... Supported values: [minimal, low, medium, high,
+   * xhigh, max]`, measured 2026-09-22), so a no-thinking compaction and a zero-budget turn failed
+   * identically and forever. Persisted like `provider_media_limit`: a fresh worker starts warm.
+   *
+   * ⚠️ A LEARNED value, never a guess. Absent means "not known yet" and the neutral `"none"` is
+   * sent; deleting the row re-learns on the next refusal.
+   */
+  provider_reasoning_effort: Schema.Record(
+    Schema.String,
+    Schema.Literals(["none", "minimal", "low", "medium", "high", "xhigh", "max"]),
+  )
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        'The lowest reasoning effort each model accepts, keyed "providerID/modelID" — e.g. ' +
+        '{"gateway/muse-spark-1.3-contributor":"minimal"}. Learned from the model\'s own 400; absent ' +
+        'means the neutral "none" is sent.',
+    }),
+
+  /**
    * Bounded measurements for one exact provider wire route. The key is a serialized tuple of
    * provider, wire-model, endpoint, route and protocol, so two servers sharing one scheduler Device
    * never share tokenizer evidence. Machine-written observations remain visible and repairable
@@ -897,4 +922,3 @@ export const node = makeLocationNode({
   layer,
   deps: [FSUtil.node, Global.node, Location.node, Policy.node, SettingsConfigStore.node],
 })
-

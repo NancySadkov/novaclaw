@@ -15,7 +15,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { Duration, Effect, Layer, Schema } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { HttpBody, HttpClient, HttpClientError, HttpClientRequest } from "effect/unstable/http"
-import { isEgressBlocked } from "@novaclaw/llm"
+import { isEgressBlocked, reasoningEffortFloorFrom, type ReasoningEffort } from "@novaclaw/llm"
 import { InstanceHttpApi } from "../api"
 import type { ProbePayload } from "../groups/provider"
 import { ConfigProviderPreset } from "@novaclaw/core/config/provider-preset"
@@ -497,7 +497,11 @@ export const probeCompletion = (
 ): Effect.Effect<CompletionProbe> => {
   const timeoutMs = input.timeoutMs ?? ConfigProviderConnection.DEFAULT_COMPLETION_TIMEOUT_MS
   const path =
-    input.wire === "anthropic-messages" ? "messages" : input.wire === "openai-responses" ? "responses" : "chat/completions"
+    input.wire === "anthropic-messages"
+      ? "messages"
+      : input.wire === "openai-responses"
+        ? "responses"
+        : "chat/completions"
   const url = `${input.baseURL.replace(/\/+$/, "")}/${path}`
   const body =
     input.wire === "anthropic-messages"
@@ -554,7 +558,9 @@ export const probeCompletion = (
                 ? typeof value === "object" && value !== null && Array.isArray((value as { content?: unknown }).content)
                 : input.wire === "openai-responses"
                   ? typeof value === "object" && value !== null && Array.isArray((value as { output?: unknown }).output)
-                  : typeof value === "object" && value !== null && Array.isArray((value as { choices?: unknown }).choices)
+                  : typeof value === "object" &&
+                    value !== null &&
+                    Array.isArray((value as { choices?: unknown }).choices)
             return valid
               ? { kind: "ok", latencyMs }
               : {
@@ -730,6 +736,79 @@ export const probeCompletionLearningWire = (
     }
     return { probe: first.probe, attempts, latencyMs, wire: input.wire }
   })
+
+/**
+ * Ask the endpoint for a NO-THINKING completion and learn the effort floor from its refusal.
+ *
+ * 🔴 The runtime asks for "no thinking" with the provider-neutral `"none"`
+ * (`ProviderDispatch.withoutReasoning`), and a gateway whose upstream enum starts at `minimal`
+ * answers `reasoning_effort 'none' is not supported ... Supported values: [minimal, low, medium,
+ * high, xhigh, max]` (measured 2026-09-22 on `muse-spark-1.3-contributor`). The runner learns that
+ * from a failed turn; this asks the SAME question at Test time, so the configuration adapts before
+ * the first compaction or zero-budget turn can fail on it.
+ *
+ * Returns the floor the endpoint named — `undefined` when it accepted `"none"` or answered neither
+ * way. Never throws and never reports a fault: a probe is allowed to learn nothing, and a model
+ * without an effort parameter simply has no floor to find.
+ */
+export const probeReasoningEffortFloor = (
+  client: HttpClient.HttpClient,
+  input: {
+    baseURL: string
+    modelID: string
+    wire: ProbeWire
+    headers: Record<string, string>
+    timeoutMs?: number
+  },
+): Effect.Effect<ReasoningEffort | undefined> => {
+  const path =
+    input.wire === "anthropic-messages"
+      ? "messages"
+      : input.wire === "openai-responses"
+        ? "responses"
+        : "chat/completions"
+  const url = `${input.baseURL.replace(/\/+$/, "")}/${path}`
+  const body =
+    input.wire === "openai-responses"
+      ? {
+          model: input.modelID,
+          input: [{ role: "user", content: [{ type: "input_text", text: "Reply OK" }] }],
+          reasoning: { effort: "none" },
+          max_output_tokens: 16,
+          stream: false,
+        }
+      : input.wire === "openai-chat"
+        ? {
+            model: input.modelID,
+            messages: [{ role: "user", content: "Reply OK" }],
+            reasoning_effort: "none",
+            max_tokens: 1,
+            temperature: 0,
+            stream: false,
+          }
+        : // anthropic-messages has no effort parameter to refuse; nothing to learn from it.
+          undefined
+  if (body === undefined) return Effect.succeed(undefined)
+  return client
+    .execute(
+      HttpClientRequest.post(url, {
+        headers: new Headers({ ...input.headers, "content-type": "application/json" }),
+        body: HttpBody.jsonUnsafe(body),
+      }),
+    )
+    .pipe(
+      Effect.flatMap((response) =>
+        response.status >= 200 && response.status < 300
+          ? Effect.succeed<ReasoningEffort | undefined>(undefined)
+          : response.text.pipe(Effect.map((text) => reasoningEffortFloorFrom(text))),
+      ),
+      Effect.orElseSucceed(() => undefined),
+      Effect.timeoutOrElse({
+        duration: Duration.millis(input.timeoutMs ?? ConfigProviderConnection.DEFAULT_COMPLETION_TIMEOUT_MS),
+        orElse: () => Effect.succeed(undefined),
+      }),
+    )
+}
 
 /** Context-window spellings emitted by the OpenAI-compatible servers we support. */
 export function modelContextWindow(model: Record<string, unknown>): number | undefined {
@@ -933,8 +1012,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       const latencyMs = Date.now() - started
       // Every non-`ok` arm already carries the status the wire schema will show, including the
       // airgap refusal — which is `error` + an airgap-shaped detail, deliberately NOT `unreachable`.
-      if (transport.kind !== "ok")
-        return { status: transport.status, latencyMs, baseURL, detail: transport.detail }
+      if (transport.kind !== "ok") return { status: transport.status, latencyMs, baseURL, detail: transport.detail }
       const body = transport.body
       const data =
         typeof body === "object" && body !== null && Array.isArray((body as { data?: unknown }).data)
@@ -959,6 +1037,8 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       // when it refused the configured wire. Capabilities and the stored fingerprint both follow it.
       let effectiveWire = wire
       let learnedPackage: ConfigProviderPreset.ApiChannel | undefined
+      // The no-thinking floor this endpoint named, when it refused the neutral "none".
+      let learnedEffort: ReasoningEffort | undefined
       if (ctx.payload.modelID) {
         const wireModelID = ModelV2.ID.make(savedModel?.api?.id ?? ctx.payload.modelID)
         const completion = yield* probeCompletionLearningWire(http, {
@@ -1016,6 +1096,32 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
                 }
               : {}),
           }
+        // The endpoint answered a plain completion. Now ask the SAME no-thinking question the runner
+        // will ask on a zero-budget turn or a compaction, and learn the floor from the refusal
+        // before such a turn can fail on it. Only a SAVED model has a row to carry the answer.
+        if (ctx.payload.baseURL === undefined) {
+          const affinity = yield* ProviderSession.storedAffinityHeader(settings, baseURL)
+          const modelKey = ModelV2.ID.make(savedModel?.api?.id ?? ctx.payload.modelID)
+          const floor = yield* probeReasoningEffortFloor(http, {
+            baseURL,
+            modelID: modelKey,
+            wire: effectiveWire,
+            headers: {
+              ...authHeaders,
+              ...(ProviderSession.headersFor({ header: affinity, sessionID: undefined }) ?? {}),
+            },
+            timeoutMs: ConfigProviderConnection.completionTimeoutMs(connection),
+          })
+          if (floor !== undefined) {
+            const all: Record<string, unknown> = yield* settings.all().pipe(Effect.orElseSucceed(() => ({})))
+            const current = all["provider_reasoning_effort"]
+            const rows = typeof current === "object" && current !== null ? (current as Record<string, unknown>) : {}
+            yield* settings
+              .set("provider_reasoning_effort", { ...rows, [`${ctx.params.providerID}/${ctx.payload.modelID}`]: floor })
+              .pipe(Effect.ignore)
+            learnedEffort = floor
+          }
+        }
       }
       // CAPABILITY NEGOTIATION, only when asked and only once a plain completion has come back:
       // every rung generates, so without chat there is nothing to read and asking would measure the
@@ -1080,6 +1186,9 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
         ProbeWindow.remember(ctx.params.providerID, ctx.payload.modelID, window)
       const detail = [
         learnedPackage === undefined ? undefined : `Switched this model's API to ${learnedPackage}.`,
+        learnedEffort === undefined
+          ? undefined
+          : `No-thinking requests will use reasoning effort "${learnedEffort}" — this endpoint rejects "none".`,
         configuredIDUnlisted
           ? `Generation succeeded with configured id "${ctx.payload.modelID}", although /models advertises ${models.length ? models.map((id) => `"${id}"`).join(", ") : "no model ids"}. The server is accepting an alias.`
           : undefined,
