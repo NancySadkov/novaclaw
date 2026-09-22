@@ -34,7 +34,11 @@ function fixture(options: { creation?: "throw" | "empty"; removeError?: boolean;
 
 test("clearing removes the viewed archived chat and every live root before opening its replacement", async () => {
   const operation = fixture()
-  expect(await operation.run()).toBe("fresh")
+  const cleared = await operation.run()
+  // The removed ids are RETURNED so the caller can retire them client-side; relying on the
+  // asynchronous `session.deleted` event is what left a ghost tab after a Clear (2026-09-22).
+  expect(cleared?.successor).toBe("fresh")
+  expect([...(cleared?.removed ?? [])].sort()).toEqual(["live", "old"])
   expect(operation.calls.slice(0, -1).sort()).toEqual(["remove:live", "remove:old"])
   expect(operation.calls.at(-1)).toBe("create:theron")
 })

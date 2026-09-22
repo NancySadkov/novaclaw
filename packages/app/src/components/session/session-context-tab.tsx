@@ -30,6 +30,7 @@ import { sessionCompactionEvents } from "./session-compaction-events"
 import { showToast } from "@/utils/toast"
 import { useConfirm } from "@/components/dialog-confirm"
 import { tabHref, useTabs } from "@/context/tabs"
+import { forgetGoneSession } from "@/context/session-gone"
 import { clearOfficerChat } from "./session-clear-chat"
 
 const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
@@ -303,21 +304,37 @@ export function SessionContextTab() {
         }))
       )
         return
-      const successor = await clearOfficerChat({
+      /**
+       * 🔴 **A cleared chat is RETIRED, not merely deleted.**
+       *
+       * Reported live 2026-09-22: Clear Chat removed `ses_daedalus` server-side, the removal's
+       * `session.deleted` event was never observed (the sidecar restarted under this renderer), and
+       * the tab stayed pinned to the destroyed id — every send then answered *"Failed to send prompt
+       * — Session not found: ses_daedalus"*. The retirement used to be left to that event alone.
+       *
+       * Now the ids the clear just removed are dropped through the ONE policy: the cached record goes
+       * (so the route cannot keep rendering the deleted chat) and the tab closes. `addSessionTab`
+       * below then re-points the colleague's tab at the successor — or opens it — so the strip can
+       * never keep pointing at a chat this gesture just destroyed.
+       */
+      const cleared = await clearOfficerChat({
         client,
         agentID,
         name,
         pathname,
         onReplacementFailed: (sessionIDs) => {
-          for (const id of sessionIDs) tabs.closeSessionTab(key, id)
+          for (const id of sessionIDs)
+            forgetGoneSession({ session: serverSync().session, tabs, server: key, sessionID: id })
           if (server.key === key && params.id === sessionID) navigate("/")
         },
       })
-      if (successor === undefined) {
+      if (cleared === undefined) {
         showToast({ variant: "default", title: language.t("agentConfig.clearNothing") })
         return
       }
-      const tab = tabs.addSessionTab({ server: key, sessionId: successor, agent: agentID })
+      for (const id of cleared.removed)
+        forgetGoneSession({ session: serverSync().session, tabs, server: key, sessionID: id })
+      const tab = tabs.addSessionTab({ server: key, sessionId: cleared.successor, agent: agentID })
       if (server.key === key && params.id === sessionID) navigate(tabHref(tab))
     } catch (error) {
       showToast({ variant: "error", title: language.t("agentConfig.clearFailed"), description: String(error) })
