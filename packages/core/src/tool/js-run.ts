@@ -1,5 +1,6 @@
 import spawn from "cross-spawn"
 import type { ChildProcess } from "node:child_process"
+import { OwnedProcesses } from "../util/owned-processes"
 // We need decimal.js as SOURCE TEXT, not as a module: it is evaluated INSIDE the sandbox realm so
 // the snippet's `Decimal` is a guest-realm object. Importing it normally and injecting the resulting
 // host class is exactly the hole this module was rewritten to close — see the header below.
@@ -352,12 +353,14 @@ const probeRuntime = (command: string, env: Record<string, string>): Promise<boo
     }
     if (spawned === undefined) return resolve(false)
     const child = spawned
+    const releaseOwned = OwnedProcesses.register(child)
     let out = ""
     let settled = false
     const finish = (ok: boolean) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      releaseOwned()
       resolve(ok)
     }
     const timer = setTimeout(() => {
@@ -439,6 +442,7 @@ export async function runJs(code: string, opts?: JsRunOptions): Promise<JsRun> {
     let stderr = ""
     let settled = false
     let killedForTimeout = false
+    const releaseOwned = OwnedProcesses.register(child)
 
     const kill = () => {
       try {
@@ -449,6 +453,7 @@ export async function runJs(code: string, opts?: JsRunOptions): Promise<JsRun> {
       if (settled) return
       settled = true
       clearTimeout(hardTimer)
+      releaseOwned()
       opts?.signal?.removeEventListener("abort", onAbort)
       resolve(run)
     }

@@ -195,9 +195,11 @@ const COLLAPSED: ReadonlyArray<readonly [string, RegExp]> = [
   ["packages/core/src/cross-spawn-spawner.ts", /\bkillTree(?:Sync)?\(/],
   ["packages/core/src/jh/process-runner.ts", /\bkillTree\(/],
   ["packages/core/src/pty.ts", /\bkillTreeSync\(/],
+  ["packages/core/src/util/owned-processes.ts", /\bkillTree(?:Sync)?\(/],
   ["packages/novaclaw/src/util/process.ts", /\bShell\.killTree\(/],
   ["packages/novaclaw/src/cli/cmd/serve.ts", /\bkillTreeSync\(/],
   ["packages/app/scripts/dev-with-backend.ts", /\bkillTreeSync\(/],
+  ["packages/desktop/src/main/server.ts", /\bkillTreeSync\(/],
 ]
 
 describe("the sweep", () => {

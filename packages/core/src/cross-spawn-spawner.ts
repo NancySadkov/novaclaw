@@ -29,6 +29,7 @@ import { filesystem, path } from "./effect/app-node-platform"
 // THE one tree-kill (re-exported as `Shell.killTree`). The leaf spelling is used here rather than
 // `./shell` so this spawner keeps its current, minimal reach.
 import { killTree, killTreeSync } from "./util/kill-tree"
+import { OwnedProcesses } from "./util/owned-processes"
 
 const toError = (err: unknown): Error => (err instanceof globalThis.Error ? err : new globalThis.Error(String(err)))
 
@@ -302,9 +303,11 @@ export const make = Effect.gen(function* () {
         // emitting 'exit', and teardown must not wait forever for that one either.
         const exited = Deferred.makeUnsafe<readonly [code: number | null, signal: NodeJS.Signals | null]>()
         const proc = launch(command.command, command.args, opts)
+        const releaseOwned = OwnedProcesses.register(proc)
         let end = false
         let exit: readonly [code: number | null, signal: NodeJS.Signals | null] | undefined
         proc.on("error", (err) => {
+          releaseOwned()
           resume(Effect.fail(toPlatformError("spawn", err, command)))
         })
         proc.on("exit", (...args) => {
@@ -313,6 +316,7 @@ export const make = Effect.gen(function* () {
         })
         proc.on("close", (...args) => {
           Deferred.doneUnsafe(exited, Exit.succeed(exit ?? args))
+          releaseOwned()
           if (end) return
           end = true
           Deferred.doneUnsafe(signal, Exit.succeed(exit ?? args))
@@ -324,6 +328,7 @@ export const make = Effect.gen(function* () {
           // Interrupted before `spawn` fired, so `acquireRelease` never acquired and this is the ONLY
           // teardown this child will get — it must reach the whole tree, not just the root. A sync
           // context cannot await, hence the sync twin (no SIGTERM grace on POSIX; see kill-tree.ts).
+          releaseOwned()
           killTreeSync(proc)
         })
       },

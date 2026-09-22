@@ -54,6 +54,7 @@ type Listener = {
 
 type ServerModule = {
   configureServerLaunchCredential(input: { readonly password?: string; readonly username?: string }): void
+  killOwnedProcesses(): Promise<void>
   Server: {
     listen(options: {
       port: number
@@ -69,6 +70,7 @@ type ServerModule = {
 
 const parentPort = getParentPort()
 let listener: Listener | undefined
+let killOwnedProcesses: (() => Promise<void>) | undefined
 
 parentPort.on("message", (event) => {
   const command = parseCommand(event.data)
@@ -100,10 +102,14 @@ async function start(command: StartCommand) {
       join(dirname(fileURLToPath(import.meta.url)), "server-runtime", "novaclaw-server.js"),
     ).href
     const beforeImport = performance.now()
-    const { Server, configureServerLaunchCredential } = (await import(/* @vite-ignore */ serverURL)) as ServerModule
+    const { Server, configureServerLaunchCredential, killOwnedProcesses: sweep } = (await import(
+      /* @vite-ignore */ serverURL
+    )) as ServerModule
     // The server runtime is a separate bundle with its own module singletons. Apply the credential
     // through that bundle's exported seam; setting a lookalike holder in this wrapper leaves it open.
     configureServerLaunchCredential({ password: command.password, username: command.username })
+    // The owned-process registry lives in that bundle too — a second copy here would sweep nothing.
+    killOwnedProcesses = sweep
 
     const beforeListen = performance.now()
     listener = await Server.listen({
@@ -141,6 +147,11 @@ async function start(command: StartCommand) {
 
 async function stop() {
   try {
+    // Reap the agent-launched OS processes this server owns (bash jobs, terminals, js sandboxes, the
+    // DHT sidecar) BEFORE the listener goes down. The parent's tree-kill only reaches what is still
+    // a descendant at that instant, and on Windows the requested stop is the one path that lets this
+    // process run its own cleanup instead of being terminated outright.
+    await killOwnedProcesses?.().catch((error) => console.error("[novaclaw] owned process sweep failed:", error))
     await listener?.stop()
   } finally {
     listener = undefined

@@ -6,6 +6,7 @@ import type { Details } from "electron"
 import { pollUntilHealthy } from "./health-poll"
 import { getLogger } from "./logging"
 import { getUserShell, loadShellEnv } from "./shell-env"
+import { killTreeSync } from "@novaclaw/core/util/kill-tree"
 import { getStore } from "./store"
 import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
 import {
@@ -270,6 +271,20 @@ export async function spawnLocalServer(
 
   let stopping: Promise<void> | undefined
 
+  // The sidecar owns agent commands of its own (bash jobs, terminals, js sandboxes). Killing only
+  // the sidecar root strands them — on Windows the stop is a TerminateProcess no exit hook survives,
+  // and a sidecar that already exited on POSIX reparents them past any later lookup. The tree kill
+  // reaches them while the parent map still names them. A child with no pid has no tree address, so
+  // the root kill is the only lever there.
+  const stopSidecarTree = () => {
+    if (exited) return
+    if (child.pid === undefined) {
+      child.kill()
+      return
+    }
+    killTreeSync(child.pid, { exited: () => exited })
+  }
+
   return {
     listener: {
       stop: () => {
@@ -277,7 +292,7 @@ export async function spawnLocalServer(
         if (stopping) return stopping
         if (exited) return Promise.resolve()
         const timer = setTimeout(() => {
-          if (!exited) child.kill()
+          stopSidecarTree()
         }, SIDECAR_STOP_TIMEOUT)
         stopping = exit.promise.then(() => undefined).finally(() => clearTimeout(timer))
         child.postMessage({ type: "stop" })
@@ -287,7 +302,7 @@ export async function spawnLocalServer(
       // loop has stopped answering. The supervisor observes the resulting exit and respawns it.
       terminate: () => {
         abandonPoll()
-        if (!exited) child.kill()
+        stopSidecarTree()
       },
     },
     health: { wait },

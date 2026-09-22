@@ -29,6 +29,10 @@ function violationFor(filename: string, spec: string): string | undefined {
   // precisely BECAUSE of this rule: `../shell` re-exports the same function but drags Flag/FSUtil/
   // ShellBundle/Global behind it, and jh must not reach those. Do NOT relax this to "../shell".
   if (spec === "../util/kill-tree") return undefined
+  // Owned-process registry over the kill above: `src/util/owned-processes.ts` imports only
+  // `../util/kill-tree` and nothing else, so it carries the same zero reach. `process-runner.ts`
+  // registers its child so a server shutdown reaps agent commands instead of stranding them.
+  if (spec === "../util/owned-processes") return undefined
   // The workspace-render budget (2026-09-02) needs a token estimate to size the render against
   // `limits.context`. `src/util/token.ts` imports NOTHING AT ALL — a pure estimator over a string —
   // so it carries no session/tool/config/v1/llm/schema reach, which is what §0.7.2 actually guards.

@@ -20,6 +20,7 @@ import { Effect } from "effect"
 import { spawn } from "node:child_process"
 import type { ChildProcess } from "node:child_process"
 import { killTree } from "../util/kill-tree"
+import { OwnedProcesses } from "../util/owned-processes"
 
 export interface RunResult {
   readonly exitCode: number | undefined
@@ -84,10 +85,12 @@ function runOnce(
       done = true
       if (killTimer) clearTimeout(killTimer)
       if (giveUp) clearTimeout(giveUp)
+      releaseOwned()
       resolve(r)
     }
 
     let child: ChildProcess
+    let releaseOwned: () => void = () => undefined
     try {
       const base = {
         cwd: input.cwd,
@@ -101,6 +104,7 @@ function runOnce(
         plan.file !== undefined
           ? spawn(plan.file, [...(plan.args ?? [])], base)
           : spawn(plan.command ?? input.command, [], { ...base, shell: plan.shell ?? defaultShell() })
+      releaseOwned = OwnedProcesses.register(child)
     } catch (e) {
       finish({ exitCode: undefined, output: messageOf(e), timedOut: false })
       return

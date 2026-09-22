@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url"
 import { Context, Effect, Layer, Semaphore } from "effect"
 import { CommunityConsent } from "./consent"
 import { makeGlobalNode } from "../effect/app-node"
+import { OwnedProcesses } from "../util/owned-processes"
 
 /**
  * Community — finding instances through a public Kademlia DHT (`AGENTS.md`, "we run NOTHING").
@@ -548,11 +549,15 @@ const startNode = (binary: string, bootstrap?: ReadonlyArray<string>): Node | un
         ? process.env
         : { ...process.env, NOVACLAW_DHT_BOOTSTRAP: bootstrap.join(" ") }
     const child = spawn(binary, [], { stdio: ["pipe", "pipe", "ignore"], env })
+    const releaseOwned = OwnedProcesses.register(child)
     const state = { buffer: "" }
     let onLine: ((line: string) => void) | undefined
     let onExit: (() => void) | undefined
     child.on("error", () => onExit?.())
-    child.on("close", () => onExit?.())
+    child.on("close", () => {
+      releaseOwned()
+      onExit?.()
+    })
     /**
      * 🔴 **Writing to a dead child raises `EPIPE` on the STREAM, and an unhandled stream error kills
      * the whole process** (review 1.7, unit 5 F2). Reproduced against a stub that answers one
@@ -593,6 +598,7 @@ const startNode = (binary: string, bootstrap?: ReadonlyArray<string>): Node | un
         onExit = handler
       },
       stop: () => {
+        releaseOwned()
         child.stdin.end()
         child.kill()
       },

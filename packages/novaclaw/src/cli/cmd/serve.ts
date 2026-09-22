@@ -11,6 +11,7 @@ import { killTreeSync } from "@novaclaw/core/util/kill-tree"
 import { CommandSpec } from "../command-spec"
 import { ServeChildCommand } from "../serve-child-command"
 import { Shutdown } from "@novaclaw/core/shutdown"
+import { OwnedProcesses } from "@novaclaw/core/util/owned-processes"
 import { disposeAllInstances } from "@/project/instance-runtime"
 
 /** What a person will wait for a quit. Long enough for a database flush, short enough to feel
@@ -242,6 +243,13 @@ export const ServeCommand = effectCmd({
      *
      * ⚠️ The deadline is a promise about TOTAL wait, so it covers both tasks together rather than
      * each. A quit that takes twice as long as advertised is the reason people reach for kill -9.
+     *
+     * The `commands` task reaps every agent-launched OS process still registered as owned (bash jobs,
+     * terminals, js sandboxes, the DHT sidecar) through the ONE tree-kill. Instance disposal already
+     * releases the location scopes those children belong to, but a scope release only reaches a live
+     * root — and nothing else on this path names the raw children at all. Without this a server quit
+     * strands running commands as strays. It runs FIRST so the trees get the full deadline, and a
+     * listener replacement never passes through here — only a real shutdown does.
      */
     let settling = false
     const settle = (signal: string) => {
@@ -250,6 +258,7 @@ export const ServeCommand = effectCmd({
       void Effect.runPromise(
         Shutdown.settleAll(
           [
+            { name: "commands", settle: Effect.promise(() => OwnedProcesses.killAll()) },
             { name: "http", settle: Effect.promise(() => server.stop(true)) },
             { name: "instances", settle: Effect.promise(() => disposeAllInstances()) },
           ],
