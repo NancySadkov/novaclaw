@@ -13,6 +13,7 @@ import type {
   OutboundFile,
 } from "../driver"
 import { ConnectError, FileError, ModerationError, SendError } from "../driver"
+import { makeBoundedInboundQueue } from "./inbound-queue"
 
 // The Telegram BOT-API driver (messenger-plan §2.1): raw HTTPS/JSON, zero dependencies — the
 // fakeable Telegram protocol that proves the whole gateway pipeline + the `key` auth path.
@@ -286,7 +287,7 @@ export const make = (fetchImpl: FetchLike): Driver => ({
 
       // The long-poll loop: getUpdates(offset) → emit → advance the durable offset. The stream is
       // scoped; closing it ends the loop. Failures propagate to the gateway's backoff.
-      const queue = yield* Queue.unbounded<InboundEvent, ConnectError>()
+      const queue = yield* makeBoundedInboundQueue<InboundEvent, ConnectError>()
       const stored = yield* ctx.cursor.get().pipe(Effect.orElseSucceed(() => undefined))
       let offset = typeof stored === "number" ? stored : 0
 

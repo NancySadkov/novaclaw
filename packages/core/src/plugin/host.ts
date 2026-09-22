@@ -25,9 +25,7 @@ const mutable = <T>(value: T) => value as DeepMutable<T>
 /**
  * Per-subscription delivery buffer, in events.
  *
- * Back-pressure is not optional here: every typed PubSub in `EventV2` is `PubSub.unbounded`,
- * so an unbounded plugin subscription is a memory leak with a slow handler in it. This is the
- * same bound the HTTP event subscriber already uses (`packages/server/src/handlers/event.ts`,
+ * This is the same bound the HTTP event subscriber already uses (`packages/server/src/handlers/event.ts`,
  * `subscriberCapacity = 256`) and the shape of `EventV2.allBounded` — a `Queue.dropping`
  * installed at the publish seam.
  *

@@ -16,6 +16,7 @@ import type {
   OutboundMessage,
 } from "../driver"
 import { ChallengeError, ConnectError, LoginCodeError, ModerationError, SendError } from "../driver"
+import { makeBoundedInboundQueue } from "./inbound-queue"
 import type { LoopbackFactory } from "../oauth-loopback"
 import { InstallationVersion } from "../../installation/version"
 
@@ -592,7 +593,7 @@ export const make = (
         )
       const selfName = str((meResponse.body as Record<string, unknown> | undefined)?.["name"]) ?? config.username
 
-      const queue = yield* Queue.unbounded<InboundEvent, ConnectError>()
+      const queue = yield* makeBoundedInboundQueue<InboundEvent, ConnectError>()
       let cursors = readCursor(yield* ctx.cursor.get().pipe(Effect.orElseSucceed(() => undefined)))
 
       const children = (body: unknown): Thing[] => {

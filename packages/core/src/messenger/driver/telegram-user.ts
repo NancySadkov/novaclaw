@@ -15,6 +15,7 @@ import type {
   OutboundFile,
 } from "../driver"
 import { ChallengeError, ConnectError, FileError, LoginCodeError, SendError, withAbortSignal } from "../driver"
+import { makeBoundedInboundQueue } from "./inbound-queue"
 
 // The Telegram USER-ACCOUNT driver (messenger-plan §0.2 + §2.2 owner decision): the agent logs
 // into the user's OWN Telegram account (MTProto) and acts as them while they're AFK — the lay
@@ -323,7 +324,7 @@ export const make = (factory: UserClientFactory): Driver => {
         const me = yield* tryClient(() => client.me())
         const sent = sentTracker(512)
 
-        const queue = yield* Queue.unbounded<InboundEvent, ConnectError>()
+        const queue = yield* makeBoundedInboundQueue<InboundEvent, ConnectError>()
         const pump = Effect.gen(function* () {
           while (true) {
             const batch = yield* tryClient(() => client.pull())

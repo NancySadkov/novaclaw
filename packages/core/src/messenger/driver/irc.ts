@@ -6,6 +6,7 @@ import type { Messenger } from "@novaclaw/schema/messenger"
 import { MessengerWire } from "../wire"
 import type { ChatSnapshot, Connection, ConnectContext, Driver, InboundEvent } from "../driver"
 import { ConnectError, SendError, withAbortSignal } from "../driver"
+import { makeBoundedInboundQueue } from "./inbound-queue"
 
 // The IRC driver (messenger-plan §2.1) — the contract's DEGRADATION FLOOR: no files, no edits,
 // no message ids from the platform (we DERIVE them — see `messageIDOf`), no chat enumeration (join-by-name; the
@@ -282,7 +283,7 @@ export const make = (factory: IrcSocketFactory): Driver => ({
       const user = nick.replaceAll(/[^A-Za-z0-9]/g, "").slice(0, 10) || "novaclaw"
       yield* sendCommand("USER", [user, "0", "*"], "NovaClaw")
 
-      const queue = yield* Queue.unbounded<InboundEvent, ConnectError>()
+      const queue = yield* makeBoundedInboundQueue<InboundEvent, ConnectError>()
       // The same-millisecond de-collider for `messageIDOf`'s derived arm (its doc comment carries
       // the why). Two byte-identical messages from one sender inside one millisecond derive one
       // id, and the gateway's ledger would read the second as a replay and drop it — a silent

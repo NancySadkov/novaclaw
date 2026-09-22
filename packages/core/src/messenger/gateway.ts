@@ -2,7 +2,7 @@ export * as MessengerGateway from "./gateway"
 
 import fs from "node:fs/promises"
 import path from "node:path"
-import { Clock, Context, Duration, Effect, Fiber, FiberSet, Layer, Semaphore, Stream } from "effect"
+import { Cause, Clock, Context, Duration, Effect, Fiber, FiberSet, Layer, Semaphore, Stream } from "effect"
 import { Messenger } from "@novaclaw/schema/messenger"
 import type { FileAttachment, Origin as PromptOrigin } from "@novaclaw/schema/prompt"
 import { Session } from "@novaclaw/schema/session"
@@ -1939,11 +1939,25 @@ const build = (options: Options) =>
     // long-polls on one account, edge #16 self-inflicted). If this line ever logs twice in one
     // serve, the layer graph regressed into building a second instance.
     yield* Log.event("messenger.gateway.start", {})
-    yield* Effect.forkScoped(relay.pipe(Effect.catchCause(() => Effect.void)))
-    yield* Effect.forkScoped(dispatchCompleted.pipe(Effect.catchCause(() => Effect.void)))
-    yield* Effect.forkScoped(dispatchNotices.pipe(Effect.catchCause(() => Effect.void)))
-    // `EventV2.subscribe` acquires its PubSub subscription when the stream fiber starts, not when
-    // the stream value is constructed. Let all three fibers reach that acquisition before this
+    const supervise = (eventType: string, consume: Effect.Effect<void, unknown>) =>
+      Effect.forever(
+        consume.pipe(
+          Effect.catchCauseIf(
+            (cause) => !Cause.hasInterrupts(cause),
+            (cause) =>
+              Log.event("messenger.event.subscription.restarted", {
+                "messenger.event": eventType,
+                "messenger.failure": Log.fault(cause),
+              }),
+          ),
+          Effect.andThen(Effect.sleep("1 second")),
+        ),
+      )
+    yield* Effect.forkScoped(supervise(SessionEvent.Text.Ended.type, relay))
+    yield* Effect.forkScoped(supervise(SessionEvent.Completed.type, dispatchCompleted))
+    yield* Effect.forkScoped(supervise(SessionEvent.Synthetic.type, dispatchNotices))
+    // `EventV2.subscribe` installs its bounded listener when the stream fiber starts, not when the
+    // stream value is constructed. Let all three fibers reach that acquisition before this
     // layer reports itself ready; otherwise an event published immediately after boot can land in
     // the gap and disappear (the direct-session relay is the shortest reproducer).
     yield* Effect.yieldNow

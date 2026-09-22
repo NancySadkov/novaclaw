@@ -310,4 +310,20 @@ describe("the adapter's push→pull inbox", () => {
       expect(error instanceof TelegramUserDriver.UserClientError && error.failure.kind).toBe("challenge")
     }),
   )
+
+  it.live("caps callback backlog and reports overflow after preserving the buffered messages", () =>
+    Effect.gen(function* () {
+      const inbox = TelegramUserMtcute.messageInbox()
+      for (let index = 0; index < 257; index++) inbox.push(inboundMessage("1", String(index)))
+
+      const buffered = yield* settled(inbox.pull())
+      expect(buffered).toHaveLength(256)
+      expect(buffered[0]?.messageID).toBe("0")
+      expect(buffered[255]?.messageID).toBe("255")
+      expect(String(yield* failure(inbox.pull()))).toContain("backlog exceeded its limit")
+
+      inbox.push(inboundMessage("1", "after-overflow"))
+      expect(String(yield* failure(inbox.pull()))).toContain("backlog exceeded its limit")
+    }),
+  )
 })

@@ -282,7 +282,7 @@ describe("PluginHost event domain", () => {
   )
 
   // D2's back-pressure half: a wedged handler costs a BOUNDED amount of memory, and the loss is
-  // logged rather than silent. V1 had no bound at all, and every typed PubSub is unbounded.
+  // logged rather than silent. V1 had no bound at all.
   it.live("drops — loudly — once a wedged handler falls past the buffer", () =>
     Effect.gen(function* () {
       const events = yield* EventV2.Service

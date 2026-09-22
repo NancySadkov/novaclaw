@@ -5455,10 +5455,14 @@ export const layer = Layer.effect(
               }
               const slice = Math.min(5_000, remaining)
               wokeForInput = yield* Effect.race(
-                events.subscribe(SessionEvent.PromptAdmitted).pipe(
-                  Stream.filter((event) => event.data.sessionID === input.sessionID),
+                Stream.unwrap(
+                  EventV2.subscribeBounded(events, SessionEvent.PromptAdmitted, 256, (event) =>
+                    event.data.sessionID === input.sessionID,
+                  ),
+                ).pipe(
                   Stream.runHead,
                   Effect.as(true),
+                  Effect.catchTag("EventV2.SubscriberOverflow", () => Effect.succeed(false)),
                 ),
                 Effect.sleep(Duration.millis(slice)).pipe(Effect.as(false)),
               )

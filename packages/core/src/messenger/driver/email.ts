@@ -13,6 +13,8 @@ import type {
   LoginSupport,
 } from "../driver"
 import { ChallengeError, ConnectError, LoginCodeError, SendError, withAbortSignal } from "../driver"
+import { makeBoundedInboundQueue } from "./inbound-queue"
+import { makeBoundedMap } from "./bounded-map"
 
 // The EMAIL driver (messenger-plan §2.1, §0.2) — the strongest "agent covers while I'm AFK" fit:
 // the agent logs into the user's OWN mailbox (IMAP poll + SMTP send) and answers client threads as
@@ -397,8 +399,8 @@ export const makeConnect =
       )
 
       // Reply state per thread, rebuilt from inbound so send() can address the right person.
-      const threads = new Map<string, ThreadState>()
-      const queue = yield* Queue.unbounded<InboundEvent, ConnectError>()
+      const threads = makeBoundedMap<string, ThreadState>(4096)
+      const queue = yield* makeBoundedInboundQueue<InboundEvent, ConnectError>()
 
       // Durable cursor: {uidValidity, uid}. A UIDVALIDITY change means the mailbox was rebuilt — the
       // old UIDs are meaningless, so reset to 0 and re-fetch (never silently drop) (edge #10).

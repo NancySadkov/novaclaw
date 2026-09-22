@@ -130,8 +130,8 @@ export interface Interface {
     data: Data<D>,
     options?: PublishOptions,
   ) => Effect.Effect<Payload<D>>
-  readonly subscribe: <D extends Definition>(definition: D) => Stream.Stream<Payload<D>>
-  readonly all: () => Stream.Stream<Payload>
+  readonly subscribe: <D extends Definition>(definition: D) => Stream.Stream<Payload<D>, SubscriberOverflowError>
+  readonly all: () => Stream.Stream<Payload, SubscriberOverflowError>
   readonly durable: (input: { readonly aggregateID: string; readonly after?: number }) => Stream.Stream<Payload>
   /** @deprecated Use `all()` and consume the returned stream. */
   readonly listen: (listener: Subscriber) => Effect.Effect<Unsubscribe>
@@ -150,19 +150,44 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/Event") {}
 
-export const allBounded = (events: Interface, capacity: number) =>
+const boundedSubscription = (events: Pick<Interface, "listen">, capacity: number, accepts: (event: Payload) => boolean) =>
   Effect.gen(function* () {
     const queue = yield* Queue.dropping<Payload, SubscriberOverflowError>(capacity)
+    let overflowed = false
     const unsubscribe = yield* events.listen((event) =>
-      Queue.offer(queue, event).pipe(
-        Effect.flatMap((accepted) =>
-          accepted ? Effect.void : Queue.fail(queue, new SubscriberOverflowError({ capacity })).pipe(Effect.asVoid),
+      Effect.sync(() => {
+        if (overflowed || !accepts(event)) return false
+        if (Queue.offerUnsafe(queue, event)) return false
+        overflowed = true
+        return true
+      }).pipe(
+        Effect.flatMap((overflow) =>
+          overflow ? Queue.fail(queue, new SubscriberOverflowError({ capacity })).pipe(Effect.asVoid) : Effect.void,
         ),
       ),
     )
     yield* Effect.addFinalizer(() => unsubscribe.pipe(Effect.andThen(Queue.shutdown(queue)), Effect.asVoid))
     return Stream.fromQueue(queue)
   })
+
+export const allBounded = (events: Pick<Interface, "listen">, capacity: number) =>
+  boundedSubscription(events, capacity, () => true)
+
+export const subscribeBounded = <D extends Definition>(
+  events: Pick<Interface, "listen">,
+  definition: D,
+  capacity: number,
+  accepts: (event: Payload<D>) => boolean = () => true,
+) =>
+  boundedSubscription(
+    events,
+    capacity,
+    (event) => event.type === definition.type && accepts(event as Payload<D>),
+  ).pipe(
+    Effect.map((stream) => stream.pipe(Stream.map((event) => event as Payload<D>))),
+  )
+
+const DEFAULT_SUBSCRIBER_CAPACITY = 256
 
 export interface LayerOptions {
   readonly beforeAggregateRead?: (aggregateID: string) => Effect.Effect<void>
@@ -173,33 +198,20 @@ export const layerWith = (options?: LayerOptions) =>
     Service,
     Effect.gen(function* () {
       const pubsub = {
-        all: yield* PubSub.unbounded<Payload>(),
         durable: new Map<string, Set<PubSub.PubSub<void>>>(),
-        typed: new Map<string, PubSub.PubSub<Payload>>(),
       }
       const projectors = new Map<string, Subscriber[]>()
       // TODO: Bind durable projectors to exact type+version before supporting incompatible historical payloads.
       const listeners = new Array<Subscriber>()
       const { db } = yield* Database.Service
 
-      const getOrCreate = (definition: Definition) =>
-        Effect.gen(function* () {
-          const existing = pubsub.typed.get(definition.type)
-          if (existing) return existing
-          const created = yield* PubSub.unbounded<Payload>()
-          pubsub.typed.set(definition.type, created)
-          return created
-        })
-
       yield* Effect.addFinalizer(() =>
         Effect.gen(function* () {
-          yield* PubSub.shutdown(pubsub.all)
           yield* Effect.forEach(
             pubsub.durable.values(),
             (pubsubs) => Effect.forEach(pubsubs, PubSub.shutdown, { discard: true }),
             { discard: true },
           )
-          yield* Effect.forEach(pubsub.typed.values(), PubSub.shutdown, { discard: true })
         }),
       )
 
@@ -416,9 +428,6 @@ export const layerWith = (options?: LayerOptions) =>
             (listener) => (isolateListeners ? observe(event, listener) : listener(event)),
             { discard: true },
           )
-          const typed = pubsub.typed.get(event.type)
-          if (typed) yield* PubSub.publish(typed, event)
-          yield* PubSub.publish(pubsub.all, event)
         })
       }
 
@@ -537,13 +546,6 @@ export const layerWith = (options?: LayerOptions) =>
           .pipe(Effect.orDie)
       }
 
-      const subscribe = <D extends Definition>(definition: D): Stream.Stream<Payload<D>> =>
-        Stream.unwrap(getOrCreate(definition).pipe(Effect.map((pubsub) => Stream.fromPubSub(pubsub)))).pipe(
-          Stream.map((event) => event as Payload<D>),
-        )
-
-      const streamAll = (): Stream.Stream<Payload> => Stream.fromPubSub(pubsub.all)
-
       const readAfter = (aggregateID: string, after: number) =>
         (options?.beforeAggregateRead?.(aggregateID) ?? Effect.void).pipe(
           Effect.andThen(
@@ -627,6 +629,12 @@ export const layerWith = (options?: LayerOptions) =>
             if (index >= 0) listeners.splice(index, 1)
           })
         })
+
+      const subscribe = <D extends Definition>(definition: D): Stream.Stream<Payload<D>, SubscriberOverflowError> =>
+        Stream.unwrap(subscribeBounded({ listen }, definition, DEFAULT_SUBSCRIBER_CAPACITY))
+
+      const streamAll = (): Stream.Stream<Payload, SubscriberOverflowError> =>
+        Stream.unwrap(allBounded({ listen }, DEFAULT_SUBSCRIBER_CAPACITY))
 
       const project = <D extends Definition>(definition: D, projector: Subscriber<D>): Effect.Effect<void> =>
         Effect.sync(() => {

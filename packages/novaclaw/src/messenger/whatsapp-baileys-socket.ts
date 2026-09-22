@@ -22,6 +22,8 @@ import type {
   WAMessage,
 } from "@novaclaw/core/messenger/driver/whatsapp-baileys"
 import { WAClientError, WhatsAppBaileysDriver } from "@novaclaw/core/messenger/driver/whatsapp-baileys"
+import { INBOUND_INBOX_CAPACITY, makeInboundInbox } from "@novaclaw/core/messenger/driver/inbound-inbox"
+import { makeBoundedMap } from "@novaclaw/core/messenger/driver/bounded-map"
 
 // The Baileys socket factory — the ONLY file that imports @whiskeysockets/baileys (the ToS-gray,
 // out-of-kernel bridge; loaded via a gated DYNAMIC import in external-driver-source.ts, never at
@@ -168,10 +170,10 @@ export const factory: WAClientFactory = async (config: WAClientConfig): Promise<
   })
 
   // push → pull buffer.
-  const buffer: WAMessage[] = []
-  let pullWake: (() => void) | undefined
-  let pullFail: ((error: Error) => void) | undefined
-  const seenChats = new Map<string, ChatSnapshot>()
+  const inbox = makeInboundInbox<WAMessage>(INBOUND_INBOX_CAPACITY, () =>
+    new WAClientError({ kind: "error", message: "WhatsApp inbound message backlog exceeded its limit; reconnecting." }),
+  )
+  const seenChats = makeBoundedMap<string, ChatSnapshot>(4096)
 
   // Every inbound jid is folded onto the phone JID — see `foldSelfAddress` for why that is
   // load-bearing (the LID-addressed self-chat is what the §0.1.5 console runs on).
@@ -197,13 +199,14 @@ export const factory: WAClientFactory = async (config: WAClientConfig): Promise<
     const isGroup = jid.endsWith("@g.us")
     const self = selfId()
     const title = jid === self ? "Message Yourself" : (message.pushName ?? jid)
-    if (!seenChats.has(jid))
+    if (!seenChats.has(jid)) {
       seenChats.set(jid, {
         chatID: jid,
         kind: isGroup ? "group" : "dm",
         title,
         ...(jid === self ? { self: true } : {}),
       })
+    }
     return {
       chatID: jid,
       chatKind: isGroup ? "group" : "dm",
@@ -260,7 +263,7 @@ export const factory: WAClientFactory = async (config: WAClientConfig): Promise<
         if (statusCode === DisconnectReason.loggedOut) {
           const error = new WAClientError({ kind: "logged-out" })
           onOpenFail(error)
-          pullFail?.(error)
+          inbox.fail(error)
         } else {
           // restartRequired (515, expected right after the first pairing) → reconnect at once.
           // timedOut is the routine end of a QR ref batch mid-scan — near-immediate, because the
@@ -278,11 +281,7 @@ export const factory: WAClientFactory = async (config: WAClientConfig): Promise<
       if (event.type !== "notify") return // new arrivals only, not a history backfill
       for (const message of event.messages) {
         const normalized = normalize(message)
-        if (normalized !== undefined) buffer.push(normalized)
-      }
-      if (buffer.length > 0) {
-        pullWake?.()
-        pullWake = undefined
+        if (normalized !== undefined) inbox.push(normalized)
       }
     })
     return socket
@@ -328,15 +327,7 @@ export const factory: WAClientFactory = async (config: WAClientConfig): Promise<
     currentLink: () => link,
     waitForOpen: () => whenOpen,
     exportAuth: async () => serialize(),
-    pull: async () => {
-      for (;;) {
-        if (buffer.length > 0) return buffer.splice(0, buffer.length)
-        await new Promise<void>((resolve, reject) => {
-          pullWake = resolve
-          pullFail = reject
-        })
-      }
-    },
+    pull: inbox.pull,
     chats: async (limit) => {
       const self = selfId()
       const list = [...seenChats.values()]

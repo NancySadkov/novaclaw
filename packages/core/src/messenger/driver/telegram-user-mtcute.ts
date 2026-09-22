@@ -5,6 +5,7 @@ import { InstallationVersion } from "../../installation/version"
 import type { ChatSnapshot } from "../driver"
 import type { UserClient, UserClientConfig, UserClientFactory, UserMessage } from "./telegram-user"
 import { UserClientError } from "./telegram-user"
+import { INBOUND_INBOX_CAPACITY, makeInboundInbox } from "./inbound-inbox"
 
 // The mtcute adapter behind the telegram-user driver's `UserClient` seam (messenger-plan §2.2:
 // mtcute is the owner-accepted MTProto dependency — pure TS + wasm crypto, no native modules).
@@ -157,43 +158,13 @@ const toUserMessage = (message: MtcuteMessage): UserMessage => {
  * Lives here, exported and free of mtcute types, so the fault can be exercised without a provider.
  */
 export const messageInbox = () => {
-  let buffer: UserMessage[] = []
-  let waiter: { resolve: (batch: readonly UserMessage[]) => void; reject: (error: unknown) => void } | undefined
-  let dead: UserClientError | undefined
-  return {
-    push: (message: UserMessage): void => {
-      buffer.push(message)
-      if (waiter === undefined) return
-      const { resolve } = waiter
-      waiter = undefined
-      const batch = buffer
-      buffer = []
-      resolve(batch)
-    },
-    /** The updates loop died. Idempotent — the FIRST cause is the one reported. */
-    fail: (error: unknown): void => {
-      dead ??= classify(error)
-      const pending = waiter
-      waiter = undefined
-      pending?.reject(dead)
-    },
-    pull: (): Promise<readonly UserMessage[]> =>
-      new Promise((resolve, reject) => {
-        // Buffered messages first even when the loop is dead: what already arrived is real, and the
-        // next pull reports the death. Losing them would trade one silent fault for another.
-        if (buffer.length > 0) {
-          const batch = buffer
-          buffer = []
-          resolve(batch)
-          return
-        }
-        if (dead !== undefined) {
-          reject(dead)
-          return
-        }
-        waiter = { resolve, reject }
-      }),
-  }
+  const inbox = makeInboundInbox<UserMessage>(INBOUND_INBOX_CAPACITY, () =>
+    new UserClientError({
+      kind: "error",
+      message: "Telegram inbound message backlog exceeded its limit; reconnecting.",
+    }),
+  )
+  return { ...inbox, fail: (error: unknown) => inbox.fail(classify(error)) }
 }
 
 /** The production factory the driver registry injects. */

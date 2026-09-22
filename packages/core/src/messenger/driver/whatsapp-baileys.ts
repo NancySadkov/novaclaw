@@ -15,6 +15,7 @@ import type {
   OutboundFile,
 } from "../driver"
 import { ChallengeError, ConnectError, FileError, LoginCodeError, SendError, withAbortSignal } from "../driver"
+import { makeBoundedInboundQueue } from "./inbound-queue"
 
 // The WhatsApp driver (messenger-plan §2.1; owner decision 2026-07-23: the Baileys linked-device
 // bridge, shipped OUT OF KERNEL as a plugin). This is the fake-testable POLICY half — the telegram-
@@ -307,7 +308,7 @@ export const make = (factory: WAClientFactory): Driver => {
         const me = yield* tryClient(() => client.me())
         const sent = sentTracker(512)
 
-        const queue = yield* Queue.unbounded<InboundEvent, ConnectError>()
+        const queue = yield* makeBoundedInboundQueue<InboundEvent, ConnectError>()
         const pump = Effect.gen(function* () {
           while (true) {
             const batch = yield* tryClient(() => client.pull())

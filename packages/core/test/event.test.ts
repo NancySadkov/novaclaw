@@ -1,4 +1,5 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
+import { readFile } from "node:fs/promises"
 import { Cause, DateTime, Deferred, Effect, Exit, Fiber, Layer, Option, Schema, Stream } from "effect"
 import { EventV2 } from "@novaclaw/core/event"
 import { Event } from "@novaclaw/schema/event"
@@ -40,6 +41,11 @@ const SyncMessage = EventV2.define({
     id: Schema.String,
     text: Schema.String,
   },
+})
+
+test("the event service cannot reintroduce unbounded publish subscribers", async () => {
+  const source = await readFile(new URL("../src/event.ts", import.meta.url), "utf8")
+  expect(source).not.toContain("PubSub.unbounded")
 })
 
 const SyncSent = EventV2.define({
@@ -369,6 +375,19 @@ describe("EventV2", () => {
         expect.objectContaining({ data: { text: "overflow" } }),
         last,
       ])
+    }),
+  )
+
+  it.effect("bounds a typed subscription and terminates it once on overflow", () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2.Service
+      const slowStream = yield* EventV2.subscribeBounded(events, Message, 1)
+      yield* events.publish(Message, { text: "buffered" })
+      yield* events.publish(Message, { text: "overflow" })
+      yield* events.publish(Message, { text: "ignored after terminal overflow" })
+
+      const error = yield* slowStream.pipe(Stream.runCollect, Effect.flip)
+      expect(error).toBeInstanceOf(EventV2.SubscriberOverflowError)
     }),
   )
 

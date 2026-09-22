@@ -1464,6 +1464,16 @@ export const EVENTS = {
     content: "none",
     file: "packages/core/src/messenger/gateway.ts",
   },
+  "messenger.event.subscription.restarted": {
+    level: "error",
+    message: "messenger: an outbound event relay failed and will resubscribe",
+    attributes: {
+      "messenger.event": "text",
+      "messenger.failure": "fault",
+    },
+    content: "user",
+    file: "packages/core/src/messenger/gateway.ts",
+  },
   /**
    * A stranger sent a command and was answered with SILENCE rather than a refusal.
    *

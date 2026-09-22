@@ -15,6 +15,8 @@ import type {
   OutboundFile,
 } from "../driver"
 import { ConnectError, FileError, ModerationError, SendError } from "../driver"
+import { createOverflowTerminatingHandler, INBOUND_QUEUE_CAPACITY, makeBoundedInboundQueue } from "./inbound-queue"
+import { makeBoundedMap } from "./bounded-map"
 
 // The Discord BOT driver (messenger-plan §2.1): REST over HTTPS + the Gateway WebSocket, both
 // behind injectable seams (fetch + a socket factory) so tests drive fakes. `key` auth = a bot
@@ -159,6 +161,8 @@ export type DiscordSocketFactory = (
   },
 ) => Promise<DiscordSocket>
 
+type GatewayFrame = { kind: "frame"; data: string } | { kind: "closed"; reason: string }
+
 export interface Cursor {
   readonly sessionID: string
   readonly seq: number
@@ -300,7 +304,7 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
       // Lazily learned channel metadata — name, type, and (for a thread / forum post) its parent.
       // The gateway events carry ids only, and the parent is what makes ONE binding cover a whole
       // support forum, so this lookup is load-bearing, not cosmetic.
-      const channelMeta = new Map<string, ChannelMeta>()
+      const channelMeta = makeBoundedMap<string, ChannelMeta>(4096)
       const describeChannel = (channelID: string, dm: boolean) =>
         Effect.gen(function* () {
           if (dm) return undefined
@@ -326,12 +330,13 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
           return meta
         })
 
-      const queue = yield* Queue.unbounded<InboundEvent, ConnectError>()
+      const queue = yield* makeBoundedInboundQueue<InboundEvent, ConnectError>()
       const rawCursor = yield* ctx.cursor.get().pipe(Effect.orElseSucceed(() => undefined))
       const stored = readCursor(rawCursor)
       // Per-channel catch-up anchors survive an invalid-session wipe (see readAnchors) — they are
       // what the REST backfill starts after so a laptop that slept doesn't drop its support channel.
-      const anchors = new Map<string, string>(Object.entries(readAnchors(rawCursor)))
+      const anchors = makeBoundedMap<string, string>(4096)
+      for (const [channelID, messageID] of Object.entries(readAnchors(rawCursor))) anchors.set(channelID, messageID)
       let session: Cursor | undefined = stored
       let seq = stored?.seq ?? 0
       let acked = true
@@ -355,13 +360,22 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
       const sendFrame = (frame: unknown) => Effect.sync(() => socketHolder.current?.send(JSON.stringify(frame)))
 
       // The frame pump rides callbacks → an inner queue, so the Effect side stays a plain loop.
-      const frames = yield* Queue.unbounded<{ kind: "frame"; data: string } | { kind: "closed"; reason: string }>()
+      const frames = yield* makeBoundedInboundQueue<GatewayFrame, ConnectError>(INBOUND_QUEUE_CAPACITY)
+      const offerFrame = createOverflowTerminatingHandler<GatewayFrame>(
+        (frame) => Queue.offerUnsafe(frames, frame),
+        () => {
+          Effect.runFork(
+            Queue.fail(frames, new ConnectError({ reason: "Discord gateway event backlog exceeded its limit; reconnecting." })),
+          )
+          socketHolder.current?.close()
+        },
+      )
       const url = session?.resumeURL ?? GATEWAY_URL
       socketHolder.current = yield* Effect.tryPromise({
         try: () =>
           socketFactory(url, {
-            onMessage: (data) => void Queue.offerUnsafe(frames, { kind: "frame", data }),
-            onClose: (reason) => void Queue.offerUnsafe(frames, { kind: "closed", reason }),
+            onMessage: (data) => offerFrame({ kind: "frame", data }),
+            onClose: (reason) => offerFrame({ kind: "closed", reason }),
           }),
         catch: (error) => new ConnectError({ reason: `Could not reach the Discord gateway: ${String(error)}` }),
       })
