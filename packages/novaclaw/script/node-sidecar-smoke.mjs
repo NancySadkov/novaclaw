@@ -139,18 +139,28 @@ try {
     throw new Error(`portrait route returned ${portraitResponse.status} ${portraitResponse.headers.get("content-type")}`)
   }
 
+  /**
+   * ⚠️ **Two valid fallbacks, because the pool changed the answer** (measured 2026-09-22). A
+   * colleague with no uploaded portrait now claims a SHIPPED pooled `.webp`; the SVG glyph is the
+   * last resort when the pool is exhausted or its assignment was retired. Asserting `image/svg+xml`
+   * alone turned the pool into a release-build break for a behaviour that is working as designed.
+   *
+   * What must never happen is unchanged: an ok response carrying REAL image bytes. A missing bundled
+   * asset still fails here — the pooled branch requires a RIFF header, the glyph branch requires the
+   * svg prologue — so the check still catches the silent placeholder degradation it was written for.
+   */
   const fallbackResponse = await fetch(`http://127.0.0.1:${port}/api/agent/portrait-smoke-missing/avatar`, {
     headers: { authorization: auth },
   })
-  const fallback = new TextDecoder().decode(await fallbackResponse.arrayBuffer())
-  if (
-    !fallbackResponse.ok ||
-    fallbackResponse.headers.get("content-type") !== "image/svg+xml" ||
-    !fallback.startsWith("<svg ")
-  ) {
-    throw new Error(
-      `portrait fallback returned ${fallbackResponse.status} ${fallbackResponse.headers.get("content-type")}`,
-    )
+  const fallbackBytes = new Uint8Array(await fallbackResponse.arrayBuffer())
+  const fallbackType = fallbackResponse.headers.get("content-type")
+  const pooled =
+    fallbackType === "image/webp" &&
+    fallbackBytes.length >= 12 &&
+    String.fromCharCode(...fallbackBytes.slice(0, 4)) === "RIFF"
+  const glyph = fallbackType === "image/svg+xml" && new TextDecoder().decode(fallbackBytes).startsWith("<svg ")
+  if (!fallbackResponse.ok || (!pooled && !glyph)) {
+    throw new Error(`portrait fallback returned ${fallbackResponse.status} ${fallbackType}`)
   }
 } catch (error) {
   failures += 1
