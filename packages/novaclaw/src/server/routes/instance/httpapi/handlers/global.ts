@@ -50,18 +50,20 @@ function eventResponse() {
      * straight to `Queue.make`, so every slow client accumulated its own copy of the process-wide
      * model event stream in server memory, without limit. One stalled browser tab was enough.
      *
-     * ⚠️ **Bounded, and overflow ENDS the stream — it does not trim it.** The three strategies the API
+     * ⚠️ **Bounded, and overflow shuts the stream down immediately.** The three strategies the API
      * offers are all wrong here: `suspend` would let one slow client apply backpressure to the bus
      * every other client shares; `sliding` and `dropping` make that client's view diverge invisibly,
-     * which is the same silent-corruption shape as NC-REL-004 one layer up. Ending is safe precisely
-     * because the app already resyncs on reconnect — the client receives `server.connected` and
-     * invalidates, so a forced reconnect costs a round trip and loses nothing.
+     * which is the same silent-corruption shape as NC-REL-004 one layer up. Gracefully ending a full
+     * queue would flush its stale backlog first; shutdown clears it and releases the response now.
+     * The app resyncs on reconnect — it receives `server.connected` and invalidates, so dropping this
+     * stale stream costs a round trip and loses nothing.
      */
     const events = Stream.callback<GlobalBusEvent>(
       (queue) => {
         let buffered = 0
         let handler: (event: GlobalBusEvent) => void
         handler = createOverflowTerminatingHandler(
+          queue,
           (event) => {
             if (!Queue.offerUnsafe(queue, event)) return false
             buffered++
@@ -72,7 +74,6 @@ function eventResponse() {
             Effect.runFork(
               Log.event("server.global.event.overflow", { "server.stream": "global", "server.buffered": buffered }),
             )
-            Queue.endUnsafe(queue)
           },
         )
         return Effect.acquireRelease(

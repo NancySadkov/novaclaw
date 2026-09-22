@@ -109,6 +109,70 @@ describe("runReconnectingStream", () => {
     ])
   })
 
+  test("a successful connection that closes quickly does not reset retry backoff", async () => {
+    let active = true
+    let opens = 0
+    const delays: number[] = []
+    const states: Array<[ReconnectStreamState, number]> = []
+
+    await runReconnectingStream({
+      active: () => active,
+      open: async () => oneEvent(++opens),
+      recover: async () => {},
+      accept: () => {},
+      wait: async () => {},
+      delay: (failure) => {
+        delays.push(failure)
+        return 0
+      },
+      state: (status, attempt) => {
+        states.push([status, attempt])
+        if (status === "reconnecting" && attempt === 3) active = false
+      },
+    })
+
+    expect(opens).toBe(3)
+    expect(delays).toEqual([0, 1, 2])
+    expect(states).toEqual([
+      ["connected", 0],
+      ["reconnecting", 1],
+      ["connected", 0],
+      ["reconnecting", 2],
+      ["connected", 0],
+      ["reconnecting", 3],
+    ])
+  })
+
+  test("retry backoff resets after a stream remains stable for thirty seconds", async () => {
+    let active = true
+    let opens = 0
+    let clock = 0
+    const delays: number[] = []
+
+    await runReconnectingStream({
+      active: () => active,
+      open: async () => oneEvent(++opens),
+      recover: async () => {},
+      accept: () => {
+        if (opens === 1) clock += 1
+        else if (opens === 2) clock += 30_000
+        else clock += 1
+      },
+      wait: async () => {},
+      delay: (failure) => {
+        delays.push(failure)
+        return 0
+      },
+      state: (status, attempt) => {
+        if (status === "reconnecting" && attempt === 2) active = false
+      },
+      now: () => clock,
+    })
+
+    expect(opens).toBe(3)
+    expect(delays).toEqual([0, 0, 1])
+  })
+
   test("a hanging open is retried, not parked, once the attempt deadline aborts it", async () => {
     // A HALF-OPEN connection: `open()` never settles on its own. `runReconnectingStream` awaits it
     // with no timeout, so only an abort from `attemptStarted` can hand control back to the loop.

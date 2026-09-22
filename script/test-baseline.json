@@ -47,6 +47,7 @@
   "countsOverflowTerminatingHandler": "2026-09-22: novaclaw:server 448->449 adds one regression case in overflow-handler.test.ts: after a bounded event queue rejects an offer, later events are neither offered nor reported as additional overflows. This pins the global SSE overflow terminal-state guard. Nothing moved down.",
   "countsBoundedIngressAndEvents": "2026-09-23: core 7398->7406 adds eight regression cases: five in messenger-inbound-queue.test.ts (no raw unbounded driver queues; external messenger buffers and remote-ID caches use bounded structures; bounded producers park; callback offers stop and report once after overflow; overflow failure reaches the consumer), two in event.test.ts (bounded typed-subscription overflow; no unbounded PubSub in EventV2), and one in messenger-telegram-user-updates.test.ts (the callback inbox caps at 256 and reports overflow after draining). Nothing moved down.",
   "countsShippedShellBinding": "2026-09-22: core 7393->7394 (+1), measured on a green whole-unit run (7394 pass, 9 skip, 0 fail) after the five tests this slice repaired stopped being red. NOT +5: those five were passing when this baseline was last set and went red afterwards without a re-baseline, so they were already counted and repairing them only restores the number. The single ADDED test is tool-bash.test.ts's `keeps the real shell job alive until an ampersand child with closed pipes exits`: it was registered behind `if (Shell.posix(Shell.agentDefault()))`, which is false on a Windows checkout whose `NOVACLAW_W64DEVKIT_PATH` the test preload scrubs, so it was neither run nor counted; `test/fixture/agent-shell.ts` now binds the shipped w64devkit and the case runs (measured 1116 ms). Skips are unchanged at 9 - the repaired cases RUN now rather than skipping, which is the point. Nothing moved down.",
+  "countsReconnectStreamStability": "2026-09-23: app:unit 1784->1797 (+13), app:browser 262->263 (+1). Eleven unit tests were added since the prior baseline across connection-banner.test.ts, server-session.test.ts, session-gone.test.ts and session-execution-error.test.ts; the two new reconnect-stream.test.ts cases prove quick successful handshakes retain retry backoff and a stable 30-second stream resets it. The browser case is native-transcript-remount.test.tsx's unfolded-command remount regression. Measured in the app package gate: 1797 unit pass/0 fail (count-only drift before this re-baseline), 263 browser pass/0 fail. Nothing moved down.",
   "units": {
     "llm": 28,
     "core": 9,
@@ -80,8 +81,8 @@
     "session-ui": 231,
     "ui": 67,
     "core": 7406,
-    "app:unit": 1784,
-    "app:browser": 262,
+    "app:unit": 1797,
+    "app:browser": 263,
     "desktop": 239,
     "server": 114,
     "novaclaw:server": 449,

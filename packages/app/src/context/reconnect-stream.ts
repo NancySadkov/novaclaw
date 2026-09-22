@@ -1,5 +1,7 @@
 export type ReconnectStreamState = "connected" | "reconnecting"
 
+const STABLE_STREAM_MS = 30_000
+
 /** Page suspension must release backoff before a visible page can start its fresh attempt. */
 export function waitForStreamRetry(ms: number, signal: AbortSignal): Promise<void> {
   if (signal.aborted) return Promise.resolve()
@@ -25,6 +27,7 @@ export interface ReconnectStreamOptions<T> {
   attemptStarted?: (attempt: AbortController) => void
   attemptFinished?: (attempt: AbortController) => void
   failed?: (error: unknown, signal: AbortSignal) => void
+  now?: () => number
 }
 
 /**
@@ -33,10 +36,12 @@ export interface ReconnectStreamOptions<T> {
  */
 export async function runReconnectingStream<T>(options: ReconnectStreamOptions<T>) {
   let failures = 0
+  const now = options.now ?? Date.now
 
   while (options.active()) {
     const attempt = new AbortController()
     options.attemptStarted?.(attempt)
+    let establishedAt: number | undefined
     try {
       const stream = await options.open(attempt.signal)
       let received = false
@@ -50,7 +55,7 @@ export async function runReconnectingStream<T>(options: ReconnectStreamOptions<T
           // A deadline ends this attempt, not its owner. Retry it through the same failure path as
           // a dropped socket; returning here permanently stranded a still-started connection.
           attempt.signal.throwIfAborted()
-          failures = 0
+          establishedAt = now()
           options.state("connected", 0)
         }
         await options.accept(event)
@@ -63,6 +68,7 @@ export async function runReconnectingStream<T>(options: ReconnectStreamOptions<T
     }
 
     if (!options.active()) return
+    if (establishedAt !== undefined && now() - establishedAt >= STABLE_STREAM_MS) failures = 0
     const displayAttempt = failures + 1
     options.state("reconnecting", displayAttempt)
     await options.wait(options.delay(failures++))

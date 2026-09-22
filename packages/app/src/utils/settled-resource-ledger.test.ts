@@ -116,6 +116,7 @@ const LEDGER: { resources: Record<string, number>; folds: Record<string, number>
     "components/directory-picker-domain.ts": 2,
     "components/settings-v2/servers.tsx": 1,
     "context/notification.tsx": 1,
+    "context/session-gone.ts": 1,
     "pages/contacts.tsx": 2,
     "pages/debug.tsx": 1,
     "utils/instance-fetch.ts": 1,
