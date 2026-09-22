@@ -61,6 +61,7 @@ import {
 } from "./utils/server-health"
 import { legacySessionServer, requireServerKey, selectSessionLineage, sessionHref } from "./utils/session-route"
 import { isSessionNotFoundError } from "./utils/server-errors"
+import { forgetGoneSession } from "./context/session-gone"
 import { showToast } from "@/utils/toast"
 
 import { HomeScreen } from "@/pages/home-screen/home-screen"
@@ -196,7 +197,8 @@ function ResolvedTargetSessionRoute() {
     },
     ({ id, server, sync }) =>
       sync.session.lineage.resolve(id).catch((error) => {
-        if (isSessionNotFoundError(error, id)) tabs.removeSessionTab({ server, sessionId: id })
+        // GONE retires every trace, not just the tab — see `session-gone.ts` for the class.
+        if (isSessionNotFoundError(error, id)) forgetGoneSession({ session: sync.session, tabs, server, sessionID: id })
         throw error
       }),
   )

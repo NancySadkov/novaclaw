@@ -5,7 +5,10 @@ import { Binary } from "@novaclaw/core/util/binary"
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router"
 import { type Accessor } from "solid-js"
 import { useTabs } from "@/context/tabs"
+import { useServer } from "@/context/server"
 import { useServerSync, type ServerSync } from "@/context/server-sync"
+import { forgetGoneSession } from "@/context/session-gone"
+import { isSessionNotFoundError } from "@/utils/server-errors"
 import { OPTIMISTIC_METADATA_KEY } from "@/context/global-sync/message-v2-store"
 import { kickPendingPrompts } from "@/utils/session-pending-api"
 import { useLanguage } from "@/context/language"
@@ -368,6 +371,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const params = useParams()
   const [search] = useSearchParams<{ draftId?: string }>()
   const tabs = useTabs()
+  const server = useServer()
   const pendingKey = (sessionID: string) => ScopedKey.from(sdk().scope, sessionID)
 
   const errorMessage = (err: unknown) => layoutErrorMessage(err, language.t("common.requestFailed"))
@@ -589,7 +593,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       agent,
       model,
       // 🔴 What this chat picked, not what it resolved to. See `FollowupDraft.override`.
-      override: currentOverride ? { providerID: currentOverride.providerID, modelID: currentOverride.modelID } : undefined,
+      override: currentOverride
+        ? { providerID: currentOverride.providerID, modelID: currentOverride.modelID }
+        : undefined,
       variant,
     }
 
@@ -741,6 +747,20 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         pending.delete(pendingKey(session.id))
         if (sessionDirectory === projectDirectory) {
           sync().set("session_status", session.id, { type: "idle" })
+        }
+        /**
+         * 🔴 **A CHAT THAT NO LONGER EXISTS is a lifecycle event, not a send failure.**
+         *
+         * Reported live 2026-09-22: `ses_daedalus` had been deleted server-side, the tab survived in
+         * the persisted strip, and every send answered a toast reading *"Failed to send prompt —
+         * Session not found: ses_daedalus"* — a fault the user could neither understand nor act on.
+         * Retire every client-side trace and let the route's own `SessionGoneCard` explain; the same
+         * policy the route already applies, so a future observer cannot retire only its own slice.
+         */
+        if (isSessionNotFoundError(err, draft.sessionID)) {
+          forgetGoneSession({ session: serverSync().session, tabs, server: server.key, sessionID: draft.sessionID })
+          if (restoreInput()) restoreCommentItems(submission.target(), commentItems)
+          return
         }
         showToast({
           title: language.t("prompt.toast.promptSendFailed.title"),

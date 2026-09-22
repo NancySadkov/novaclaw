@@ -497,6 +497,26 @@ export function createServerSession(
       seen.delete(sessionID)
       evict([sessionID])
     },
+    /**
+     * FORGET a session the server has told us does not exist.
+     *
+     * 🔴 **Not `evict`, and the difference is the whole ghost-session class.** `evict` is a
+     * cache-SIZE tool: `dropSessionCaches` does not touch `info` — the one field the session route
+     * reads through `peekLineage` — and it REFUSES a session that merely looks busy. So a deleted
+     * chat whose `session.deleted` event was missed (a sidecar restart, another client) stayed in
+     * `data.info`, the route rendered it, and every send dead-ended on
+     * `Session not found: <id>`. This drops the record regardless of cache pressure or a stale busy
+     * flag, mirroring the `session.deleted` arm above.
+     */
+    forget(sessionID: string) {
+      infoSeen.delete(sessionID)
+      seen.delete(sessionID)
+      setData(
+        "info",
+        produce((draft) => void delete draft[sessionID]),
+      )
+      evict([sessionID])
+    },
     pin(sessionID: string) {
       pinned.set(sessionID, (pinned.get(sessionID) ?? 0) + 1)
       touch(sessionID)
