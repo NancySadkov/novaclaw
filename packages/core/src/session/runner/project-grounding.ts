@@ -1,6 +1,7 @@
 export * as ProjectGrounding from "./project-grounding"
 
 import fs from "node:fs/promises"
+import { displayPath } from "../../util/path"
 
 export const TOKEN_INTERVAL = 64 * 1024
 
@@ -123,8 +124,8 @@ export const render = (
   listing?: { readonly entries: ReadonlyArray<Entry>; readonly total: number },
 ): string =>
   [
-    `Current working folder: ${location.directory}`,
-    ...(isInformativeRoot(location.root, location.directory) ? [`Project root: ${location.root}`] : []),
+    `Current working folder: ${displayPath(location.directory)}`,
+    ...(isInformativeRoot(location.root, location.directory) ? [`Project root: ${displayPath(location.root)}`] : []),
     ...(location.vcs?.type === "git" ? ["This project uses Git."] : []),
     ...(listing ? renderEntries(listing.entries, listing.total) : []),
     "Keep project writes inside the working folder unless the user explicitly approves a different location.",

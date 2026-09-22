@@ -1,3 +1,7 @@
+export function displayPath(value: string): string {
+  return value.replaceAll("\\", "/")
+}
+
 export function getFilename(path: string | undefined) {
   if (!path) return ""
   const trimmed = path.replace(/[/\\]+$/, "")
@@ -27,4 +31,3 @@ export function getFilenameTruncated(path: string | undefined, maxLength: number
   if (available <= 0) return filename.slice(0, maxLength - 1) + "…"
   return filename.slice(0, available) + "…" + ext
 }
-

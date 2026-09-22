@@ -14,6 +14,7 @@ import { FileMutation } from "../file-mutation"
 import { FileObservation } from "../file-observation"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
+import { displayPath } from "../util/path"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -138,7 +139,7 @@ export const layer = Layer.effectDiscard(
                   return new ToolFailure({
                     message: "File appeared after permission approval. Read it before replacing it.",
                   })
-                return new ToolFailure({ message: `Unable to write ${input.path}` })
+                return new ToolFailure({ message: `Unable to write ${displayPath(input.path)}` })
               }),
             ),
         }),

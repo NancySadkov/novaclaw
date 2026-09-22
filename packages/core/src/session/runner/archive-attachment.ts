@@ -1,5 +1,7 @@
 export * as ArchiveAttachment from "./archive-attachment"
 
+import { displayPath } from "../../util/path"
+
 // A ZIP ATTACHED TO A CHAT (owner, 2026-08-23: *"ensure user can attach a zip file to chat for
 // analysis by the agent"*).
 //
@@ -240,7 +242,7 @@ export function archiveDigest(input: {
     // reporting that the archive is unknowable.
     if (input.path) {
       return (
-        `[Archive${label} (${input.mime}) is attached and lives on this host at ${input.path}. Its ` +
+        `[Archive${label} (${input.mime}) is attached and lives on this host at ${displayPath(input.path)}. Its ` +
         `contents have NOT been shown to you — open it with your own tools if you need them, and do ` +
         `not describe or guess what is inside until you have.]`
       )

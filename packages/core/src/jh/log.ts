@@ -1,5 +1,7 @@
 export * as JhLog from "./log"
 
+import { displayPath } from "../util/path"
+
 // jh — the engine-internal append-only event log (jh.md §6b: Intent · Action · Observation ·
 // Verification, where everything after Intent is machine-generated). Engine-internal only — it does NOT
 // ride EventV2 (D10). Each entry is stamped with a monotonic seq by the engine; `render` gives a
@@ -163,7 +165,7 @@ function describe(e: Sequenced): string {
     case "restored_best":
       return `restored_best ${e.step}: score=${e.score} (${e.reason})`
     case "coord_mode":
-      return `coord_mode ${e.step}: ${e.file} — edit_file disabled after repeated mis-quotes; use replace_lines coordinates`
+      return `coord_mode ${e.step}: ${displayPath(e.file)} — edit_file disabled after repeated mis-quotes; use replace_lines coordinates`
     case "reverted":
       return `reverted ${e.step}: ${e.reason}`
     case "flattened":
@@ -173,7 +175,7 @@ function describe(e: Sequenced): string {
     case "test_registered":
       return `test_registered ${e.step}: \`${e.command}\``
     case "gate_yielded":
-      return `gate_yielded ${e.step}: ${e.file} — the edit gate yields after repeated rejections; the next attempt lands`
+      return `gate_yielded ${e.step}: ${displayPath(e.file)} — the edit gate yields after repeated rejections; the next attempt lands`
     case "suspect_test":
       return `suspect_test ${e.step}: \`${e.command}\` — excluded from gating (the test itself may be wrong)`
     case "numerics_hint":
@@ -189,9 +191,9 @@ function describe(e: Sequenced): string {
     case "suite":
       return `suite ${e.step}: ${e.green} green, ${e.red} red${e.skipped > 0 ? `, ${e.skipped} skipped (budget)` : ""}`
     case "rederived":
-      return `rederived ${e.step}: fresh implementation of ${e.file}`
+      return `rederived ${e.step}: fresh implementation of ${displayPath(e.file)}`
     case "edit_rejected":
-      return `edit_rejected ${e.step}: ${e.file} did not compile — reverted (workspace stays green)`
+      return `edit_rejected ${e.step}: ${displayPath(e.file)} did not compile — reverted (workspace stays green)`
     case "split_degraded":
       return `split_degraded ${e.step} (could not split — ran atomic instead of blocking)`
     case "root_degraded":

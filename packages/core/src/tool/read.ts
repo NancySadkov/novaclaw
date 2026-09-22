@@ -18,6 +18,7 @@ import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
 import { AbsolutePath } from "../schema"
 import { SessionSchema } from "../session/schema"
+import { displayPath } from "../util/path"
 import { binaryNote } from "./hex"
 import { ReadGuidance } from "./read-guidance"
 import { ReadToolFileSystem } from "./read-filesystem"
@@ -79,6 +80,7 @@ const SHARED_TAIL =
  * says it does not know and offers both checks.
  */
 export const readFailureMessage = (error: unknown, path: string): string => {
+  const shownPath = displayPath(path)
   const reason = String((error as { readonly reason?: unknown } | undefined)?.reason ?? "")
   const code = String((error as { readonly code?: unknown } | undefined)?.code ?? "")
   const text = String((error as { readonly message?: unknown } | undefined)?.message ?? "")
@@ -89,21 +91,21 @@ export const readFailureMessage = (error: unknown, path: string): string => {
   // guess" that the perception section also carries.
   if (matches(/\bENOENT\b|\bNotFound\b/, "NotFound", "ENOENT"))
     return (
-      `${path} does not exist. If you have not listed this folder yet, list it (\`glob\` or ` +
+      `${shownPath} does not exist. If you have not listed this folder yet, list it (\`glob\` or ` +
       `\`bash ls\`) and read one of the names it returns — do not guess or invent a filename.`
     )
 
   // Refused — the path is real; the process may not open it.
   if (matches(/\bEACCES\b|\bEPERM\b|permission denied/i, "PermissionDenied", "EACCES", "EPERM"))
     return (
-      `${path} exists but could not be opened: permission denied. Check whether this session is ` +
+      `${shownPath} exists but could not be opened: permission denied. Check whether this session is ` +
       `allowed to read that location before trying again — re-reading it will fail the same way.`
     )
 
   // Held — real, permitted, and busy. Retrying can genuinely work here, which is why it is the one
   // case that says so.
   if (matches(/\bEBUSY\b|\bETXTBSY\b|being used by another process/i, "Busy", "EBUSY", "ETXTBSY"))
-    return `${path} is locked by another process. Wait a moment and read it again, or continue with another file.`
+    return `${shownPath} is locked by another process. Wait a moment and read it again, or continue with another file.`
 
   // A path whose PARENT is not a folder — `a/b.txt/c.txt`, which is what a model produces when it
   // appends to a filename it already had. The correction is specific and the model can act on it
@@ -111,15 +113,15 @@ export const readFailureMessage = (error: unknown, path: string): string => {
   // the filesystem is ever touched, which is why it arrives with no errno attached.
   if (matches(/\bENOTDIR\b/, "non_directory_ancestor", "ENOTDIR"))
     return (
-      `${path} cannot exist: something on the way to it is a file, not a folder. List the folder you ` +
+      `${shownPath} cannot exist: something on the way to it is a file, not a folder. List the folder you ` +
       `meant (\`glob\` or \`bash ls\`) and read a name it returns.`
     )
 
   // A directory handed to a file read — a mistake with an obvious correction.
-  if (matches(/\bEISDIR\b/, "EISDIR")) return `${path} is a directory, not a file. List it instead to see what it holds.`
+  if (matches(/\bEISDIR\b/, "EISDIR")) return `${shownPath} is a directory, not a file. List it instead to see what it holds.`
 
   return (
-    `Unable to read ${path}${text ? ` (${text})` : ""}. The cause is not one this tool recognises: ` +
+    `Unable to read ${shownPath}${text ? ` (${text})` : ""}. The cause is not one this tool recognises: ` +
     `check that the path exists by listing its folder, and that this session may read that location.`
   )
 }
@@ -140,7 +142,7 @@ export const DESCRIPTION_TEXT_ONLY = "Read a file, page through large UTF-8 text
  * pictures are elided to make room for this one.
  */
 export const heldImageNotice = (path: string, limit: number): string =>
-  `[Not opened: ${path}. This model accepts only ${limit} image${limit === 1 ? "" : "s"} per request, and you are already holding ${limit} that you have not described yet. Opening another would push one of them out of this conversation, and it would be gone. FIRST write down what each image you are holding shows — one line each is enough — then read this file again; the pictures you have described survive as your own text even after the pixels go.]`
+  `[Not opened: ${displayPath(path)}. This model accepts only ${limit} image${limit === 1 ? "" : "s"} per request, and you are already holding ${limit} that you have not described yet. Opening another would push one of them out of this conversation, and it would be gone. FIRST write down what each image you are holding shows — one line each is enough — then read this file again; the pictures you have described survive as your own text even after the pixels go.]`
 
 export const IMAGE_NOTE =
   "Image read successfully. Write one line now saying what it shows, before you read anything else — " +

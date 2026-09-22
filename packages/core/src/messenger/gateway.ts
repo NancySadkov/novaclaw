@@ -20,6 +20,7 @@ import { Log } from "@novaclaw/schema/log"
 import { SessionV2 } from "../session"
 import { SessionOrigin } from "../session/origin"
 import { MessengerCommands } from "./commands"
+import { displayPath } from "../util/path"
 import type { Connection, Driver, InboundEvent } from "./driver"
 import * as MessengerDriverContract from "./driver"
 import { MessengerFormat } from "./format"
@@ -937,7 +938,7 @@ const build = (options: Options) =>
             continue
           }
           files.push({ uri: `file://${target.replaceAll("\\", "/")}`, mime, name })
-          notes.push(`[attachment "${name}" saved to ${target}]`)
+          notes.push(`[attachment "${name}" saved to ${displayPath(target)}]`)
         }
         if (refs.length > MAX_ATTACHMENTS_PER_MESSAGE)
           notes.push(

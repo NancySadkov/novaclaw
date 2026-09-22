@@ -10,6 +10,7 @@ import { LocationMutation } from "../location-mutation"
 import { Ripgrep } from "../ripgrep"
 import { RelativePath } from "../schema"
 import { PermissionV2 } from "../permission"
+import { displayPath } from "../util/path"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -71,7 +72,7 @@ type ModelOutput = typeof Output.Encoded
 
 /** Format raw search results into the concise line-oriented output models expect. */
 export const toModelOutput = (output: ModelOutput) => {
-  const lines = output.entries.length === 0 ? ["No files found"] : output.entries.map((item) => item.path)
+  const lines = output.entries.length === 0 ? ["No files found"] : output.entries.map((item) => displayPath(item.path))
   // 🗑️ A `withheld` notice used to be appended here — the sentence that told the model its result was
   // PARTIAL because the folder's `exclude` list removed rows. There is no list any more (owner,
   // 2026-09-16), so there is nothing to be partial about and no sentence to write. A bare `withheld: 0`
@@ -119,7 +120,7 @@ export const layer = Layer.effectDiscard(
                   ...output,
                   entries: output.entries.map((entry) => ({
                     ...entry,
-                    path: path.resolve(location.directory, entry.path),
+                    path: displayPath(path.resolve(location.directory, entry.path)),
                   })),
                 }),
               },

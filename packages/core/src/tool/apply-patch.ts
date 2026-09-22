@@ -10,6 +10,7 @@ import { FSUtil } from "../fs-util"
 import { LocationMutation } from "../location-mutation"
 import { Patch } from "../patch"
 import { PermissionV2 } from "../permission"
+import { displayPath } from "../util/path"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -51,7 +52,7 @@ export const toModelOutput = (output: Output) =>
   [
     "Applied patch sequentially:",
     ...output.applied.map(
-      (item) => `${item.type === "add" ? "A" : item.type === "delete" ? "D" : "M"} ${item.resource}`,
+      (item) => `${item.type === "add" ? "A" : item.type === "delete" ? "D" : "M"} ${displayPath(item.resource)}`,
     ),
   ].join("\n")
 
@@ -99,8 +100,8 @@ export const layer = Layer.effectDiscard(
               const fail = (path: string) => {
                 const prefix =
                   applied.length === 0
-                    ? `Unable to apply patch at ${path}`
-                    : `Patch partially applied before failing at ${path}. Applied: ${applied.map((item) => item.resource).join(", ")}`
+                    ? `Unable to apply patch at ${displayPath(path)}`
+                    : `Patch partially applied before failing at ${displayPath(path)}. Applied: ${applied.map((item) => displayPath(item.resource)).join(", ")}`
                 return new ToolFailure({ message: prefix })
               }
               return Effect.gen(function* () {

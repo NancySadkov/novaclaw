@@ -6,6 +6,7 @@ import { Flock } from "./util/flock"
 import { Flag } from "./flag/flag"
 import { Xdg } from "./util/xdg"
 import { makeGlobalNode } from "./effect/app-node"
+import { displayPath } from "./util/path"
 
 const app = "novaclaw"
 
@@ -185,7 +186,7 @@ const dirs = (): Xdg.Dirs => {
     console.error(
       `[novaclaw] WARNING: could not determine this machine's home directory ` +
         `(os.homedir(), USERPROFILE, HOMEDRIVE+HOMEPATH and HOME are all empty), so NovaClaw is ` +
-        `storing its files under ${root} for this run. Pass --home <dir> (or set NOVACLAW_HOME) to ` +
+        `storing its files under ${displayPath(root)} for this run. Pass --home <dir> (or set NOVACLAW_HOME) to ` +
         `choose where they live.`,
     )
     chosen = {
@@ -226,8 +227,8 @@ const dirs = (): Xdg.Dirs => {
     if (second.length === 0) {
       console.error(
         `[novaclaw] WARNING: NovaClaw could not create its directories under the home it resolved ` +
-          `(${failures.map((fault) => `${fault.directory}: ${fault.message}`).join("; ")}), so it is ` +
-          `storing its files under ${root} for this run. Pass --home <dir> (or set NOVACLAW_HOME) to ` +
+          `(${failures.map((fault) => `${displayPath(fault.directory)}: ${fault.message}`).join("; ")}), so it is ` +
+          `storing its files under ${displayPath(root)} for this run. Pass --home <dir> (or set NOVACLAW_HOME) to ` +
           `choose where they live.`,
       )
       chosen = relocated
@@ -245,7 +246,7 @@ const dirs = (): Xdg.Dirs => {
     // its own call site, naming its own path.
     console.error(
       `[novaclaw] WARNING: NovaClaw could not create these directories and no fallback worked: ` +
-        `${status.failures.map((fault) => `${fault.directory}: ${fault.message}`).join("; ")}. ` +
+        `${status.failures.map((fault) => `${displayPath(fault.directory)}: ${fault.message}`).join("; ")}. ` +
         `The instance is starting anyway; features that need those directories will fail and say so. ` +
         `Pass --home <dir> (or set NOVACLAW_HOME) to choose where they live.`,
     )

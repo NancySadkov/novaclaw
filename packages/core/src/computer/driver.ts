@@ -6,6 +6,7 @@ import { ComputerEvidence } from "./evidence"
 import type { ComputerLedger } from "./ledger"
 import { ComputerLoop } from "./loop"
 import type { ComputerPrompt } from "./prompt"
+import { displayPath } from "../util/path"
 
 /**
  * Computer Use 2.1 / S5 — the IMPURE BINDING. `JhEngine`'s shape: injected effects, a pure reducer,
@@ -492,13 +493,13 @@ export function run(spec: ComputerLoop.TaskSpec, deps: Deps): Effect.Effect<RunR
         }
         // Condition 3 — a file, with bytes in it.
         if (outcome.file === undefined)
-          return reject(`the capture command exited 0 but wrote no file at ${path}`, outcome)
+          return reject(`the capture command exited 0 but wrote no file at ${displayPath(path)}`, outcome)
         if (!(outcome.file.size > 0))
-          return reject(`the capture at ${path} is empty (${outcome.file.size} bytes)`, outcome)
+          return reject(`the capture at ${displayPath(path)} is empty (${outcome.file.size} bytes)`, outcome)
         // Condition 4 — and it is this run's, not a leftover.
         if (outcome.file.mtimeMs < startedAt - tolerance) {
           return reject(
-            `the file at ${path} is STALE: last modified ${startedAt - outcome.file.mtimeMs}ms before the ` +
+            `the file at ${displayPath(path)} is STALE: last modified ${startedAt - outcome.file.mtimeMs}ms before the ` +
               `capture command started, so it was written by something other than this capture`,
             outcome,
           )

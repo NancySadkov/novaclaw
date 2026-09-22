@@ -12,6 +12,7 @@ import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
+import { displayPath } from "../util/path"
 import { trashPath } from "../trash"
 import { TrashSettings } from "../trash-settings"
 import { ToolRegistry } from "./registry"
@@ -94,7 +95,7 @@ export const layer = Layer.effectDiscard(
                   const denial = PermissionV2.denialMessage(error)
                   if (denial) return new ToolFailure({ message: denial })
                   return new ToolFailure({
-                    message: `Unable to trash ${input.path}: ${error instanceof Error ? error.message : String(error)}`,
+                    message: `Unable to trash ${displayPath(input.path)}: ${error instanceof Error ? error.message : String(error)}`,
                   })
                 }),
               ),

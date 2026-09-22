@@ -4,6 +4,7 @@ import { makeLocationNode } from "../effect/app-node"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Reference } from "../reference"
 import { SystemContext } from "../system-context/index"
+import { displayPath } from "../util/path"
 
 const Summary = Schema.Struct({
   name: Schema.String,
@@ -18,7 +19,7 @@ const render = (references: ReadonlyArray<typeof Summary.Type>) =>
     ...references.flatMap((reference) => [
       "  <reference>",
       `    <name>${reference.name}</name>`,
-      `    <path>${reference.path}</path>`,
+      `    <path>${displayPath(reference.path)}</path>`,
       ...(reference.description === undefined ? [] : [`    <description>${reference.description}</description>`]),
       "  </reference>",
     ]),

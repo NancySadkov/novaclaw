@@ -52,4 +52,10 @@ describe("project grounding copy", () => {
     ).toContain("Project root: /repo")
     expect(ProjectGrounding.render({ directory: "C:\\work", root: "C:\\" })).not.toContain("Project root:")
   })
+
+  test("renders Windows locations with separators intact", () => {
+    expect(
+      ProjectGrounding.render({ directory: "C:\\Users\\nangl\\.local\\share\\novaclaw", root: "C:\\Users\\nangl\\.local" }),
+    ).toContain("Current working folder: C:/Users/nangl/.local/share/novaclaw\nProject root: C:/Users/nangl/.local")
+  })
 })

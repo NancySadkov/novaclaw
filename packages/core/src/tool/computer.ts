@@ -26,6 +26,7 @@ import { SessionStore } from "../session/store"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
+import { displayPath } from "../util/path"
 
 export const name = "computer"
 
@@ -599,7 +600,7 @@ export const layer = Layer.effectDiscard(
                   )
                   return (interactive ? run.pipe(Effect.timeout("60 seconds")) : run).pipe(
                     Effect.mapError(
-                      (error) => new ToolFailure({ message: `computer: ${plan.file} failed — ${String(error)}` }),
+                      (error) => new ToolFailure({ message: `computer: ${displayPath(plan.file)} failed — ${String(error)}` }),
                     ),
                   )
                 }

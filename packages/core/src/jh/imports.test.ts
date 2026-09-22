@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { stripComments } from "../../test/lib/source-scan"
 
 // §0.7.2 — mechanical import-whitelist guard. Every engine source file under src/jh/ may import ONLY:
-//   effect · ./… (jh-relative) · ../util/hash · node:… (process-runner/tools-basic/store only) ·
+//   effect · ./… (jh-relative) · ../util/{hash,path} · node:… (process-runner/tools-basic/store only) ·
 //   drizzle-orm/… (sql.ts only) · ../database/… (store.ts only).
 // This keeps jh out of the LocationServiceMap and away from session/tool/config/v1/llm REACH, so
 // Phases 1–13 cannot collide with F1 deletions. The guard scans the directory, so it grows as files
@@ -18,6 +18,7 @@ function violationFor(filename: string, spec: string): string | undefined {
   if (spec === "effect") return undefined
   if (spec.startsWith("./")) return undefined
   if (spec === "../util/hash") return undefined
+  if (spec === "../util/path") return undefined
   // improve18: the PURE affective homeostat (core root, zero dependencies) — Strict and the normal
   // drain loop must drive ONE engine, not two look-alikes. Whitelisted on the same grounds as
   // ../util/hash: a leaf module, no session/tool/config/v1/llm/schema reach (which is what §0.7.2

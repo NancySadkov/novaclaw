@@ -178,7 +178,7 @@ describe("outcome 2 of 4 — NOT WORKING (the instance did not do it)", () => {
     const text = RecipeVerify.summary(result)
     expect(text).toContain("NOT WORKING")
     expect(text).toContain("brief.md")
-    expect(text).toContain(dir.path)
+    expect(text).toContain(dir.path.replaceAll("\\", "/"))
   })
 
   test("an artifact that exists but is EMPTY — the placeholder a file-exists check would green-light", async () => {

@@ -22,6 +22,7 @@ import { Location } from "./location"
 import { LocationMutation } from "./location-mutation"
 import { LocationServiceMap } from "./location-service-map"
 import { BootProfile } from "./observability/boot-profile"
+import { displayPath } from "./util/path"
 import { PermissionV2 } from "./permission"
 import { PluginV2 } from "./plugin"
 import { PluginInternal } from "./plugin/internal"
@@ -216,7 +217,7 @@ export function buildLocationServiceMap(
                 // mark is its origin. Charging it the idle wait since the listener came up would
                 // overstate it by seconds.
                 BootProfile.report(
-                  `location ${warm ? "warm" : "cold"} · ${ref.directory}`,
+                  `location ${warm ? "warm" : "cold"} · ${displayPath(ref.directory)}`,
                   BootProfile.PHASES.location,
                   { origin: "segment" },
                 )

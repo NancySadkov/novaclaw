@@ -3,6 +3,7 @@ export * as CommandPlugin from "./command"
 import { define } from "./internal"
 import { Effect } from "effect"
 import { Location } from "../location"
+import { displayPath } from "../util/path"
 import PROMPT_INITIALIZE from "./command/initialize.txt"
 import PROMPT_REVIEW from "./command/review.txt"
 
@@ -13,11 +14,11 @@ export const Plugin = define({
     const location = yield* Location.Service
     yield* ctx.command.transform((draft) => {
       draft.update("init", (command) => {
-        command.template = PROMPT_INITIALIZE.replace("${path}", location.root)
+        command.template = PROMPT_INITIALIZE.replace("${path}", displayPath(location.root))
         command.description = "guided AGENTS.md setup"
       })
       draft.update("review", (command) => {
-        command.template = PROMPT_REVIEW.replace("${path}", location.root)
+        command.template = PROMPT_REVIEW.replace("${path}", displayPath(location.root))
         command.description = "review changes [commit|branch|pr], defaults to uncommitted"
         command.subtask = true
       })

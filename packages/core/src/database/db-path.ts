@@ -4,6 +4,7 @@ import { isAbsolute, join } from "path"
 import { Flag } from "../flag/flag"
 import { Global } from "../global"
 import { InstallationChannel } from "../installation/version"
+import { displayPath } from "../util/path"
 
 // The instance database file. A LEAF module (no drizzle/migration imports) so boot-time snapshot
 // readers — the offline chokepoint reads the settings store SYNCHRONOUSLY at layer init — can
@@ -52,7 +53,7 @@ export function halfIsolationWarning(env: NodeJS.ProcessEnv = process.env): stri
   if (env.NOVACLAW_HOME || env.XDG_DATA_HOME) return undefined
   return (
     `NOVACLAW_DB moves only the database file (${Flag.NOVACLAW_DB}); the rest of the instance — ` +
-    `memory, adhoc tools, plugins, scratch and the log under ${Global.Path.data}, and the config dir — ` +
+    `memory, adhoc tools, plugins, scratch and the log under ${displayPath(Global.Path.data)}, and the config dir — ` +
     `is still the real one. For a whole isolated instance set NOVACLAW_HOME (or pass --home).`
   )
 }

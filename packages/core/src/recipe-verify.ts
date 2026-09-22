@@ -3,6 +3,7 @@ export * as RecipeVerify from "./recipe-verify"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { UnknownReason } from "@novaclaw/schema/unknown-reason"
+import { displayPath } from "./util/path"
 
 /**
  * **The deterministic success artifact for a cook** — the health-check recipes' verdict.
@@ -584,7 +585,7 @@ export const summary = (receipt: Receipt): string => {
   if (receipt.cook?.state === "stopped" && receipt.verdict === "unknown")
     return (
       `${name} — I could not check this cook. ${period(receipt.cook.why?.trim() || HOUSE_REASON.stopped)} ` +
-      `Anything missing from ${receipt.directory} is work that never happened rather than work that ` +
+      `Anything missing from ${displayPath(receipt.directory)} is work that never happened rather than work that ` +
       `failed, so this tells us nothing about this NovaClaw either way. Run it again and let it finish.` +
       (declaresNothing ? hint : "")
     )
@@ -606,7 +607,7 @@ export const summary = (receipt: Receipt): string => {
 
   return (
     `${name} — NOT WORKING. It says it produces ${list(unmet.map((check) => clip(check.declared)))}, and in ` +
-    `${receipt.directory} ${findings(unmet)}.` +
+    `${displayPath(receipt.directory)} ${findings(unmet)}.` +
     (met.length > 0 ? ` (${list(verified)} did arrive.)` : "") +
     couldNot +
     ` Run the “Install health check” recipe to see what this machine can do, or open that folder and read ` +

@@ -83,9 +83,26 @@ describe("PromptManager — the one system prompt", () => {
 
   test("an earlier work-log is named only when one exists", () => {
     expect(PromptManager.generate(base)).not.toContain("Earlier work-log")
-    expect(PromptManager.generate({ ...base, workLog: "C:/scratch/tmp/oldlog-2026-09-17-120000.json" })).toContain(
-      "Earlier work-log: C:/scratch/tmp/oldlog-2026-09-17-120000.json.",
+    expect(PromptManager.generate({ ...base, workLog: "C:\\Users\\nangl\\.local\\share\\oldlog-1.json" })).toContain(
+      "Earlier work-log: C:/Users/nangl/.local/share/oldlog-1.json",
     )
+  })
+
+  test("prompt-facing Windows paths keep every separator through text serialization", () => {
+    const text = PromptManager.generate({
+      ...base,
+      shell: "C:\\Users\\nangl\\.local\\bin\\bash.exe",
+      scratch: "C:\\Users\\nangl\\.local\\share\\novaclaw\\scratch\\geryon",
+      project: "C:\\Users\\nangl\\.local\\share\\novaclaw",
+      workLog: "C:\\Users\\nangl\\.local\\share\\novaclaw\\scratch\\geryon\\tmp\\oldlog-1.json",
+    })
+    expect(text).toContain("Shell: C:/Users/nangl/.local/bin/bash.exe")
+    expect(text).toContain("C:/Users/nangl/.local/share/novaclaw/scratch/geryon is your private workspace")
+    expect(text).toContain("Your project is C:/Users/nangl/.local/share/novaclaw")
+    expect(text).toContain(
+      "Earlier work-log: C:/Users/nangl/.local/share/novaclaw/scratch/geryon/tmp/oldlog-1.json",
+    )
+    expect(text).not.toContain("C:/Users/nangl.local")
   })
 
   test("`You have no subordinates` replaces an empty list, and an absent superior means the owner", () => {

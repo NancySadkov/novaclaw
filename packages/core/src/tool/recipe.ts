@@ -80,6 +80,7 @@ import { Global } from "../global"
 import { PermissionV2 } from "../permission"
 import { Recipe } from "../recipe"
 import { RecipeBuiltin } from "../recipe-builtin"
+import { displayPath } from "../util/path"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -171,7 +172,7 @@ export const formatOne = (recipe: Recipe.Recipe, folder: string): string =>
   [
     `# ${recipe.name} (${recipe.slug})`,
     recipe.description ? `${recipe.description}` : undefined,
-    `Folder: ${folder}`,
+    `Folder: ${displayPath(folder)}`,
     recipe.assets.length > 0 ? `Assets: ${recipe.assets.join(", ")}` : "Assets: none",
     recipe.builtin ? "This is a shipped example — replacing it changes what every future run of it does." : undefined,
     "",
@@ -192,7 +193,7 @@ export const collisionMessage = (title: string, slug: string) =>
 
 export const savedMessage = (recipe: Recipe.Recipe, folder: string, replaced: boolean) =>
   `${replaced ? "Replaced" : "Saved"} recipe "${recipe.name}" (slug "${recipe.slug}"). ` +
-  `Its folder is ${folder} — put any assets it needs there. ` +
+  `Its folder is ${displayPath(folder)} — put any assets it needs there. ` +
   `Frontmatter you did not write is preserved on every save.`
 
 const failure = (message: string) => new ToolFailure({ message })

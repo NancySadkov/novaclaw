@@ -3,6 +3,7 @@ export * as SessionCompaction from "./compaction"
 import { LLM, LLMError, LLMEvent, Message, type FinishReason, type LLMRequest, type Model } from "@novaclaw/llm"
 import { DateTime, Effect, Stream } from "effect"
 import { OldContext } from "./old-context"
+import { displayPath } from "../util/path"
 import type { Config } from "../config"
 import type { EventV2 } from "../event"
 import { CompactionPrune } from "./compaction-prune"
@@ -258,7 +259,7 @@ export const serializeMessage = (message: SessionMessage.Message, complete = fal
   if (message.type === "user") {
     // Ask the provenance question BEFORE claiming the user said this (session/steer-provenance.ts).
     if (isSteerText(message.text)) return `${STEER_LABEL}${stripSteerProvenance(message.text)}`
-    const files = message.files?.map((file) => `[Attached ${file.mime}: ${file.name ?? file.uri}]`) ?? []
+    const files = message.files?.map((file) => `[Attached ${file.mime}: ${file.name ?? displayPath(file.uri)}]`) ?? []
     // 🔴 A DELIVERED PEER MESSAGE IS A USER MESSAGE, and labelling it `[User]` launders a colleague's
     // question into something the owner asked. Durable, too: after one compaction nothing downstream
     // can recover who actually said it. Same misattribution the line above prevents for steers —

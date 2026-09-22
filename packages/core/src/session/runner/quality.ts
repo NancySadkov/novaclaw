@@ -17,6 +17,7 @@ export * as Quality from "./quality"
 
 import type { SessionMessage } from "../message"
 import type { Quality as QualitySchema } from "@novaclaw/schema/quality"
+import { displayPath } from "../../util/path"
 
 /**
  * The five slots, defined once in `@novaclaw/schema/quality` so the CONTRACT can carry them too.
@@ -79,7 +80,10 @@ export function writeTargets(context: readonly SessionMessage.Message[]): string
 /** Substitute the touched file into a provisioned command template. */
 export function renderCommand(template: string, file: string): string {
   // Quote for the shell: double quotes cover spaces on cmd.exe AND sh.
-  return template.includes("{file}") ? template.replaceAll("{file}", `"${file}"`) : `${template} "${file}"`
+  const shellPath = displayPath(file)
+  return template.includes("{file}")
+    ? template.replaceAll("{file}", `"${shellPath}"`)
+    : `${template} "${shellPath}"`
 }
 
 export interface DueCheck {

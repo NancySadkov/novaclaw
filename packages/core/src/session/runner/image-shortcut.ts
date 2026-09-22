@@ -1,5 +1,7 @@
 export * as ImageShortcut from "./image-shortcut"
 
+import { displayPath } from "../../util/path"
+
 /**
  * A shell command aimed at an IMAGE — the shortcut a model reaches for instead of looking.
  *
@@ -179,9 +181,9 @@ export const targetOf = target
 export const refusal = (command: string): string => {
   const target = targetOf(command)
   return (
-    `That command reads the FILE BYTES of ${target ?? "an image"}, so it cannot say what the picture ` +
+    `That command reads the FILE BYTES of ${target === undefined ? "an image" : displayPath(target)}, so it cannot say what the picture ` +
     `shows — a PNG/JPEG is compressed data, and dumping it as hex, text or base64 yields nothing about ` +
-    `the image's content. It was not run.${target === undefined ? "" : ` Call read with path="${target}" instead`}` +
+    `the image's content. It was not run.${target === undefined ? "" : ` Call read with path="${displayPath(target)}" instead`}` +
     `${target === undefined ? " Use the read tool on the image path instead" : ""} — that returns the ` +
     `actual pixels to you, and it is the only way to describe an image here. There is no cheaper route ` +
     `to these descriptions than looking at each file.`

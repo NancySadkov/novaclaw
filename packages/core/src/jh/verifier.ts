@@ -9,6 +9,7 @@ import { Effect } from "effect"
 import type { Presence } from "../presence"
 import type { JhStep } from "./step"
 import type { JhProcessRunner } from "./process-runner"
+import { displayPath } from "../util/path"
 
 export interface VerifyResult {
   readonly ok: boolean
@@ -129,12 +130,12 @@ export function verify(input: {
       // 🔴 The two ways of not seeing a file, kept apart. `absent` is an observation about the work;
       // `unreadable` is an observation about us, and saying "file not found" on it would put a fact the
       // gate never established into the transcript the model reasons from next turn.
-      if (answer === "absent") return Effect.succeed({ ok: false, detail: `file not found: ${check.path}` })
+      if (answer === "absent") return Effect.succeed({ ok: false, detail: `file not found: ${displayPath(check.path)}` })
       return Effect.succeed({
         ok: false,
         inconclusive: true,
         detail:
-          `could not check ${check.path} — the check itself failed (the path could not be read: permissions, ` +
+          `could not check ${displayPath(check.path)} — the check itself failed (the path could not be read: permissions, ` +
           `a symlink loop, or a drive that is not answering). This says NOTHING about whether the file is ` +
           `there. Fix the read, or write the file to a path you can read, then re-run this step.`,
       })

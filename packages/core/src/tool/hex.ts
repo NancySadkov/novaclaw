@@ -14,6 +14,8 @@
 //
 // Pure + dependency-free so it is unit-tested without a filesystem.
 
+import { displayPath } from "../util/path"
+
 export interface FileType {
   readonly format: string
   readonly description: string
@@ -137,7 +139,7 @@ export function binaryNote(resource: string, size: number | undefined, type: Fil
   const what = type ? `${type.format} — ${type.description}` : "unrecognized binary data"
   const bytes = size === undefined ? "" : `${size} bytes; `
   return (
-    `"${resource}" is a binary file (${bytes}${what}), not text. ` +
+    `"${displayPath(resource)}" is a binary file (${bytes}${what}), not text. ` +
     `Use \`read-hex\` to inspect it in chunks (it pages, so it works even on multi-GB images) ` +
     `and \`write-hex\` to patch bytes at an offset.`
   )

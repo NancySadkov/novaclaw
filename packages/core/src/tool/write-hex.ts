@@ -10,6 +10,7 @@ import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
+import { displayPath } from "../util/path"
 import { parseHexInput } from "./hex"
 import { writePatch } from "./hex-io"
 import { ToolRegistry } from "./registry"
@@ -119,7 +120,7 @@ export const layer = Layer.effectDiscard(
                   const denial = PermissionV2.denialMessage(error)
                   if (denial) return new ToolFailure({ message: denial })
                   return new ToolFailure({
-                    message: `Unable to write-hex ${input.filename}: ${error instanceof Error ? error.message : String(error)}`,
+                    message: `Unable to write-hex ${displayPath(input.filename)}: ${error instanceof Error ? error.message : String(error)}`,
                   })
                 }),
               ),

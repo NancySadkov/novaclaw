@@ -11,6 +11,7 @@ import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
 import { Ripgrep } from "../ripgrep"
 import { RelativePath } from "../schema"
+import { displayPath } from "../util/path"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -59,7 +60,7 @@ export const toModelOutput = (output: ModelOutput) => {
     if (current !== match.entry.path) {
       if (current) lines.push("")
       current = match.entry.path
-      lines.push(`${match.entry.path}:`)
+      lines.push(`${displayPath(match.entry.path)}:`)
     }
     lines.push(`  Line ${match.line}: ${match.text}`)
   }

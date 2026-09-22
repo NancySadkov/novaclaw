@@ -17,6 +17,7 @@ import fs from "node:fs/promises"
 import { randomUUID } from "node:crypto"
 import path from "node:path"
 import { Global } from "./global"
+import { displayPath } from "./util/path"
 
 export interface Recipe {
   readonly name: string
@@ -156,7 +157,7 @@ const atomicWrite = async (file: string, value: string) => {
 }
 
 const unreadableCatalogue = (file: string) =>
-  new Error(`Session tool catalogue is unreadable and was not overwritten: ${file}`)
+  new Error(`Session tool catalogue is unreadable and was not overwritten: ${displayPath(file)}`)
 
 /** Recipes the model defined in this session (empty on any read problem — never blocks). */
 export async function listSessionRecipes(sessionID: string, options?: Options): Promise<Recipe[]> {

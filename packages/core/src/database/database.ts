@@ -10,6 +10,7 @@ import { DatabaseMigration } from "./migration"
 import { migrations } from "./migration.gen"
 import { Global } from "../global"
 import { makeGlobalNode } from "../effect/app-node"
+import { displayPath } from "../util/path"
 
 const makeDatabase = EffectDrizzleSqlite.makeWithDefaults()
 type DatabaseShape = Effect.Success<typeof makeDatabase>
@@ -224,18 +225,18 @@ export const repairsFor = (fault: Omit<Fault, "repair" | "summary">): readonly s
     case "unreadable":
       return [
         "Close any other NovaClaw that may be using this file, then start it again.",
-        `Check that your account can read and write ${fault.path} and the folder it is in.`,
+        `Check that your account can read and write ${displayPath(fault.path)} and the folder it is in.`,
         "Point NovaClaw somewhere else with --home <dir> (or NOVACLAW_HOME), or NOVACLAW_DB=<file>.",
       ]
     case "corrupt":
       return [
         "Restore this file from a backup if you have one — it was NOT modified, moved or deleted.",
-        `If you have no backup, move ${fault.path} aside yourself and start NovaClaw again; it will create a new, empty database. Doing that loses the chats and settings in the old file, which is why NovaClaw will not do it for you.`,
+        `If you have no backup, move ${displayPath(fault.path)} aside yourself and start NovaClaw again; it will create a new, empty database. Doing that loses the chats and settings in the old file, which is why NovaClaw will not do it for you.`,
         "Point NovaClaw somewhere else with --home <dir> (or NOVACLAW_HOME) to keep this file untouched.",
       ]
     case "foreign":
       return [
-        `${fault.path} is a database, but not one of NovaClaw's. Nothing was changed.`,
+        `${displayPath(fault.path)} is a database, but not one of NovaClaw's. Nothing was changed.`,
         "If this file is yours, move it somewhere else — NovaClaw will create its own database here.",
         "If NovaClaw is pointed at the wrong place, fix --home <dir> (or NOVACLAW_HOME / NOVACLAW_DB).",
       ]
@@ -247,13 +248,13 @@ export const repairsFor = (fault: Omit<Fault, "repair" | "summary">): readonly s
       ]
     case "busy":
       return [
-        `Another program is holding ${fault.path} — almost always a second NovaClaw. Close the other one (a desktop window, a "novaclaw serve", or a command still running in a terminal) and start this one again.`,
+        `Another program is holding ${displayPath(fault.path)} — almost always a second NovaClaw. Close the other one (a desktop window, a "novaclaw serve", or a command still running in a terminal) and start this one again.`,
         "Nothing is wrong with your data or with this version, so do NOT reinstall or downgrade; two NovaClaws on one database file is the whole cause.",
         "To run two at once, give this one its own database: --home <dir> (or NOVACLAW_HOME), or NOVACLAW_DB=<file>.",
       ]
     case "unknown":
       return [
-        `NovaClaw could not tell what is wrong with ${fault.path}, and stopped rather than guess. It was NOT modified.`,
+        `NovaClaw could not tell what is wrong with ${displayPath(fault.path)}, and stopped rather than guess. It was NOT modified.`,
         "The `detail` line above is the raw fault — report it.",
         "Point NovaClaw somewhere else with --home <dir> (or NOVACLAW_HOME) to keep this file untouched.",
       ]
@@ -269,19 +270,19 @@ export const repairsFor = (fault: Omit<Fault, "repair" | "summary">): readonly s
 export const summaryFor = (kind: FaultKind, file: string, migration?: string): string => {
   switch (kind) {
     case "unreadable":
-      return `NovaClaw could not open its database file (${file}).`
+      return `NovaClaw could not open its database file (${displayPath(file)}).`
     case "corrupt":
-      return `NovaClaw's database file is damaged and could not be read (${file}).`
+      return `NovaClaw's database file is damaged and could not be read (${displayPath(file)}).`
     case "foreign":
-      return `The file at ${file} is a database, but it is not NovaClaw's.`
+      return `The file at ${displayPath(file)} is a database, but it is not NovaClaw's.`
     case "migration":
       return migration === undefined
-        ? `NovaClaw could not create the tables in its database (${file}).`
-        : `NovaClaw could not upgrade its database to this version (${file}); it stopped at migration ${migration}.`
+        ? `NovaClaw could not create the tables in its database (${displayPath(file)}).`
+        : `NovaClaw could not upgrade its database to this version (${displayPath(file)}); it stopped at migration ${migration}.`
     case "busy":
-      return `Another NovaClaw is already using this database file (${file}).`
+      return `Another NovaClaw is already using this database file (${displayPath(file)}).`
     case "unknown":
-      return `NovaClaw could not use its database file (${file}).`
+      return `NovaClaw could not use its database file (${displayPath(file)}).`
   }
 }
 
@@ -378,7 +379,7 @@ export const report = (fault: Fault): string => {
     `[novaclaw] NovaClaw stopped instead of starting up without it — an instance that looks healthy on a`,
     `[novaclaw] database it cannot use would write into a broken store.`,
     `[novaclaw]`,
-    `[novaclaw]   database: ${fault.path}`,
+    `[novaclaw]   database: ${displayPath(fault.path)}`,
     `[novaclaw]   fault:    ${fault.kind}`,
     ...(fault.migration === undefined ? [] : [`[novaclaw]   migration: ${fault.migration}`]),
     ...(fault.tables === undefined ? [] : [`[novaclaw]   tables:   ${fault.tables.join(", ")}`]),

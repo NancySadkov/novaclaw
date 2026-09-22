@@ -6,6 +6,7 @@ import path from "path"
 import { isManifestRouteId, MANIFEST_ROUTE_IDS, type ManifestRouteId } from "./app-route"
 import { Global } from "./global"
 import { Slug } from "./util/slug"
+import { displayPath } from "./util/path"
 
 // The persisted home-app registry (B14): the server-side half of the "make me an app" seam. An
 // agent (or the user) registers a MANIFEST — a launcher, not code: open a closed built-in route id,
@@ -196,7 +197,7 @@ export async function saveApp(input: SaveInput, options?: Options): Promise<Mani
       try {
         createdAt = (JSON.parse(existing) as Manifest).createdAt ?? manifest.createdAt
       } catch {
-        throw new Error(`Existing app manifest is unreadable and was not overwritten: ${file}`)
+        throw new Error(`Existing app manifest is unreadable and was not overwritten: ${displayPath(file)}`)
       }
     }
     const merged = { ...manifest, createdAt }

@@ -15,6 +15,7 @@ import { KeyedMutex } from "./effect/keyed-mutex"
 import { Flock } from "./util/flock"
 import { ShellBundle } from "./shell-bundle"
 import { which } from "./util/which"
+import { displayPath } from "./util/path"
 
 let cachedBinary: string | undefined
 /**
@@ -774,7 +775,7 @@ export const layer = Layer.effect(
         return yield* new OperationError({
           operation: "restore",
           directory: repository.worktree,
-          message: `Invalid tree entry for ${file}`,
+          message: `Invalid tree entry for ${displayPath(file)}`,
         })
       return { mode: match[1], object: match[2] }
     })
@@ -849,7 +850,7 @@ export const layer = Layer.effect(
                       new OperationError({
                         operation: "restore",
                         directory: input.repository.worktree,
-                        message: `Failed to remove ${file}`,
+                        message: `Failed to remove ${displayPath(file)}`,
                         cause,
                       }),
                   ),
@@ -921,7 +922,7 @@ export const layer = Layer.effect(
                     operation: "capture",
                     directory: input.path,
                     message:
-                      result.stderr.trim() || result.text.trim() || `Failed to capture untracked change: ${file}`,
+                      result.stderr.trim() || result.text.trim() || `Failed to capture untracked change: ${displayPath(file)}`,
                   }),
                 ),
           ),

@@ -19,6 +19,7 @@ export * as JhEngine from "./engine"
 import { Effect, Exit } from "effect"
 import type { Presence } from "../presence"
 import { Hash } from "../util/hash"
+import { displayPath } from "../util/path"
 import { Token } from "../util/token"
 import { JhTree } from "./tree"
 import { JhController } from "./controller"
@@ -1554,7 +1555,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           if (suspicious) {
             regression.markSuspect(t.command)
             newlySuspect ??= t.command
-            suspectNote ??= `\n(note: the test \`${t.command}\` was just marked SUSPECT${ownFile ? ` — its own file ${ownFile} does not build` : ""}; it is excluded from gating until fixed or replaced.)`
+            suspectNote ??= `\n(note: the test \`${t.command}\` was just marked SUSPECT${ownFile ? ` — its own file ${displayPath(ownFile)} does not build` : ""}; it is excluded from gating until fixed or replaced.)`
             continue
           }
         }
@@ -1929,7 +1930,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
               } else {
                 short = {
                   ok: false,
-                  detail: `STALE ARTIFACT — ${sp.file} was built before the latest source edits; rebuild it (recompile) before re-checking`,
+                  detail: `STALE ARTIFACT — ${displayPath(sp.file)} was built before the latest source edits; rebuild it (recompile) before re-checking`,
                 }
                 noCountSig = true
                 break
@@ -2263,7 +2264,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // step's check passes. This is the write→compile→fix loop with no backtracking and no tool-lock.
         const actionDesc =
           currentTool === "write_file"
-            ? `write_file ${String(currentArgs.path ?? "?")}`
+            ? `write_file ${displayPath(String(currentArgs.path ?? "?"))}`
             : typeof currentArgs.command === "string"
               ? currentArgs.command
               : JSON.stringify(currentArgs).slice(0, 200)

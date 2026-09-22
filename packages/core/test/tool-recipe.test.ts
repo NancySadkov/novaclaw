@@ -140,7 +140,7 @@ describe("recipe: author → load → render", () => {
 
         const read = yield* call(registry, { op: "read", slug: "hello-c" })
         expect(textOf(read)).toContain("Write hello.c, compile it with warnings on, and run it.")
-        expect(textOf(read)).toContain(path.join(root, "hello-c"))
+        expect(textOf(read)).toContain(path.join(root, "hello-c").replaceAll("\\", "/"))
       }),
     ),
   )

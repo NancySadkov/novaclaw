@@ -203,7 +203,7 @@ describe("a database that cannot be opened", () => {
     expect(fault.path).toBe(file)
     expect(fault.migration).toBeUndefined()
     expect(stderr).toContain("[novaclaw]")
-    expect(stderr).toContain(file)
+    expect(stderr).toContain(file.replaceAll("\\", "/"))
     expect(stderr).toContain("Nothing was moved, renamed or deleted")
     expect(stderr).toContain("--home <dir>")
     // The directory is still a directory, and nothing appeared beside it.
@@ -381,7 +381,7 @@ describe("what the user reads", () => {
     // is to not be described as another one would get described as another one.
     for (const kind of Database.faultKinds) {
       const text = Database.report(sample(kind))
-      expect(text).toContain("C:\\Users\\someone\\AppData\\Local\\novaclaw\\novaclaw.db")
+      expect(text).toContain("C:/Users/someone/AppData/Local/novaclaw/novaclaw.db")
       expect(text).toContain("Nothing was moved, renamed or deleted")
       expect(text).toContain("What repairs this:")
       expect(Database.repairsFor(sample(kind)).length).toBeGreaterThanOrEqual(2)

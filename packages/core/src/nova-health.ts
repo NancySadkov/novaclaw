@@ -1,5 +1,7 @@
 export * as NovaHealth from "./nova-health"
 
+import { displayPath } from "./util/path"
+
 /**
  * One calm answer to *"is anything wrong?"*, composed from signals that already exist.
  *
@@ -144,7 +146,7 @@ export const fromConfigDocument = (input: {
     // The FILE and the REASON, because "a config file is invalid" sends someone to the wrong file
     // when they keep more than one, and "invalid" alone does not say what to change.
     detail:
-      `${first!.path} could not be read — ${first!.notice}. Nothing in it was applied` +
+      `${displayPath(first!.path)} could not be read — ${first!.notice}. Nothing in it was applied` +
       `${rest > 0 ? `, and ${rest} other document${rest === 1 ? " is" : "s are"} in the same state` : ""}.`,
     action: "Fix the file and restart, or delete it and configure from Settings.",
   }

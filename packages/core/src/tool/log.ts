@@ -8,6 +8,7 @@ import { makeLocationNode } from "../effect/app-node"
 import { Global } from "../global"
 import { LogRead } from "../observability/log-read"
 import { SessionOrigin } from "../session/origin"
+import { displayPath } from "../util/path"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -360,7 +361,7 @@ export function run(input: typeof Input.Type, source: Source): Output | ToolFail
       ok: true,
       message:
         result.scanned === 0
-          ? `No log lines found under ${source.directory}. A fresh instance may not have written one yet.`
+          ? `No log lines found under ${displayPath(source.directory)}. A fresh instance may not have written one yet.`
           : `No line matches (examined ${result.scanned}). Widen the filter, or start from {op:'count'}.`,
     }
   const header =

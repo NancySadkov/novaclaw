@@ -19,6 +19,7 @@ import { PermissionV2 } from "../permission"
 import { EFFECTIVE_CONFIG_DEFAULTS, resolveSessionConfig } from "../session/config-resolve"
 import { SessionOrigin } from "../session/origin"
 import { SessionStore } from "../session/store"
+import { displayPath } from "../util/path"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -897,7 +898,7 @@ export const layer = Layer.effectDiscard(
                       Effect.orElseSucceed(() => undefined),
                     )
                     if (stat === undefined || !stat.isFile())
-                      return { outcome: "failed", message: `No file at ${input.path.trim()}.` } satisfies Output
+                      return { outcome: "failed", message: `No file at ${displayPath(input.path.trim())}.` } satisfies Output
                     const maxBytes = caps?.files.maxBytes
                     if (maxBytes !== undefined && stat.size > maxBytes)
                       return {
@@ -914,7 +915,7 @@ export const layer = Layer.effectDiscard(
                       source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
                     })
                     const data = yield* Effect.tryPromise(() => fs.readFile(filePath)).pipe(
-                      Effect.mapError(() => new ToolFailure({ message: `Could not read ${input.path.trim()}.` })),
+                      Effect.mapError(() => new ToolFailure({ message: `Could not read ${displayPath(input.path.trim())}.` })),
                     )
                     const outcome = yield* gateway.sendFile({
                       accountID: resolved.account.id,

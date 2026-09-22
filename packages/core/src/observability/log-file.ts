@@ -3,6 +3,7 @@ export * as LogFile from "./log-file"
 import fsSync from "node:fs"
 import path from "node:path"
 import zlib from "node:zlib"
+import { displayPath } from "../util/path"
 
 /**
  * **The log writer: one active segment, gzipped rotations, a bounded directory.**
@@ -614,7 +615,7 @@ export class Writer {
           this.size = 0
           this.truncations++
           process.stderr.write(
-            `[novaclaw] WARNING: ${this.file} could not be rotated (something else is holding it ` +
+            `[novaclaw] WARNING: ${displayPath(this.file)} could not be rotated (something else is holding it ` +
               `open) and passed its hard cap, so it was truncated. Earlier lines from this run are gone.\n`,
           )
         }

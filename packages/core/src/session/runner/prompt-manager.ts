@@ -1,5 +1,7 @@
 export * as PromptManager from "./prompt-manager"
 
+import { displayPath } from "../../util/path"
+
 /**
  * THE ONE SYSTEM PROMPT, and its single source of authority.
  *
@@ -146,7 +148,7 @@ export const generate = (input: Input): string => {
   blocks.push(
     [
       `This instance runs on ${input.os} ${input.kernelRelease} / ${input.arch}.`,
-      `Shell: ${input.shell}`,
+      `Shell: ${displayPath(input.shell)}`,
       "",
       `Instance owner is ${input.owner}.`,
       `Your name is ${input.name ?? input.owner}.${input.title === undefined ? "" : ` Your job title is ${input.title}.`}`,
@@ -157,7 +159,7 @@ export const generate = (input: Input): string => {
   )
   if (input.scratch !== undefined && input.scratch.trim().length > 0)
     blocks.push(
-      `${input.scratch} is your private workspace — use for intermediate files, instead of littering project's folder.`,
+      `${displayPath(input.scratch)} is your private workspace — use for intermediate files, instead of littering project's folder.`,
     )
   if (input.unattended && (input.goal?.trim() ?? "").length > 0)
     blocks.push(`Your durable goal, set for you by whoever assigned this work:\n\n${input.goal!.trim()}`)
@@ -167,11 +169,11 @@ export const generate = (input: Input): string => {
     const listing = (input.projectFiles ?? []).length === 0 ? "" : renderProjectFiles(input.projectFiles!)
     blocks.push(
       listing.length === 0
-        ? `Your project is ${input.project}`
-        : `Your project is ${input.project}\nIt has following files:\n${listing}`,
+        ? `Your project is ${displayPath(input.project)}`
+        : `Your project is ${displayPath(input.project)}\nIt has following files:\n${listing}`,
     )
   }
   if (input.workLog !== undefined && input.workLog.trim().length > 0)
-    blocks.push(`Earlier work-log: ${input.workLog}.`)
+    blocks.push(`Earlier work-log: ${displayPath(input.workLog)}`)
   return blocks.filter((block) => block.length > 0).join("\n\n")
 }

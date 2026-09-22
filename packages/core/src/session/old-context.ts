@@ -5,6 +5,7 @@ import path from "node:path"
 import { randomUUID } from "node:crypto"
 import type { Message, SystemPart } from "@novaclaw/llm"
 import { stampOf } from "../observability/log-file"
+import { displayPath } from "../util/path"
 
 /** Inside the agent's scratch folder, beside its other throwaway work. */
 export const DIR = "tmp"
@@ -30,7 +31,7 @@ export const identity = randomUUID
  * must be told, in the place it looks, that the chat is not gone. `file` is absolute, because the
  * agent's working directory is not necessarily its scratch folder.
  */
-export const tombstone = (file: string): string => `${file} holds earlier chat`
+export const tombstone = (file: string): string => `${displayPath(file)} holds earlier chat`
 
 /** Shared by rendering and compaction budgeting: measure the actual replacement envelope. */
 export const checkpoint = (input: { summary: string; recent: string; file?: string }): string =>
@@ -113,32 +114,38 @@ export const save = async (input: {
   return target
 }
 
-export const workLogName = (at: Date): string => {
+export const workLogName = (at: Date, counter = 1): string => {
   const iso = at.toISOString()
-  return `oldlog-${iso.slice(0, 10)}-${iso.slice(11, 19).replaceAll(":", "")}.json`
+  return `oldlog-${iso.slice(0, 10)}-${iso.slice(11, 19).replaceAll(":", "")}-${counter}.json`
 }
 
-export const workLogFile = (input: { readonly scratchFolder: string; readonly at: Date }): string =>
-  path.join(input.scratchFolder, DIR, workLogName(input.at))
+export const workLogFile = (input: { readonly scratchFolder: string; readonly at: Date; readonly counter?: number }): string =>
+  path.join(input.scratchFolder, DIR, workLogName(input.at, input.counter))
 
 export const saveWorkLog = async (input: {
   readonly scratchFolder: string
   readonly at: Date
   readonly text: string
 }): Promise<string> => {
-  const target = workLogFile({ scratchFolder: input.scratchFolder, at: input.at }).replace(
-    ".json",
-    `-${input.at.getUTCMilliseconds().toString().padStart(3, "0")}-${identity()}.json`,
-  )
-  await fs.mkdir(path.dirname(target), { recursive: true })
-  await fs.writeFile(target, JSON.stringify({ at: input.at.toISOString(), text: input.text }, undefined, 2), {
-    encoding: "utf8",
-    flag: "wx",
-  })
-  return target
+  const directory = path.join(input.scratchFolder, DIR)
+  await fs.mkdir(directory, { recursive: true })
+  const body = JSON.stringify({ at: input.at.toISOString(), text: input.text }, undefined, 2)
+  for (let counter = 1; ; counter++) {
+    const target = workLogFile({ scratchFolder: input.scratchFolder, at: input.at, counter })
+    try {
+      await fs.writeFile(target, body, { encoding: "utf8", flag: "wx" })
+      return target
+    } catch (cause) {
+      if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause
+    }
+  }
 }
 
 const WORK_LOG = /^oldlog-.*\.json$/
+const workLogSortKey = (name: string): string => {
+  const match = /^oldlog-(\d{4}-\d{2}-\d{2})-(\d{6})-(\d+)\.json$/.exec(name)
+  return match === null ? name : `${match[1]}${match[2]}${match[3]!.padStart(20, "0")}`
+}
 
 /** The newest work-log in the agent's scratch, or `undefined` when there is none. */
 export const latestWorkLog = async (scratchFolder: string): Promise<string | undefined> => {
@@ -146,7 +153,7 @@ export const latestWorkLog = async (scratchFolder: string): Promise<string | und
     const names = await fs.readdir(path.join(scratchFolder, DIR))
     const newest = names
       .filter((name) => WORK_LOG.test(name))
-      .sort()
+      .sort((left, right) => workLogSortKey(left).localeCompare(workLogSortKey(right)))
       .at(-1)
     return newest === undefined ? undefined : path.join(scratchFolder, DIR, newest)
   } catch {

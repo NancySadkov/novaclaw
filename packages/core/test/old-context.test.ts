@@ -2,7 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { DIR, file, name, render, save, tombstone } from "../src/session/old-context"
+import { DIR, file, latestWorkLog, name, render, save, saveWorkLog, tombstone, workLogName } from "../src/session/old-context"
 import { Message } from "@novaclaw/llm"
 
 /**
@@ -57,8 +57,9 @@ describe("the folded-away chat has a name the agent can be handed", () => {
     const target = path.join("C:", "scratch", "geryon", "tmp", "oldctx-20260915T174500123Z.txt")
     const line = tombstone(target)
 
-    expect(line).toBe(`${target} holds earlier chat`)
-    expect(line).toContain(target)
+    const shown = target.replaceAll("\\", "/")
+    expect(line).toBe(`${shown} holds earlier chat`)
+    expect(line).toContain(shown)
     // No placeholder may survive into the context the model reads: `%DATETIME%` reaching a model is
     // the same defect as a config value reaching it, and it is invisible in a summary.
     expect(line).not.toContain("%")
@@ -130,6 +131,32 @@ describe("the harness can always write it, whatever is already on disk", () => {
     expect(path.basename(written)).toMatch(/^oldctx-20260915T174500123Z-[a-f0-9-]+\.txt$/)
     expect(path.basename(path.dirname(written))).toBe("tmp")
     await expect(fs.stat(written)).resolves.toBeDefined()
+  })
+})
+
+describe("the work-log keeps the prompt reference short and collision-safe", () => {
+  test("the name carries a per-second counter, not a UUID", () => {
+    const at = new Date("2026-09-22T09:43:33.606Z")
+
+    expect(workLogName(at)).toBe("oldlog-2026-09-22-094333-1.json")
+    expect(workLogName(at, 2)).toBe("oldlog-2026-09-22-094333-2.json")
+    expect(workLogName(at, 10)).toBe("oldlog-2026-09-22-094333-10.json")
+  })
+
+  test("two compactions at one instant get distinct numbered files", async () => {
+    const root = await tempRoot("work-log")
+    const scratch = path.join(root, "geryon")
+    const at = new Date("2026-09-22T09:43:33.606Z")
+
+    const [first, second] = await Promise.all([
+      saveWorkLog({ scratchFolder: scratch, at, text: "first" }),
+      saveWorkLog({ scratchFolder: scratch, at, text: "second" }),
+    ])
+
+    expect(new Set([path.basename(first), path.basename(second)])).toEqual(
+      new Set(["oldlog-2026-09-22-094333-1.json", "oldlog-2026-09-22-094333-2.json"]),
+    )
+    expect(await latestWorkLog(scratch)).toBe(path.join(scratch, DIR, "oldlog-2026-09-22-094333-2.json"))
   })
 })
 

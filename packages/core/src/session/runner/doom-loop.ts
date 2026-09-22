@@ -7,6 +7,7 @@
 
 import type { SessionMessage } from "../message"
 import { lastRealUserIndex } from "../steer-provenance"
+import { displayPath } from "../../util/path"
 
 export const DOOM_LOOP_THRESHOLD = 3
 
@@ -151,7 +152,7 @@ export function detectFailureStreak(
 export function failureStreakMessage(streak: FailureStreak): string {
   return (
     `The last ${streak.count} tool calls to the same target (\`${streak.name}\`${
-      streak.target ? ` → ${streak.target}` : ""
+      streak.target ? ` → ${displayPath(streak.target)}` : ""
     }) failed the same way. Stop repeating it — read the error, change your approach, or tell the user ` +
     `what's blocking you.`
   )

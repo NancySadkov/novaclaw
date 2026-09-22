@@ -32,6 +32,7 @@ import { SessionInput } from "../input"
 import type { SessionMessage } from "../message"
 import { Quality } from "./quality"
 import { TaskConstraint } from "./task-constraint"
+import { displayPath } from "../../util/path"
 
 export const WALL_DEFAULT_MIN = 45
 export const MAX_DEPTH = 5
@@ -456,7 +457,7 @@ export function lastUserText(context: readonly SessionMessage.Message[]): string
 export function environmentFor(platform: NodeJS.Platform, shellPath: string = Shell.agentDefault()): string {
   const isBash = Shell.name(shellPath) === "bash"
   const shell = isBash
-    ? `Each \`run\` command executes in a FRESH bash shell (\`${shellPath}\`) in the working directory; no PATH/cwd state persists between calls. Use POSIX syntax and FORWARD SLASHES \`/\` in ALL paths${platform === "win32" ? " (a Windows drive is `/c/...` to this bash)" : ""}. APPEND any needed directory inside the same command: \`PATH="$PATH:/dir/bin" your-command\` — PREPENDING a toolchain shadows the shell's own \`ls\`/\`head\`/\`cat\` and breaks later commands. Run a locally built program as \`./name\`. Reference files by relative path.`
+    ? `Each \`run\` command executes in a FRESH bash shell (\`${displayPath(shellPath)}\`) in the working directory; no PATH/cwd state persists between calls. Use POSIX syntax and FORWARD SLASHES \`/\` in ALL paths${platform === "win32" ? " (a Windows drive is `/c/...` to this bash)" : ""}. APPEND any needed directory inside the same command: \`PATH="$PATH:/dir/bin" your-command\` — PREPENDING a toolchain shadows the shell's own \`ls\`/\`head\`/\`cat\` and breaks later commands. Run a locally built program as \`./name\`. Reference files by relative path.`
     : platform === "win32"
       ? "Each `run` command executes in a FRESH Windows cmd.exe shell in the working directory. NO state (current directory, environment variables, PATH) persists between separate `run` calls. Use FORWARD SLASHES `/` in ALL paths. If a command needs a tool's directory on PATH, set it INSIDE that same command: `set PATH=C:/some/dir/bin;%PATH% && your-command`. A program built in the working directory must be run as `.\\name.exe` — a bare name fails. POSIX syntax (pipes into `head`, `2>/dev/null`, `VAR=x cmd`) does NOT work here. Reference files by relative path."
       : "Each `run` command executes in a FRESH /bin/sh shell in the working directory; no PATH/cwd state persists between calls. Prepend any needed PATH inside the command: `PATH=/dir/bin:$PATH your-command`. Run a locally built program as `./name`. Reference files by relative path."

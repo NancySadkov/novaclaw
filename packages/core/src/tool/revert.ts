@@ -22,6 +22,7 @@ import { Snapshot } from "../snapshot"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
+import { displayPath } from "../util/path"
 
 export const name = "revert"
 export const MAX_STEPS = 50
@@ -47,7 +48,7 @@ export type Output = typeof Output.Type
 const MAX_LISTED = 20
 
 export const toModelOutput = (output: Output) => {
-  const listed = output.files.slice(0, MAX_LISTED).join(", ")
+  const listed = output.files.slice(0, MAX_LISTED).map(displayPath).join(", ")
   const more = output.files.length > MAX_LISTED ? ` (+${output.files.length - MAX_LISTED} more)` : ""
   return `Restored ${output.count} file(s) to their pre-change state: ${listed}${more}. Deleted files are NOT covered here — restore those from the Trash instead.`
 }

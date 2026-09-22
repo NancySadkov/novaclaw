@@ -59,6 +59,9 @@ describe("Quality (QE-B pure)", () => {
   test("renderCommand: {file} substitution (quoted) or appended", () => {
     expect(renderCommand("parse {file}", "src/x y.ts")).toBe('parse "src/x y.ts"')
     expect(renderCommand("verify", "a.ts")).toBe('verify "a.ts"')
+    expect(renderCommand("read {file}", "C:\\Users\\nangl\\.local\\share\\novaclaw\\file.ts")).toBe(
+      'read "C:/Users/nangl/.local/share/novaclaw/file.ts"',
+    )
   })
 
   test("dueMidLoop: syntax+check per file; typecheck on the cadence", () => {

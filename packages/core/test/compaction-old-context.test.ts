@@ -162,7 +162,7 @@ describe("the folded chat is saved where the agent can grep it", () => {
     const { context, metadata } = await drive({ scratchFolder: folder })
     const file = metadata?.["compaction.folded.file"] as string
 
-    expect(context).toContain(`${file} holds earlier chat`)
+    expect(context).toContain(`${file.replaceAll("\\", "/")} holds earlier chat`)
     // OUTSIDE `<summary>`, deliberately: the summary is the MODEL's text, re-fed as
     // `<previous-summary>` on the next cycle, archived to memory and shown to the user. A harness path
     // inside it would be words in the model's mouth in all four places, one stale line per cycle.

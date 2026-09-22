@@ -6,6 +6,7 @@ import { makeLocationNode } from "./effect/app-node"
 import { FSUtil } from "./fs-util"
 import { SessionExecutionAttempt } from "./session/execution-attempt"
 import { SessionSchema } from "./session/schema"
+import { displayPath } from "./util/path"
 
 export interface Target {
   readonly canonical: string
@@ -80,7 +81,7 @@ export const layer = Layer.effect(
       const bytes = yield* fs.readFile(target.canonical)
       const text = yield* Effect.try({
         try: () => new TextDecoder("utf-8", { fatal: true }).decode(bytes),
-        catch: (cause) => new FSUtil.FileSystemError({ method: `decode ${target.resource}`, cause }),
+        catch: (cause) => new FSUtil.FileSystemError({ method: `decode ${displayPath(target.resource)}`, cause }),
       })
       return {
         digest: createHash("sha256").update(bytes).digest("hex"),

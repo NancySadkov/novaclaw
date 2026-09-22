@@ -3,6 +3,7 @@ export * as AgentWorkspace from "./workspace"
 import { Scratch } from "../scratch"
 import type { SessionMessage } from "../session/message"
 import { applySteerProvenance } from "../session/steer-provenance"
+import { displayPath } from "../util/path"
 
 // WHERE a colleague works, and what happens when you move it (owner, 2026-08-21).
 //
@@ -92,13 +93,13 @@ export const reassignmentNotice = (input: {
 }): string =>
   applySteerProvenance(
     input.ownScratch
-      ? `Your assignment changed: you are no longer on ${input.from}, and your folder is your own ` +
-          `workspace (${input.to}) again. Your previous conversation has been filed and THIS chat starts ` +
-          `fresh, rooted in ${input.to} — so everything you read or write here happens in the right ` +
+      ? `Your assignment changed: you are no longer on ${displayPath(input.from)}, and your folder is your own ` +
+          `workspace (${displayPath(input.to)}) again. Your previous conversation has been filed and THIS chat starts ` +
+          `fresh, rooted in ${displayPath(input.to)} — so everything you read or write here happens in the right ` +
           `place. Anything you were part-way through in the old chat is not yours to finish; say so if ` +
           `it matters, and wait for the next thing you are asked.`
-      : `Your assignment changed: your folder is now ${input.to}, not ${input.from}. Your previous ` +
-          `conversation has been filed and THIS chat starts fresh, rooted in ${input.to} — so the new ` +
+      : `Your assignment changed: your folder is now ${displayPath(input.to)}, not ${displayPath(input.from)}. Your previous ` +
+          `conversation has been filed and THIS chat starts fresh, rooted in ${displayPath(input.to)} — so the new ` +
           `project's files are the ones you will find here. Anything you were part-way through in the ` +
           `old chat is not yours to carry over; say so if it matters, and wait for the next thing you ` +
           `are asked.`,

@@ -28,6 +28,7 @@ import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
 import { DEFAULT_TIMEOUT_MS, JOB_WAIT_DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS } from "./bash-deadline"
+import { displayPath } from "../util/path"
 
 export { DEFAULT_TIMEOUT_MS, JOB_WAIT_DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS } from "./bash-deadline"
 
@@ -399,7 +400,7 @@ export const layer = Layer.effectDiscard(
                 }
 
               if ((yield* fs.stat(target.canonical)).type !== "Directory")
-                return yield* Effect.fail(new Error(`Working directory is not a directory: ${target.canonical}`))
+                return yield* Effect.fail(new Error(`Working directory is not a directory: ${displayPath(target.canonical)}`))
 
               // Agents use NovaClaw's supplied POSIX shell. Resolved above the approval reduction so
               // parsing and execution use the exact same shell.

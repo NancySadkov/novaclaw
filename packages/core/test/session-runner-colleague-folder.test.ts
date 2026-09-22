@@ -72,6 +72,7 @@ fs.writeFileSync(path.join(ASSIGNED_PROJECT, "ledger.md"), "the books\n")
 const UNASSIGNED_SCRATCH = Scratch.forAgent(UNASSIGNED)
 fs.mkdirSync(UNASSIGNED_SCRATCH, { recursive: true })
 fs.writeFileSync(path.join(UNASSIGNED_SCRATCH, "sketch.txt"), "notes\n")
+const shownPath = (value: string) => value.replaceAll("\\", "/")
 
 /**
  * Where the chat runs, derived by the SAME function the server's create uses. Typing the path out
@@ -168,9 +169,9 @@ describe("the folder a colleague was assigned is the folder its turn is grounded
     expect(
       assigned.text,
       "the first turn for a colleague with a stored folder did not name that folder — the model is left to infer a cwd it was never given, which is the failure `project-grounding.ts` exists for",
-    ).toContain(`Current working folder: ${ASSIGNED_PROJECT}`)
+    ).toContain(`Current working folder: ${shownPath(ASSIGNED_PROJECT)}`)
     expect(unassigned.text, "a colleague with no project was not grounded in its own workspace").toContain(
-      `Current working folder: ${UNASSIGNED_SCRATCH}`,
+      `Current working folder: ${shownPath(UNASSIGNED_SCRATCH)}`,
     )
 
     // The CONTENTS, not just the path. This is the half that converted on a real model: asked about
@@ -188,7 +189,7 @@ describe("the folder a colleague was assigned is the folder its turn is grounded
       "sketch.txt",
     )
     expect(unassigned.text, "the unassigned colleague was grounded in the assigned project").not.toContain("ledger.md")
-    expect(unassigned.text).not.toContain(ASSIGNED_PROJECT)
+    expect(unassigned.text).not.toContain(shownPath(ASSIGNED_PROJECT))
 
     // The ordinary chat gets the cadence and no second system line.
     expect(
@@ -205,7 +206,7 @@ describe("the folder a colleague was assigned is the folder its turn is grounded
     const fast = await groundingFor({ agentID: ASSIGNED, directory: ASSIGNED_PROJECT, shortChat: true })
     expect(fast.requests, "the Fast Chat turn never reached the provider — this case would prove nothing").toBe(1)
     expect(fast.everything, "a pure Chat leaked a project assignment into the model request").not.toContain(
-      ASSIGNED_PROJECT,
+      shownPath(ASSIGNED_PROJECT),
     )
     expect(fast.everything).not.toContain("ledger.md")
     expect(fast.everything).not.toContain("Current working folder")
@@ -230,7 +231,7 @@ describe("the folder a colleague was assigned is the folder its turn is grounded
       "an unassigned colleague's own scratch folder is now announced as the project this conversation belongs to",
     ).not.toContain("this conversation belongs to")
     expect(fast.everything, "the unassigned Fast Chat names its scratch workspace as a project folder").not.toContain(
-      UNASSIGNED_SCRATCH,
+      shownPath(UNASSIGNED_SCRATCH),
     )
   })
 
@@ -276,7 +277,7 @@ describe("the folder a colleague was assigned is the folder its turn is grounded
     expect(
       strict.everything,
       "Strict now states the working folder's absolute path — a welcome change, and this case is where it is recorded",
-    ).not.toContain(ASSIGNED_PROJECT)
+    ).not.toContain(shownPath(ASSIGNED_PROJECT))
     expect(
       strict.everything,
       "Strict now carries the Fast Chat working-folder line — the fix was supposed to leave the step engine's own horizon alone",
@@ -317,6 +318,6 @@ describe("the folder a colleague was assigned is the folder its turn is grounded
     expect(
       fallthrough.everything,
       "a conversational turn in a Strict session is told nothing about its working folder — the cadence stood down for Strict and the step prompt never ran, which is the Fast Chat defect from the other direction",
-    ).toContain(`Current working folder: ${ASSIGNED_PROJECT}`)
+    ).toContain(`Current working folder: ${shownPath(ASSIGNED_PROJECT)}`)
   })
 })

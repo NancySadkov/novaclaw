@@ -15,6 +15,7 @@ import { FileMutation } from "../file-mutation"
 import { FSUtil } from "../fs-util"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
+import { displayPath } from "../util/path"
 import { AUTO_APPLY_COST_CEILING, find as findMatch, replace as replaceMatches } from "./edit-match"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
@@ -67,7 +68,7 @@ const previewLines = (value: string, prefix: "+" | "-") => {
 
 export const toModelOutput = (output: Output, oldString: string, newString: string) =>
   [
-    `Edited file successfully: ${output.files[0]?.file}`,
+    `Edited file successfully: ${displayPath(output.files[0]?.file ?? "")}`,
     `Replacements: ${output.replacements}`,
     ...(output.match.cost === 0
       ? []
@@ -114,7 +115,7 @@ export const layer = Layer.effectDiscard(
                     ? new ToolFailure({
                         message: "File changed after permission approval. Read it again before editing.",
                       })
-                    : new ToolFailure({ message: `Unable to edit ${input.path}` })
+                    : new ToolFailure({ message: `Unable to edit ${displayPath(input.path)}` })
                 }),
               )
 

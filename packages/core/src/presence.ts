@@ -2,6 +2,7 @@ export * as Presence from "./presence"
 
 import fs from "node:fs"
 import fsp from "node:fs/promises"
+import { displayPath } from "./util/path"
 
 /**
  * **Is it there? — the three-answer probe, and the one place the errno decision is made.**
@@ -154,4 +155,4 @@ export const isPresent = (target: string): boolean => probe(target) === "present
  * the verdict, and the errno is the observation.
  */
 export const couldNotRead = (target: string, reading: Reading): string =>
-  `I could not read ${target} (${reading.code ?? "the check itself failed"}), so I cannot tell whether it is still there`
+  `I could not read ${displayPath(target)} (${reading.code ?? "the check itself failed"}), so I cannot tell whether it is still there`

@@ -13,6 +13,7 @@ import { Global } from "./global"
 import { Location } from "./location"
 import { AbsolutePath, RelativePath } from "./schema"
 import { Hash } from "./util/hash"
+import { displayPath } from "./util/path"
 import { Log } from "@novaclaw/schema/log"
 
 export const ID = Schema.String.pipe(Schema.brand("Snapshot.ID"))
@@ -283,7 +284,7 @@ export const layer = Layer.effect(
       for (const [file, snapshot] of input.files) {
         const absolute = path.resolve(worktree, file)
         if (!FSUtil.contains(worktree, absolute))
-          return yield* new Error({ operation, message: `Path escapes the project: ${file}` })
+          return yield* new Error({ operation, message: `Path escapes the project: ${displayPath(file)}` })
         files.set(file, Git.TreeID.make(snapshot))
       }
       return files
