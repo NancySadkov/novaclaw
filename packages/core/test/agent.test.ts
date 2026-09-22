@@ -134,12 +134,11 @@ describe("AgentV2", () => {
         "nova",
         "plan",
         "recipe",
-        // The Research Officer, shipped so a question that needs EVIDENCE has somebody whose charter
-        // is the research commandments. It is held to the same floor as every other built-in: the ONE
-        // thing its charter adds is `{action:"skill", resource:"research"}`, which is narrow by
-        // construction and grants no ambient authority over what it may run.
-        "summary",
-        "title",
+        // "researcher" left on 2026-09-07 (`8634e2481`) when the Research Officer moved out of this
+        // plugin roster into the seeded officers (`agent-config-seed.ts`). Not asserted back in: an
+        // instance with no seed row has no researcher, and a built-in roster must not read seed state.
+        // "summary"/"title" left on 2026-09-21 (`ba3fce31f`) — two prompt strings that never spoke to
+        // anyone, retired to internal machinery. Both removals are why the set is pinned by name.
       ])
       expect(agents.find((item) => item.id === AgentV2.NOVA_ID)?.avatar).toBeUndefined()
       for (const item of agents) {

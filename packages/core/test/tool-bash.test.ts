@@ -1,7 +1,7 @@
 import fs from "fs/promises"
 import { realpathSync } from "node:fs"
 import path from "path"
-import { describe, expect, test } from "bun:test"
+import { afterAll, describe, expect, test } from "bun:test"
 import { Effect, Layer, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { AgentJail } from "@novaclaw/core/agent-jail"
@@ -17,12 +17,12 @@ import { PermissionV2 } from "@novaclaw/core/permission"
 import { AppProcess } from "@novaclaw/core/process"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
-import { Shell } from "@novaclaw/core/shell"
 import { BashTool } from "@novaclaw/core/tool/bash"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
 import { location } from "./fixture/location"
 import { tmpdir } from "./fixture/tmpdir"
+import { shippedAgentShellAvailable, useShippedAgentShell } from "./fixture/agent-shell"
 import { testEffect } from "./lib/effect"
 import { toolIdentity, executeTool, settleTool, toolDefinitions } from "./lib/tool"
 
@@ -204,6 +204,21 @@ const call = (input: typeof BashTool.Input.Type, id = "call-bash") => ({
 
 const it = testEffect(Layer.empty)
 
+/**
+ * 🔴 **Bind this whole file to the ONE agent shell NovaClaw ships.**
+ *
+ * `bash` hands a command string to `HostExec.resolveShell()` → `Shell.agentDefault()`, and on Windows
+ * that resolves to NovaClaw's embedded `w64devkit` `sh` — the single dialect the product supports.
+ * `test/preload.ts` scrubs `NOVACLAW_W64DEVKIT_PATH` (the launcher's install description must not
+ * leak into the suite), which would otherwise leave these tests asserting whatever the host shell
+ * did. `fixture/agent-shell.ts` explains the choice and why it is scoped here rather than set
+ * process-wide; the restore is registered because core's tests share a process.
+ */
+const restoreAgentShell = useShippedAgentShell()
+afterAll(restoreAgentShell)
+/** The shipped-shell cases: visible skips, never a fallback to asserting `cmd.exe`. */
+const itShippedShell = shippedAgentShellAvailable ? it.live : it.live.skip
+
 describe("BashTool", () => {
   /**
    * ── THE IMAGE-SHORTCUT DRIVE, AT ITS CALL SITE ─────────────────────────────────────────────────
@@ -283,7 +298,13 @@ describe("BashTool", () => {
               },
             })
             expect(runs).toHaveLength(1)
-            expect(runs[0]?.command).toEndWith("\npwd")
+            // The ownership wrapper is the shipped shell's contract (`HostExec.ownedShellCommand`
+            // installs the EXIT trap). Asserted unconditionally wherever that shell is bound — see
+            // `fixture/agent-shell.ts`; there is no second dialect here to branch on. The `toContain`
+            // below is the shell-independent half, so this test still covers its own subject (the
+            // structured result) when a checkout has not prepared the bundle.
+            expect(runs[0]?.command).toContain("pwd")
+            if (shippedAgentShellAvailable) expect(runs[0]?.command).toEndWith("\npwd")
             expect(runs[0]?.cwd).toBe(realpathSync(tmp.path))
             expect(assertions).toMatchObject([{ sessionID, action: "bash", resources: ["pwd"], save: ["pwd"] }])
           }),
@@ -866,7 +887,7 @@ describe("BashTool", () => {
     ),
   )
 
-  it.live("treats a POSIX ampersand as supervised background work", () =>
+  itShippedShell("treats a POSIX ampersand as supervised background work", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
       (tmp) => {
@@ -884,8 +905,10 @@ describe("BashTool", () => {
               })
               expect(settled.output?.structured).not.toHaveProperty("timeout")
               expect(runs).toHaveLength(1)
-              expect(runs[0]?.command).toContain("trap __novaclaw_wait_for_owned_children EXIT")
               expect(runs[0]?.command).toContain("serve forever >/dev/null 2>&1 &")
+              // The lifecycle trap is the shipped shell's, and it is asserted without a branch: this
+              // file binds that shell, so a `cmd.exe` pass-through is not a case the suite accepts.
+              expect(runs[0]?.command).toContain("trap __novaclaw_wait_for_owned_children EXIT")
             }),
           ),
         )
@@ -894,44 +917,42 @@ describe("BashTool", () => {
     ),
   )
 
-  if (Shell.posix(Shell.agentDefault())) {
-    it.live(
-      "keeps the real shell job alive until an ampersand child with closed pipes exits",
-      () =>
-        Effect.acquireUseRelease(
-          Effect.promise(() => tmpdir()),
-          (tmp) => {
-            reset()
-            return withTool(
-              tmp.path,
-              (registry) =>
-                Effect.gen(function* () {
-                  const startedAt = Date.now()
-                  const started = yield* settleTool(
-                    registry,
-                    call({ command: "sleep 1 >/dev/null 2>&1 &", timeout: 60_000 }, "call-ampersand-live"),
-                  )
-                  const structured = started.output?.structured as { readonly job?: unknown } | undefined
-                  const job = structured?.job
-                  expect(started.output?.structured).toMatchObject({ background: true, running: true })
-                  expect(Date.now() - startedAt).toBeLessThan(900)
-                  expect(typeof job).toBe("string")
-                  if (typeof job !== "string") throw new Error("background launch returned no job id")
+  itShippedShell(
+    "keeps the real shell job alive until an ampersand child with closed pipes exits",
+    () =>
+      Effect.acquireUseRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) => {
+          reset()
+          return withTool(
+            tmp.path,
+            (registry) =>
+              Effect.gen(function* () {
+                const startedAt = Date.now()
+                const started = yield* settleTool(
+                  registry,
+                  call({ command: "sleep 1 >/dev/null 2>&1 &", timeout: 60_000 }, "call-ampersand-live"),
+                )
+                const structured = started.output?.structured as { readonly job?: unknown } | undefined
+                const job = structured?.job
+                expect(started.output?.structured).toMatchObject({ background: true, running: true })
+                expect(Date.now() - startedAt).toBeLessThan(900)
+                expect(typeof job).toBe("string")
+                if (typeof job !== "string") throw new Error("background launch returned no job id")
 
-                  const finished = yield* settleTool(
-                    registry,
-                    call({ job, action: "wait", timeout: 3_000 }, "call-ampersand-wait"),
-                  )
-                  expect(finished.output?.structured).toMatchObject({ running: false, exit: 0 })
-                }),
-              LayerNode.compile(AppProcess.node),
-            )
-          },
-          (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-        ),
-      10_000,
-    )
-  }
+                const finished = yield* settleTool(
+                  registry,
+                  call({ job, action: "wait", timeout: 3_000 }, "call-ampersand-wait"),
+                )
+                expect(finished.output?.structured).toMatchObject({ running: false, exit: 0 })
+              }),
+            LayerNode.compile(AppProcess.node),
+          )
+        },
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+      ),
+    10_000,
+  )
 })
 
 test("keeps locked deferred parity TODOs visible", async () => {

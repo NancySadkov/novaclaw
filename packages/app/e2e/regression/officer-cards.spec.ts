@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
 import { fixture } from "../smoke/session-timeline.fixture"
 import { mockNovaClawServer } from "../utils/mock-server"
 
@@ -20,6 +20,18 @@ const agents = names.map((name, index) => ({
   avatar: index < 2 ? `/api/agent/${index === 0 ? "nova" : "officer-1"}/avatar` : undefined,
   workspace: fixture.directory,
 }))
+/**
+ * A card's selector, built from the SAME id the fixture hands the server.
+ *
+ * ⚠️ Written as a template, never with a hardcoded id, and the reason is a gate rather than taste:
+ * the card binds `data-contact-id={props.view.id}` (`pages/contacts.tsx`), so the id is DATA and
+ * appears in no source file. `packages/core/test/e2e-selector-rot.test.ts` is the static guard that
+ * catches a spec steering by markup nothing renders; a hardcoded id it cannot resolve is reported as
+ * rot, while the template form is recognised as dynamic and checked at the attribute level — which is
+ * the honest description of a server-supplied id.
+ */
+const officerCard = (page: Page, id: string) => page.locator(`[data-contact-id="${id}"]`)
+const cardId = (index: number) => agents[index]!.id
 const sessions = agents.map((agent, index) => ({
   ...fixture.sessions[0],
   id: `ses_compact_${index}`,
@@ -135,9 +147,15 @@ test("officer tiles keep dimensions across widths and expose actions without clu
     await page.screenshot({ path: info.outputPath(`officers-${width}.png`) })
   }
   expect(rowCounts).toEqual([2, 2, 2, 4, 6, 6])
-  await expect(cards.locator('[data-action="contacts-clone"], [data-action="contacts-reorder"]')).toHaveCount(0)
+  // The card must expose NO inline clone control: cloning lives in the right-click menu below.
+  // `contacts-reorder` is not asserted alongside it any more — the RPG-card pass (2026-09-21,
+  // `ba3fce31f`) removed that attribute entirely and moved reordering onto drag + alt-arrow
+  // (`aria-description` = `contacts.order.hint`), which the drag test below covers. Asserting a
+  // removed attribute is a claim nothing can falsify, and the static selector guard rightly reads
+  // it as rot.
+  await expect(cards.locator('[data-action="contacts-clone"]')).toHaveCount(0)
   await expect(page.getByText("CEO", { exact: true })).toHaveCount(0)
-  const iris = page.locator('[data-contact-id="officer-1"]')
+  const iris = officerCard(page, cardId(1))
   await iris.click({ button: "right" })
   const menu = page.getByRole("menu")
   await expect(menu).toBeVisible()
@@ -167,7 +185,7 @@ test.describe("touch cards", () => {
     await page.goto("/tasks")
     await page.setViewportSize({ width: 390, height: 420 })
     const touch = await page.context().newCDPSession(page)
-    const first = await page.locator('[data-contact-id="officer-4"]').boundingBox()
+    const first = await officerCard(page, cardId(4)).boundingBox()
     const x = first!.x + 75
     const y = first!.y + 120
     await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] })
@@ -180,7 +198,7 @@ test.describe("touch cards", () => {
       .toBeGreaterThan(0)
     await expect(page.getByRole("menu")).toHaveCount(0)
     await expect(page).toHaveURL(/tasks$/)
-    const card = page.locator('[data-contact-id="officer-1"]')
+    const card = officerCard(page, cardId(1))
     await card.scrollIntoViewIfNeeded()
     const box = await card.boundingBox()
     const cdp = await page.context().newCDPSession(page)
@@ -207,8 +225,8 @@ test("whole-card dragging persists arrangement and releasing does not open chat"
   })
   await page.setViewportSize({ width: 1600, height: 900 })
   await page.goto("/tasks")
-  const source = page.locator('[data-contact-id="officer-1"]')
-  const destination = page.locator('[data-contact-id="officer-2"]')
+  const source = officerCard(page, cardId(1))
+  const destination = officerCard(page, cardId(2))
   const from = await source.boundingBox()
   const to = await destination.boundingBox()
   await page.mouse.move(from!.x + 110, from!.y + 80)
