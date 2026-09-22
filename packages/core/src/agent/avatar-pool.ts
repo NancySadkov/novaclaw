@@ -100,6 +100,10 @@ import avatar096 from "../../../app/public/assets/agents/portraits/pool/avatar-0
 import avatar097 from "../../../app/public/assets/agents/portraits/pool/avatar-097.webp" with { type: "file" }
 import avatar098 from "../../../app/public/assets/agents/portraits/pool/avatar-098.webp" with { type: "file" }
 import avatar099 from "../../../app/public/assets/agents/portraits/pool/avatar-099.webp" with { type: "file" }
+import avatar100 from "../../../app/public/assets/agents/portraits/pool/avatar-100.webp" with { type: "file" }
+import avatar101 from "../../../app/public/assets/agents/portraits/pool/avatar-101.webp" with { type: "file" }
+import avatar102 from "../../../app/public/assets/agents/portraits/pool/avatar-102.webp" with { type: "file" }
+import avatar103 from "../../../app/public/assets/agents/portraits/pool/avatar-103.webp" with { type: "file" }
 
 export const files = [
   avatar000,
@@ -202,4 +206,8 @@ export const files = [
   avatar097,
   avatar098,
   avatar099,
+  avatar100,
+  avatar101,
+  avatar102,
+  avatar103,
 ] as const

@@ -10,10 +10,6 @@ import { Global } from "../global"
 import { AvatarAssignment } from "./avatar-assignment"
 import { files as poolFiles } from "./avatar-pool"
 import novaPortraitFile from "../../../app/public/assets/agents/portraits/nova.webp" with { type: "file" }
-import geryonPortraitFile from "../../../app/public/assets/agents/portraits/geryon.webp" with { type: "file" }
-import xeniaPortraitFile from "../../../app/public/assets/agents/portraits/xenia.webp" with { type: "file" }
-import daedalusPortraitFile from "../../../app/public/assets/agents/portraits/daedalus.webp" with { type: "file" }
-import myronPortraitFile from "../../../app/public/assets/agents/portraits/myron.webp" with { type: "file" }
 
 /** The avatar is a small identity component, not an arbitrary file upload. */
 export const MAX_BYTES = 5 * 1024 * 1024
@@ -42,10 +38,6 @@ const extensions = Object.values(TYPES)
 
 const BUILTIN_PORTRAITS: Readonly<Record<string, string>> = {
   nova: novaPortraitFile,
-  geryon: geryonPortraitFile,
-  xenia: xeniaPortraitFile,
-  daedalus: daedalusPortraitFile,
-  myron: myronPortraitFile,
 }
 
 /** Bun's file loader emits an absolute path in source runs and a chunk-relative path in a bundle. */

@@ -10,6 +10,7 @@
     "dev": "bun script/lib/stray-servers.ts \"starting a dev server\" && bun run --cwd packages/novaclaw --conditions=browser src/index.ts",
     "dev:desktop": "bun --cwd packages/desktop dev",
     "dev:web": "bun script/lib/stray-servers.ts \"starting a dev server\" && bun --cwd packages/app dev",
+    "import:portrait-pool": "bun script/import-portrait-pool.ts",
     "typecheck": "bun run script/test.ts --only=typecheck",
     "hooks:install": "bun run script/install-hooks.ts",
     "version:sync": "bun run script/sync-version.ts",

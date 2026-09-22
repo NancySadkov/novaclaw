@@ -61,7 +61,7 @@ describe("instance-owned agent portraits", () => {
     if (retired.kind === "placeholder") expect(new TextDecoder().decode(retired.bytes)).toContain(">T</text>")
   })
 
-  test("the bundled pool contains 100 distinct WebP portraits", async () => {
+  test("the bundled pool contains 104 distinct WebP portraits", async () => {
     const hashes = new Set<string>()
     for (let slot = 0; slot < AvatarAssignment.POOL_SIZE; slot++) {
       const portrait = await Avatar.pooled(slot)
@@ -92,18 +92,18 @@ describe("instance-owned agent portraits", () => {
     expect(new Set(portraits.map((portrait) => (portrait.kind === "image" ? portrait.hash : ""))).size).toBe(3)
   })
 
-  test("restores the five established officer portraits without consuming pool slots", async () => {
+  test("Nova is the only built-in portrait and other established portraits use pool slots", async () => {
     const data = await root()
-    const established = ["nova", "geryon", "xenia", "daedalus", "myron"]
-    const portraits = await Promise.all(established.map((id) => Avatar.portraitIn(data, id, undefined, id)))
-    const builtins = await Promise.all(established.map((id) => Avatar.builtin(id)))
-
-    expect(portraits.map((portrait) => (portrait.kind === "image" ? portrait.hash : undefined))).toEqual(
-      builtins.map((portrait) => portrait?.hash),
-    )
-    expect(new Set(builtins.map((portrait) => portrait?.hash)).size).toBe(established.length)
-    expect(await AvatarAssignment.claimIn(data, "new-officer", () => 0)).toBe(0)
-    expect(await Avatar.builtin("xenia-2")).toBeUndefined()
+    expect(await Avatar.builtin("nova")).toBeDefined()
+    for (const [slot, id] of ["geryon", "xenia", "daedalus", "myron"].entries()) {
+      expect(await Avatar.builtin(id)).toBeUndefined()
+      expect(await AvatarAssignment.claimIn(data, id, () => 0)).toBe(slot)
+      const portrait = await Avatar.portraitIn(data, id, undefined, id)
+      const pooled = await Avatar.pooled(slot)
+      if (pooled === undefined) throw new Error(`Missing pool portrait at slot ${slot}`)
+      expect(portrait).toEqual({ kind: "image", ...pooled })
+    }
+    expect(await AvatarAssignment.claimIn(data, "new-officer", () => 0)).toBe(4)
   })
 
   test("Nova always uses the star portrait and no other agent may upload it", async () => {

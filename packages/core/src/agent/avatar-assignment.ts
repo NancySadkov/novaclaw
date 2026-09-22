@@ -5,7 +5,7 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { Global } from "../global"
 
-export const POOL_SIZE = 100
+export const POOL_SIZE = 104
 
 const queues = new Map<string, Promise<unknown>>()
 const rootIn = (dataDirectory: string) => path.join(dataDirectory, "agent-avatars")
