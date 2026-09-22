@@ -61,7 +61,7 @@ import {
 } from "./utils/server-health"
 import { legacySessionServer, requireServerKey, selectSessionLineage, sessionHref } from "./utils/session-route"
 import { isSessionNotFoundError } from "./utils/server-errors"
-import { forgetGoneSession } from "./context/session-gone"
+import { forgetGoneSession, revalidateSessionTabs } from "./context/session-gone"
 import { showToast } from "@/utils/toast"
 
 import { HomeScreen } from "@/pages/home-screen/home-screen"
@@ -156,6 +156,7 @@ const TargetSessionRoute = () => {
     <Show when={requireServerKey(params.serverKey)} keyed>
       <ServerSDKProvider server={conn}>
         <ServerSyncProvider server={conn}>
+          <SessionTabRevalidate />
           <ResolvedTargetSessionRoute />
         </ServerSyncProvider>
       </ServerSDKProvider>
@@ -182,6 +183,36 @@ function SessionGoneCard() {
       </button>
     </div>
   )
+}
+
+/**
+ * Re-validate the sessions the tab strip holds whenever this server's stream RECONNECTS.
+ *
+ * 🔴 A chat deleted by ANOTHER client while this renderer was disconnected never arrives as an
+ * event, so ASKING is the only way its tab gets retired (owner, 2026-09-22: *"better be safe than
+ * sorry and confused"*). It rides the reconnect BARRIER, so the strip is reconciled before the
+ * connection is declared recovered; `revalidateSessionTabs` never rejects, so a check that cannot
+ * run leaves the connection recovering exactly as it did before.
+ *
+ * ⚠️ It lives HERE, not in `server-sync.tsx`, because it needs the tab store and `tabs.tsx` imports
+ * `@solidjs/router` — which cannot load under the unit preload. The session-sync module stays free of
+ * that dependency so its pure helpers remain testable without a browser.
+ */
+function SessionTabRevalidate() {
+  const serverSDK = useServerSDK()
+  const sync = useServerSync()
+  const tabs = useTabs()
+  onCleanup(
+    serverSDK().reconnectRecovery.register((signal: AbortSignal | undefined) =>
+      revalidateSessionTabs({
+        session: sync().session,
+        tabs,
+        server: ServerConnection.key(serverSDK().server),
+        signal,
+      }).then(() => undefined),
+    ),
+  )
+  return null
 }
 
 function ResolvedTargetSessionRoute() {
@@ -278,7 +309,10 @@ function SelectedServerProviders(props: ParentProps) {
   return (
     <ServerKey>
       <ServerSDKProvider>
-        <ServerSyncProvider>{props.children}</ServerSyncProvider>
+        <ServerSyncProvider>
+          <SessionTabRevalidate />
+          {props.children}
+        </ServerSyncProvider>
       </ServerSDKProvider>
     </ServerKey>
   )

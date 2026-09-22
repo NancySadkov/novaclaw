@@ -88,6 +88,29 @@ describe("server session", () => {
     expect(ctx.get).toEqual([{ sessionID: "root" }, { sessionID: "root" }])
   })
 
+  /**
+   * The reconnect half: a deletion by ANOTHER client while this renderer was disconnected never
+   * arrives as an event, so the strip re-asks for the sessions it actually holds.
+   */
+  test("revalidates records and names only the ones the server no longer has", async () => {
+    const ctx = setup({ root: session("root") })
+
+    const gone = await ctx.store.revalidate(["root", "deleted"])
+
+    expect(ctx.get).toEqual([{ sessionID: "root" }, { sessionID: "deleted" }])
+    expect(gone).toEqual(["deleted"])
+  })
+
+  test("a revalidation that faults for any other reason retires nothing", async () => {
+    // A flaky reconnect must never delete a live chat from the UI: only an explicit not-found counts.
+    const client = {
+      v2: { session: { get: () => Promise.reject(new Error("502 Bad Gateway")) } },
+    } as unknown as NovaclawClient
+    const store = createServerSession(client)
+
+    expect(await store.revalidate(["flaky"])).toEqual([])
+  })
+
   test("applies events without a directory store", () => {
     const ctx = setup({})
     ctx.store.apply({ type: "session.created", properties: { sessionID: "root", info: session("root") } })

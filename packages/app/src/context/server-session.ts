@@ -13,6 +13,7 @@ import { Binary } from "@novaclaw/core/util/binary"
 import { isSessionWorking } from "@/context/session-working"
 import { diffs as cleanDiffs } from "@/utils/diffs"
 import { normalizeSessionTimes } from "@/utils/session-time"
+import { isSessionNotFoundError } from "@/utils/server-errors"
 import { rootSession } from "@/utils/session-route"
 import { applyControlPatch, controlPatch } from "./global-sync/control-fold"
 import * as LiveRate from "./global-sync/live-rate"
@@ -516,6 +517,33 @@ export function createServerSession(
         produce((draft) => void delete draft[sessionID]),
       )
       evict([sessionID])
+    },
+    /**
+     * Re-validate these records against the server and name the ones that are GONE.
+     *
+     * 🔴 **Reconnect is the one moment a deletion can be missed for good.** `session.deleted` is an
+     * EVENT; a client that was disconnected when another client (or the CLI) deleted a chat never
+     * receives it, so its cached record — and the tab pointing at it — outlives the connection until
+     * the user happens to open that chat. `forgetGoneSession` heals that on contact; this closes the
+     * window by ASKING, once per reconnect, for the handful of sessions the user actually has open.
+     *
+     * ⚠️ Best-effort by construction: only an explicit not-found retires a record. A timeout, a
+     * transport fault or a 5xx leaves it exactly where it was, which is the state before this
+     * existed — the alternative would let a flaky reconnect delete a live chat from the UI.
+     */
+    revalidate(sessionIDs: readonly string[], signal?: AbortSignal): Promise<readonly string[]> {
+      return Promise.all(
+        sessionIDs.map((sessionID) =>
+          withRequestDeadline({
+            label: "Checking this chat",
+            timeoutMs: settings?.requestTimeoutMs,
+            ...(signal === undefined ? {} : { signal }),
+            run: (requestSignal) => client.v2.session.get({ sessionID }, { signal: requestSignal }),
+          })
+            .then((result) => (result.data?.data === undefined ? sessionID : undefined))
+            .catch((error) => (isSessionNotFoundError(error, sessionID) ? sessionID : undefined)),
+        ),
+      ).then((gone) => gone.filter((id): id is string => id !== undefined))
     },
     pin(sessionID: string) {
       pinned.set(sessionID, (pinned.get(sessionID) ?? 0) + 1)
