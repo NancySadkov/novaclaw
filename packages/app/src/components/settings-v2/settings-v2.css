@@ -896,9 +896,21 @@
     width: auto;
   }
 
+  /* 🔴 The base media query gives the control `flex-shrink: 0`, so a long probe detail could not
+     shrink IT — the COPY absorbed the whole overflow and `overflow-wrap: anywhere` rendered the
+     model name one character per line (owner report, 2026-09-22). The control must shrink, down to
+     the action buttons' own min-content, so the status wraps beside it instead. */
+  .settings-v2-models [data-slot="settings-v2-row-control"] {
+    min-width: 0;
+    flex-shrink: 1;
+  }
+
   .settings-v2-models-row-actions {
     flex: 0 1 auto;
-    align-items: flex-end;
+    /* `stretch`, not `flex-end`: a column child sized to `flex-end` takes its own max-content width,
+       which is what let one long sentence push the row wide. Stretched, the status fills the column
+       and wraps. */
+    align-items: stretch;
   }
 
   .settings-v2-models-row-controls {
@@ -916,6 +928,12 @@
   white-space: normal;
   overflow-wrap: anywhere;
   min-width: 0;
+  /* Stretched and bounded so the detail wraps INSIDE the actions column: sized to its own
+     max-content it both overflowed the row and (with the control unable to shrink) collapsed the
+     model name. */
+  align-self: stretch;
+  max-width: 100%;
+  text-align: right;
   color: var(--v2-text-text-muted);
 }
 

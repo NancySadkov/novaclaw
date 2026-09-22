@@ -1079,9 +1079,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       if (window !== undefined && ctx.payload.modelID !== undefined && ctx.payload.baseURL === undefined)
         ProbeWindow.remember(ctx.params.providerID, ctx.payload.modelID, window)
       const detail = [
-        learnedPackage === undefined
-          ? undefined
-          : `The endpoint refused this model's configured API, so Nova switched it to ${learnedPackage}. Generation and every later turn now use that route.`,
+        learnedPackage === undefined ? undefined : `Switched this model's API to ${learnedPackage}.`,
         configuredIDUnlisted
           ? `Generation succeeded with configured id "${ctx.payload.modelID}", although /models advertises ${models.length ? models.map((id) => `"${id}"`).join(", ") : "no model ids"}. The server is accepting an alias.`
           : undefined,

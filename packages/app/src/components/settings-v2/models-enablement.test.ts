@@ -140,4 +140,16 @@ describe("Models tab — quiet overview, details on demand", () => {
     expect(styles).toContain("@container (min-width: 46rem)")
     expect(styles).toMatch(/\.settings-v2-models-row-controls\s*\{\s*flex-wrap: nowrap;/)
   })
+
+  test("🔴 a long probe detail cannot collapse the model name", () => {
+    // The base media query pins the control at `flex-shrink: 0`, so a long status could not shrink IT
+    // and the COPY absorbed the whole overflow — `overflow-wrap: anywhere` then drew the name one
+    // character per line (owner report, 2026-09-22). The control shrinks to the buttons' min-content
+    // and the status stretches so it wraps beside it.
+    expect(styles).toMatch(
+      /\.settings-v2-models \[data-slot="settings-v2-row-control"\]\s*\{\s*min-width: 0;\s*flex-shrink: 1;/,
+    )
+    expect(styles).toMatch(/\.settings-v2-models-row-actions\s*\{[^}]*flex: 0 1 auto;[^}]*align-items: stretch;/)
+    expect(styles).toMatch(/\.settings-v2-models-probe-result\s*\{[^}]*align-self: stretch;/)
+  })
 })
