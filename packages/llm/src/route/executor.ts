@@ -25,7 +25,7 @@ import {
   UnknownProviderReason,
   isEgressBlocked,
 } from "../schema"
-import { classify } from "../provider-error"
+import { classify, isQuotaBody } from "../provider-error"
 
 export interface Interface {
   readonly execute: (
@@ -246,10 +246,13 @@ const statusReason = (input: {
     return new AuthenticationReason({ message: input.message, kind: "invalid", http: input.http })
   }
   if (input.status === 403) {
+    // A gateway that throttles with 403 names the account, not the credential: file the body's
+    // verdict, not the status's. Anything else here is the key/permission refusal it has always been.
+    if (isQuotaBody(body)) return new QuotaExceededReason({ message: input.message, http: input.http })
     return new AuthenticationReason({ message: input.message, kind: "insufficient-permissions", http: input.http })
   }
   if (input.status === 429) {
-    if (/insufficient[-_\s]?quota|quota[-_\s]?exceeded/i.test(body)) {
+    if (isQuotaBody(body)) {
       return new QuotaExceededReason({ message: input.message, http: input.http })
     }
     return new RateLimitReason({
@@ -266,6 +269,10 @@ const statusReason = (input: {
     input.status === 413 ||
     input.status === 422
   ) {
+    // A throttled account is endpoint health, not a malformed request: the remedy is the
+    // substitute route, so it is filed before either request-shaped reading. Deliberately ahead
+    // of `classify` — reshaping the request cannot help an overdrawn account.
+    if (isQuotaBody(body)) return new QuotaExceededReason({ message: input.message, http: input.http })
     const classification = classify(body)
     // 🔴 ORDER. The refusal's own CLASSIFICATION wins over a content-policy reading of the same
     // bytes, and the sniff runs INSIDE this arm rather than ahead of every status branch.

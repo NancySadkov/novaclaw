@@ -15,6 +15,7 @@ import {
   type FinishReason,
   type ProviderErrorEvent,
   isModelMissing,
+  isQuotaExceededFailure,
 } from "@novaclaw/llm"
 import {
   Cause,
@@ -3799,10 +3800,17 @@ export const layer = Layer.effect(
             llmFailure !== undefined
               ? ProviderRetry.isTransientProviderFailure(llmFailure)
               : publisher.assistantFailureRetryable()
+          // A throttled ACCOUNT is endpoint health, not a malformed request: replaying the same
+          // payload after a delay cannot help, but the next turn belongs on a substitute while the
+          // assigned route sits out its backoff. Filing quota as a halt stranded sessions on the
+          // dead route instead — measured live 2026-09-22, two officers looping on a gateway whose
+          // account was overdrawn while a working default stood by.
+          const quotaFailure =
+            isQuotaExceededFailure(llmFailure) || isQuotaExceededFailure(publisher.assistantFailureMessage())
           // A provider that explicitly rejected THIS request cannot recover by replaying the same
           // payload after a delay. Treating `retryable:false` as endpoint health made autonomous
           // sessions resubmit one malformed history forever (441 identical DeepSeek 400s live).
-          const providerHalted = turnFailed && providerFailureRetryable === false
+          const providerHalted = turnFailed && providerFailureRetryable === false && !quotaFailure
           // Replaying a failed pre-action turn on a substitute is safe. Replaying after a tool call
           // is not: the call may already have changed a file or sent a message, even if the provider
           // connection died before acknowledging the result.
@@ -4487,6 +4495,29 @@ export const layer = Layer.effect(
           reason: "new-input",
         })
         yield* SessionExecutionAttempt.providerSettledCurrent(providerRecovery.attemptID)
+        // A stranded attempt is the one verdict the turn-end bookkeeping can never file: the worker
+        // that would have filed it is gone, which is why this latch exists at all. An attempt older
+        // than a full stall window answered nothing in the time the instance promises to wait, so its
+        // route is filed as failed — otherwise model resolution keeps selecting the same dead route
+        // and every recovery replays it (measured live 2026-09-22: two officers, sixty identical
+        // restarts, an empty recovery ledger, a working default never tried). A YOUNG latch is
+        // supersession or a fast crash, which is evidence about nothing, so it files nothing.
+        const nowMs = DateTime.toEpochMillis(yield* DateTime.now)
+        const strandedMs = nowMs - DateTime.toEpochMillis(providerRecovery.startedAt)
+        if (strandedMs >= (yield* harnessConfig()).providerStallTimeoutMs) {
+          const stranded = ModelV2.Ref.make({
+            providerID: ProviderV2.ID.make(String(providerRecovery.model.providerID)),
+            id: ModelV2.ID.make(String(providerRecovery.model.id)),
+          })
+          const recorded = yield* models
+            .providerFailed(stranded, nowMs)
+            .pipe(Effect.orElseSucceed(() => false))
+          yield* Log.event("session.provider.stranded", {
+            "session.id": input.sessionID,
+            "model.stranded": `${stranded.providerID}/${stranded.id}`,
+            "model.stranded.recorded": recorded,
+          })
+        }
         // A replacement worker with no pending input exits successfully after closing the orphaned
         // provider attempt. That is process recovery but task abandonment: the user's work remains
         // stopped behind a reassuring banner. Admit the continuation DURABLY before clearing the

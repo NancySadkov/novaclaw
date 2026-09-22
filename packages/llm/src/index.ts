@@ -8,6 +8,8 @@ export {
   isContextOverflowFailure,
   isMediaLimit,
   isModelMissing,
+  isQuotaBody,
+  isQuotaExceededFailure,
   isReasoningEffortUnsupported,
   mediaLimitFailure,
   promptTokensFrom,

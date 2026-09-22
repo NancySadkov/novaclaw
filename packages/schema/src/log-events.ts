@@ -2602,6 +2602,17 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  "session.provider.stranded": {
+    level: "warn",
+    message: "a provider attempt never settled — its route filed as failed",
+    attributes: {
+      "session.id": "correlate",
+      "model.stranded": "id",
+      "model.stranded.recorded": "flag",
+    },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.quality.check.errored": {
     level: "warn",
     message: "quality check errored",

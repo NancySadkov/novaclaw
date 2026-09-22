@@ -1,10 +1,17 @@
 import { describe, expect, test } from "bun:test"
 import {
+  LLMError,
+  QuotaExceededReason,
+  RateLimitReason,
+} from "./schema"
+import {
   classify,
   contextLimitFrom,
   imageLimitFrom,
   isContextOverflow,
   isMediaLimit,
+  isQuotaBody,
+  isQuotaExceededFailure,
   isReasoningEffortUnsupported,
   promptTokensFrom,
   reasoningEffortFloorFrom,
@@ -116,6 +123,42 @@ describe("reasoning-effort refusals", () => {
   })
 })
 
+/**
+ * **The refusing body is a MEASUREMENT of the exact request**, and it is the only free one in the
+ * system: every other prompt count arrives from a usage report after a call that succeeded.
+ */
+describe("quota bodies — a throttled account is endpoint health, not a malformed request", () => {
+  test("names the account states a gateway actually sends", () => {
+    expect(isQuotaBody("Go usage limit exceeded.")).toBe(true)
+    expect(isQuotaBody("insufficient_quota")).toBe(true)
+    expect(isQuotaBody("Quota exceeded for this month")).toBe(true)
+    expect(isQuotaBody("insufficient credits: balance 0")).toBe(true)
+  })
+
+  test("refuses the neighbours — a bare limit or a window is not an account", () => {
+    expect(isQuotaBody("image limit exceeded")).toBe(false)
+    expect(isQuotaBody("This model's maximum context length is 8192 tokens")).toBe(false)
+    expect(isQuotaBody("502 Bad Gateway")).toBe(false)
+    expect(isQuotaBody("invalid api key")).toBe(false)
+  })
+
+  test("a quota refusal reads as a quota failure from every channel that carries it", () => {
+    const thrown = new LLMError({
+      module: "test",
+      method: "stream",
+      reason: new QuotaExceededReason({ message: "Go usage limit exceeded." }),
+    })
+    expect(isQuotaExceededFailure(thrown)).toBe(true)
+    expect(isQuotaExceededFailure("Go usage limit exceeded.")).toBe(true)
+    const rateLimited = new LLMError({
+      module: "test",
+      method: "stream",
+      reason: new RateLimitReason({ message: "slow down" }),
+    })
+    expect(isQuotaExceededFailure(rateLimited)).toBe(false)
+    expect(isQuotaExceededFailure(undefined)).toBe(false)
+  })
+})
 /**
  * **The refusing body is a MEASUREMENT of the exact request**, and it is the only free one in the
  * system: every other prompt count arrives from a usage report after a call that succeeded.

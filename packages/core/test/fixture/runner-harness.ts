@@ -23,6 +23,8 @@ import { SessionRunner } from "@novaclaw/core/session/runner"
 import * as SessionRunnerLLM from "@novaclaw/core/session/runner/llm"
 import { SessionMaintenance } from "@novaclaw/core/session/runner/maintenance"
 import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
+import { ProviderRecovery } from "@novaclaw/core/session/runner/provider-recovery"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { SessionComponentRegistry } from "@novaclaw/core/session/component-registry"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
@@ -123,6 +125,16 @@ export interface RunnerScript {
   withReadTool?: boolean
   /** Register the production exit-request tool for completion-review claims. */
   withExitTool?: boolean
+  /**
+   * Wire the REAL settings-backed provider-recovery store into the model seam.
+   *
+   * Absent keeps the historical inert stub (`providerFailed` answers false, the rest no-op) — which
+   * is what every claim that never touches the ledger wants. Set it for claims about the DURABLE
+   * verdict: a failing turn must leave a row a fresh worker can route around. The implementations
+   * below mirror `session/runner/model.ts` arm-for-arm; that file is the source of truth and this
+   * flag is the statement that the test depends on the join, not just the rule.
+   */
+  providerRecoveryStore?: boolean
   /** Events the out-of-band auto-title probe gets. Default: an empty stream, i.e. no title. */
   titleTurns?: LLMEvent[][]
   /** Events the out-of-band post-drain maintenance probes get. Default: an empty stream. */
@@ -609,6 +621,40 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     deps: [ToolPolicyGate.node],
   })
 
+  const recoveryStore = script.providerRecoveryStore === true
+  // The real settings-backed verdicts, for claims about the DURABLE ledger (`providerRecoveryStore`).
+  // Each arm mirrors `session/runner/model.ts` and is cast through unknown because the seam's member
+  // types promise R=never while any durable verdict needs the store at call time. The cast is safe
+  // by construction: the arms read only providerID/id off the ref and answer the member shapes, and
+  // the store they need is attached to the execution layer below, which is the context every drain
+  // runs under.
+  const recordProviderFailed = ((model: ModelV2.Ref, at: number) =>
+    Effect.gen(function* () {
+      return yield* (yield* SettingsConfigStore.Service)
+        .update("provider_recovery", (current) =>
+          ProviderRecovery.exhausted(ProviderRecovery.decode(current), model, at),
+        )
+        .pipe(
+          Effect.as(true),
+          Effect.catchCause(() => Effect.succeed(false)),
+        )
+    })) as unknown as SessionRunnerModel.Interface["providerFailed"]
+  const recordProviderSucceeded = ((model: ModelV2.Ref) =>
+    Effect.gen(function* () {
+      yield* (yield* SettingsConfigStore.Service)
+        .update("provider_recovery", (current) => ProviderRecovery.succeeded(ProviderRecovery.decode(current), model))
+        .pipe(Effect.ignore)
+    })) as unknown as SessionRunnerModel.Interface["providerSucceeded"]
+  const recordProviderRecoveryFailures = ((model: ModelV2.Ref) =>
+    Effect.gen(function* () {
+      return yield* (yield* SettingsConfigStore.Service).all().pipe(
+        Effect.map(
+          (config) => ProviderRecovery.decode(config["provider_recovery"])[ProviderRecovery.key(model)]?.failures ?? 0,
+        ),
+        Effect.catchCause(() => Effect.succeed(0)),
+      )
+    })) as unknown as SessionRunnerModel.Interface["providerRecoveryFailures"]
+
   const models = SessionRunnerModel.layerWith(
     (session) =>
       Effect.gen(function* () {
@@ -632,6 +678,11 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     undefined,
     undefined,
     undefined,
+    undefined,
+    undefined,
+    recoveryStore ? recordProviderFailed : undefined,
+    recoveryStore ? recordProviderSucceeded : undefined,
+    recoveryStore ? recordProviderRecoveryFailures : undefined,
   )
 
   const systemContextKey = SystemContext.Key.make("test/harness-context")
@@ -750,7 +801,13 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
         stopCommand: () => Effect.succeed(false),
       })
     }),
-  ).pipe(Layer.provide(runnerLayer))
+  ).pipe(
+    Layer.provide(
+      script.providerRecoveryStore === true
+        ? Layer.mergeAll(runnerLayer, SettingsConfigStore.layer)
+        : runnerLayer,
+    ),
+  )
 
   const layer = AppNodeBuilder.build(
     LayerNode.group([
@@ -797,6 +854,10 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
       // materialised `durable_prompt` directly and watch the prompt move only at the rewrite. The
       // runner already depends on it, so this adds no second store.
       SessionComponentRegistry.node,
+      // The durable provider-recovery ledger. Only built for claims that opt into the real store
+      // (`providerRecoveryStore`): every other claim keeps the inert seam, and an unconditional
+      // store here would give those claims a ledger their seam promises they do not have.
+      ...(script.providerRecoveryStore === true ? [SettingsConfigStore.node] : []),
     ]),
     [
       [LayerNodePlatform.llmClient, clientLayer],

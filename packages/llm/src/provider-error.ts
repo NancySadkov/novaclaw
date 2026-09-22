@@ -168,6 +168,25 @@ const MODEL_MISSING =
 export const isModelMissing = (message: string): boolean => MODEL_MISSING.test(message)
 
 /**
+ * The account behind the endpoint is throttled or spent, not the request malformed.
+ *
+ * 🔴 Measured 2026-09-22: a hosted gateway answered usage pressure with
+ * `Go usage limit exceeded` — no word `quota` anywhere, so the 429 arm filed it as a plain
+ * rate limit and a 400/403 twin would have filed as a malformed request or a bad key. Both
+ * misfile the remedy: waiting out a rate limit or fixing the request cannot help when the
+ * account itself is the thing that is overdrawn. The recovery that fits is the substitute
+ * route, exactly as for any other endpoint-health signal.
+ *
+ * ⚠️ Deliberately NARROW: `quota` or `usage limit` must appear. A bare "limit exceeded" is
+ * claimed by the media cap next door (`image limit exceeded`), and an overflow body names a
+ * window, not an account — neither may read as quota.
+ */
+const QUOTA_BODY =
+  /quota|usage[-_\s]?limit|insufficient[-_\s]?(credit|balance)|exceed[^a-z]{0,20}(credit|balance)/i
+
+export const isQuotaBody = (message: string): boolean => QUOTA_BODY.test(message)
+
+/**
  * The endpoint refused a REASONING EFFORT value, and usually names the ones it does accept.
  *
  * 🔴 Measured 2026-09-22 against a hosted gateway serving `muse-spark-1.3-contributor`:
@@ -251,6 +270,22 @@ export const isContextOverflowFailure = (failure: unknown) =>
   failure instanceof LLMError
     ? failure.reason._tag === "InvalidRequest" && failure.reason.classification === "context-overflow"
     : Schema.is(ProviderErrorEvent)(failure) && failure.classification === "context-overflow"
+
+/**
+ * The endpoint throttled the ACCOUNT, wherever the verdict arrives from.
+ *
+ * A quota failure is endpoint health for routing purposes — the next turn belongs on a
+ * substitute — while never being a same-request retry: asking the same throttled account
+ * again after two seconds cannot succeed. That split is why this lives beside, not inside,
+ * `isTransientProviderFailure`: transient answers "replay this request", this answers
+ * "route around this endpoint".
+ */
+export const isQuotaExceededFailure = (failure: unknown): boolean => {
+  if (failure instanceof LLMError) return failure.reason._tag === "QuotaExceeded"
+  if (Schema.is(ProviderErrorEvent)(failure)) return isQuotaBody(failure.message)
+  if (typeof failure === "string") return isQuotaBody(failure)
+  return false
+}
 
 /**
  * The ONE place a provider's 4xx body becomes a classification, so the three protocol sites cannot
