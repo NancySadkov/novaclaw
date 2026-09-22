@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { NovaclawClient, SessionMessage, V2Event } from "@novaclaw/sdk/v2/client"
 import { createNativeMessageStore } from "./message-v2-store"
 import { isOptimistic, OPTIMISTIC_METADATA_KEY } from "@novaclaw/session-ui/v2/message-fold"
+import { OPEN_TAB_LIMIT } from "@/context/tab-retention"
 
 function ev(type: string, data: Record<string, unknown>): V2Event {
   return { id: `evt_${type}`, type, data } as unknown as V2Event
@@ -17,16 +18,28 @@ function clientReturning(messages: SessionMessage[]): NovaclawClient {
     },
   } as unknown as NovaclawClient
 }
-const noClient = {} as NovaclawClient
+const noClient = clientReturning([])
 const MODEL = { providerID: "spark", id: "qwen3.6-35b" }
 const prompted = (sessionID: string, messageID: string, text = "hi") =>
   ev("session.next.prompted", { timestamp: 1, sessionID, messageID, prompt: { text, files: [], agents: [] } })
 const stepStarted = (sessionID: string, assistantMessageID: string, ts = 2) =>
   ev("session.next.step.started", { timestamp: ts, sessionID, assistantMessageID, agent: "build", model: MODEL })
+const openTranscript = (store: ReturnType<typeof createNativeMessageStore>, sessionID: string) => {
+  const messageID = `open-${sessionID}`
+  store.optimistic(sessionID, {
+    id: messageID,
+    type: "user",
+    text: "",
+    time: { created: Date.now() },
+    metadata: { [OPTIMISTIC_METADATA_KEY]: true },
+  } as unknown as SessionMessage)
+  store.forget(sessionID, messageID)
+}
 
 describe("createNativeMessageStore", () => {
-  test("apply folds a session.next.* sequence into per-session messages", () => {
+  test("apply folds a session.next.* sequence for an opened transcript", async () => {
     const store = createNativeMessageStore(noClient)
+    await store.load("s")
     store.apply(prompted("s", "msg_u"))
     store.apply(stepStarted("s", "msg_a"))
     store.apply(
@@ -48,13 +61,46 @@ describe("createNativeMessageStore", () => {
     if (a.type === "assistant" && a.content[0]?.type === "text") expect(a.content[0].text).toBe("hey")
   })
 
-  test("apply routes by sessionID and ignores non-session.next events", () => {
+  test("apply routes by sessionID and ignores non-session.next events", async () => {
     const store = createNativeMessageStore(noClient)
+    await store.load("s1")
+    await store.load("s2")
     store.apply(prompted("s1", "m1", "a"))
     store.apply(prompted("s2", "m2", "b"))
     store.apply(ev("session.status", { sessionID: "s1", status: { type: "idle" } }))
     expect(store.messages("s1")!.map((m) => m.id)).toEqual(["m1"])
     expect(store.messages("s2")!.map((m) => m.id)).toEqual(["m2"])
+  })
+
+  test("unopened sessions never allocate transcript cache from the global event stream", () => {
+    const store = createNativeMessageStore(noClient)
+    store.apply(prompted("background-session", "msg_u"))
+    expect(store.messages("background-session")).toBeUndefined()
+  })
+
+  test("reconnect reads at most the six most recently opened transcripts", async () => {
+    const reads: string[] = []
+    const client = {
+      v2: {
+        session: {
+          async messages({ sessionID }: { sessionID: string }) {
+            reads.push(sessionID)
+            return { data: { data: [] } }
+          },
+        },
+      },
+    } as unknown as NovaclawClient
+    const store = createNativeMessageStore(client)
+    const sessions = Array.from({ length: OPEN_TAB_LIMIT + 1 }, (_, index) => `session-${index}`)
+    for (const sessionID of sessions) await store.load(sessionID)
+
+    reads.length = 0
+    store.apply(prompted("background-session", "msg_u"))
+    await store.reconcileAll()
+
+    expect(store.messages(sessions[0]!)).toBeUndefined()
+    expect(store.messages("background-session")).toBeUndefined()
+    expect(reads).toEqual(sessions.slice(1))
   })
 
   test("load bootstraps from the native fetch, then live apply extends it", async () => {
@@ -66,15 +112,18 @@ describe("createNativeMessageStore", () => {
     expect(store.messages("s")!.map((m) => m.id)).toEqual(["msg_1", "msg_a"])
   })
 
-  test("evict drops a session's messages", () => {
+  test("evict drops a session's messages", async () => {
     const store = createNativeMessageStore(noClient)
+    await store.load("s")
     store.apply(prompted("s", "m1"))
     store.evict("s")
     expect(store.messages("s")).toBeUndefined()
   })
 
-  test("🔴 a deleted chat's transcript leaves the store on the event, with no caller in between", () => {
+  test("🔴 a deleted chat's transcript leaves the store on the event, with no caller in between", async () => {
     const store = createNativeMessageStore(noClient)
+    await store.load("s")
+    await store.load("kept")
     store.apply(prompted("s", "m1"))
     store.apply(prompted("kept", "m2"))
     store.apply(ev("session.deleted", { info: { id: "s" } }))
@@ -82,8 +131,9 @@ describe("createNativeMessageStore", () => {
     expect(store.messages("kept")!.map((m) => m.id)).toEqual(["m2"])
   })
 
-  test("archiving drops it too; an ordinary update does not", () => {
+  test("archiving drops it too; an ordinary update does not", async () => {
     const store = createNativeMessageStore(noClient)
+    await store.load("s")
     store.apply(prompted("s", "m1"))
     store.apply(ev("session.updated", { info: { id: "s", time: { created: 1 } } }))
     expect(store.messages("s")!.map((m) => m.id)).toEqual(["m1"])
@@ -147,6 +197,7 @@ describe("optimistic user messages", () => {
 
   test("forget never removes a canonical message when cancellation loses promotion", () => {
     const store = createNativeMessageStore(noClient)
+    openTranscript(store, "s")
     store.apply(prompted("s", "msg_u", "the model has this"))
     store.forget("s", "msg_u")
     expect(store.messages("s")?.map((m) => m.id)).toEqual(["msg_u"])
@@ -195,6 +246,7 @@ describe("the optimistic row settles when the server confirms it", () => {
   test("an echo for a message we never showed optimistically is folded normally", () => {
     // The replace path must not eat ordinary prompts — e.g. one sent from another device.
     const store = createNativeMessageStore(noClient)
+    openTranscript(store, "s")
     store.apply(prompted("s", "msg_elsewhere", "from my phone"))
     expect(store.messages("s")?.map((m) => m.id)).toEqual(["msg_elsewhere"])
   })
@@ -202,6 +254,7 @@ describe("the optimistic row settles when the server confirms it", () => {
   test("a NON-optimistic row with the same id is left alone", () => {
     // Only rows we marked may be replaced; anything else keeps appendMessage's dedupe semantics.
     const store = createNativeMessageStore(noClient)
+    openTranscript(store, "s")
     store.apply(prompted("s", "msg_u", "first"))
     store.apply(prompted("s", "msg_u", "second"))
     expect(store.messages("s")?.length).toBe(1)
@@ -234,6 +287,7 @@ describe("recovering a transcript after the stream dropped", () => {
       v2: { session: { messages: async () => ({ data: answer }) } },
     } as unknown as NovaclawClient
     const store = createNativeMessageStore(client)
+    openTranscript(store, "s")
     store.apply(prompted("s", "msg_kept", "Keep this visible"))
     store.apply(
       ev("session.next.step.ended", {
@@ -278,6 +332,8 @@ describe("recovering a transcript after the stream dropped", () => {
       },
     } as unknown as NovaclawClient
     const store = createNativeMessageStore(client)
+    openTranscript(store, "deleted")
+    openTranscript(store, "kept")
     store.apply(prompted("deleted", "msg_old"))
     store.apply(prompted("kept", "msg_kept"))
 
@@ -343,6 +399,7 @@ describe("recovering a transcript after the stream dropped", () => {
       },
     } as unknown as NovaclawClient
     const store = createNativeMessageStore(client)
+    openTranscript(store, "s")
 
     // The browser sees only the terminal event — step.started and every text event were dropped.
     store.apply(
@@ -378,6 +435,7 @@ describe("recovering a transcript after the stream dropped", () => {
       },
     } as unknown as NovaclawClient
     const store = createNativeMessageStore(client)
+    openTranscript(store, "s")
 
     store.apply(
       ev("session.next.step.ended", {
@@ -422,6 +480,8 @@ describe("recovering a transcript after the stream dropped", () => {
   test("it re-reads every chat the client is holding, not just one", async () => {
     const { client } = growingClient([[message("msg_x", "seed")]])
     const store = createNativeMessageStore(client)
+    openTranscript(store, "s1")
+    openTranscript(store, "s2")
     store.apply(prompted("s1", "msg_a"))
     store.apply(prompted("s2", "msg_b"))
 
@@ -446,6 +506,8 @@ describe("recovering a transcript after the stream dropped", () => {
       },
     } as unknown as NovaclawClient
     const store = createNativeMessageStore(client)
+    openTranscript(store, "s1")
+    openTranscript(store, "s2")
     store.apply(prompted("s1", "msg_a"))
     store.apply(prompted("s2", "msg_b"))
 
@@ -506,6 +568,7 @@ describe("recovering a transcript after the stream dropped", () => {
       v2: { session: { messages: () => new Promise((resolve) => pending.push(resolve)) } },
     } as unknown as NovaclawClient
     const store = createNativeMessageStore(client)
+    openTranscript(store, "s")
     store.apply(prompted("s", "msg_before"))
     store.apply(
       ev("session.next.step.ended", {
@@ -542,6 +605,7 @@ describe("recovering a transcript after the stream dropped", () => {
       v2: { session: { messages: () => new Promise((resolve, reject) => pending.push({ resolve, reject })) } },
     } as unknown as NovaclawClient
     const store = createNativeMessageStore(client)
+    openTranscript(store, "s")
     store.apply(prompted("s", "msg_before"))
     const recovery = store.reconcileAll().then(
       () => "recovered",
@@ -568,6 +632,7 @@ describe("recovering a transcript after the stream dropped", () => {
       },
     } as unknown as NovaclawClient
     const store = createNativeMessageStore(client)
+    openTranscript(store, "s")
     store.apply(prompted("s", "msg_before"))
     const controller = new AbortController()
     const recovery = store.reconcileAll(controller.signal).then(

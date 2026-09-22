@@ -81,7 +81,7 @@
     "session-ui": 231,
     "ui": 67,
     "core": 7406,
-    "app:unit": 1797,
+    "app:unit": 1801,
     "app:browser": 263,
     "desktop": 239,
     "server": 114,
@@ -97,6 +97,7 @@
     "novaclaw test/cli/run/run-process.test.ts": 17,
     "novaclaw test/mcp/config-reload.test.ts": 4
   },
+  "countsAttribution": "2026-09-23 slice: app:unit 1797→1801 (+4) from message-v2-store.test.ts (opened-session cache isolation and six-session reconnect bound, +2) and server-sdk.test.ts (bounded event backlog and production overflow-resync wiring, +2).",
   "failing": {
     "novaclaw:server": []
   },

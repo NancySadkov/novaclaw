@@ -10,6 +10,7 @@ export { OPTIMISTIC_METADATA_KEY } from "@novaclaw/session-ui/v2/message-fold"
 import { fetchNativeMessages } from "./message-v2-fetch"
 import { isSessionNotFoundError } from "@/utils/server-errors"
 import { withRequestDeadline } from "@/utils/request-deadline"
+import { OPEN_TAB_LIMIT } from "@/context/tab-retention"
 
 /**
  * The native transcript store — THE render path (`NativeTimeline` → `NativeTranscript`).
@@ -30,8 +31,6 @@ export function createNativeMessageStore(client: NovaclawClient) {
     messages: {} as Record<string, SessionMessage[]>,
     terminalReconcile: {} as Record<string, number>,
   })
-  // Requested transcripts, including a first load that failed before it could create a store row.
-  // Reconnect recovery must retry those too or a chat opened during an outage stays blank forever.
   const heldSessions = new Set<string>()
   // Full (no-cursor) loads are authoritative snapshots. A mount load and the busy→idle
   // recovery load can overlap, so only the newest snapshot for a session may commit. Cursor
@@ -41,6 +40,15 @@ export function createNativeMessageStore(client: NovaclawClient) {
   // Retain the latest outcome as well as its revision. Superseded reads must join that outcome,
   // including a rejection, rather than fulfill a recovery barrier without committing any data.
   const authoritativeLoads = new Map<string, Promise<void>>()
+  const holdSession = (sessionID: string) => {
+    heldSessions.delete(sessionID)
+    heldSessions.add(sessionID)
+    while (heldSessions.size > OPEN_TAB_LIMIT) {
+      const oldest = heldSessions.values().next().value
+      if (oldest === undefined) return
+      evict(oldest)
+    }
+  }
   const settleLatest = async (sessionID: string, signal?: AbortSignal): Promise<void> => {
     while (true) {
       signal?.throwIfAborted()
@@ -65,7 +73,7 @@ export function createNativeMessageStore(client: NovaclawClient) {
     if (retired !== undefined) return evict(retired)
     if (!event.type.startsWith("session.next.")) return
     const sessionID = (event.data as { sessionID?: string } | undefined)?.sessionID
-    if (!sessionID) return
+    if (!sessionID || !heldSessions.has(sessionID)) return
     setData(
       "messages",
       produce((bySession) => {
@@ -100,7 +108,7 @@ export function createNativeMessageStore(client: NovaclawClient) {
     sessionID: string,
     options?: { limit?: number; order?: "asc" | "desc"; cursor?: string; signal?: AbortSignal },
   ): Promise<void> => {
-    heldSessions.add(sessionID)
+    holdSession(sessionID)
     const authoritative = options?.cursor === undefined
     const rev = authoritative ? (authoritativeLoadRev.get(sessionID) ?? 0) + 1 : undefined
     if (rev !== undefined) authoritativeLoadRev.set(sessionID, rev)
@@ -172,13 +180,15 @@ export function createNativeMessageStore(client: NovaclawClient) {
    *    this fixes. Callers pass `Date.now()`; the merge then keeps it by its own rule ("created AFTER
    *    the fetch ⇒ it simply arrived too late to be included").
    */
-  const optimistic = (sessionID: string, message: SessionMessage) =>
+  const optimistic = (sessionID: string, message: SessionMessage) => {
+    holdSession(sessionID)
     setData(
       "messages",
       produce((bySession) => {
         appendMessage((bySession[sessionID] ??= []), message)
       }),
     )
+  }
 
   /**
    * Take back an optimistic row whose send FAILED.
@@ -242,8 +252,7 @@ export function createNativeMessageStore(client: NovaclawClient) {
    * `load` is already idempotent and authoritative, so calling it twice is harmless.
    */
   const reconcileAll = async (signal?: AbortSignal) => {
-    const sessions = new Set([...heldSessions, ...Object.keys(data.messages)])
-    const sessionIDs = [...sessions]
+    const sessionIDs = [...heldSessions]
     const results = await Promise.allSettled(sessionIDs.map((sessionID) => load(sessionID, { signal })))
     const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected")
     // Finish every independent read before rejecting: one broken chat must not abandon the others,

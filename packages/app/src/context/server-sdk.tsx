@@ -12,6 +12,7 @@ import { useGlobal } from "./global"
 import { ServerScope } from "@/utils/server-scope"
 import { reconnectDelayMs } from "@/utils/reconnect-schedule"
 import { runReconnectingStream, waitForStreamRetry } from "./reconnect-stream"
+import { enqueueEvent, EventBacklogOverflowError } from "./global-sync/event-backlog"
 
 const isAbortError = (error: unknown) =>
   error !== null && typeof error === "object" && "name" in error && error.name === "AbortError"
@@ -196,7 +197,16 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
           if (event.payload.type !== "sync" && event.payload.type !== "server.heartbeat") {
             const directory = event.directory ?? "global"
             const payload = event.payload as Event
-            queue.push({ directory, payload })
+            try {
+              enqueueEvent(queue, { directory, payload })
+            } catch (error) {
+              if (!(error instanceof EventBacklogOverflowError)) throw error
+              queue.length = 0
+              buffer.length = 0
+              if (timer) clearTimeout(timer)
+              timer = undefined
+              throw error
+            }
             schedule()
           }
 
@@ -236,6 +246,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
           clearHeartbeat()
         },
         failed: (error, signal) => {
+          if (error instanceof EventBacklogOverflowError) return
           if (!isStreamClosed(error, signal) && !streamErrorLogged) {
             streamErrorLogged = true
             console.error("[global-sdk] event stream failed", {

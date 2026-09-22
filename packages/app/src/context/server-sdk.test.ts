@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
 import { createReconnectRecoveryBarrier, resumeStreamAfterPageShow } from "./server-sdk"
+import { enqueueEvent, EVENT_BACKLOG_LIMIT, EventBacklogOverflowError } from "./global-sync/event-backlog"
 
 // S7: the V1 `message.part.*` coalescing tests retired with the translated vocabulary — the
 // stream carries raw `session.next.*` events, pushed to the frame-batched queue unmodified.
@@ -15,6 +16,29 @@ describe("resumeStreamAfterPageShow", () => {
     resumeStreamAfterPageShow({ persisted: true } as PageTransitionEvent, start)
 
     expect(starts).toBe(1)
+  })
+})
+
+describe("event backlog", () => {
+  test("forces resynchronization at the fixed queue limit", () => {
+    const queue: number[] = []
+    for (let index = 0; index < EVENT_BACKLOG_LIMIT; index++) enqueueEvent(queue, index)
+
+    expect(queue).toHaveLength(EVENT_BACKLOG_LIMIT)
+    expect(() => enqueueEvent(queue, EVENT_BACKLOG_LIMIT)).toThrow(EventBacklogOverflowError)
+    expect(queue).toHaveLength(EVENT_BACKLOG_LIMIT)
+  })
+
+  test("the live stream discards stale batches and reconnects on overflow", () => {
+    const source = fs.readFileSync(path.join(import.meta.dir, "server-sdk.tsx"), "utf8")
+    const code = source
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("//"))
+      .join("\n")
+
+    expect(code).toContain("enqueueEvent(queue, { directory, payload })")
+    expect(code).toMatch(/queue\.length = 0[\s\S]*buffer\.length = 0[\s\S]*throw error/)
+    expect(code).toContain("if (error instanceof EventBacklogOverflowError) return")
   })
 })
 
