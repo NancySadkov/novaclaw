@@ -23,6 +23,7 @@ import { Log } from "@novaclaw/schema/log"
 import { mutateConfig } from "./config-mutation"
 import { ServerAuth } from "@/server/auth"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
+import { createOverflowTerminatingHandler } from "./overflow-handler"
 
 function eventData(data: unknown): Sse.Event {
   return {
@@ -59,16 +60,21 @@ function eventResponse() {
     const events = Stream.callback<GlobalBusEvent>(
       (queue) => {
         let buffered = 0
-        const handler = (event: GlobalBusEvent) => {
-          if (Queue.offerUnsafe(queue, event)) {
+        let handler: (event: GlobalBusEvent) => void
+        handler = createOverflowTerminatingHandler(
+          (event) => {
+            if (!Queue.offerUnsafe(queue, event)) return false
             buffered++
-            return
-          }
-          Effect.runFork(
-            Log.event("server.global.event.overflow", { "server.stream": "global", "server.buffered": buffered }),
-          )
-          Queue.endUnsafe(queue)
-        }
+            return true
+          },
+          () => {
+            GlobalBus.off("event", handler)
+            Effect.runFork(
+              Log.event("server.global.event.overflow", { "server.stream": "global", "server.buffered": buffered }),
+            )
+            Queue.endUnsafe(queue)
+          },
+        )
         return Effect.acquireRelease(
           Effect.sync(() => GlobalBus.on("event", handler)),
           () => Effect.sync(() => GlobalBus.off("event", handler)),

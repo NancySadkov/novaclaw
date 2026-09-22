@@ -44,6 +44,7 @@
   "countsRecoveryLedger": "2026-09-22: core 7386->7389 adds three recovery-ledger guards in session-runner-recovery-ledger.test.ts: a quota refusal continues the drain instead of halting it on the dead route; abandoning a stranded attempt files its route so the next turn routes around it; and a young latch files nothing. Every delta is a test ADDED; nothing moved down.",
   "countsOwnedProcesses": "2026-09-22: core 7389->7393 adds four guards in owned-processes.test.ts for the registry that reaps agent-launched OS processes at shutdown: register counts live entries and release drops them, killAll terminates a registered running child, killAllSync terminates one, and killAll with no entries of its own resolves. Every delta is a test ADDED; nothing moved down.",
   "countsQuotaLedgerServerDrift": "2026-09-22: novaclaw:server 444->448 is a CORRECTION of pre-existing drift, not this slice's tests — measured while landing an unrelated process-lifetime change that adds no test under packages/novaclaw. The four are ccfddc9d9's added cases in httpapi-provider-probe-completion.test.ts (counted from that commit's own diff: four added test declarations), which its baseline note never recorded because it accounted only for `llm`. Re-derived from the observed total; nothing moved down.",
+  "countsOverflowTerminatingHandler": "2026-09-22: novaclaw:server 448->449 adds one regression case in overflow-handler.test.ts: after a bounded event queue rejects an offer, later events are neither offered nor reported as additional overflows. This pins the global SSE overflow terminal-state guard. Nothing moved down.",
   "countsShippedShellBinding": "2026-09-22: core 7393->7394 (+1), measured on a green whole-unit run (7394 pass, 9 skip, 0 fail) after the five tests this slice repaired stopped being red. NOT +5: those five were passing when this baseline was last set and went red afterwards without a re-baseline, so they were already counted and repairing them only restores the number. The single ADDED test is tool-bash.test.ts's `keeps the real shell job alive until an ampersand child with closed pipes exits`: it was registered behind `if (Shell.posix(Shell.agentDefault()))`, which is false on a Windows checkout whose `NOVACLAW_W64DEVKIT_PATH` the test preload scrubs, so it was neither run nor counted; `test/fixture/agent-shell.ts` now binds the shipped w64devkit and the case runs (measured 1116 ms). Skips are unchanged at 9 - the repaired cases RUN now rather than skipping, which is the point. Nothing moved down.",
   "units": {
     "llm": 28,
@@ -82,7 +83,7 @@
     "app:browser": 262,
     "desktop": 239,
     "server": 114,
-    "novaclaw:server": 448,
+    "novaclaw:server": 449,
     "novaclaw:v2": 4,
     "novaclaw:config": 143,
     "novaclaw:tool": 43,
