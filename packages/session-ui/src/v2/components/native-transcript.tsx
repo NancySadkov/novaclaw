@@ -108,6 +108,16 @@ interface ToolFoldState {
 }
 const NO_TOOL_FOLD: ToolFoldState = { get: () => undefined, set: () => {} }
 const ToolFoldContext = createContext<Accessor<ToolFoldState>>(() => NO_TOOL_FOLD)
+const sessionToolFolds = new Map<string, Accessor<ToolFoldState>>()
+
+function createToolFold(key: string | undefined, local: Accessor<ToolFoldState>): Accessor<ToolFoldState> {
+  if (!key) return local
+  const existing = sessionToolFolds.get(key)
+  if (existing) return existing
+  const state = () => local()
+  sessionToolFolds.set(key, state)
+  return state
+}
 
 /**
  * The session-fault headline, TRANSLATED.
@@ -218,6 +228,8 @@ export function NativeTranscript(props: {
    * tab's command-timer toggle is the one writer. A caller that omits it keeps the shipped default.
    */
   showCommandTiming?: boolean
+  /** Stable chat identity used to retain fold choices across chat-view remounts for this app lifetime. */
+  foldStateKey?: string
   /**
    * Prompts the user has SENT that the agent has not read yet (`GET /api/session/:id/pending`).
    * They are durable and already accepted, but have no transcript row until the runner promotes them —
@@ -243,10 +255,11 @@ export function NativeTranscript(props: {
   // Expansion the user created, keyed above the Turn (see ToolFoldContext). A record store, so a
   // key written for one card does not re-render any other.
   const [toolFoldState, setToolFoldState] = createStore<Record<string, boolean>>({})
-  const toolFold = () => ({
+  const localToolFold = () => ({
     get: (key: string) => toolFoldState[key],
     set: (key: string, open: boolean) => setToolFoldState(key, open),
   })
+  const toolFold = createToolFold(props.foldStateKey, localToolFold)
   // The native store captures the session's initial agent/model as `*-switched` messages,
   // but those are setup state (V1 shows them in the header, not the transcript). Drop the
   // LEADING run of switch markers; a switch that lands mid-conversation still renders as a

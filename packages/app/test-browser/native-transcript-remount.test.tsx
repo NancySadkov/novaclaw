@@ -52,6 +52,7 @@ function mount(
     status?: unknown
     liveGeneratedTokens?: number
     directory?: string
+    foldStateKey?: string
   },
 ) {
   const host = document.createElement("div")
@@ -63,6 +64,7 @@ function mount(
       >
         <NativeTranscript
           messages={options?.messages ?? messages}
+          foldStateKey={options?.foldStateKey}
           status={(options?.status ?? { type: "busy" }) as never}
           liveGeneratedTokens={options?.liveGeneratedTokens}
           directory={options?.directory}
@@ -383,6 +385,21 @@ describe("native transcript remount", () => {
     setMessages([...messages(), step("msg_step_2", "call_step_2", 6, "bun run typecheck")])
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(host.querySelectorAll('[data-slot="basic-tool-v2-content"]')).toHaveLength(1)
+  })
+
+  test("an unfolded command survives recreating the chat view", async () => {
+    const foldStateKey = "native-transcript-remount-fold-state"
+    const first = mount(undefined, { messages, status: { type: "idle" }, foldStateKey })
+    ;(first.querySelector('[data-slot="basic-tool-v2-trigger"]') as HTMLElement).click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(first.querySelectorAll('[data-slot="basic-tool-v2-content"]')).toHaveLength(1)
+
+    dispose?.()
+    dispose = undefined
+    first.remove()
+
+    const reopened = mount(undefined, { messages, status: { type: "idle" }, foldStateKey })
+    expect(reopened.querySelectorAll('[data-slot="basic-tool-v2-content"]')).toHaveLength(1)
   })
 
   test("todowrite is folded by default — the composer dock already carries the list", async () => {

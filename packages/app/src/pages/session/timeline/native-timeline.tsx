@@ -517,6 +517,7 @@ export function NativeTimeline(props: {
         <div ref={(el) => (content = el)}>
           <NativeTranscript
             messages={messages()}
+            foldStateKey={props.sessionID}
             directory={props.directory}
             liveGeneratedTokens={serverSync().session.data.session_live(props.sessionID)?.approxTokens}
             maxToolTimeoutMs={props.maxToolTimeoutMs}
