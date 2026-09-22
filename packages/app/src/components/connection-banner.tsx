@@ -1,6 +1,6 @@
 import { Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js"
 import { useGlobal } from "@/context/global"
-import { useLanguage } from "@/context/language"
+import { useLanguage, type TranslationKey } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useSupervisorPhase } from "@/hooks/use-supervisor-phase"
 import { useServer } from "@/context/server"
@@ -34,6 +34,12 @@ const TROUBLE = new Set<ServerStreamStatus>(["connecting", "reconnecting"])
 
 /** What the strip is saying. `stopped` is the only one that is interactive. */
 export type BannerMode = "hidden" | "reconnecting" | "still-trying" | "restored" | "stopped"
+
+export function supervisorReasonKey(reason: string): TranslationKey | undefined {
+  if (reason === "crash") return "app.connection.reason.crash"
+  if (reason === "unresponsive") return "app.connection.reason.unresponsive"
+  if (reason === "start-failed") return "app.connection.reason.startFailed"
+}
 
 /**
  * The whole render decision, pure — so the interesting combinations are assertable without a DOM.
@@ -77,7 +83,21 @@ export function ConnectionBanner() {
   const [longOutage, setLongOutage] = createSignal(false)
   const [restored, setRestored] = createSignal(false)
   // ONE source for the supervisor phase, shared with ConnectionError — see the hook for why.
-  const { gaveUp } = useSupervisorPhase()
+  const { phase, gaveUp } = useSupervisorPhase()
+  const [lastRestartReason, setLastRestartReason] = createSignal<string>()
+  createEffect(
+    on(phase, (current) => {
+      if (current?.phase === "restarting" || current?.phase === "gave-up") setLastRestartReason(current.reason)
+    }),
+  )
+  createEffect(
+    on(status, (current) => {
+      if (current === "connected") setLastRestartReason(undefined)
+    }),
+  )
+  const restartReason = createMemo(() => {
+    return supervisorReasonKey(lastRestartReason() ?? "")
+  })
   const [repairing, setRepairing] = createSignal(false)
   let showTimer: ReturnType<typeof setTimeout> | undefined
   let escalateTimer: ReturnType<typeof setTimeout> | undefined
@@ -167,6 +187,9 @@ export function ConnectionBanner() {
         <div class="flex flex-col items-center gap-0.5 px-4 py-2 rounded-lg bg-surface-base shadow-lg border border-border-weak-base text-center">
           <Show when={mode() === "stopped"}>
             <span class="text-12-regular text-text-strong">{language.t("app.connection.stopped.title")}</span>
+            <Show when={restartReason()}>
+              <span class="text-12-regular text-text-weak max-w-80">{language.t(restartReason()!)}</span>
+            </Show>
             <span class="text-12-regular text-text-weak max-w-80">
               {language.t("app.connection.stopped.description")}
             </span>
@@ -181,6 +204,9 @@ export function ConnectionBanner() {
           </Show>
           <Show when={mode() === "reconnecting" || mode() === "still-trying"}>
             <span class="text-12-regular text-text-strong">{language.t("app.connection.reconnecting")}</span>
+            <Show when={restartReason()}>
+              <span class="text-12-regular text-text-weak max-w-80">{language.t(restartReason()!)}</span>
+            </Show>
             <Show when={mode() === "still-trying"}>
               <span class="text-12-regular text-text-weak">{language.t("app.connection.stillTrying")}</span>
             </Show>

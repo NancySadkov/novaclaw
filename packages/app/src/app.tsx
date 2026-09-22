@@ -27,7 +27,7 @@ import {
   Show,
 } from "solid-js"
 import { Dynamic } from "solid-js/web"
-import { ConnectionBanner } from "@/components/connection-banner"
+import { ConnectionBanner, supervisorReasonKey } from "@/components/connection-banner"
 import { CommandProvider } from "@/context/command"
 import { CommentsProvider } from "@/context/comments"
 import { FileProvider } from "@/context/file"
@@ -669,7 +669,12 @@ function ConnectionError(props: {
   const language = useLanguage()
   const server = useServer()
   const platform = usePlatform()
-  const { gaveUp: supervisorGaveUp } = useSupervisorPhase()
+  const { phase, gaveUp: supervisorGaveUp } = useSupervisorPhase()
+  const restartReason = createMemo(() => {
+    const current = phase()
+    if (current?.phase !== "restarting" && current?.phase !== "gave-up") return undefined
+    return supervisorReasonKey(current.reason)
+  })
   const [repairing, setRepairing] = createSignal(false)
   const others = () => server.list.filter((s) => ServerConnection.key(s) !== server.key)
   const name = createMemo(() => server.name || server.key)
@@ -718,6 +723,9 @@ function ConnectionError(props: {
             cannot disagree about whether the instance is coming back (they never co-render: the gate
             picks one). An absent supervisor stays `undefined` and keeps the calm copy. */}
         <p class="mt-1 text-12-regular text-text-weak max-w-80">{language.t(copy().detail)}</p>
+        <Show when={restartReason()}>
+          <p class="mt-1 text-12-regular text-text-weak max-w-80">{language.t(restartReason()!)}</p>
+        </Show>
         <Show when={copy().detail === "app.connection.stopped.description"}>
           <button
             type="button"

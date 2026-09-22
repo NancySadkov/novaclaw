@@ -71,6 +71,7 @@ function unwrapNamedError(error: unknown): unknown {
  */
 export function isUnreachableError(error: unknown) {
   if (!(error instanceof Error)) return false
+  if ("status" in error && typeof error.status === "number") return false
   const cause: unknown = error.cause
   if (!cause || typeof cause !== "object") return true
   return !("body" in cause) && !("status" in cause)

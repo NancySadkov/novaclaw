@@ -27646,6 +27646,25 @@
                 "additionalProperties": false
               },
               {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["server.heartbeat"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {}
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
                 "$ref": "#/components/schemas/SyncEventSessionCreated"
               },
               {

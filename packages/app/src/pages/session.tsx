@@ -46,6 +46,8 @@ import {
   stopSessionCommand,
   stopSessionExecution,
 } from "@/utils/session-execution-api"
+import { formatServerError } from "@/utils/server-errors"
+import { shouldSuppressSessionExecutionError } from "@/utils/session-execution-error"
 import { recoveryChangesNote } from "./session-recovery-note"
 import { PromptInput } from "@/components/prompt-input"
 import { SessionContextUsage } from "@/components/session-context-usage"
@@ -426,9 +428,10 @@ export default function Page() {
       else await stopSessionExecution(conn.http, id, sdk().directory)
       await executionQuery.refetch()
     } catch (error) {
+      if (shouldSuppressSessionExecutionError(error, id)) return
       showToast({
         title: action === "retry" ? "Could not retry this chat" : "Could not stop this chat",
-        description: String(error),
+        description: formatServerError(error, language.t),
         variant: "error",
       })
     }

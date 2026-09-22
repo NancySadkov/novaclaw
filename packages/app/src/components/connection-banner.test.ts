@@ -2,7 +2,7 @@ import fs from "fs"
 import path from "path"
 import { describe, expect, test } from "bun:test"
 import { dict as en } from "@/i18n/en"
-import { bannerMode } from "./connection-banner"
+import { bannerMode, supervisorReasonKey } from "./connection-banner"
 
 /**
  * The supervisor's restart ladder is BOUNDED — after five fast crashes it stops for good. Before
@@ -52,6 +52,13 @@ describe("connection banner mode", () => {
     expect(en["app.connection.stopped.description"]).not.toContain("clears by itself")
     expect(en["app.connection.stopped.description"]).toContain("stopped trying")
     expect(en["app.connection.stopped.restart"]).toBeTruthy()
+  })
+
+  test("supervisor reasons have explicit user-facing copy", () => {
+    expect(supervisorReasonKey("crash")).toBe("app.connection.reason.crash")
+    expect(supervisorReasonKey("unresponsive")).toBe("app.connection.reason.unresponsive")
+    expect(supervisorReasonKey("start-failed")).toBe("app.connection.reason.startFailed")
+    expect(supervisorReasonKey("unknown")).toBeUndefined()
   })
 })
 

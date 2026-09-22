@@ -461,6 +461,9 @@ export const dict = {
     "The instance is running, but it refused the saved username or password. Update the credentials for this instance, or pick another one below.",
   "app.connection.reconnecting": "Connection lost — reconnecting…",
   "app.connection.promptReconnecting": "Connection Lost. Reconnecting Attempt {{attempt}}",
+  "app.connection.reason.crash": "The instance stopped unexpectedly. NovaClaw is restarting it.",
+  "app.connection.reason.unresponsive": "The instance stopped answering. NovaClaw is restarting it.",
+  "app.connection.reason.startFailed": "The instance failed while starting. NovaClaw is trying again.",
   "app.connection.stillTrying": "Still trying. Your work is safe; this clears by itself once the instance is back.",
   "app.connection.restored": "Reconnected",
   // The BOUNDED end of the restart ladder. Says the three things the old "still trying" line could

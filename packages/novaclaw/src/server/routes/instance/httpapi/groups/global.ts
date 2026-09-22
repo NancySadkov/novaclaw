@@ -159,6 +159,11 @@ const GlobalEventSchema = Schema.Struct({
       type: Schema.Literal(ServerEvent.Disposed.type),
       properties: Schema.Struct({}),
     }),
+    Schema.Struct({
+      id: EventV2.ID,
+      type: Schema.Literal("server.heartbeat"),
+      properties: Schema.Struct({}),
+    }),
     ...SyncEventSchemas,
   ]),
 }).annotate({ identifier: "GlobalEvent" })

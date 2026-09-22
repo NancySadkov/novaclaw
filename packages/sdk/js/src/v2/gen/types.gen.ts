@@ -1285,6 +1285,13 @@ export type GlobalEvent = {
           [key: string]: unknown
         }
       }
+    | {
+        id: string
+        type: "server.heartbeat"
+        properties: {
+          [key: string]: unknown
+        }
+      }
     | SyncEventSessionCreated
     | SyncEventSessionUpdated
     | SyncEventSessionDeleted

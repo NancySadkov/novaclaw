@@ -273,6 +273,7 @@ describe("isUnreachableError", () => {
       isUnreachableError(new Error("boom", { cause: { body: { name: "NotFoundError", data: {} }, status: 404 } })),
     ).toBe(false)
     expect(isUnreachableError(new Error("boom", { cause: { status: 500 } }))).toBe(false)
+    expect(isUnreachableError(Object.assign(new Error("boom"), { status: 500 }))).toBe(false)
   })
 
   test("a non-Error is nobody's liveness claim", () => {

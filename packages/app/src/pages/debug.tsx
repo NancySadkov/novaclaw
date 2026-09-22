@@ -16,6 +16,8 @@ import { capabilities, retryCapability } from "@/utils/capability-api"
 import { loadedPlugins } from "@/utils/plugin-api"
 import { createSettledResource } from "@/utils/settled-resource"
 import { retrySessionExecution, sessionExecutions, stopSessionExecution } from "@/utils/session-execution-api"
+import { formatServerError } from "@/utils/server-errors"
+import { shouldSuppressSessionExecutionError } from "@/utils/session-execution-error"
 import { contextTurns, formatContextFinding, formatContextTokens } from "./debug-context"
 import { debugPresenceBusy, debugPresenceCell, debugPresenceOrphanText, debugPresenceOrphans } from "./debug-presence"
 import { VIEWER_TTL_SECONDS } from "./session/session-presence"
@@ -300,9 +302,10 @@ function DebugAppPage() {
       setExecutionTick((v) => v + 1)
       showToast({ title: action === "retry" ? "Session retry started" : "Session stopped" })
     } catch (error) {
+      if (shouldSuppressSessionExecutionError(error, sessionID)) return
       showToast({
         title: action === "retry" ? "Could not retry session" : "Could not stop session",
-        description: String(error),
+        description: formatServerError(error, language.t),
         variant: "error",
       })
     }
