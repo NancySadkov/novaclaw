@@ -71,7 +71,7 @@ export const layer = Layer.effect(
       }),
       setLayers: Effect.fn("AgentConfigStore.setLayers")(function* (name, layers) {
         yield* agents.setLayers(name, layers)
-        yield* Effect.promise(() => AvatarAssignment.activate(name))
+        yield* Effect.promise(() => AvatarAssignment.reactivate(name))
       }),
       removeAgent: Effect.fn("AgentConfigStore.removeAgent")(function* (name) {
         yield* agents.remove(name)

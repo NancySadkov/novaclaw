@@ -107,6 +107,21 @@ export const activateIn = async (
   })
 }
 
+export const reactivateIn = async (dataDirectory: string, agentID: string): Promise<void> => {
+  const root = rootIn(dataDirectory)
+  await serialized(root, async () => {
+    await fs.mkdir(root, { recursive: true })
+    await fs.rm(retiredPath(root, agentID), { force: true })
+  })
+}
+
+export const releaseIn = async (dataDirectory: string, agentID: string): Promise<void> => {
+  const root = rootIn(dataDirectory)
+  await serialized(root, async () => {
+    await fs.rm(claimPath(root, agentID), { force: true })
+  })
+}
+
 export const retireIn = async (dataDirectory: string, agentID: string): Promise<void> => {
   const root = rootIn(dataDirectory)
   await serialized(root, async () => {
@@ -118,4 +133,6 @@ export const retireIn = async (dataDirectory: string, agentID: string): Promise<
 
 export const claim = (agentID: string) => claimIn(Global.Path.data, agentID)
 export const activate = (agentID: string) => activateIn(Global.Path.data, agentID)
+export const reactivate = (agentID: string) => reactivateIn(Global.Path.data, agentID)
+export const release = (agentID: string) => releaseIn(Global.Path.data, agentID)
 export const retire = (agentID: string) => retireIn(Global.Path.data, agentID)

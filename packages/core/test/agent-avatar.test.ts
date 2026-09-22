@@ -13,6 +13,15 @@ const root = async () => {
   return value
 }
 
+const webPDimensions = (bytes: Uint8Array) => {
+  expect(new TextDecoder().decode(bytes.slice(12, 16))).toBe("VP8 ")
+  expect([...bytes.slice(23, 26)]).toEqual([0x9d, 0x01, 0x2a])
+  return {
+    width: (((bytes[27] ?? 0) << 8) | (bytes[26] ?? 0)) & 0x3fff,
+    height: (((bytes[29] ?? 0) << 8) | (bytes[28] ?? 0)) & 0x3fff,
+  }
+}
+
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((value) => fs.rm(value, { recursive: true, force: true })))
 })
@@ -59,6 +68,7 @@ describe("instance-owned agent portraits", () => {
       expect(portrait, `slot ${slot}`).toBeDefined()
       expect(portrait?.mime, `slot ${slot}`).toBe("image/webp")
       expect([...portrait!.bytes.slice(0, 4)], `slot ${slot}`).toEqual([0x52, 0x49, 0x46, 0x46])
+      expect(webPDimensions(portrait!.bytes), `slot ${slot}`).toEqual({ width: 250, height: 250 })
       hashes.add(portrait!.hash)
     }
     expect(hashes.size).toBe(AvatarAssignment.POOL_SIZE)
@@ -66,20 +76,48 @@ describe("instance-owned agent portraits", () => {
 
   test("agents receive unique stable portraits and retirement returns a slot to the pool", async () => {
     const data = await root()
-    expect(await AvatarAssignment.claimIn(data, "nova", () => 0)).toBe(0)
-    expect(await AvatarAssignment.claimIn(data, "xenia", () => 0)).toBe(1)
-    expect(await AvatarAssignment.claimIn(data, "nova", () => 0.99)).toBe(0)
+    expect(await AvatarAssignment.claimIn(data, "theron", () => 0)).toBe(0)
+    expect(await AvatarAssignment.claimIn(data, "wren", () => 0)).toBe(1)
+    expect(await AvatarAssignment.claimIn(data, "theron", () => 0.99)).toBe(0)
 
-    await AvatarAssignment.retireIn(data, "nova")
-    expect(await AvatarAssignment.claimIn(data, "nova", () => 0)).toBeUndefined()
-    expect(await AvatarAssignment.claimIn(data, "daedalus", () => 0)).toBe(0)
-    expect(await AvatarAssignment.activateIn(data, "nova", () => 0)).toBe(2)
+    await AvatarAssignment.retireIn(data, "theron")
+    expect(await AvatarAssignment.claimIn(data, "theron", () => 0)).toBeUndefined()
+    expect(await AvatarAssignment.claimIn(data, "cassia", () => 0)).toBe(0)
+    expect(await AvatarAssignment.activateIn(data, "theron", () => 0)).toBe(2)
 
     const portraits = await Promise.all(
-      ["nova", "xenia", "daedalus"].map((id) => Avatar.portraitIn(data, id, undefined, id)),
+      ["theron", "wren", "cassia"].map((id) => Avatar.portraitIn(data, id, undefined, id)),
     )
     expect(portraits.every((portrait) => portrait.kind === "image")).toBe(true)
     expect(new Set(portraits.map((portrait) => (portrait.kind === "image" ? portrait.hash : ""))).size).toBe(3)
+  })
+
+  test("restores the five established officer portraits without consuming pool slots", async () => {
+    const data = await root()
+    const established = ["nova", "geryon", "xenia", "daedalus", "myron"]
+    const portraits = await Promise.all(established.map((id) => Avatar.portraitIn(data, id, undefined, id)))
+    const builtins = await Promise.all(established.map((id) => Avatar.builtin(id)))
+
+    expect(portraits.map((portrait) => (portrait.kind === "image" ? portrait.hash : undefined))).toEqual(
+      builtins.map((portrait) => portrait?.hash),
+    )
+    expect(new Set(builtins.map((portrait) => portrait?.hash)).size).toBe(established.length)
+    expect(await AvatarAssignment.claimIn(data, "new-officer", () => 0)).toBe(0)
+    expect(await Avatar.builtin("xenia-2")).toBeUndefined()
+  })
+
+  test("Nova always uses the star portrait and no other agent may upload it", async () => {
+    const data = await root()
+    const star = await Avatar.builtin("nova")
+    expect(star).toBeDefined()
+    await AvatarAssignment.claimIn(data, "nova", () => 0)
+
+    const portrait = await Avatar.portraitIn(data, "nova", "🦊", "Renamed Nova")
+    expect(portrait.kind).toBe("image")
+    if (portrait.kind === "image") expect(portrait.hash).toBe(star!.hash)
+    expect(await AvatarAssignment.claimIn(data, "new-officer", () => 0)).toBe(0)
+    await expect(Avatar.writeIn(data, "nova", Uint8Array.of(1), "image/png")).rejects.toThrow("always uses")
+    await expect(Avatar.writeIn(data, "wren", star!.bytes, "image/webp")).rejects.toThrow("reserved for Nova")
   })
 
   test("a configured glyph remains the one source when no image was uploaded", async () => {

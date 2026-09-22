@@ -1,5 +1,7 @@
 export * as Avatar from "./avatar"
 
+/// <reference path="../assets.d.ts" />
+
 import { createHash, randomUUID } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
@@ -7,6 +9,11 @@ import { fileURLToPath } from "node:url"
 import { Global } from "../global"
 import { AvatarAssignment } from "./avatar-assignment"
 import { files as poolFiles } from "./avatar-pool"
+import novaPortraitFile from "../../../app/public/assets/agents/portraits/nova.webp" with { type: "file" }
+import geryonPortraitFile from "../../../app/public/assets/agents/portraits/geryon.webp" with { type: "file" }
+import xeniaPortraitFile from "../../../app/public/assets/agents/portraits/xenia.webp" with { type: "file" }
+import daedalusPortraitFile from "../../../app/public/assets/agents/portraits/daedalus.webp" with { type: "file" }
+import myronPortraitFile from "../../../app/public/assets/agents/portraits/myron.webp" with { type: "file" }
 
 /** The avatar is a small identity component, not an arbitrary file upload. */
 export const MAX_BYTES = 5 * 1024 * 1024
@@ -33,12 +40,32 @@ export type Portrait =
 
 const extensions = Object.values(TYPES)
 
+const BUILTIN_PORTRAITS: Readonly<Record<string, string>> = {
+  nova: novaPortraitFile,
+  geryon: geryonPortraitFile,
+  xenia: xeniaPortraitFile,
+  daedalus: daedalusPortraitFile,
+  myron: myronPortraitFile,
+}
+
 /** Bun's file loader emits an absolute path in source runs and a chunk-relative path in a bundle. */
 export const bundledAssetPath = (file: string, moduleURL: string = import.meta.url) =>
   path.isAbsolute(file) ? file : fileURLToPath(new URL(file, moduleURL))
 
 export const pooled = async (slot: number): Promise<Stored | undefined> => {
   const file = poolFiles[slot]
+  if (file === undefined) return undefined
+  try {
+    const bytes = new Uint8Array(await fs.readFile(bundledAssetPath(file)))
+    if (bytes.byteLength === 0 || bytes.byteLength > MAX_BYTES) return undefined
+    return { bytes, mime: "image/webp", hash: digest(bytes) }
+  } catch {
+    return undefined
+  }
+}
+
+export const builtin = async (agentID: string): Promise<Stored | undefined> => {
+  const file = BUILTIN_PORTRAITS[agentID.trim().toLowerCase()]
   if (file === undefined) return undefined
   try {
     const bytes = new Uint8Array(await fs.readFile(bundledAssetPath(file)))
@@ -104,6 +131,10 @@ export const writeIn = async (
   const format = mime(contentType)
   if (format === undefined) throw new Error("Avatar must be PNG, JPEG, GIF or WebP")
   const hash = digest(bytes)
+  const normalizedAgentID = agentID.trim().toLowerCase()
+  if (normalizedAgentID === "nova") throw new Error("Nova always uses its star portrait")
+  const novaPortrait = await builtin("nova")
+  if (novaPortrait?.hash === hash) throw new Error("Nova's star portrait is reserved for Nova")
   const root = rootIn(dataDirectory)
   await fs.mkdir(root, { recursive: true })
   const blob = blobPath(root, agentID, hash, format)
@@ -169,9 +200,19 @@ export const portraitIn = async (
   storedGlyph: string | undefined,
   name?: string,
 ): Promise<Portrait> => {
+  if (agentID.trim().toLowerCase() === "nova") {
+    await Promise.all([AvatarAssignment.releaseIn(dataDirectory, agentID), removeIn(dataDirectory, agentID)])
+    const nova = await builtin("nova")
+    if (nova !== undefined) return { kind: "image", ...nova }
+  }
   const stored = await readIn(dataDirectory, agentID)
   if (stored !== undefined) return { kind: "image", ...stored }
   if (storedGlyph?.trim()) return { kind: "glyph", text: storedGlyph.trim() }
+  const assigned = await builtin(agentID)
+  if (assigned !== undefined) {
+    await AvatarAssignment.releaseIn(dataDirectory, agentID)
+    return { kind: "image", ...assigned }
+  }
   const slot = await AvatarAssignment.claimIn(dataDirectory, agentID)
   const shipped = slot === undefined ? undefined : await pooled(slot)
   if (shipped !== undefined) return { kind: "image", ...shipped }

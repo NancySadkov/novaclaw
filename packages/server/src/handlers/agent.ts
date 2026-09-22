@@ -80,6 +80,12 @@ export const AgentHandler = handlerLayer(
       )
       .handleRaw("agent.avatar.upload", (ctx) =>
         Effect.gen(function* () {
+          if (AgentV2.isProtected(ctx.params.agentID))
+            return yield* new InvalidRequestError({
+              message: "Nova always uses its star portrait",
+              kind: PROTECTED_AGENT,
+              field: "agentID",
+            })
           const request = yield* HttpServerRequest.HttpServerRequest
           const contentType = request.headers["content-type"]
           const format = Avatar.mime(contentType)
@@ -117,16 +123,22 @@ export const AgentHandler = handlerLayer(
         }),
       )
       .handle("agent.avatar.delete", (ctx) =>
-        Effect.tryPromise(() => Avatar.remove(String(ctx.params.agentID))).pipe(
-          Effect.mapError(
-            (error) =>
-              new InvalidRequestError({
-                message: error instanceof Error ? error.message : String(error),
-                field: "agentID",
-              }),
-          ),
-          Effect.asVoid,
-        ),
+        AgentV2.isProtected(ctx.params.agentID)
+          ? new InvalidRequestError({
+              message: "Nova always uses its star portrait",
+              kind: PROTECTED_AGENT,
+              field: "agentID",
+            })
+          : Effect.tryPromise(() => Avatar.remove(String(ctx.params.agentID))).pipe(
+              Effect.mapError(
+                (error) =>
+                  new InvalidRequestError({
+                    message: error instanceof Error ? error.message : String(error),
+                    field: "agentID",
+                  }),
+              ),
+              Effect.asVoid,
+            ),
       )
       .handle("agent.usage", (ctx) =>
         // The roster's work column. `Database.Service` rather than a per-location store: spend
