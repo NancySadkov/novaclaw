@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { Avatar } from "@novaclaw/core/agent/avatar"
+import { AvatarAssignment } from "@novaclaw/core/agent/avatar-assignment"
 
 const roots: string[] = []
 const root = async () => {
@@ -38,24 +39,47 @@ describe("instance-owned agent portraits", () => {
     expect(await Avatar.readIn(data, "theron")).toBeUndefined()
   })
 
-  test("a missing portrait is a deterministic server-owned placeholder, not a client lookup", async () => {
+  test("an agent without an upload receives a stable server-owned pool portrait", async () => {
     const data = await root()
     const first = await Avatar.portraitIn(data, "theron-2", undefined, "Theron")
     const second = await Avatar.portraitIn(data, "theron-2", undefined, "Theron")
     expect(first).toEqual(second)
-    expect(first.kind).toBe("placeholder")
-    if (first.kind === "placeholder") expect(new TextDecoder().decode(first.bytes)).toContain(">T</text>")
+    expect(first.kind).toBe("image")
+
+    await AvatarAssignment.retireIn(data, "theron-2")
+    const retired = await Avatar.portraitIn(data, "theron-2", undefined, "Theron")
+    expect(retired.kind).toBe("placeholder")
+    if (retired.kind === "placeholder") expect(new TextDecoder().decode(retired.bytes)).toContain(">T</text>")
   })
 
-  test("🔴 the initial colleagues' drawn faces come from the server-owned portrait resolver", async () => {
-    const data = await root()
-    for (const id of ["nova", "geryon", "xenia", "daedalus", "myron", "xenia-2"]) {
-      const portrait = await Avatar.portraitIn(data, id, undefined, id)
-      expect(portrait.kind, id).toBe("image")
-      if (portrait.kind !== "image") throw new Error(`${id} did not resolve to its shipped portrait`)
-      expect(portrait.mime, id).toBe("image/webp")
-      expect([...portrait.bytes.slice(0, 4)], id).toEqual([0x52, 0x49, 0x46, 0x46])
+  test("the bundled pool contains 100 distinct WebP portraits", async () => {
+    const hashes = new Set<string>()
+    for (let slot = 0; slot < AvatarAssignment.POOL_SIZE; slot++) {
+      const portrait = await Avatar.pooled(slot)
+      expect(portrait, `slot ${slot}`).toBeDefined()
+      expect(portrait?.mime, `slot ${slot}`).toBe("image/webp")
+      expect([...portrait!.bytes.slice(0, 4)], `slot ${slot}`).toEqual([0x52, 0x49, 0x46, 0x46])
+      hashes.add(portrait!.hash)
     }
+    expect(hashes.size).toBe(AvatarAssignment.POOL_SIZE)
+  })
+
+  test("agents receive unique stable portraits and retirement returns a slot to the pool", async () => {
+    const data = await root()
+    expect(await AvatarAssignment.claimIn(data, "nova", () => 0)).toBe(0)
+    expect(await AvatarAssignment.claimIn(data, "xenia", () => 0)).toBe(1)
+    expect(await AvatarAssignment.claimIn(data, "nova", () => 0.99)).toBe(0)
+
+    await AvatarAssignment.retireIn(data, "nova")
+    expect(await AvatarAssignment.claimIn(data, "nova", () => 0)).toBeUndefined()
+    expect(await AvatarAssignment.claimIn(data, "daedalus", () => 0)).toBe(0)
+    expect(await AvatarAssignment.activateIn(data, "nova", () => 0)).toBe(2)
+
+    const portraits = await Promise.all(
+      ["nova", "xenia", "daedalus"].map((id) => Avatar.portraitIn(data, id, undefined, id)),
+    )
+    expect(portraits.every((portrait) => portrait.kind === "image")).toBe(true)
+    expect(new Set(portraits.map((portrait) => (portrait.kind === "image" ? portrait.hash : ""))).size).toBe(3)
   })
 
   test("a configured glyph remains the one source when no image was uploaded", async () => {

@@ -61,10 +61,14 @@ export const AgentHandler = handlerLayer(
       )
       .handleRaw("agent.avatar.get", (ctx) =>
         Effect.gen(function* () {
-          const portrait = yield* Effect.promise(() => Avatar.portrait(String(ctx.params.agentID), undefined, String(ctx.params.agentID)))
+          const portrait = yield* Effect.promise(() =>
+            Avatar.portrait(String(ctx.params.agentID), undefined, String(ctx.params.agentID)),
+          )
           if (portrait.kind === "glyph") {
             const bytes = Avatar.placeholder(String(ctx.params.agentID), portrait.text)
-            return HttpServerResponse.raw(bytes, { headers: { "content-type": "image/svg+xml", "cache-control": "no-store" } })
+            return HttpServerResponse.raw(bytes, {
+              headers: { "content-type": "image/svg+xml", "cache-control": "no-store" },
+            })
           }
           return HttpServerResponse.raw(portrait.bytes, {
             headers: {
@@ -101,11 +105,12 @@ export const AgentHandler = handlerLayer(
               field: "body",
             })
           const stored = yield* Effect.tryPromise(() => Avatar.write(String(ctx.params.agentID), bytes, format)).pipe(
-            Effect.mapError((error) =>
-              new InvalidRequestError({
-                message: error instanceof Error ? error.message : String(error),
-                field: "body",
-              }),
+            Effect.mapError(
+              (error) =>
+                new InvalidRequestError({
+                  message: error instanceof Error ? error.message : String(error),
+                  field: "body",
+                }),
             ),
           )
           return HttpServerResponse.jsonUnsafe({ hash: stored.hash, mime: stored.mime }, { status: 201 })
@@ -187,7 +192,7 @@ export const AgentHandler = handlerLayer(
           })
           // Identity is removed LAST. If the required worker-tree barrier fails, the officer stays
           // addressable and retirement can be retried instead of leaving unowned live processes.
-          yield* store.removeAgent(ctx.params.agentID)
+          yield* AgentConfigStore.retire(store, ctx.params.agentID)
           const fallback = yield* store.getDefault()
           if (fallback === ctx.params.agentID) yield* store.clearDefault()
           // 🔴 …and the LIVE snapshot is re-materialised, or the delete is durable but invisible.

@@ -303,7 +303,7 @@ const LAYERED_ARMS = [
         removeEntity: (name) =>
           AgentV2.isProtected(name)
             ? agents.removeAgent(name)
-            : AgentRemoval.announce(name).pipe(Effect.andThen(agents.removeAgent(name))),
+            : AgentRemoval.announce(name).pipe(Effect.andThen(AgentConfigStore.retire(agents, name))),
       }
     }),
     ...agentCodec,

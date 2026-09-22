@@ -6,6 +6,7 @@ import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
 import { AgentConfigTable, AgentSettingTable } from "./agent-config/sql"
 import { ConfigAgent } from "./config/agent"
+import { AvatarAssignment } from "./agent/avatar-assignment"
 
 const DEFAULT_AGENT_KEY = "default_agent"
 
@@ -70,6 +71,7 @@ export const layer = Layer.effect(
       }),
       setLayers: Effect.fn("AgentConfigStore.setLayers")(function* (name, layers) {
         yield* agents.setLayers(name, layers)
+        yield* Effect.promise(() => AvatarAssignment.activate(name))
       }),
       removeAgent: Effect.fn("AgentConfigStore.removeAgent")(function* (name) {
         yield* agents.remove(name)
@@ -104,6 +106,9 @@ export const defaultLayer = layer.pipe(Layer.provide(Database.defaultLayer))
  * another about what a colleague is configured to do.
  */
 export const fold = (layers: readonly ConfigAgent.Info[]): ConfigAgent.Info | undefined =>
-  layers.length === 0 ? undefined : (layers.reduce((carry, layer) => ({ ...carry, ...layer }) as ConfigAgent.Info))
+  layers.length === 0 ? undefined : layers.reduce((carry, layer) => ({ ...carry, ...layer }) as ConfigAgent.Info)
+
+export const retire = (store: Interface, name: string): Effect.Effect<void> =>
+  store.removeAgent(name).pipe(Effect.andThen(Effect.promise(() => AvatarAssignment.retire(name))))
 
 export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node] })

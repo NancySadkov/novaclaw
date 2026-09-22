@@ -21,6 +21,7 @@ import { SessionMemoryCleanup } from "../session/memory-cleanup"
 import { SessionScheduler } from "../session/scheduler"
 import { SessionSchema } from "../session/schema"
 import { SessionTable } from "../session/sql"
+import { Avatar } from "./avatar"
 
 // RETIRING A COLLEAGUE THAT WAS REMOVED THROUGH THE CONFIG DOOR.
 //
@@ -215,6 +216,9 @@ export const node = makeGlobalNode({
         // generate no lifecycle event for hours. Cleanup is therefore synchronous with retirement,
         // not deferred until a future sample happens to overwrite the row.
         status.remove(agentID),
+      )
+      yield* AgentRetire.registerCleaner("avatar", (agentID) =>
+        Effect.tryPromise(() => Avatar.remove(agentID)).pipe(Effect.orDie),
       )
       yield* register((agentID) =>
         AgentRetire.everything({ db, events, memory, agent: agentID, at: Date.now() }).pipe(Effect.asVoid),

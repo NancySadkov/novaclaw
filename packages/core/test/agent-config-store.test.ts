@@ -5,6 +5,7 @@ import { sql } from "drizzle-orm"
 import { Effect, Logger, Schema } from "effect"
 import { AgentConfigSeed } from "@novaclaw/core/agent-config-seed"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import { AvatarAssignment } from "@novaclaw/core/agent/avatar-assignment"
 import { ConfigAgent } from "@novaclaw/core/config/agent"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -51,6 +52,24 @@ describe("AgentConfigStore", () => {
 
       yield* store.removeAgent("reviewer")
       expect(yield* store.isEmpty()).toBe(true)
+    }),
+  )
+
+  it.effect("retirement releases an avatar while a plain config reset preserves it", () =>
+    Effect.gen(function* () {
+      const store = yield* AgentConfigStore.Service
+      const layer = [decodeAgent({ description: "portrait owner" })]
+
+      yield* store.setLayers("retiring-officer", layer)
+      const retiredSlot = yield* Effect.promise(() => AvatarAssignment.claim("retiring-officer"))
+      expect(retiredSlot).toBeDefined()
+      yield* AgentConfigStore.retire(store, "retiring-officer")
+      expect(yield* Effect.promise(() => AvatarAssignment.claim("retiring-officer"))).toBeUndefined()
+
+      yield* store.setLayers("governing-agent", layer)
+      const governingSlot = yield* Effect.promise(() => AvatarAssignment.claim("governing-agent"))
+      yield* store.removeAgent("governing-agent")
+      expect(yield* Effect.promise(() => AvatarAssignment.claim("governing-agent"))).toBe(governingSlot)
     }),
   )
 

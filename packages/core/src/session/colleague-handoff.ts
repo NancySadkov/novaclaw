@@ -622,7 +622,7 @@ export const fromParts = (input: {
     // Revoke the owned process tree before dropping its identity. If that barrier fails, the
     // officer remains addressable and Nova can retry instead of creating orphan workers.
     yield* input.forget(colleague)
-    yield* input.store.removeAgent(colleague)
+    yield* AgentConfigStore.retire(input.store, colleague)
     yield* input.refresh
     return true
   }),
@@ -931,7 +931,8 @@ export const layer = Layer.effect(
         store,
         // The chat is OPENED if the colleague has none yet — see `openChat`. Built from what this
         // layer already holds rather than re-resolved per delivery.
-        chat: (colleague) => ensureLiveChat({ db, events, projects, store: sessions, agentConfigs: store }, AgentV2.ID.make(colleague)),
+        chat: (colleague) =>
+          ensureLiveChat({ db, events, projects, store: sessions, agentConfigs: store }, AgentV2.ID.make(colleague)),
         refresh: agents.reload(),
         roster: agents.all(),
         forget: (colleague) => AgentRetire.everything({ db, events, memory, agent: colleague, at: Date.now() }),

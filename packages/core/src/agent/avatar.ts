@@ -5,16 +5,8 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { Global } from "../global"
-// @ts-expect-error Bun's file-loader import is resolved at build time; TypeScript has no WebP module.
-import novaPortraitFile from "../../../app/public/assets/agents/portraits/nova.webp" with { type: "file" }
-// @ts-expect-error Bun's file-loader import is resolved at build time; TypeScript has no WebP module.
-import geryonPortraitFile from "../../../app/public/assets/agents/portraits/geryon.webp" with { type: "file" }
-// @ts-expect-error Bun's file-loader import is resolved at build time; TypeScript has no WebP module.
-import xeniaPortraitFile from "../../../app/public/assets/agents/portraits/xenia.webp" with { type: "file" }
-// @ts-expect-error Bun's file-loader import is resolved at build time; TypeScript has no WebP module.
-import daedalusPortraitFile from "../../../app/public/assets/agents/portraits/daedalus.webp" with { type: "file" }
-// @ts-expect-error Bun's file-loader import is resolved at build time; TypeScript has no WebP module.
-import myronPortraitFile from "../../../app/public/assets/agents/portraits/myron.webp" with { type: "file" }
+import { AvatarAssignment } from "./avatar-assignment"
+import { files as poolFiles } from "./avatar-pool"
 
 /** The avatar is a small identity component, not an arbitrary file upload. */
 export const MAX_BYTES = 5 * 1024 * 1024
@@ -41,31 +33,12 @@ export type Portrait =
 
 const extensions = Object.values(TYPES)
 
-/**
- * The faces that ship with the initial company. They enter through the SERVER-owned portrait
- * resolver, just like an uploaded image, so the UI and a visual model receive the same bytes.
- *
- * These files remain part of the embedded web assets too, but the renderer never derives this path
- * from an agent name. The import makes the files reachable from both the standalone binary and the
- * desktop's bundled Node sidecar; a source-tree-relative `readFile` would work in development and
- * disappear in the packaged product.
- */
-const BUILTIN_PORTRAITS: Readonly<Record<string, string>> = {
-  nova: novaPortraitFile,
-  geryon: geryonPortraitFile,
-  xenia: xeniaPortraitFile,
-  daedalus: daedalusPortraitFile,
-  myron: myronPortraitFile,
-}
-
-const baseAgentID = (agentID: string) => agentID.trim().toLowerCase().replace(/-\d+$/, "")
-
 /** Bun's file loader emits an absolute path in source runs and a chunk-relative path in a bundle. */
 export const bundledAssetPath = (file: string, moduleURL: string = import.meta.url) =>
   path.isAbsolute(file) ? file : fileURLToPath(new URL(file, moduleURL))
 
-export const builtin = async (agentID: string): Promise<Stored | undefined> => {
-  const file = BUILTIN_PORTRAITS[baseAgentID(agentID)]
+export const pooled = async (slot: number): Promise<Stored | undefined> => {
+  const file = poolFiles[slot]
   if (file === undefined) return undefined
   try {
     const bytes = new Uint8Array(await fs.readFile(bundledAssetPath(file)))
@@ -199,7 +172,8 @@ export const portraitIn = async (
   const stored = await readIn(dataDirectory, agentID)
   if (stored !== undefined) return { kind: "image", ...stored }
   if (storedGlyph?.trim()) return { kind: "glyph", text: storedGlyph.trim() }
-  const shipped = await builtin(agentID)
+  const slot = await AvatarAssignment.claimIn(dataDirectory, agentID)
+  const shipped = slot === undefined ? undefined : await pooled(slot)
   if (shipped !== undefined) return { kind: "image", ...shipped }
   const bytes = placeholder(agentID, name)
   return { kind: "placeholder", bytes, mime: "image/svg+xml", hash: digest(bytes) }
