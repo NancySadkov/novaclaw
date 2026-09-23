@@ -46,9 +46,9 @@ const STREAM_CHECKPOINT_MS = 500
  * and a reader that knows no tag renders exactly what it rendered before.
  *
  * `_tag` is `SessionMessage.ErrorTag` at the call sites but `string` on the wire, deliberately — see
- * the note on `SessionMessage.ErrorTags`. `retryable` answers the USER's question ("can retrying this
- * turn plausibly work?"), which is `ProviderRetry.isTransientProviderFailure`, **not** the
- * schema-level `LLMError.retryable` getter — those disagree, and `Transport` is exactly where.
+ * the note on `SessionMessage.ErrorTags`. `retryable` answers the USER's question ("can this turn
+ * recover?"), using the runner's route-recovery verdict instead of the schema-level
+ * `LLMError.retryable` getter.
  */
 type Fault = {
   readonly message: string
@@ -138,7 +138,6 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
   // saying it does not serve this model at all — the two recover differently and a bare boolean
   // cannot distinguish them.
   let assistantFailureMessage: string | undefined
-  let assistantFailureRetryable: boolean | undefined
   let providerFailed = false
   let stepSettlement: { readonly finish: string; readonly tokens: ReturnType<typeof tokens> } | undefined
   const executionBoundary = input.executionBoundary ?? (() => Effect.void)
@@ -361,7 +360,6 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
       typeof (fault as { message?: unknown }).message === "string"
         ? ((fault as { message?: string }).message ?? undefined)
         : undefined
-    assistantFailureRetryable = fault.retryable
     yield* events.publish(SessionEvent.Step.Failed, {
       sessionID: input.sessionID,
       timestamp: yield* timestamp,
@@ -664,7 +662,6 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
      */
     hasAssistantFailed: () => assistantFailed,
     assistantFailureMessage: () => assistantFailureMessage,
-    assistantFailureRetryable: () => assistantFailureRetryable,
     stepSettlement: () => stepSettlement,
     startAssistant,
     assistantMessageID: assistantMessageIDForTool,

@@ -9,7 +9,7 @@
 //     the runner accepts the partial turn as broken and starts a continuation request.
 //   - One reconnect after two seconds before the failed route is handed to the durable recovery
 //     circuit. That circuit routes traffic elsewhere and probes this route again on an exponential
-//     2 s…10 min cadence; a turn never sits on a dead endpoint for minutes.
+//     2 s…30 min cadence; a turn never sits on a dead endpoint for minutes.
 //   - The runner additionally only replays attempts that failed before durable assistant
 //     output, so a retry can never duplicate partially-streamed text or tool actions.
 //
@@ -55,6 +55,10 @@ export function isRetryableBeforeOutput(error: unknown): error is LLMError {
   return (
     isTransientProviderFailure(error) || (error instanceof LLMError && error.reason._tag === "InvalidProviderOutput")
   )
+}
+
+export function canRecoverOnAnotherRoute(error: LLMError | undefined): boolean {
+  return error?.reason._tag !== "OfflineBlocked" && error?.reason._tag !== "NoRoute"
 }
 
 /** A malformed stream tail is non-fatal once useful output has already been persisted. */

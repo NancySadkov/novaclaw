@@ -4,6 +4,10 @@ import {
   AuthenticationReason,
   InvalidRequestReason,
   InvalidProviderOutputReason,
+  ModelID,
+  NoRouteReason,
+  OfflineBlockedReason,
+  ProviderID,
   ProviderInternalReason,
   QuotaExceededReason,
   RateLimitReason,
@@ -14,6 +18,7 @@ import {
   MAX_RETRY_DELAY_MS,
   isTransientProviderFailure,
   isRetryableBeforeOutput,
+  canRecoverOnAnotherRoute,
   isBrokenResponse,
   maxAttempts,
   retryDelayMs,
@@ -34,13 +39,13 @@ describe("isTransientProviderFailure (1D taxonomy)", () => {
     ))
   test("RateLimit 429 is transient", () =>
     expect(isTransientProviderFailure(llmError(new RateLimitReason({ message: "slow down" })))).toBe(true))
-  test("Authentication is FATAL — retrying cannot fix it", () =>
+  test("Authentication is not replayed on the same route", () =>
     expect(
       isTransientProviderFailure(llmError(new AuthenticationReason({ message: "bad key", kind: "invalid" }))),
     ).toBe(false))
-  test("InvalidRequest is FATAL (context overflow has its own recovery)", () =>
+  test("InvalidRequest is not replayed on the same route", () =>
     expect(isTransientProviderFailure(llmError(new InvalidRequestReason({ message: "too long" })))).toBe(false))
-  test("QuotaExceeded is FATAL", () =>
+  test("QuotaExceeded is not replayed on the same route", () =>
     expect(isTransientProviderFailure(llmError(new QuotaExceededReason({ message: "quota" })))).toBe(false))
   test("a non-LLMError is never retried", () => {
     expect(isTransientProviderFailure(new Error("random"))).toBe(false)
@@ -51,6 +56,24 @@ describe("isTransientProviderFailure (1D taxonomy)", () => {
     expect(isTransientProviderFailure(error)).toBe(false)
     expect(isRetryableBeforeOutput(error)).toBe(true)
     expect(isBrokenResponse(error)).toBe(true)
+    expect(canRecoverOnAnotherRoute(error)).toBe(true)
+  })
+  test("provider refusals can move to another route without replaying on the same route", () => {
+    const rejection = llmError(new InvalidRequestReason({ message: "reasoning_content is required" }))
+    expect(isRetryableBeforeOutput(rejection)).toBe(false)
+    expect(canRecoverOnAnotherRoute(rejection)).toBe(true)
+    expect(canRecoverOnAnotherRoute(llmError(new AuthenticationReason({ message: "bad key", kind: "invalid" })))).toBe(
+      true,
+    )
+    expect(canRecoverOnAnotherRoute(undefined)).toBe(true)
+  })
+  test("local routing and offline-policy decisions cannot recover through a provider switch", () => {
+    expect(
+      canRecoverOnAnotherRoute(
+        llmError(new NoRouteReason({ route: "test", provider: ProviderID.make("test"), model: ModelID.make("test") })),
+      ),
+    ).toBe(false)
+    expect(canRecoverOnAnotherRoute(llmError(new OfflineBlockedReason({ message: "offline" })))).toBe(false)
   })
   test("OFF-A: Transport with kind InvalidUrlError (offline-policy block) is FATAL", () =>
     expect(

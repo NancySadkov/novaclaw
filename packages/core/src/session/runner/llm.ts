@@ -15,7 +15,6 @@ import {
   type FinishReason,
   type ProviderErrorEvent,
   isModelMissing,
-  isQuotaExceededFailure,
 } from "@novaclaw/llm"
 import {
   Cause,
@@ -3202,7 +3201,11 @@ export const layer = Layer.effect(
                 return
               }
             }
-            yield* publish(event)
+            yield* publish(
+              LLMEvent.is.providerError(event)
+                ? { ...event, retryable: ProviderRetry.canRecoverOnAnotherRoute(undefined) }
+                : event,
+            )
             if (event.type !== "tool-call" || event.providerExecuted) return
             if (!toolMaterialization) {
               yield* withPublication(
@@ -3702,15 +3705,13 @@ export const layer = Layer.effect(
                 true,
               ),
             )
-            // ⚠️ `retryable` is the RUNNER's verdict, not `LLMError.retryable`. The schema getter answers
-            // "does this reason class permit a retry" and says **false** for `Transport` — while the
-            // runner's own retry loop above treats exactly that as transient and retries it. The user's
-            // question is the runner's, so it is the runner's answer that goes on the wire.
+            // A failed provider turn can recover on another route even when replaying this exact
+            // request on the same route would fail again.
             yield* withPublication(
               publisher.failAssistant({
                 message: llmFailure.reason.message,
                 _tag: llmFailure.reason._tag,
-                retryable: ProviderRetry.isTransientProviderFailure(llmFailure),
+                retryable: ProviderRetry.canRecoverOnAnotherRoute(llmFailure),
                 ...(ProviderRetry.statusCode(llmFailure) === undefined
                   ? {}
                   : { status: ProviderRetry.statusCode(llmFailure) }),
@@ -3800,29 +3801,11 @@ export const layer = Layer.effect(
           // epilogue: the endpoint plainly served, and demoting a colleague's model for a damaged
           // `[DONE]` would move it off something that works.
           const turnFailed = publisher.hasAssistantFailed() && !handledResponseFailure
-          const providerFailureRetryable =
-            llmFailure !== undefined
-              ? ProviderRetry.isTransientProviderFailure(llmFailure)
-              : publisher.assistantFailureRetryable()
-          // A throttled ACCOUNT is endpoint health, not a malformed request: replaying the same
-          // payload after a delay cannot help, but the next turn belongs on a substitute while the
-          // assigned route sits out its backoff. Filing quota as a halt stranded sessions on the
-          // dead route instead — measured live 2026-09-22, two officers looping on a gateway whose
-          // account was overdrawn while a working default stood by.
-          const quotaFailure =
-            isQuotaExceededFailure(llmFailure) || isQuotaExceededFailure(publisher.assistantFailureMessage())
-          // A provider that explicitly rejected THIS request cannot recover by replaying the same
-          // payload after a delay. Treating `retryable:false` as endpoint health made autonomous
-          // sessions resubmit one malformed history forever (441 identical DeepSeek 400s live).
-          const providerHalted = turnFailed && providerFailureRetryable === false && !quotaFailure
-          // Replaying a failed pre-action turn on a substitute is safe. Replaying after a tool call
-          // is not: the call may already have changed a file or sent a message, even if the provider
-          // connection died before acknowledging the result.
+          const canRecoverOnAnotherRoute = ProviderRetry.canRecoverOnAnotherRoute(llmFailure)
+          const providerHalted = turnFailed && !canRecoverOnAnotherRoute
+          // The next turn reads the settled tool result from history instead of reissuing its call.
           const reroutableProviderFailure =
-            turnFailed &&
-            !providerHalted &&
-            !sawToolCall &&
-            !(stream._tag === "Failure" && Cause.hasInterrupts(stream.cause))
+            turnFailed && canRecoverOnAnotherRoute && !(stream._tag === "Failure" && Cause.hasInterrupts(stream.cause))
           let providerFailureRecorded = false
           if (turnFailed) {
             // 🔴 An endpoint saying it does not HAVE this model is not a flaky turn, and counting it

@@ -51,6 +51,14 @@ describe("durable provider recovery", () => {
     expect(ProviderRecovery.capabilitiesMatch(required, { tools: true, input: ["text"], output: ["text"] })).toBe(false)
   })
 
+  test("an empty capability profile is unknown, while a declared limitation still vetoes substitution", () => {
+    const required = { tools: true, input: ["text", "image"], output: ["text"] }
+    expect(ProviderRecovery.capabilitiesMatch(required, undefined)).toBe(true)
+    expect(ProviderRecovery.capabilitiesMatch(required, { tools: false, input: [], output: [] })).toBe(true)
+    expect(ProviderRecovery.capabilitiesMatch(required, { tools: false, input: ["text"], output: ["text"] })).toBe(false)
+    expect(ProviderRecovery.capabilitiesMatch(required, { tools: true, input: ["text"], output: ["text"] })).toBe(false)
+  })
+
   // 🔴 `invariants.md` — *"if several available pick the one with closest matching capability"*.
   // `capabilitiesMatch` is the veto; this is the rank. A distance of zero is the SAME model shape.
   test("closeness is a DISTANCE, not a preference for the biggest survivor", () => {
@@ -73,6 +81,12 @@ describe("durable provider recovery", () => {
   test("no declared capabilities on either side is NO EVIDENCE, not maximal distance", () => {
     expect(ProviderRecovery.capabilityDistance(undefined, { tools: true, input: ["text"], output: ["text"] })).toBe(0)
     expect(ProviderRecovery.capabilityDistance({ tools: true, input: ["text"], output: ["text"] }, undefined)).toBe(0)
+    expect(
+      ProviderRecovery.capabilityDistance(
+        { tools: true, input: ["text"], output: ["text"] },
+        { tools: false, input: [], output: [] },
+      ),
+    ).toBe(0)
   })
 
   test("chooses the earliest recovery probe when every compatible route is down", () => {

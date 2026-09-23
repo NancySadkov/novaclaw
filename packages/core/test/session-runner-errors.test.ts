@@ -1,12 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Stream } from "effect"
-import { eq } from "drizzle-orm"
+import { Effect, Schema, Stream } from "effect"
 import { InvalidProviderOutputReason, LLMError, LLMEvent, TransportReason } from "@novaclaw/llm"
-import { Database } from "@novaclaw/core/database/database"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { SessionTable } from "@novaclaw/core/session/sql"
-import { HARNESS_SESSION, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { ApplicationTools } from "@novaclaw/core/tool/application-tools"
+import { Tool } from "@novaclaw/core/tool/tool"
+import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — how a provider error becomes a durable, terminal assistant failure.
@@ -23,7 +22,54 @@ import { HARNESS_SESSION, drive, makeRunnerHarness } from "./fixture/runner-harn
  */
 
 describe("SessionRunnerLLM — provider errors", () => {
-  test("an explicitly non-retryable request failure stops an unattended drain", async () => {
+  test("a provider error after a tool call continues without executing the tool twice", async () => {
+    let writes = 0
+    const harness = makeRunnerHarness({
+      turns: [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          LLMEvent.toolCall({ id: "call-write-once", name: "write_once", input: {} }),
+          LLMEvent.providerError({ message: "stream failed after tool call", retryable: false }),
+        ],
+        completeTurn("recovered", "Continued after the recorded write"),
+      ],
+      providerRecoveryStore: true,
+    })
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        yield* (yield* ApplicationTools.Service).register({
+          write_once: Tool.make({
+            description: "Record one write",
+            input: Schema.Struct({}),
+            output: Schema.Struct({ done: Schema.Boolean }),
+            execute: () =>
+              Effect.sync(() => {
+                writes++
+                return { done: true }
+              }),
+          }),
+        })
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Run the write and continue" }),
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+        return yield* session.context(HARNESS_SESSION)
+      }),
+      "claim — a settled tool call survives provider recovery",
+    )
+
+    expect(writes).toBe(1)
+    expect(harness.requests).toHaveLength(2)
+    expect(JSON.stringify(harness.requests[1]?.messages)).toContain("call-write-once")
+    expect(context.at(-1)).toMatchObject({ type: "assistant", finish: "stop" })
+  })
+
+  test("an explicitly non-retryable provider request enters route recovery and continues the drain", async () => {
     const harness = makeRunnerHarness({
       turns: [
         [
@@ -35,37 +81,37 @@ describe("SessionRunnerLLM — provider errors", () => {
         ],
         [
           LLMEvent.stepStart({ index: 0 }),
-          LLMEvent.textStart({ id: "should-not-run" }),
-          LLMEvent.textDelta({ id: "should-not-run", text: "replayed" }),
-          LLMEvent.textEnd({ id: "should-not-run" }),
+          LLMEvent.textStart({ id: "recovered" }),
+          LLMEvent.textDelta({ id: "recovered", text: "Recovered" }),
+          LLMEvent.textEnd({ id: "recovered" }),
           LLMEvent.stepFinish({ index: 0, reason: "stop" }),
           LLMEvent.finish({ reason: "stop" }),
         ],
       ],
+      providerRecoveryStore: true,
     })
 
-    await drive(
+    const context = await drive(
       harness,
       Effect.gen(function* () {
-        const { db } = yield* Database.Service
         const session = yield* SessionV2.Service
         yield* session.prompt({
           sessionID: HARNESS_SESSION,
           prompt: Prompt.make({ text: "Keep working" }),
           resume: false,
         })
-        yield* db
-          .update(SessionTable)
-          .set({ type: "goal-oriented" })
-          .where(eq(SessionTable.id, HARNESS_SESSION))
-          .run()
-          .pipe(Effect.orDie)
         yield* session.resume(HARNESS_SESSION)
+        return yield* session.context(HARNESS_SESSION)
       }),
-      "claim — a fatal provider verdict cannot self-drive into an identical request",
+      "claim — a provider rejection can recover on another route",
     )
 
-    expect(harness.requests, "the self-drive must not replay a request the provider declared fatal").toHaveLength(1)
+    expect(harness.requests).toHaveLength(2)
+    expect(context).toMatchObject([
+      { type: "user", text: "Keep working" },
+      { type: "assistant", finish: "error", error: { retryable: true } },
+      { type: "assistant", finish: "stop", content: [{ type: "text", text: "Recovered" }] },
+    ])
   })
 
   test("projects provider errors as terminal assistant step failures", async () => {

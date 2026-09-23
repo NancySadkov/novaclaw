@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { DateTime, Effect } from "effect"
-import { LLMError, QuotaExceededReason } from "@novaclaw/llm"
+import { InvalidProviderOutputReason, LLMError, QuotaExceededReason } from "@novaclaw/llm"
+import { Stream } from "effect"
 import { ModelV2 } from "@novaclaw/core/model"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { Database } from "@novaclaw/core/database/database"
@@ -13,12 +14,7 @@ import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionRunner } from "@novaclaw/core/session/runner"
 import { ProviderRecovery } from "@novaclaw/core/session/runner/provider-recovery"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import {
-  HARNESS_SESSION,
-  completeTurn,
-  drive,
-  makeRunnerHarness,
-} from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
 
 /**
  * THE LEDGER IS THE JOIN — three claims about the durable provider-recovery verdict.
@@ -72,6 +68,40 @@ const readRecoveryLedger = Effect.gen(function* () {
 })
 
 describe("SessionRunnerLLM — the recovery ledger learns what the turn could not file", () => {
+  test("an unreadable provider stream retries, then continues through durable recovery", async () => {
+    const unreadable = new LLMError({
+      module: "test",
+      method: "stream",
+      reason: new InvalidProviderOutputReason({ message: "Failed to read compatible-chat stream" }),
+    })
+    const harness = makeRunnerHarness({
+      turns: [
+        Stream.fail(unreadable),
+        Stream.fail(unreadable),
+        completeTurn("t-recover", "Recovered after the stream failed"),
+      ],
+      providerRecoveryStore: true,
+    })
+
+    const context = await drive(
+      harness,
+      Effect.gen(function* () {
+        const session = yield* SessionV2.Service
+        yield* session.prompt({
+          sessionID: HARNESS_SESSION,
+          prompt: Prompt.make({ text: "Continue the task" }),
+          resume: false,
+        })
+        yield* session.resume(HARNESS_SESSION)
+        return yield* session.context(HARNESS_SESSION)
+      }),
+      "claim — an unreadable stream must not halt after its quick retry",
+    )
+
+    expect(harness.requests).toHaveLength(3)
+    expect(context.at(-1)).toMatchObject({ type: "assistant", finish: "stop" })
+  }, 15_000)
+
   test("a quota refusal continues the drain instead of halting it on the dead route", async () => {
     const quota = new LLMError({
       module: "test",

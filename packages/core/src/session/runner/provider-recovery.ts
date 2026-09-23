@@ -90,13 +90,16 @@ export const succeeded = (state: State, ref: { readonly providerID: string; read
   return next
 }
 
-/** A substitute may equal or exceed every declared architectural capability of the unavailable model. */
+const capabilitiesUnknown = (capabilities: ModelV2.Capabilities): boolean =>
+  !capabilities.tools && capabilities.input.length === 0 && capabilities.output.length === 0
+
+/** A declared substitute must cover the assigned model; an empty profile is unknown, not a refusal. */
 export const capabilitiesMatch = (
   required: ModelV2.Capabilities | undefined,
   candidate: ModelV2.Capabilities | undefined,
 ): boolean => {
-  if (required === undefined) return true
-  if (candidate === undefined) return false
+  if (required === undefined || candidate === undefined) return true
+  if (capabilitiesUnknown(required) || capabilitiesUnknown(candidate)) return true
   if (required.tools && !candidate.tools) return false
   return (
     required.input.every((kind) => candidate.input.includes(kind)) &&
@@ -116,16 +119,16 @@ export const capabilitiesMatch = (
  * the reverse — so the substitution lands on the model that is closest to the one that was asked
  * for, not on the biggest one that happens to be available.
  *
- * ⚠️ `undefined` on either side is NO EVIDENCE, never "no capabilities": a hand-added local endpoint
+ * ⚠️ An undefined or empty profile is NO EVIDENCE, never "no capabilities": a hand-added endpoint
  * usually declares nothing, and treating silence as an empty set would rank every such model as
- * maximally distant. Both sides unknown is distance zero (nothing to compare), which keeps such a
- * model eligible and lets the veto above be the only thing that refuses.
+ * maximally distant. Unknown profiles have distance zero; the veto above handles declared limits.
  */
 export const capabilityDistance = (
   required: ModelV2.Capabilities | undefined,
   candidate: ModelV2.Capabilities | undefined,
 ): number => {
   if (required === undefined || candidate === undefined) return 0
+  if (capabilitiesUnknown(required) || capabilitiesUnknown(candidate)) return 0
   const extra = (superset: readonly string[], subset: readonly string[]) =>
     superset.filter((kind) => !subset.includes(kind)).length
   return (
