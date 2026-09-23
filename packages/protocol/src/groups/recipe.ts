@@ -97,6 +97,31 @@ const ImportInput = Schema.Struct({
 /** A complete recipe folder on the wire, as actual ZIP bytes rather than a JSON wrapper. */
 const Archive = Schema.Uint8Array.pipe(HttpApiSchema.asUint8Array({ contentType: "application/zip" }))
 
+const AssetFile = Schema.Struct({ path: Schema.String, bytes: Schema.Finite })
+const AssetContent = Schema.Struct({
+  path: Schema.String,
+  content: Schema.String,
+  encoding: Schema.Literals(["utf8", "base64"]),
+})
+const Launch = Schema.Struct({ kind: Schema.Literals(["html", "executable"]), path: Schema.String })
+const Deployment = Schema.Struct({
+  slug: Schema.String,
+  name: Schema.String,
+  description: Schema.optional(Schema.String),
+  state: Schema.Literals(["deploying", "ready"]),
+  sessionID: Schema.optional(Schema.String),
+  launch: Schema.optional(Launch),
+})
+const LaunchResult = Schema.Struct({
+  kind: Schema.Literals(["chat", "html", "console"]),
+  sessionID: Schema.optional(Schema.String),
+  url: Schema.optional(Schema.String),
+  ptyID: Schema.optional(Schema.String),
+})
+
+export const hasRecipePreviewTicketURL = (url: URL): boolean =>
+  /^\/api\/recipe-preview\/[^/]+\/[^/]+\/.+/.test(url.pathname)
+
 const RunResult = Schema.Struct({
   sessionID: Schema.String,
   /** Where it is cooking — the scratch folder by default, or whatever the caller chose. */
@@ -170,6 +195,42 @@ const VerifyResult = Schema.Struct({
 }).annotate({ identifier: "Recipe.VerifyResult" })
 
 export const RecipeGroup = HttpApiGroup.make("server.recipe")
+  .add(
+    HttpApiEndpoint.post("recipe.archivePreview", "/api/recipe/archive/preview", {
+      payload: Archive,
+      success: Schema.Struct({ name: Schema.String, description: Schema.optional(Schema.String), prompt: Schema.String, assets: Schema.Array(Schema.String) }),
+      error: InvalidRequestError,
+    }),
+  )
+  .add(HttpApiEndpoint.get("recipe.deployedList", "/api/recipe/deployed", { success: Schema.Array(Deployment) }))
+  .add(HttpApiEndpoint.delete("recipe.undeploy", "/api/recipe/deployed/:slug", {
+    params: { slug: Schema.String }, success: HttpApiSchema.NoContent, error: InvalidRequestError,
+  }))
+  .add(HttpApiEndpoint.post("recipe.deployedLaunch", "/api/recipe/deployed/:slug/launch", {
+    params: { slug: Schema.String }, success: LaunchResult, error: InvalidRequestError,
+  }))
+  .add(HttpApiEndpoint.get("recipe.deployedFile", "/api/recipe-preview/*", {
+    success: Schema.Uint8Array.pipe(HttpApiSchema.asUint8Array()),
+    error: InvalidRequestError,
+  }))
+  .add(HttpApiEndpoint.post("recipe.deploy", "/api/recipe/:slug/deploy", {
+    params: { slug: Schema.String }, payload: Schema.Struct({}), success: Deployment, error: InvalidRequestError,
+  }))
+  .add(HttpApiEndpoint.put("recipe.replaceSource", "/api/recipe/:slug/source", {
+    params: { slug: Schema.String }, payload: Schema.Struct({ markdown: Schema.String }), success: Recipe, error: InvalidRequestError,
+  }))
+  .add(HttpApiEndpoint.get("recipe.assets", "/api/recipe/:slug/assets", {
+    params: { slug: Schema.String }, success: Schema.Array(AssetFile), error: InvalidRequestError,
+  }))
+  .add(HttpApiEndpoint.get("recipe.assetRead", "/api/recipe/:slug/asset", {
+    params: { slug: Schema.String }, query: { path: Schema.String }, success: AssetContent, error: InvalidRequestError,
+  }))
+  .add(HttpApiEndpoint.put("recipe.assetWrite", "/api/recipe/:slug/asset", {
+    params: { slug: Schema.String }, payload: AssetContent, success: AssetContent, error: InvalidRequestError,
+  }))
+  .add(HttpApiEndpoint.delete("recipe.assetRemove", "/api/recipe/:slug/asset", {
+    params: { slug: Schema.String }, query: { path: Schema.String }, success: HttpApiSchema.NoContent, error: InvalidRequestError,
+  }))
   .add(
     HttpApiEndpoint.get("recipe.list", "/api/recipe", { success: Schema.Array(Recipe) }).annotateMerge(
       OpenApi.annotations({

@@ -1,4 +1,5 @@
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
+import { useLocation } from "@solidjs/router"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
@@ -31,6 +32,8 @@ import { answeredNothing, createSettledResource } from "@/utils/settled-resource
  * instance's home as the PTY working directory, then reuse the exact directory-scoped PTY transport
  * used by chat terminals. This keeps remote/P2P operation honest. */
 export function TerminalPage() {
+  const location = useLocation()
+  const launchedPTY = createMemo(() => new URLSearchParams(location.search).get("launch") || undefined)
   const global = useGlobal()
   const server = useServer()
   const language = useLanguage()
@@ -61,7 +64,7 @@ export function TerminalPage() {
 
   return (
     <RequiresLevel
-      min="advanced"
+      min={launchedPTY() ? "normal" : "advanced"}
       fallback={
         <ExpertiseGate
           glyph="terminal"
@@ -95,7 +98,7 @@ export function TerminalPage() {
           {(resolved) => (
             <SDKProvider directory={resolved}>
               <TerminalProvider>
-                <TerminalWorkspace serverName={conn() ? serverName(conn()!) : "NovaClaw"} />
+                <TerminalWorkspace serverName={conn() ? serverName(conn()!) : "NovaClaw"} launchedPTY={launchedPTY()} />
               </TerminalProvider>
             </SDKProvider>
           )}
@@ -105,7 +108,7 @@ export function TerminalPage() {
   )
 }
 
-function TerminalWorkspace(props: { serverName: string }) {
+function TerminalWorkspace(props: { serverName: string; launchedPTY?: string }) {
   const terminal = useTerminal()
   const language = useLanguage()
   const confirm = useConfirm()
@@ -113,8 +116,17 @@ function TerminalWorkspace(props: { serverName: string }) {
   const [stopping, setStopping] = createSignal(false)
   const [error, setError] = createSignal<{ id: string; message: string } | undefined>()
 
+  let openedLaunch: string | undefined
   createEffect(() => {
-    if (!terminal.ready() || terminal.all().length !== 0 || created()) return
+    const matching = terminal.all().find((item) => item.ptyID === props.launchedPTY)
+    if (matching && openedLaunch !== props.launchedPTY) {
+      openedLaunch = props.launchedPTY
+      terminal.open(matching.id)
+    }
+  })
+
+  createEffect(() => {
+    if (!terminal.ready() || terminal.all().length !== 0 || created() || props.launchedPTY) return
     setCreated(true)
     terminal.new()
   })

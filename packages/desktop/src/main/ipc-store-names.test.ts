@@ -121,6 +121,7 @@ registerIpcHandlers({
   relaunch: unreachable("relaunch"),
   awaitInitialization: unreachable("awaitInitialization"),
   consumeInitialDeepLinks: unreachable("consumeInitialDeepLinks"),
+  consumeInitialRecipePackages: unreachable("consumeInitialRecipePackages"),
   getDefaultServerUrl: unreachable("getDefaultServerUrl"),
   setDefaultServerUrl: unreachable("setDefaultServerUrl"),
   getDisplayBackend: unreachable("getDisplayBackend"),

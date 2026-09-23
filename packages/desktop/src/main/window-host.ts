@@ -1,7 +1,8 @@
 import { BrowserWindow, dialog } from "electron"
 import { createMainWindow } from "./windows"
 import { createMenu } from "./menu"
-import { sendDeepLinks, sendMenuCommand } from "./ipc"
+import { sendDeepLinks, sendMenuCommand, sendRecipePackages } from "./ipc"
+import type { OpenedRecipePackage } from "./recipe-package-open"
 import { getLogDirectory } from "./logging"
 import { logDirectoryNotice } from "./log-directory"
 
@@ -9,10 +10,13 @@ import { logDirectoryNotice } from "./log-directory"
 export function createWindowHost(relaunch: () => void) {
   let current: BrowserWindow | undefined
   const pendingLinks: string[] = []
+  const pendingPackages: OpenedRecipePackage[] = []
+  let packagesConsumed = false
   return {
     open() {
       const window = createMainWindow()
       current = window
+      window.webContents.on("did-start-loading", () => { packagesConsumed = false })
       window.once("closed", () => {
         if (current === window) current = undefined
       })
@@ -44,5 +48,13 @@ export function createWindowHost(relaunch: () => void) {
       if (current && urls.length) sendDeepLinks(current, urls)
     },
     consumeLinks: () => pendingLinks.splice(0),
+    packages(packages: OpenedRecipePackage[]) {
+      if (packagesConsumed && current) sendRecipePackages(current, packages)
+      else pendingPackages.push(...packages)
+    },
+    consumePackages: () => {
+      packagesConsumed = true
+      return pendingPackages.splice(0)
+    },
   }
 }

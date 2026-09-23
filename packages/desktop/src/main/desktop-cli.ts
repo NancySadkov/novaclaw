@@ -78,8 +78,8 @@ export function parseDesktopInvocation(argv: readonly string[]): DesktopInvocati
   if (mode === "server") {
     const offending = firstPresent(argv, CLIENT_OPTIONS)
     if (offending) return error(`client option '${offending}' cannot be used with '--server-only'`)
-    if (argv.some((arg) => arg.startsWith("novaclaw://")))
-      return error("a novaclaw:// URL cannot be opened with '--server-only'")
+    if (argv.some((arg) => arg.startsWith("novaclaw://") || arg.toLowerCase().endsWith(".nova")))
+      return error("a link or .nova package cannot be opened with '--server-only'")
   }
   if (mode !== "client" && firstPresent(argv, CLIENT_OPTIONS))
     return error("client connection options require '--client-only'")
@@ -163,7 +163,7 @@ export function desktopExecutableName(execPath: string): string {
 
 /** GCC-style: compact synopsis and aligned option groups for the two executable roles. */
 export function desktopHelp(executable = "NovaClaw.exe"): string {
-  return `Usage: ${executable} [OPTION]... [novaclaw://URL]
+  return `Usage: ${executable} [OPTION]... [novaclaw://URL | recipe.nova]
 Launch the NovaClaw client and server. Both run unless one is selected alone.
 
 General options:
@@ -190,6 +190,7 @@ Server options:
 
 Arguments:
   novaclaw://URL             Open a NovaClaw link in the client.
+  recipe.nova                 Preview a recipe package in the client.
 `
 }
 

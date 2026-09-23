@@ -52,6 +52,7 @@ export type ElectronAPI = {
   awaitInitialization: () => Promise<ServerReadyData>
   wslServers: WslServersAPI
   consumeInitialDeepLinks: () => Promise<string[]>
+  consumeInitialRecipePackages: () => Promise<{ name: string; bytes: Uint8Array }[]>
   getDefaultServerUrl: () => Promise<string | null>
   setDefaultServerUrl: (url: string | null) => Promise<void>
   getDisplayBackend: () => Promise<LinuxDisplayBackend | null>
@@ -68,6 +69,7 @@ export type ElectronAPI = {
   getWindowCount: () => Promise<number>
   onMenuCommand: (cb: (id: string) => void) => () => void
   onDeepLink: (cb: (urls: string[]) => void) => () => void
+  onRecipePackage: (cb: (packages: { name: string; bytes: Uint8Array }[]) => void) => () => void
 
   openDirectoryPicker: (opts?: {
     multiple?: boolean
@@ -86,6 +88,7 @@ export type ElectronAPI = {
   saveFilePicker: (opts?: { title?: string; defaultPath?: string }) => Promise<{ token: string; path: string } | null>
   writePickedFile: (token: string, content: string) => Promise<void>
   openLink: (url: string) => void
+  openRecipeBrowser: (url: string, title: string) => Promise<void>
   openPath: (path: string, app?: string) => Promise<void>
   readClipboardImage: () => Promise<{ buffer: ArrayBuffer; width: number; height: number } | null>
   readClipboardText: () => Promise<string>

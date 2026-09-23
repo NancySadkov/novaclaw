@@ -1,21 +1,62 @@
-import { Component, Index, Show, type ComponentProps } from "solid-js"
+import { Component, Index, onCleanup, Show, type ComponentProps } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import type { HomeApp } from "@/apps/registry"
 
-type TileProps = { app: HomeApp; shouldSuppressOpen?: () => boolean; onDelete?: (app: HomeApp) => void }
+type TileProps = {
+  app: HomeApp
+  shouldSuppressOpen?: () => boolean
+  onDelete?: (app: HomeApp) => void
+  onContextAction?: (app: HomeApp, event: MouseEvent) => void
+}
 
 // Artwork stays local. The launcher owns framing, lighting, and focus for glyphs and contributed apps.
-export const AppTile: Component<TileProps> = (props) => (
-  <button
+export const AppTile: Component<TileProps> = (props) => {
+  let holdTimer: ReturnType<typeof setTimeout> | undefined
+  let suppressClick = false
+  let touchStart: { x: number; y: number } | undefined
+  const cancelHold = () => {
+    if (holdTimer) clearTimeout(holdTimer)
+    holdTimer = undefined
+  }
+  onCleanup(cancelHold)
+  return <button
     type="button"
     class="home-app"
     data-hero={props.app.hero ? "true" : undefined}
     data-source={props.app.source}
     style={{ "--app-accent": props.app.accent }}
     onClick={() => {
+      if (suppressClick) return
       if (!props.shouldSuppressOpen?.()) props.app.open()
     }}
+    onPointerDown={(event) => {
+      if (event.pointerType !== "touch" || !props.onContextAction) return
+      touchStart = { x: event.clientX, y: event.clientY }
+      cancelHold()
+      holdTimer = setTimeout(() => {
+        suppressClick = true
+        props.onContextAction?.(props.app, new MouseEvent("contextmenu", { clientX: event.clientX, clientY: event.clientY }))
+      }, 550)
+    }}
+    onPointerMove={(event) => {
+      if (touchStart && Math.hypot(event.clientX - touchStart.x, event.clientY - touchStart.y) > 8) cancelHold()
+    }}
+    onPointerUp={() => {
+      cancelHold()
+      touchStart = undefined
+      setTimeout(() => { suppressClick = false }, 0)
+    }}
+    onPointerCancel={() => {
+      cancelHold()
+      touchStart = undefined
+      suppressClick = false
+    }}
     onContextMenu={(event) => {
+      if (props.onContextAction) {
+        event.preventDefault()
+        props.onContextAction(props.app, event)
+        return
+      }
       if (!props.onDelete) return
       event.preventDefault()
       props.onDelete(props.app)
@@ -57,4 +98,4 @@ export const AppTile: Component<TileProps> = (props) => (
       <span data-slot="app-tile-badge">{(props.app.badge?.() ?? 0) > 9 ? "9+" : props.app.badge?.()}</span>
     </Show>
   </button>
-)
+}

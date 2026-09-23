@@ -54,6 +54,18 @@ const listenForDeepLinks = () => {
   return window.api.onDeepLink((urls) => emitDeepLinks(urls))
 }
 
+const emitRecipePackages = (packages: { name: string; bytes: Uint8Array }[]) => {
+  if (packages.length === 0) return
+  window.__NOVACLAW__ ??= {}
+  window.__NOVACLAW__.recipePackages = [...(window.__NOVACLAW__.recipePackages ?? []), ...packages]
+  for (const item of packages) window.dispatchEvent(new CustomEvent("novaclaw:recipe-package", { detail: item }))
+}
+
+const listenForRecipePackages = () => {
+  void window.api.consumeInitialRecipePackages().then(emitRecipePackages)
+  return window.api.onRecipePackage(emitRecipePackages)
+}
+
 const createPlatform = (): Platform => {
   const attachmentPaths = new WeakMap<File, string>()
   const os = (() => {
@@ -131,6 +143,7 @@ const createPlatform = (): Platform => {
     openLink(url: string) {
       window.api.openLink(url)
     },
+    openRecipeBrowser: (url: string, title: string) => window.api.openRecipeBrowser(url, title),
     async openPath(path: string, app?: string) {
       if (os === "windows") {
         const resolvedApp = app ? await window.api.resolveAppPath(app).catch(() => null) : null
@@ -250,6 +263,7 @@ window.api.onMenuCommand((id) => {
   menuTrigger?.(id)
 })
 listenForDeepLinks()
+listenForRecipePackages()
 
 render(() => {
   const platform = createPlatform()

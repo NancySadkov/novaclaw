@@ -4,6 +4,7 @@ import { createEffect, createMemo, createResource, createSignal, For, Match, onC
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useDirectoryPicker } from "@/components/directory-picker"
+import { useConfirm } from "@/components/dialog-confirm"
 import { useServer } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
 import { showToast } from "@/utils/toast"
@@ -46,6 +47,21 @@ import {
 import { AppPage, AppPageHeader } from "@/components/app-page"
 import { createSettledResource } from "@/utils/settled-resource"
 import { createListState } from "@/utils/list-state"
+import {
+  deleteRecipeAsset,
+  deployRecipe,
+  listDeployedRecipes,
+  listRecipeAssets,
+  previewRecipeArchive,
+  readRecipeAsset,
+  replaceRecipeSource,
+  undeployRecipe,
+  writeRecipeAsset,
+  type RecipeArchivePreview,
+  type RecipeAsset,
+  type RecipeDeployment,
+} from "@/utils/recipe-api"
+import "./recipes.css"
 
 // The Recipes app (AGENTS.md → *Recipes are source code for the AI era*). A recipe is a folder of prompt +
 // assets; this page is where a normal person reads, runs, copies, edits, shares and CHECKS one.
@@ -101,6 +117,7 @@ const OUTCOME_WORD: Record<string, string> = {
 }
 
 export function RecipesPage() {
+  const confirm = useConfirm()
   const language = useLanguage()
   const sdk = useServerSDK()
   const server = useServer()
@@ -143,6 +160,26 @@ export function RecipesPage() {
   const [checking, setChecking] = createSignal(false)
   const [producesDraft, setProducesDraft] = createSignal("")
   const [producesDirty, setProducesDirty] = createSignal(false)
+  const [studioTab, setStudioTab] = createSignal<"overview" | "source" | "assets">("overview")
+  const [sourceDraft, setSourceDraft] = createSignal("")
+  const [sourceDirty, setSourceDirty] = createSignal(false)
+  const [assets, setAssets] = createSignal<RecipeAsset[]>([])
+  const [assetPath, setAssetPath] = createSignal<string>()
+  const [assetContent, setAssetContent] = createSignal("")
+  const [assetEncoding, setAssetEncoding] = createSignal<"utf8" | "base64">("utf8")
+  const [assetDirty, setAssetDirty] = createSignal(false)
+  const [packageBytes, setPackageBytes] = createSignal<Uint8Array<ArrayBuffer>>()
+  const [packagePreview, setPackagePreview] = createSignal<RecipeArchivePreview>()
+  const [packageName, setPackageName] = createSignal("")
+  const [packageLoading, setPackageLoading] = createSignal(false)
+
+  const [deployedRows, { refetch: refetchDeployed }] = createSettledResource(
+    () => httpBase(),
+    (base) => listDeployedRecipes(base),
+  )
+  const deployments = (): RecipeDeployment[] => deployedRows() ?? []
+  const deploymentListing = createListState<RecipeDeployment>(deployedRows)
+  const [selectedDeployment, setSelectedDeployment] = createSignal<string>()
 
   const views = createMemo(() => sortViews(recipes().map(toView)))
   const shown = createMemo(() => filterViews(views(), query()))
@@ -155,7 +192,7 @@ export function RecipesPage() {
    * nowhere else. A failure here stays `undefined`, which every describe* function below reports as
    * *"I could not read this recipe's file"* rather than as *"it declares nothing"*.
    */
-  const [source] = createResource(
+  const [source, { refetch: refetchSource }] = createResource(
     () => {
       const base = httpBase()
       const slug = current()?.key
@@ -169,6 +206,21 @@ export function RecipesPage() {
       }
     },
   )
+
+  createEffect(() => {
+    const loaded = source()
+    if (loaded && !sourceDirty()) setSourceDraft(loaded.markdown)
+  })
+
+  createEffect(() => {
+    const base = httpBase()
+    const slug = current()?.key
+    if (!base || !slug) {
+      setAssets([])
+      return
+    }
+    void listRecipeAssets(base, slug).then(setAssets).catch(() => setAssets([]))
+  })
 
   const needs = createMemo(() => describeNeeds(source()))
   const declared = createMemo(() => describeDeclared(source()))
@@ -203,6 +255,13 @@ export function RecipesPage() {
     setCreating(false)
     setImporting(false)
     setSelected(recipe.key)
+    setSelectedDeployment(undefined)
+    setStudioTab("overview")
+    setSourceDraft("")
+    setSourceDirty(false)
+    setAssetPath(undefined)
+    setAssetContent("")
+    setAssetDirty(false)
     setDraftName(recipe.rawName)
     setDraftDescription(recipe.description)
     // ⚠️ The RAW prompt, never the flattened one — see the header.
@@ -217,6 +276,8 @@ export function RecipesPage() {
     setCreating(true)
     setImporting(false)
     setSelected(undefined)
+    setSelectedDeployment(undefined)
+    setStudioTab("overview")
     setDraftName("")
     setDraftDescription("")
     setDraftPrompt("")
@@ -236,20 +297,27 @@ export function RecipesPage() {
       description: error instanceof Error ? error.message : String(error),
     })
 
+  const canLeaveDraft = () => (!dirty() && !sourceDirty() && !assetDirty()) || window.confirm("Discard unsaved recipe changes?")
+
   async function save() {
     const base = httpBase()
     if (!base || !draftName().trim() || !draftPrompt().trim()) return
     setBusy(true)
     try {
-      const saved = await saveRecipe(base, {
-        // Editing keeps the slug (so the folder is updated in place); a new recipe derives it from the name.
-        ...(creating() ? {} : { slug: selected() }),
-        name: draftName().trim(),
-        ...(draftDescription().trim() ? { description: draftDescription().trim() } : {}),
-        prompt: draftPrompt(),
-      })
+      const saved = creating()
+        ? await saveRecipe(base, {
+            name: draftName().trim(),
+            ...(draftDescription().trim() ? { description: draftDescription().trim() } : {}),
+            prompt: draftPrompt(),
+          })
+        : await updateRecipe(base, selected()!, {
+            name: draftName().trim(),
+            description: draftDescription().trim() || null,
+            prompt: draftPrompt(),
+          })
       await refetch()
       open(toView(saved))
+      await refetchSource()
       showToast({ title: `Saved “${saved.name}”` })
     } catch (error) {
       fail(error)
@@ -374,29 +442,207 @@ export function RecipesPage() {
     const base = httpBase()
     const file = importFile()
     if (!base || !file) return
-    if (file.size > MAX_RECIPE_ARCHIVE_BYTES) {
-      fail(new Error(`That recipe ZIP is over ${MAX_RECIPE_ARCHIVE_BYTES / 1024 / 1024} MB`))
-      return
-    }
-    setBusy(true)
+    await preparePackage(file.name, new Uint8Array(await file.arrayBuffer()))
+  }
+
+  async function preparePackage(name: string, bytes: Uint8Array<ArrayBuffer>) {
+    const base = httpBase()
+    if (!base) return
+    setPackageLoading(true)
+    setPackageBytes(undefined)
+    setPackagePreview(undefined)
     try {
-      const made = await importRecipeArchive(base, new Uint8Array(await file.arrayBuffer()), {
+      const preview = await previewRecipeArchive(base, bytes)
+      setSelectedDeployment(undefined)
+      setSelected(undefined)
+      setPackageName(name)
+      setPackageBytes(bytes)
+      setPackagePreview(preview)
+      setImporting(false)
+    } catch (error) {
+      fail(error)
+    } finally {
+      setPackageLoading(false)
+    }
+  }
+
+  async function acceptPackage(deploy: boolean) {
+    const base = httpBase()
+    const bytes = packageBytes()
+    if (!base || !bytes) return
+    if (deploy && !(await confirm({
+      title: `Deploy “${packagePreview()?.name ?? packageName()}”?`,
+      description: packagePreview()?.description || "Nova will hire an agent to build this recipe into a program.",
+      confirmLabel: "Deploy recipe",
+    }))) return
+    setBusy(true)
+    let imported: Recipe | undefined
+    try {
+      const made = await importRecipeArchive(base, bytes, {
         signal: archiveTransfers.signal,
       })
+      imported = made
+      if (deploy) await deployRecipe(base, made.slug)
+      if (deploy) window.dispatchEvent(new Event("novaclaw:recipe-deployed"))
       await refetch()
+      await refetchDeployed()
       setImportFile(undefined)
       setImportText("")
       setImporting(false)
+      setPackageBytes(undefined)
+      setPackagePreview(undefined)
       open(toView(made))
       showToast({
-        title: `Imported “${made.name}”`,
-        description: "The complete folder arrived — recipe.md and all nested assets. Read it before you run it.",
+        title: deploy ? `Deploying “${made.name}”` : `Imported “${made.name}”`,
+        description: deploy ? "Nova will prepare it. Its Home icon opens the deployment chat until it is ready." : "The complete folder is ready to edit in Recipes Studio.",
       })
     } catch (error) {
+      if (imported) {
+        void refetch()
+        void refetchDeployed()
+        setPackageBytes(undefined)
+        setPackagePreview(undefined)
+        open(toView(imported))
+      }
       fail(error)
     } finally {
       setBusy(false)
     }
+  }
+
+  createEffect(() => {
+    if (!httpBase()) return
+    const holder = window as Window & {
+      __NOVACLAW__?: { recipePackages?: { name?: string; bytes: Uint8Array<ArrayBuffer> }[] }
+    }
+    const queued = holder.__NOVACLAW__?.recipePackages
+    if (queued?.length) {
+      const latest = queued.splice(0).at(-1)
+      if (latest) void preparePackage(latest.name ?? "recipe.nova", latest.bytes)
+    }
+  })
+  const onDesktopPackage = (event: Event) => {
+    const detail = (event as CustomEvent<{ name?: string; bytes: Uint8Array<ArrayBuffer> }>).detail
+    if (detail?.bytes) {
+      const holder = window as Window & { __NOVACLAW__?: { recipePackages?: { name?: string; bytes: Uint8Array<ArrayBuffer> }[] } }
+      const queued = holder.__NOVACLAW__?.recipePackages
+      const index = queued?.findIndex((entry) => entry.bytes === detail.bytes) ?? -1
+      if (httpBase()) {
+        if (index >= 0) queued?.splice(index, 1)
+        void preparePackage(detail.name ?? "recipe.nova", detail.bytes)
+      }
+    }
+  }
+  window.addEventListener("novaclaw:recipe-package", onDesktopPackage)
+  onCleanup(() => window.removeEventListener("novaclaw:recipe-package", onDesktopPackage))
+
+  async function saveSource() {
+    const base = httpBase()
+    const slug = current()?.key
+    if (!base || !slug || !sourceDirty()) return
+    setBusy(true)
+    try {
+      const saved = await replaceRecipeSource(base, slug, sourceDraft())
+      setSourceDirty(false)
+      await refetch()
+      open(toView(saved))
+      await refetchSource()
+      setStudioTab("source")
+      showToast({ title: "recipe.md saved" })
+    } catch (error) { fail(error) } finally { setBusy(false) }
+  }
+
+  async function openAsset(path: string) {
+    const base = httpBase()
+    const slug = current()?.key
+    if (!base || !slug) return
+    try {
+      const asset = await readRecipeAsset(base, slug, path)
+      setAssetPath(path)
+      setAssetContent(asset.content)
+      setAssetEncoding(asset.encoding)
+      setAssetDirty(false)
+    } catch (error) { fail(error) }
+  }
+
+  async function saveAsset() {
+    const base = httpBase()
+    const slug = current()?.key
+    const path = assetPath()
+    if (!base || !slug || !path) return
+    setBusy(true)
+    try {
+      await writeRecipeAsset(base, slug, { path, content: assetContent(), encoding: "utf8" })
+      setAssets(await listRecipeAssets(base, slug))
+      setAssetDirty(false)
+      await refetch()
+      showToast({ title: `Saved ${path}` })
+    } catch (error) { fail(error) } finally { setBusy(false) }
+  }
+
+  async function uploadAssets(files: FileList | null) {
+    const base = httpBase()
+    const slug = current()?.key
+    if (!base || !slug || !files) return
+    setBusy(true)
+    try {
+      for (const file of Array.from(files)) {
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        const content = btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""))
+        await writeRecipeAsset(base, slug, { path: file.name, content, encoding: "base64" })
+      }
+      setAssets(await listRecipeAssets(base, slug))
+      await refetch()
+      showToast({ title: files.length === 1 ? "Asset added" : `${files.length} assets added` })
+    } catch (error) { fail(error) } finally { setBusy(false) }
+  }
+
+  async function removeAsset(path: string) {
+    const base = httpBase()
+    const slug = current()?.key
+    if (!base || !slug) return
+    setBusy(true)
+    try {
+      await deleteRecipeAsset(base, slug, path)
+      setAssets(await listRecipeAssets(base, slug))
+      if (assetPath() === path) setAssetPath(undefined)
+      await refetch()
+      showToast({ title: `Removed ${path}` })
+    } catch (error) { fail(error) } finally { setBusy(false) }
+  }
+
+  async function deployCurrent(recipe: RecipeView) {
+    const base = httpBase()
+    if (!base || !(await confirm({
+      title: `Deploy “${recipe.name}”?`,
+      description: recipe.description || "Nova will hire an agent to build this recipe into a program.",
+      confirmLabel: "Deploy recipe",
+    }))) return
+    setBusy(true)
+    try {
+      await deployRecipe(base, recipe.key)
+      window.dispatchEvent(new Event("novaclaw:recipe-deployed"))
+      await refetchDeployed()
+      showToast({ title: `Deploying “${recipe.name}”`, description: "Nova is preparing it. Its Home icon opens the deployment chat until ready." })
+    } catch (error) { void refetchDeployed(); fail(error) } finally { setBusy(false) }
+  }
+
+  async function undeployCurrent(slug: string) {
+    const base = httpBase()
+    if (!base || !(await confirm({
+      title: "Undeploy this program?",
+      description: "This removes its deployed files and Home icon. The editable recipe stays in your library.",
+      confirmLabel: "Undeploy",
+      destructive: true,
+    }))) return
+    setBusy(true)
+    try {
+      await undeployRecipe(base, slug)
+      window.dispatchEvent(new Event("novaclaw:recipe-deployed"))
+      await refetchDeployed()
+      setSelectedDeployment(undefined)
+      showToast({ title: "Recipe undeployed" })
+    } catch (error) { fail(error) } finally { setBusy(false) }
   }
 
   /** Cook it. `directory` unset = a fresh folder in the scratch workspace. */
@@ -507,11 +753,11 @@ export function RecipesPage() {
   const preview = createMemo(() => previewImport(importText()))
 
   return (
-    <AppPage class="flex flex-col overflow-hidden">
+    <AppPage class="recipe-studio flex flex-col overflow-hidden">
       <AppPageHeader
         glyph="recipes"
-        title="Recipes"
-        hint="Ready-made prompts an agent cooks for you. Source code rots; a good recipe stays fresh."
+        title="Recipes Studio"
+        hint="Shape the intent. Nova builds the program."
       >
         <button class={BTN} data-action="recipe-import-open" onClick={startImport}>
           {language.t("recipes.page.import")}
@@ -521,9 +767,9 @@ export function RecipesPage() {
         </button>
       </AppPageHeader>
 
-      <div class="flex min-h-0 flex-1 overflow-hidden">
+      <div class="recipe-studio-layout flex min-h-0 flex-1 overflow-hidden">
         {/* ── The list, on its shelves ─────────────────────────────────────────────────────────── */}
-        <div class="flex w-72 shrink-0 flex-col border-r border-v2-border-border-base">
+        <div class="recipe-studio-sidebar flex w-72 shrink-0 flex-col border-r border-v2-border-border-base">
           <div class="p-2">
             <TextInputV2
               type="text"
@@ -534,6 +780,26 @@ export function RecipesPage() {
             />
           </div>
           <div class="min-h-0 flex-1 overflow-auto px-2 pb-2">
+            <div class="recipe-studio-section-label">Deployed programs <span><button type="button" onClick={() => void refetchDeployed()}>Refresh</button> · {deployments().length}</span></div>
+            <Show when={deploymentListing().kind === "failed"}>
+              <p class="recipe-studio-muted">Could not read deployed programs.</p>
+            </Show>
+            <div class="recipe-studio-deployments">
+              <For each={deployments()}>
+                {(deployment) => (
+                  <button
+                    class="recipe-studio-deployment"
+                    classList={{ "is-selected": selectedDeployment() === deployment.slug }}
+                    onClick={() => { if (!canLeaveDraft()) return; setDirty(false); setSourceDirty(false); setAssetDirty(false); setSelected(undefined); setSelectedDeployment(deployment.slug); setImporting(false) }}
+                  >
+                    <span class="recipe-studio-deployment-glyph">✦</span>
+                    <span class="min-w-0 flex-1"><strong>{deployment.name}</strong><small>{deployment.state === "ready" ? "Ready to open" : "Nova is preparing it"}</small></span>
+                    <span class="recipe-studio-status" data-state={deployment.state} />
+                  </button>
+                )}
+              </For>
+            </div>
+            <div class="recipe-studio-section-label">Recipe library <span>{recipes().length}</span></div>
             <Switch>
               <Match when={recipeListing().kind === "failed"}>
                 <div class="p-2 text-sm text-v2-state-fg-danger" data-slot="recipes-failed">
@@ -556,20 +822,20 @@ export function RecipesPage() {
                     <div class="mb-3">
                       {/* A shelf, not a profile: a title and a line about what lives here, no settings.
                           Membership is decided by the build — a recipe cannot declare its own shelf. */}
-                      <div class={LABEL} data-slot="recipe-shelf">
+                      <div class="recipe-studio-shelf" data-slot="recipe-shelf">
                         {group.collection.title}
                       </div>
                       <div class="mt-0.5 mb-1.5 text-[11px] text-v2-text-text-faint">{group.collection.note}</div>
                       <For each={group.recipes}>
                         {(recipe) => (
                           <button
-                            class="mb-1.5 block w-full rounded-md border px-2.5 py-2 text-left transition-colors"
+                            class="recipe-studio-recipe-row mb-1.5 block w-full rounded-md border px-2.5 py-2 text-left transition-colors"
                             classList={{
                               "border-v2-border-border-focus bg-v2-background-bg-layer-02": selected() === recipe.key,
                               "border-transparent hover:bg-v2-background-bg-layer-01": selected() !== recipe.key,
                             }}
                             data-slot="recipe-row"
-                            onClick={() => open(recipe)}
+                            onClick={() => { if (canLeaveDraft()) open(recipe) }}
                           >
                             <div class="flex items-center gap-1.5">
                               <span class="min-w-0 flex-1 truncate text-sm font-medium">{recipe.name}</span>
@@ -596,7 +862,40 @@ export function RecipesPage() {
         </div>
 
         {/* ── The detail ───────────────────────────────────────────────────────────────────────── */}
-        <div class="min-w-0 flex-1 overflow-auto p-4">
+        <div class="recipe-studio-main min-w-0 flex-1 overflow-auto p-4">
+          <Show when={packagePreview()}>
+            {(packageInfo) => (
+              <section class="recipe-studio-package" data-slot="recipe-package-preview">
+                <div class="recipe-studio-package-mark">✦</div>
+                <div class="min-w-0 flex-1">
+                  <div class="recipe-studio-eyebrow">PACKAGE REVIEW · {packageName()}</div>
+                  <h2>{packageInfo().name}</h2>
+                  <p>{packageInfo().description || "This recipe asks Nova to build a program from its instructions."}</p>
+                  <small>Contains recipe.md and {packageInfo().assets.length} asset{packageInfo().assets.length === 1 ? "" : "s"}. Read the instructions before deploying a package from someone else.</small>
+                  <details class="recipe-studio-package-source"><summary>Read recipe instructions</summary><pre>{packageInfo().prompt}</pre></details>
+                </div>
+                <div class="recipe-studio-package-actions">
+                  <button class={PRIMARY} disabled={busy()} onClick={() => void acceptPackage(true)}>Deploy</button>
+                  <button class={BTN} disabled={busy()} onClick={() => void acceptPackage(false)}>Import for editing</button>
+                  <button class={BTN} disabled={busy()} onClick={() => { setPackagePreview(undefined); setPackageBytes(undefined) }}>Cancel</button>
+                </div>
+              </section>
+            )}
+          </Show>
+          <Show when={packageLoading()}><p class="recipe-studio-muted">Checking package…</p></Show>
+          <Show when={selectedDeployment()}>
+            {(slug) => {
+              const deployment = createMemo(() => deployments().find((entry) => entry.slug === slug()))
+              return <section class="recipe-studio-deployment-detail">
+                <div class="recipe-studio-hero-symbol">✦</div>
+                <span class="recipe-studio-eyebrow">DEPLOYED PROGRAM · {deployment()?.state}</span>
+                <h1>{deployment()?.name}</h1>
+                <p>{deployment()?.description || "Built from a recipe by Nova."}</p>
+                <p class="recipe-studio-muted">{deployment()?.state === "ready" ? "Open it from its icon on Home." : "Nova is preparing this program. Its Home icon opens the deployment chat."}</p>
+                <button class={BTN} disabled={busy()} onClick={() => void undeployCurrent(slug())}>Undeploy</button>
+              </section>
+            }}
+          </Show>
           <Show when={importing()}>
             <div class="max-w-2xl">
               <ImportPanel
@@ -617,7 +916,7 @@ export function RecipesPage() {
             </div>
           </Show>
 
-          <Show when={!importing()}>
+          <Show when={!importing() && !selectedDeployment() && !packagePreview()}>
             <Show
               when={creating() || current()}
               fallback={
@@ -629,7 +928,15 @@ export function RecipesPage() {
                 </div>
               }
             >
-              <div class="flex max-w-3xl flex-col gap-3">
+              <>
+              <Show when={current()}>
+                <div class="recipe-studio-tabs" role="tablist" aria-label="Recipe editor">
+                  <button role="tab" aria-selected={studioTab() === "overview"} onClick={() => setStudioTab("overview")}>Overview</button>
+                  <button role="tab" aria-selected={studioTab() === "source"} onClick={() => setStudioTab("source")}>recipe.md</button>
+                  <button role="tab" aria-selected={studioTab() === "assets"} onClick={() => setStudioTab("assets")}>Assets <span>{assets().length}</span></button>
+                </div>
+              </Show>
+              <div class="recipe-studio-editor flex max-w-3xl flex-col gap-3" classList={{ hidden: studioTab() !== "overview" && !creating() }}>
                 <div class="flex flex-wrap items-center gap-2">
                   <TextInputV2
                     type="text"
@@ -670,6 +977,9 @@ export function RecipesPage() {
                         <button class={BTN} disabled={busy()} onClick={() => void copy(recipe())}>
                           {language.t("recipes.page.copy")}
                         </button>
+                        <button class={PRIMARY} disabled={busy() || dirty() || sourceDirty()} onClick={() => void deployCurrent(recipe())}>
+                          Deploy
+                        </button>
                         <button
                           class={BTN}
                           data-action="recipe-export"
@@ -677,7 +987,7 @@ export function RecipesPage() {
                           title={describeExport(recipe())}
                           onClick={() => void exportRecipe(recipe())}
                         >
-                          {language.t("recipes.page.export")}
+                          Export .nova
                         </button>
                         <button
                           class={BTN}
@@ -920,6 +1230,43 @@ export function RecipesPage() {
                   </div>
                 </Show>
               </div>
+              <Show when={current() && studioTab() === "source"}>
+                <section class="recipe-studio-source" data-slot="recipe-source-editor">
+                  <div class="recipe-studio-editor-heading">
+                    <div><span class="recipe-studio-eyebrow">SOURCE</span><h2>recipe.md</h2></div>
+                    <button class={PRIMARY} disabled={busy() || !sourceDirty()} onClick={() => void saveSource()}>Save recipe.md</button>
+                  </div>
+                  <p>The entire recipe is editable here. It holds the title, description, build instructions and any fields you add. Assets travel beside it.</p>
+                  <textarea class={FIELD} value={sourceDraft()} onInput={(event) => { setSourceDraft(event.currentTarget.value); setSourceDirty(true) }} spellcheck={false} aria-label="recipe.md source" />
+                  <Show when={sourceDirty()}><small>Unsaved changes</small></Show>
+                </section>
+              </Show>
+              <Show when={current() && studioTab() === "assets"}>
+                <section class="recipe-studio-assets" data-slot="recipe-assets-editor">
+                  <div class="recipe-studio-editor-heading">
+                    <div><span class="recipe-studio-eyebrow">FILES</span><h2>Assets</h2></div>
+                    <label class="recipe-studio-upload">Add files<input type="file" multiple onChange={(event) => void uploadAssets(event.currentTarget.files)} /></label>
+                  </div>
+                  <p>Images, reference files and other materials stay with this recipe in its .nova package.</p>
+                  <div class="recipe-studio-assets-layout">
+                    <div class="recipe-studio-assets-list">
+                      <For each={assets()} fallback={<span class="recipe-studio-muted">No assets yet.</span>}>
+                        {(asset) => <button classList={{ "is-selected": assetPath() === asset.path }} onClick={() => void openAsset(asset.path)}><span>{asset.path}</span><small>{asset.bytes.toLocaleString()} B</small></button>}
+                      </For>
+                    </div>
+                    <Show when={assetPath()} fallback={<div class="recipe-studio-muted">Select a file to inspect it.</div>}>
+                      {(path) => <div class="recipe-studio-asset-edit">
+                        <div class="recipe-studio-editor-heading"><strong>{path()}</strong><button class={BTN} disabled={busy()} onClick={() => void removeAsset(path())}>Remove</button></div>
+                        <Show when={assetEncoding() === "utf8"} fallback={<p class="recipe-studio-muted">Binary asset. Upload a replacement file to change it.</p>}>
+                          <textarea class={FIELD} value={assetContent()} onInput={(event) => { setAssetContent(event.currentTarget.value); setAssetDirty(true) }} aria-label="Asset content" />
+                          <button class={PRIMARY} disabled={busy() || !assetDirty()} onClick={() => void saveAsset()}>Save asset text</button>
+                        </Show>
+                      </div>}
+                    </Show>
+                  </div>
+                </section>
+              </Show>
+              </>
             </Show>
           </Show>
         </div>
@@ -972,7 +1319,7 @@ function ImportPanel(props: {
             id="recipe-import-archive-file"
             class="sr-only"
             type="file"
-            accept=".zip,application/zip"
+            accept=".nova,.zip,application/zip"
             data-action="recipe-import-archive-file"
             onChange={(event) => props.onFile(event.currentTarget.files?.[0])}
           />
@@ -987,7 +1334,7 @@ function ImportPanel(props: {
           disabled={props.busy || !props.file}
           onClick={() => props.onArchiveImport()}
         >
-          {language.t("recipes.page.importFolder")}
+          Preview package
         </button>
       </section>
 

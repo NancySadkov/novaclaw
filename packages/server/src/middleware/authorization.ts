@@ -3,6 +3,7 @@ import { UnauthorizedError } from "@novaclaw/protocol/errors"
 import { Authorization } from "@novaclaw/protocol/middleware/authorization"
 export { Authorization } from "@novaclaw/protocol/middleware/authorization"
 import { hasFileReadTicketURL } from "@novaclaw/protocol/groups/fs"
+import { hasRecipePreviewTicketURL } from "@novaclaw/protocol/groups/recipe"
 import { hasPtyConnectTicketURL, isPtyConnectURL } from "@novaclaw/protocol/groups/pty"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { Effect, Encoding, Layer, Redacted } from "effect"
@@ -67,7 +68,7 @@ export const authorizationLayer = Layer.effect(
         // ticket suites assert a forged and an expired one are refused rather than only that a
         // fresh one works.
         const url = new URL(request.url, "http://localhost")
-        if (hasPtyConnectTicketURL(url) || hasFileReadTicketURL(url)) return yield* effect
+        if (hasPtyConnectTicketURL(url) || hasFileReadTicketURL(url) || hasRecipePreviewTicketURL(url)) return yield* effect
         const credential = yield* credentialFromRequest(request)
         if (ServerAuth.authorized(credential, config)) return yield* effect
         yield* HttpEffect.appendPreResponseHandler((_request, response) =>

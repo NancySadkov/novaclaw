@@ -1122,6 +1122,115 @@ export async function sourceOf(slug: string, options?: Options): Promise<string 
   return fs.readFile(path.join(recipesRoot(options), slug, RECIPE_FILE), "utf8").catch(() => undefined)
 }
 
+export async function replaceSource(slug: string, markdown: string, options?: Options): Promise<RecipeRecord> {
+  if (!isValidSlug(slug)) throw new Error(`Invalid recipe id: ${slug}`)
+  if (Buffer.byteLength(markdown, "utf8") > IMPORT_CAP) throw new Error("recipe.md is too large")
+  if (!parse(markdown).prompt) throw new Error("A recipe needs a prompt")
+  const root = recipesRoot(options)
+  const release = await acquireSlugLease(root, slug)
+  try {
+    if (!(await readOne(root, slug, new Set()))) throw new Error(`No recipe named "${slug}"`)
+    const file = path.join(root, slug, RECIPE_FILE)
+    const staging = `${file}.${randomUUID()}.tmp`
+    try {
+      await fs.writeFile(staging, markdown, { flag: "wx" })
+      await fs.rename(staging, file)
+    } finally {
+      await fs.rm(staging, { force: true }).catch(() => undefined)
+    }
+    const result = await readOne(root, slug, new Set())
+    if (!result) throw new Error(`Recipe "${slug}" could not be read back`)
+    return result
+  } finally {
+    await release()
+  }
+}
+
+const assetParts = (relative: string): string[] => {
+  if (relative.includes("\\") || relative.includes("\0") || relative.startsWith("/") || /^[A-Za-z]:/.test(relative))
+    throw new Error("Asset path must be relative")
+  const parts = relative.split("/")
+  if (parts.length > 32 || Buffer.byteLength(relative, "utf8") > 1024 ||
+      parts.some((part) => !part || part === "." || part === "..") || parts[0] === RECIPE_FILE)
+    throw new Error("Invalid asset path")
+  return parts
+}
+
+const assetRoot = async (slug: string, options?: Options): Promise<string> => {
+  const root = recipesRoot(options)
+  if (!(await readOne(root, slug, new Set()))) throw new Error(`No recipe named "${slug}"`)
+  return path.join(root, slug)
+}
+
+const assetFile = async (dir: string, relative: string, creating: boolean): Promise<string> => {
+  const parts = assetParts(relative)
+  let current = dir
+  for (const part of parts.slice(0, -1)) {
+    current = path.join(current, part)
+    const stat = await fs.lstat(current).catch(() => undefined)
+    if (!stat && creating) await fs.mkdir(current)
+    else if (!stat?.isDirectory()) throw new Error("Asset parent is not a regular directory")
+  }
+  const file = path.join(current, parts.at(-1)!)
+  const stat = await fs.lstat(file).catch(() => undefined)
+  if (stat && !stat.isFile()) throw new Error("Asset is not a regular file")
+  return file
+}
+
+export interface AssetFile { readonly path: string; readonly bytes: number }
+
+export async function listAssets(slug: string, options?: Options): Promise<AssetFile[]> {
+  const dir = await assetRoot(slug, options)
+  const files: AssetFile[] = []
+  const visit = async (parent: string, prefix: string): Promise<void> => {
+    for (const entry of await fs.readdir(parent, { withFileTypes: true })) {
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name
+      if (relative === RECIPE_FILE) continue
+      assetParts(relative)
+      const file = path.join(parent, entry.name)
+      const stat = await fs.lstat(file)
+      if (stat.isDirectory()) await visit(file, relative)
+      else if (stat.isFile()) files.push({ path: relative, bytes: stat.size })
+    }
+  }
+  await visit(dir, "")
+  return files.sort((a, b) => a.path.localeCompare(b.path))
+}
+
+export async function readAsset(slug: string, relative: string, options?: Options): Promise<Uint8Array> {
+  const file = await assetFile(await assetRoot(slug, options), relative, false)
+  return fs.readFile(file)
+}
+
+export async function writeAsset(slug: string, relative: string, bytes: Uint8Array, options?: Options): Promise<void> {
+  if (bytes.byteLength > ARCHIVE_FILE_CAP) throw new Error("Asset exceeds the per-file limit")
+  if (!isValidSlug(slug)) throw new Error(`Invalid recipe id: ${slug}`)
+  const release = await acquireSlugLease(recipesRoot(options), slug)
+  try {
+    const file = await assetFile(await assetRoot(slug, options), relative, true)
+    const staging = `${file}.${randomUUID()}.tmp`
+    try {
+      await fs.writeFile(staging, bytes, { flag: "wx" })
+      await fs.rename(staging, file)
+    } finally {
+      await fs.rm(staging, { force: true }).catch(() => undefined)
+    }
+  } finally {
+    await release()
+  }
+}
+
+export async function removeAsset(slug: string, relative: string, options?: Options): Promise<void> {
+  if (!isValidSlug(slug)) throw new Error(`Invalid recipe id: ${slug}`)
+  const release = await acquireSlugLease(recipesRoot(options), slug)
+  try {
+    const file = await assetFile(await assetRoot(slug, options), relative, false)
+    await fs.rm(file)
+  } finally {
+    await release()
+  }
+}
+
 const declarationsOf = async (
   slug: string,
   read: (frontmatter: readonly string[]) => string[],
@@ -1509,6 +1618,31 @@ const decodeArchive = (archive: Uint8Array): ArchiveEntry[] => {
     directory: entry.directory,
     bytes: decoded.get(entry.key) ?? new Uint8Array(),
   }))
+}
+
+export function previewArchive(archive: Uint8Array): {
+  name: string
+  description?: string
+  prompt: string
+  assets: string[]
+} {
+  const entries = decodeArchive(archive)
+  const manifest = entries.find((entry) => entry.name === RECIPE_FILE && !entry.directory)
+  if (!manifest) throw zipError(`it must contain ${RECIPE_FILE} at the folder root`)
+  let markdown: string
+  try {
+    markdown = new TextDecoder("utf-8", { fatal: true }).decode(manifest.bytes)
+  } catch {
+    throw zipError(`${RECIPE_FILE} is not valid UTF-8 text`)
+  }
+  const parsed = parse(markdown)
+  if (!parsed.prompt) throw zipError(`${RECIPE_FILE} has no prompt`)
+  return {
+    name: parsed.name || "Imported recipe",
+    ...(parsed.description ? { description: parsed.description } : {}),
+    prompt: parsed.prompt,
+    assets: entries.filter((entry) => !entry.directory && entry.name !== RECIPE_FILE).map((entry) => entry.name),
+  }
 }
 
 const zipDate = (mtimeMs: number): { date: number; time: number } => {

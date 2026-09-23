@@ -787,7 +787,7 @@ export function exportFilename(slug: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 64)
-  return `${safe || "recipe"}.recipe.zip`
+  return `${safe || "recipe"}.nova`
 }
 
 /**

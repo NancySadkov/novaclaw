@@ -5,6 +5,7 @@ declare global {
     api: ElectronAPI
     __NOVACLAW__?: {
       deepLinks?: string[]
+      recipePackages?: { name: string; bytes: Uint8Array }[]
     }
   }
 }

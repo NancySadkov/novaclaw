@@ -70,6 +70,9 @@ export default function NewLayout(props: ParentProps) {
     makeEventListener(window, deepLinkEvent, ((event: Event) => {
       queue((event as CustomEvent<{ urls: string[] }>).detail?.urls ?? [])
     }) as EventListener)
+    if ((window as Window & { __NOVACLAW__?: { recipePackages?: unknown[] } }).__NOVACLAW__?.recipePackages?.length)
+      navigate("/recipes")
+    makeEventListener(window, "novaclaw:recipe-package", () => navigate("/recipes"))
   })
   // Always-live from anywhere in the shell: mod+j → the chat that needs you (uix-improvement slice 3).
   useJumpToAttentionCommand()

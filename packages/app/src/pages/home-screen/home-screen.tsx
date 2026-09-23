@@ -1,4 +1,5 @@
-import { Component, createMemo, createSignal, For, Index, onCleanup, onMount, Show } from "solid-js"
+import { Component, createMemo, createResource, createSignal, For, Index, onCleanup, onMount, Show } from "solid-js"
+import { useNavigate } from "@solidjs/router"
 import {
   DragDropProvider,
   DragDropSensors,
@@ -18,6 +19,9 @@ import { useLanguage } from "@/context/language"
 import { ServerConnection, useServer } from "@/context/server"
 import { showToast } from "@/utils/toast"
 import { registeredApps, type HomeApp } from "@/apps/registry"
+import { listDeployedRecipes, launchRecipe, undeployRecipe, type RecipeDeployment } from "@/utils/recipe-api"
+import { sessionHref } from "@/utils/session-route"
+import { usePlatform } from "@/context/platform"
 import { AppTile } from "./app-tile"
 import { HelpTour, HELP_SEEN_KEY } from "./help-tour"
 import { createHomeTileClickGuard } from "./home-tile-click-guard"
@@ -69,6 +73,7 @@ const SortableTile: Component<{
   app: HomeApp
   shouldSuppressOpen: () => boolean
   onDelete?: (app: HomeApp) => void
+  onContextAction?: (app: HomeApp, event: MouseEvent) => void
 }> = (props) => {
   // eslint-disable-next-line solid/reactivity -- sortable identity is stable per mount
   const sortable = createSortable(props.app.id)
@@ -85,7 +90,7 @@ const SortableTile: Component<{
         "opacity-30": sortable.isActiveDraggable,
       }}
     >
-      <AppTile app={props.app} shouldSuppressOpen={props.shouldSuppressOpen} onDelete={props.onDelete} />
+      <AppTile app={props.app} shouldSuppressOpen={props.shouldSuppressOpen} onDelete={props.onDelete} onContextAction={props.onContextAction} />
     </div>
   )
 }
@@ -107,13 +112,54 @@ const isRemovable = (app: HomeApp) => app.source === "agent"
 export const HomeScreen: Component = () => {
   const builtins = useBuiltinApps()
   const manifestApps = useManifestApps()
+  const navigate = useNavigate()
+  const platform = usePlatform()
+  const server = useServer()
+  const global = useGlobal()
+  const connection = createMemo(() => server.current ?? global.servers.list()[0])
+  const [deployed, { refetch: refreshDeployed }] = createResource(
+    () => connection()?.http,
+    (http) => listDeployedRecipes(http),
+  )
+  const [contextTarget, setContextTarget] = createSignal<{ recipe: RecipeDeployment; x: number; y: number }>()
+  const [htmlLaunch, setHtmlLaunch] = createSignal<{ title: string; url: string }>()
+  const openDeployment = async (recipe: RecipeDeployment) => {
+    const conn = connection()
+    if (!conn) return
+    try {
+      const launch = await launchRecipe(conn.http, recipe.slug)
+      if (launch.kind === "chat" && launch.sessionID) navigate(sessionHref(ServerConnection.key(conn), launch.sessionID))
+      else if (launch.kind === "html" && launch.url) {
+        const url = new URL(launch.url, conn.http.url).href
+        if (platform.openRecipeBrowser) await platform.openRecipeBrowser(url, recipe.name)
+        else setHtmlLaunch({ title: recipe.name, url })
+      }
+      else if (launch.kind === "console" && launch.ptyID)
+        navigate(`/terminal?launch=${encodeURIComponent(launch.ptyID)}`)
+      void refreshDeployed()
+    } catch (error) {
+      showToast({ variant: "error", title: `Could not launch ${recipe.name}`, description: String(error) })
+    }
+  }
+  const deployedApps = createMemo<HomeApp[]>(() =>
+    (deployed() ?? []).map((recipe) => ({
+      id: `deployed:${recipe.slug}`,
+      title: recipe.name,
+      icon: "sparkles",
+      tile: "/assets/skin/tiles/recipes.png",
+      accent: "#b396dc",
+      source: "builtin",
+      subtitle: recipe.state === "deploying" ? "Deploying · open agent chat" : recipe.description || "Launch recipe",
+      open: () => void openDeployment(recipe),
+    })),
+  )
   const { atLeast } = useExpertise()
   const [order, setOrder] = createSignal<string[]>(loadOrder())
   const apps = createMemo<HomeApp[]>(() =>
     // Expertise gate (uix.md §6.4): a tile whose minLevel exceeds the current level is hidden (e.g.
     // Terminal in Normal/Advanced). Filter before ordering so a hidden tile can't hold a saved slot.
     applyOrder(
-      [...builtins(), ...manifestApps(), ...registeredApps()].filter((app) => atLeast(app.minLevel ?? "normal")),
+      [...builtins(), ...manifestApps(), ...registeredApps(), ...deployedApps()].filter((app) => atLeast(app.minLevel ?? "normal")),
       order(),
     ),
   )
@@ -127,9 +173,37 @@ export const HomeScreen: Component = () => {
   let scroller: HTMLDivElement | undefined
   const dialog = useDialog()
   const confirm = useConfirm()
-  const global = useGlobal()
-  const server = useServer()
   const language = useLanguage()
+
+  const undeploy = async (recipe: RecipeDeployment) => {
+    setContextTarget(undefined)
+    const conn = connection()
+    if (!conn) return
+    const proceed = await confirm({
+      title: `Undeploy ${recipe.name}?`,
+      description: "This removes the deployed copy and its Home icon. Your editable recipe stays in Recipes Studio.",
+      confirmLabel: "Undeploy",
+      destructive: true,
+    })
+    if (!proceed) return
+    try {
+      await undeployRecipe(conn.http, recipe.slug)
+      await refreshDeployed()
+      showToast({ variant: "success", title: `${recipe.name} undeployed` })
+    } catch (error) {
+      showToast({ variant: "error", title: `Could not undeploy ${recipe.name}`, description: String(error) })
+    }
+  }
+
+  onMount(() => {
+    const refresh = () => void refreshDeployed()
+    window.addEventListener("focus", refresh)
+    window.addEventListener("novaclaw:recipe-deployed", refresh)
+    onCleanup(() => {
+      window.removeEventListener("focus", refresh)
+      window.removeEventListener("novaclaw:recipe-deployed", refresh)
+    })
+  })
 
   /**
    * Throw an agent-contributed app away — the launcher's one destructive action, so it confirms
@@ -294,6 +368,14 @@ export const HomeScreen: Component = () => {
                           app={app}
                           shouldSuppressOpen={shouldSuppressOpen}
                           {...(isRemovable(app) ? { onDelete: (target: HomeApp) => void deleteApp(target) } : {})}
+                          {...(app.id.startsWith("deployed:")
+                            ? {
+                                onContextAction: (_target: HomeApp, event: MouseEvent) => {
+                                  const recipe = (deployed() ?? []).find((item) => `deployed:${item.slug}` === app.id)
+                                  if (recipe) setContextTarget({ recipe, x: event.clientX, y: event.clientY })
+                                },
+                              }
+                            : {})}
                         />
                       )}
                     </For>
@@ -304,6 +386,33 @@ export const HomeScreen: Component = () => {
           </SortableProvider>
         </div>
       </DragDropProvider>
+      <Show when={contextTarget()}>
+        {(target) => (
+          <>
+            <div class="fixed inset-0 z-50" onClick={() => setContextTarget(undefined)} onContextMenu={(event) => { event.preventDefault(); setContextTarget(undefined) }} />
+            <div
+              role="menu"
+              class="fixed z-50 rounded-xl border border-v2-border-border-strong bg-v2-background-bg-layer-03 p-1 shadow-2xl"
+              style={{ left: `${Math.min(target().x, window.innerWidth - 190)}px`, top: `${Math.min(target().y, window.innerHeight - 55)}px` }}
+            >
+              <button role="menuitem" type="button" class="rounded-lg px-4 py-2 text-sm text-v2-text-text-base hover:bg-v2-background-bg-layer-04" onClick={() => void undeploy(target().recipe)}>
+                Undeploy {target().recipe.name}
+              </button>
+            </div>
+          </>
+        )}
+      </Show>
+      <Show when={htmlLaunch()}>
+        {(launch) => (
+          <div class="fixed inset-0 z-50 flex flex-col bg-v2-background-bg-deep" role="dialog" aria-label={launch().title}>
+            <div class="flex items-center justify-between border-b border-v2-border-border-base px-4 py-3">
+              <strong class="text-v2-text-text-base">{launch().title}</strong>
+              <button type="button" class="text-v2-text-text-muted hover:text-v2-text-text-base" onClick={() => setHtmlLaunch(undefined)}>Close</button>
+            </div>
+            <iframe title={launch().title} src={launch().url} sandbox="allow-scripts" class="min-h-0 flex-1 border-0 bg-white" />
+          </div>
+        )}
+      </Show>
       <Show when={pages().length > 1}>
         <div class="home-page-dots">
           <For each={pages()}>

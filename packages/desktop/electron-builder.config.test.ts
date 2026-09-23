@@ -56,6 +56,7 @@ test("ships local archives without updater-only formats", async () => {
   expect(config.win?.artifactName).toBe("NovaClaw-${version}-windows-${arch}.${ext}")
 
   expect(config.mac?.target).toEqual(["dmg"])
+  expect(config.fileAssociations).toContainEqual(expect.objectContaining({ ext: "nova", role: "Viewer" }))
 })
 
 test("does not carry an updater runtime dependency", () => {

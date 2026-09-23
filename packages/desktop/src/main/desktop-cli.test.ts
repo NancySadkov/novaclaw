@@ -12,7 +12,7 @@ describe("desktop command line", () => {
 
   test("groups the complete public command line by general, client, and server roles", () => {
     const help = desktopHelp()
-    expect(help).toStartWith("Usage: NovaClaw.exe [OPTION]... [novaclaw://URL]\n")
+    expect(help).toStartWith("Usage: NovaClaw.exe [OPTION]... [novaclaw://URL | recipe.nova]\n")
     expect(help).toContain("\nGeneral options:\n")
     expect(help).toContain("\nClient options (with --client-only):\n")
     expect(help).toContain("\nServer options:\n")
@@ -120,6 +120,13 @@ describe("desktop command line", () => {
     expect(parseDesktopInvocation(["NovaClaw.exe", "--server-only", "--mdns"])).toMatchObject({
       action: "launch",
       options: { server: { hostname: "0.0.0.0", mdns: true } },
+    })
+  })
+
+  test("headless server refuses a recipe package argument", () => {
+    expect(parseDesktopInvocation(["NovaClaw.exe", "--server-only", "sample.nova"])).toEqual({
+      action: "error",
+      message: "a link or .nova package cannot be opened with '--server-only'",
     })
   })
 

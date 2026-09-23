@@ -11,6 +11,8 @@ import { createSaveFileAuthorizations, parseSavePickerOptions } from "./save-pic
 import { getStore, isStoreName } from "./store"
 import { getPinchZoomEnabled, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
 import { createSubscriptions } from "./subscriptions"
+import type { OpenedRecipePackage } from "./recipe-package-open"
+import { isRecipeNavigation, recipeBrowserURL } from "./recipe-browser"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -64,6 +66,7 @@ type Deps = {
   relaunch: () => void
   awaitInitialization: () => Promise<ServerReadyData>
   consumeInitialDeepLinks: () => Promise<string[]> | string[]
+  consumeInitialRecipePackages: () => Promise<OpenedRecipePackage[]> | OpenedRecipePackage[]
   getDefaultServerUrl: () => Promise<string | null> | string | null
   setDefaultServerUrl: (url: string | null) => Promise<void> | void
   getDisplayBackend: () => Promise<string | null>
@@ -104,6 +107,7 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("supervisor-unsubscribe", (event) => supervisorSubscriptions.delete(event.sender.id))
   ipcMain.handle("await-initialization", () => deps.awaitInitialization())
   ipcMain.handle("consume-initial-deep-links", () => deps.consumeInitialDeepLinks())
+  ipcMain.handle("consume-initial-recipe-packages", () => deps.consumeInitialRecipePackages())
   ipcMain.handle("get-default-server-url", () => deps.getDefaultServerUrl())
   ipcMain.handle("set-default-server-url", (_event: IpcMainInvokeEvent, url: string | null) =>
     deps.setDefaultServerUrl(url),
@@ -225,6 +229,29 @@ export function registerIpcHandlers(deps: Deps) {
     void shell.openExternal(url)
   })
 
+  ipcMain.handle("open-recipe-browser", async (event: IpcMainInvokeEvent, address: string, title: string) => {
+    const url = recipeBrowserURL(address)
+    const parent = BrowserWindow.fromWebContents(event.sender) ?? undefined
+    const viewer = new BrowserWindow({
+      parent,
+      title: typeof title === "string" ? title.slice(0, 120) : "Deployed recipe",
+      width: 1100,
+      height: 760,
+      backgroundColor: "#12091e",
+      webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
+    })
+    viewer.webContents.setWindowOpenHandler(() => ({ action: "deny" }))
+    viewer.webContents.on("will-navigate", (navigationEvent, target) => {
+      if (!isRecipeNavigation(url, target)) navigationEvent.preventDefault()
+    })
+    try {
+      await viewer.loadURL(url.href)
+    } catch (error) {
+      viewer.close()
+      throw error
+    }
+  })
+
   ipcMain.handle("open-path", async (_event: IpcMainInvokeEvent, path: string, app?: string) => {
     if (!app) return shell.openPath(path)
     await new Promise<void>((resolve, reject) => {
@@ -321,4 +348,8 @@ export function sendMenuCommand(win: BrowserWindow, id: string) {
 
 export function sendDeepLinks(win: BrowserWindow, urls: string[]) {
   win.webContents.send("deep-link", urls)
+}
+
+export function sendRecipePackages(win: BrowserWindow, packages: OpenedRecipePackage[]) {
+  win.webContents.send("recipe-package", packages)
 }

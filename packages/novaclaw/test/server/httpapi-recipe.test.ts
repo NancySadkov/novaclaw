@@ -88,6 +88,20 @@ describe("POST /api/recipe/import", () => {
 })
 
 describe("recipe folder ZIP transport", () => {
+  it.effect("previews a .nova ZIP before it is imported", () =>
+    Effect.gen(function* () {
+      const sourceSlug = "route-archive-preview"
+      fs.rmSync(path.join(root(), sourceSlug), { recursive: true, force: true })
+      yield* request("/api/recipe/import", json({ markdown: "---\nname: Preview me\ndescription: A short pitch\n---\nBuild it", slug: sourceSlug }))
+      const exported = yield* request(`/api/recipe/${sourceSlug}/archive`, { headers: { accept: "application/zip" } })
+      const archive = new Uint8Array(yield* exported.arrayBuffer)
+      const preview = yield* request("/api/recipe/archive/preview", {
+        method: "POST", headers: { "content-type": "application/zip" }, body: archive,
+      })
+      expect(preview.status).toBe(200)
+      expect(JSON.parse(yield* preview.text)).toEqual({ name: "Preview me", description: "A short pitch", prompt: "Build it", assets: [] })
+    }),
+  )
   it.effect("serves and accepts actual application/zip bytes with nested binary assets intact", () =>
     Effect.gen(function* () {
       const sourceSlug = "route-archive-source"
@@ -137,6 +151,63 @@ describe("recipe folder ZIP transport", () => {
       expect(yield* response.text).toContain("complete ZIP")
       expect(fs.existsSync(path.join(root(), slug))).toBe(false)
       expect(fs.readdirSync(root()).some((name) => name.includes(`${slug}.recipe-stage`))).toBe(false)
+    }),
+  )
+})
+
+describe("Recipes Studio and deployment routes", () => {
+  it.effect("edits recipe.md and a nested asset through HTTP", () =>
+    Effect.gen(function* () {
+      const slug = "route-studio-edit"
+      yield* request("/api/recipe/import", json({ markdown: "---\nname: Studio\n---\nFirst", slug }))
+      const source = yield* request(`/api/recipe/${slug}/source`, {
+        method: "PUT", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ markdown: "---\nname: Studio\n---\nSecond" }),
+      })
+      expect(source.status).toBe(200)
+      const written = yield* request(`/api/recipe/${slug}/asset`, {
+        method: "PUT", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: "assets/note.txt", content: "hello", encoding: "utf8" }),
+      })
+      expect(written.status).toBe(200)
+      const asset = yield* request(`/api/recipe/${slug}/asset?path=assets%2Fnote.txt`)
+      expect(JSON.parse(yield* asset.text)).toEqual({ path: "assets/note.txt", content: "hello", encoding: "utf8" })
+      expect(fs.readFileSync(fileOf(slug), "utf8")).toContain("Second")
+    }),
+  )
+
+  it.effect("deploys an editable recipe and exposes its pending Home launch", () =>
+    Effect.gen(function* () {
+      const slug = "route-studio-deploy"
+      yield* request("/api/recipe/import", json({ markdown: "---\nname: Deployed\n---\nBuild a page", slug }))
+      const deployed = yield* request(`/api/recipe/${slug}/deploy`, json({}))
+      expect(deployed.status).toBe(200)
+      const deployment = JSON.parse(yield* deployed.text) as { slug: string; state: string; sessionID?: string }
+      expect(deployment.slug).toBe(slug)
+      expect(deployment.state).toBe("deploying")
+      expect(deployment.sessionID).toBeTruthy()
+      expect(fs.existsSync(path.join(Global.Path.data, "deployed", slug, "recipe.md"))).toBe(true)
+      const listed = yield* request("/api/recipe/deployed")
+      expect((JSON.parse(yield* listed.text) as { slug: string }[]).some((entry) => entry.slug === slug)).toBe(true)
+      const opened = yield* request(`/api/recipe/deployed/${slug}/launch`, json({}))
+      expect(JSON.parse(yield* opened.text)).toEqual({ kind: "chat", sessionID: deployment.sessionID })
+      const deployedDir = path.join(Global.Path.data, "deployed", slug)
+      fs.writeFileSync(path.join(deployedDir, "index.html"), "<h1>Ready</h1>")
+      fs.writeFileSync(path.join(deployedDir, ".nova-launch.json"), JSON.stringify({ kind: "html", path: "index.html" }))
+      const ready = yield* request(`/api/recipe/deployed/${slug}/launch`, json({}))
+      const launch = JSON.parse(yield* ready.text) as { kind: string; url: string }
+      expect(launch.kind).toBe("html")
+      const page = yield* request(launch.url)
+      const pageBody = yield* page.text
+      expect(page.status, `${launch.url}: ${pageBody}`).toBe(200)
+      expect(pageBody).toBe("<h1>Ready</h1>")
+      expect(page.headers["content-security-policy"]).toContain("sandbox allow-scripts")
+      expect(page.headers["content-security-policy"]).toContain("connect-src 'none'")
+      const removed = yield* request(`/api/recipe/deployed/${slug}`, { method: "DELETE" })
+      expect(removed.status).toBe(204)
+      expect(fs.existsSync(path.join(Global.Path.data, "deployed", slug))).toBe(false)
+      const expired = yield* request(launch.url)
+      expect(expired.status).toBe(403)
     }),
   )
 })

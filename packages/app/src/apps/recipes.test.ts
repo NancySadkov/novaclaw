@@ -700,10 +700,10 @@ describe("import — a stranger's file, previewed before it lands", () => {
 describe("export — the complete portable folder", () => {
   test("🔴 the filename comes from the SLUG, never from the author's name", () => {
     // The name is a stranger's string and this one becomes a path on the user's disk.
-    expect(exportFilename("hello-c")).toBe("hello-c.recipe.zip")
+    expect(exportFilename("hello-c")).toBe("hello-c.nova")
     expect(exportFilename("../../etc/passwd")).not.toContain("..")
     expect(exportFilename("../../etc/passwd")).not.toContain("/")
-    expect(exportFilename("")).toBe("recipe.recipe.zip")
+    expect(exportFilename("")).toBe("recipe.nova")
   })
 
   test("a recipe with assets says the complete folder and every byte are included", () => {
@@ -720,7 +720,7 @@ describe("export — the complete portable folder", () => {
 
   test("the page offers ZIP upload and labels markdown paste as asset-free", () => {
     const page = fs.readFileSync(path.join(import.meta.dir, "..", "pages", "recipes.tsx"), "utf8")
-    expect(page).toContain('accept=".zip,application/zip"')
+    expect(page).toContain('accept=".nova,.zip,application/zip"')
     // The copy is keyed since 2026-09-03: the page reads the keys, and the dictionary says the words.
     expect(page).toContain('language.t("recipes.page.useThisForAProseOnly")')
     expect(page).toContain('language.t("recipes.page.importPastedMarkdownNoAssets")')

@@ -5,6 +5,7 @@ import { checkAppExists, resolveAppPath } from "./apps"
 import { describeSidecarFailure } from "./boot"
 import { offerBootRecovery } from "./boot-recovery-host"
 import { createDesktopDiagnostics } from "./diagnostics"
+import { readRecipePackage, recipePackagePaths } from "./recipe-package-open"
 import { prepareInstanceHome } from "./instance-home"
 import { registerIpcHandlers } from "./ipc"
 import { createDesktopLifecycle } from "./lifecycle"
@@ -50,6 +51,15 @@ export async function runDesktop(options: DesktopLaunchOptions) {
   }
 
   const wsl = createWslInstanceHost(app.getVersion(), logger)
+  const openPackages = async (paths: readonly string[]) => {
+    for (const filePath of paths) {
+      try {
+        window.packages([await readRecipePackage(filePath)])
+      } catch (error) {
+        logger.error("could not open recipe package", { filePath, error: String(error) })
+      }
+    }
+  }
   const local =
     options.mode === "client"
       ? createConnectedInstance(options.connect!)
@@ -124,6 +134,7 @@ export async function runDesktop(options: DesktopLaunchOptions) {
         },
         awaitInitialization: lifecycle.awaitInitialization,
         consumeInitialDeepLinks: window.consumeLinks,
+        consumeInitialRecipePackages: window.consumePackages,
         getDefaultServerUrl: () => (options.mode === "client" ? null : getDefaultServerUrl()),
         setDefaultServerUrl,
         getDisplayBackend: async () => null,
@@ -207,6 +218,12 @@ export async function runDesktop(options: DesktopLaunchOptions) {
   })
   app.on("second-instance", (_event, argv) => {
     window.links(argv.filter((arg) => arg.startsWith("novaclaw://")))
+    void openPackages(recipePackagePaths(argv))
+    window.focus()
+  })
+  app.on("open-file", (event, filePath) => {
+    event.preventDefault()
+    void openPackages([filePath])
     window.focus()
   })
   app.on("open-url", (event, url) => {
@@ -214,6 +231,7 @@ export async function runDesktop(options: DesktopLaunchOptions) {
     window.links([url])
   })
   await lifecycle.run()
+  await openPackages(recipePackagePaths(process.argv))
 }
 
 /** A client-only launch has an instance owner too; it owns credentials, not a child process. */

@@ -49,6 +49,40 @@ export interface RecipeSource {
   readonly collection: { readonly id: "examples" | "mine"; readonly title: string; readonly note: string }
 }
 
+export interface RecipeAsset {
+  readonly path: string
+  readonly bytes: number
+}
+
+export interface RecipeAssetContent {
+  readonly path: string
+  readonly content: string
+  readonly encoding: "utf8" | "base64"
+}
+
+export interface RecipeDeployment {
+  readonly slug: string
+  readonly name: string
+  readonly description?: string
+  readonly state: "deploying" | "ready"
+  readonly sessionID?: string
+  readonly launch?: { readonly kind: "html" | "executable"; readonly path: string }
+}
+
+export interface RecipeLaunch {
+  readonly kind: "chat" | "html" | "console"
+  readonly sessionID?: string
+  readonly url?: string
+  readonly ptyID?: string
+}
+
+export interface RecipeArchivePreview {
+  readonly name: string
+  readonly description?: string
+  readonly prompt: string
+  readonly assets: readonly string[]
+}
+
 /**
  * A PARTIAL edit. Omit a field to leave it exactly as the author wrote it; `description: null` removes
  * that line. Prefer this over `saveRecipe` whenever you are changing ONE thing: `save` takes a whole
@@ -222,6 +256,33 @@ export const saveRecipe = (server: ServerConnection.HttpBase, input: SaveRecipeI
 export const recipeSource = (server: ServerConnection.HttpBase, slug: string) =>
   call<RecipeSource>(server, "GET", `api/recipe/${encodeURIComponent(slug)}/source`)
 
+export const replaceRecipeSource = (server: ServerConnection.HttpBase, slug: string, markdown: string) =>
+  call<Recipe>(server, "PUT", `api/recipe/${encodeURIComponent(slug)}/source`, { markdown })
+
+export const listRecipeAssets = (server: ServerConnection.HttpBase, slug: string) =>
+  call<RecipeAsset[]>(server, "GET", `api/recipe/${encodeURIComponent(slug)}/assets`)
+
+export const readRecipeAsset = (server: ServerConnection.HttpBase, slug: string, path: string) =>
+  instanceFetch<RecipeAssetContent>(server, { method: "GET", route: `api/recipe/${encodeURIComponent(slug)}/asset`, query: { path } })
+
+export const writeRecipeAsset = (server: ServerConnection.HttpBase, slug: string, asset: RecipeAssetContent) =>
+  call<RecipeAssetContent>(server, "PUT", `api/recipe/${encodeURIComponent(slug)}/asset`, asset)
+
+export const deleteRecipeAsset = (server: ServerConnection.HttpBase, slug: string, path: string) =>
+  instanceFetch<void>(server, { method: "DELETE", route: `api/recipe/${encodeURIComponent(slug)}/asset`, query: { path } })
+
+export const listDeployedRecipes = (server: ServerConnection.HttpBase) =>
+  call<RecipeDeployment[]>(server, "GET", "api/recipe/deployed")
+
+export const deployRecipe = (server: ServerConnection.HttpBase, slug: string) =>
+  call<RecipeDeployment>(server, "POST", `api/recipe/${encodeURIComponent(slug)}/deploy`, {})
+
+export const undeployRecipe = (server: ServerConnection.HttpBase, slug: string) =>
+  call<void>(server, "DELETE", `api/recipe/deployed/${encodeURIComponent(slug)}`)
+
+export const launchRecipe = (server: ServerConnection.HttpBase, slug: string) =>
+  call<RecipeLaunch>(server, "POST", `api/recipe/deployed/${encodeURIComponent(slug)}/launch`, {})
+
 export const updateRecipe = (server: ServerConnection.HttpBase, slug: string, patch: UpdateRecipeInput) =>
   call<Recipe>(server, "PATCH", `api/recipe/${encodeURIComponent(slug)}`, patch)
 
@@ -276,6 +337,20 @@ export const importRecipeArchive = (
     rawBody: archive,
     signal: options.signal,
     timeoutMs: options.timeoutMs ?? RECIPE_ARCHIVE_TIMEOUT_MS,
+  })
+}
+
+export const previewRecipeArchive = (server: ServerConnection.HttpBase, archive: Uint8Array<ArrayBuffer>) => {
+  if (archive.byteLength === 0) return Promise.reject(new RecipeArchiveError("", "empty", "upload"))
+  if (archive.byteLength > MAX_RECIPE_ARCHIVE_BYTES)
+    return Promise.reject(new Error(`That recipe ZIP is over ${MAX_RECIPE_ARCHIVE_BYTES / 1024 / 1024} MB`))
+  if (!looksLikeZip(archive)) return Promise.reject(new RecipeArchiveError("", "not-a-zip", "upload"))
+  return instanceFetch<RecipeArchivePreview>(server, {
+    method: "POST",
+    route: "api/recipe/archive/preview",
+    headers: { "content-type": "application/zip", accept: "application/json" },
+    rawBody: archive,
+    timeoutMs: RECIPE_ARCHIVE_TIMEOUT_MS,
   })
 }
 

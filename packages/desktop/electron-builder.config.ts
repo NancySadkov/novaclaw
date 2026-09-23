@@ -224,6 +224,7 @@ const getBase = (appId: string): Configuration => ({
     name: "NovaClaw",
     schemes: ["novaclaw"],
   },
+  fileAssociations: [{ ext: "nova", name: "NovaClaw Recipe", description: "NovaClaw recipe package", role: "Viewer" }],
   win: {
     icon: `resources/icons/icon.ico`,
     // What Windows actually ships is the PORTABLE app — a folder you unpack anywhere and run, no

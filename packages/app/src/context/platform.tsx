@@ -33,6 +33,7 @@ type PlatformBase = {
 
   /** Open a local path in a local app (desktop only) */
   openPath?(path: string, app?: string): Promise<void>
+  openRecipeBrowser?(url: string, title: string): Promise<void>
 
   /** Restart the app  */
   restart(): Promise<void>

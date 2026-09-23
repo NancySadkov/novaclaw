@@ -42,6 +42,7 @@ const api: ElectronAPI = {
     startServer: (id) => ipcRenderer.invoke("wsl-servers-start", id),
   },
   consumeInitialDeepLinks: () => ipcRenderer.invoke("consume-initial-deep-links"),
+  consumeInitialRecipePackages: () => ipcRenderer.invoke("consume-initial-recipe-packages"),
   getDefaultServerUrl: () => ipcRenderer.invoke("get-default-server-url"),
   setDefaultServerUrl: (url) => ipcRenderer.invoke("set-default-server-url", url),
   getDisplayBackend: () => ipcRenderer.invoke("get-display-backend"),
@@ -66,6 +67,11 @@ const api: ElectronAPI = {
     ipcRenderer.on("deep-link", handler)
     return () => ipcRenderer.removeListener("deep-link", handler)
   },
+  onRecipePackage: (cb) => {
+    const handler = (_: unknown, packages: { name: string; bytes: Uint8Array }[]) => cb(packages)
+    ipcRenderer.on("recipe-package", handler)
+    return () => ipcRenderer.removeListener("recipe-package", handler)
+  },
 
   openDirectoryPicker: (opts) => ipcRenderer.invoke("open-directory-picker", opts),
   openFilePicker: (opts) => ipcRenderer.invoke("open-file-picker", opts),
@@ -75,6 +81,7 @@ const api: ElectronAPI = {
   saveFilePicker: (opts) => ipcRenderer.invoke("save-file-picker", opts),
   writePickedFile: (token, content) => ipcRenderer.invoke("write-picked-file", token, content),
   openLink: (url) => ipcRenderer.send("open-link", url),
+  openRecipeBrowser: (url, title) => ipcRenderer.invoke("open-recipe-browser", url, title),
   openPath: (path, app) => ipcRenderer.invoke("open-path", path, app),
   readClipboardImage: () => ipcRenderer.invoke("read-clipboard-image"),
   readClipboardText: () => ipcRenderer.invoke("read-clipboard-text"),
