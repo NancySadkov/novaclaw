@@ -1334,7 +1334,7 @@ const SessionObservationHandler = handlerLayer(
               ),
             )
             yield* attempts.authorizeRetry(ctx.params.sessionID)
-            yield* execution.resume(ctx.params.sessionID).pipe(Effect.orDie)
+            yield* execution.adopt(ctx.params.sessionID)
             return HttpApiSchema.NoContent.make()
           }),
         )
