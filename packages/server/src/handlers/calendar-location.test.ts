@@ -15,7 +15,7 @@ const services = (agents: readonly string[]) =>
   Layer.succeed(
     AgentV2.Service,
     AgentV2.Service.of({
-      all: () => Effect.succeed(agents.map((id) => ({ id }) as AgentV2.Info)),
+      all: () => Effect.succeed(agents.map((id) => ({ id, kind: id === "chat" ? "chat" : id === "human" ? "human" : "agent" }) as AgentV2.Info)),
     } as unknown as AgentV2.Interface),
   )
 
@@ -34,14 +34,15 @@ const middleware = Layer.mergeAll(
   ),
 )
 
-const environment = Layer.mergeAll(Database.layerFromPath(":memory:"), services([AMBIENT_AGENT]), middleware)
+const environment = Layer.mergeAll(Database.layerFromPath(":memory:"), services([AMBIENT_AGENT, "chat", "human"]), middleware)
 
 type CreateHandler = (request: {
+  readonly params: { readonly agentID: string }
   readonly payload: Record<string, unknown>
 }) => Effect.Effect<CalendarStore.Schedule, unknown, any>
 
 type UpdateHandler = (request: {
-  readonly params: { readonly id: string }
+  readonly params: { readonly agentID: string; readonly id: string }
   readonly payload: Record<string, unknown>
 }) => Effect.Effect<CalendarStore.Schedule, unknown, any>
 
@@ -74,16 +75,22 @@ const createInput = (overrides: Record<string, unknown> = {}) => ({
 
 const failureText = (exit: unknown) => JSON.stringify(exit)
 
-describe("calendar execution-setting validation uses the request's ambient roster", () => {
-  test("create accepts a colleague the ambient roster knows and refuses one it does not", async () => {
+describe("agent schedule ownership", () => {
+  test("create accepts a runnable agent and refuses an unknown agent", async () => {
     await withCalendar(({ create }) =>
       Effect.gen(function* () {
-        const accepted = yield* create({ payload: createInput({ agent: AMBIENT_AGENT }) })
+        const accepted = yield* create({ params: { agentID: AMBIENT_AGENT }, payload: createInput() })
         expect(accepted.agent).toBe(AMBIENT_AGENT)
 
-        const refused = yield* Effect.exit(create({ payload: createInput({ agent: "ghost" }) }))
+        const refused = yield* Effect.exit(create({ params: { agentID: "ghost" }, payload: createInput() }))
         expect(refused._tag).toBe("Failure")
-        expect(failureText(refused)).toContain('No agent named \\"ghost\\"')
+        expect(failureText(refused)).toContain('No runnable agent named \\"ghost\\"')
+
+        for (const agentID of ["chat", "human"]) {
+          const unrunnable = yield* Effect.exit(create({ params: { agentID }, payload: createInput() }))
+          expect(unrunnable._tag).toBe("Failure")
+          expect(failureText(unrunnable)).toContain(`No runnable agent named \\"${agentID}\\"`)
+        }
 
         const { db } = yield* Database.Service
         expect(yield* CalendarStore.list(db)).toHaveLength(1)
@@ -91,13 +98,13 @@ describe("calendar execution-setting validation uses the request's ambient roste
     )
   })
 
-  test("update validates a changed responsible agent against the ambient roster", async () => {
+  test("update cannot cross agent ownership", async () => {
     await withCalendar(({ create, update }) =>
       Effect.gen(function* () {
-        const schedule = yield* create({ payload: createInput({ agent: AMBIENT_AGENT }) })
-        const refused = yield* Effect.exit(update({ params: { id: schedule.id }, payload: { agent: "ghost" } }))
+        const schedule = yield* create({ params: { agentID: AMBIENT_AGENT }, payload: createInput() })
+        const refused = yield* Effect.exit(update({ params: { agentID: "ghost", id: schedule.id }, payload: { title: "wrong" } }))
         expect(refused._tag).toBe("Failure")
-        expect(failureText(refused)).toContain('No agent named \\"ghost\\"')
+        expect(failureText(refused)).toContain(`No such schedule: ${schedule.id}`)
 
         const { db } = yield* Database.Service
         expect((yield* CalendarStore.get(db, schedule.id))?.agent).toBe(AMBIENT_AGENT)

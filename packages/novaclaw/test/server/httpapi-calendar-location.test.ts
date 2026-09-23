@@ -57,7 +57,7 @@ afterEach(async () => {
 })
 
 describe("calendar location routing over HTTP", () => {
-  it.effect("resolves the responsible agent through the directory header", () =>
+  it.effect("binds an agent schedule to its target and checks the ambient roster", () =>
     Effect.gen(function* () {
       const ambientDirectory = yield* tmpdirScoped({ git: true })
       const otherDirectory = yield* tmpdirScoped({ git: true })
@@ -69,36 +69,37 @@ describe("calendar location routing over HTTP", () => {
 
       // The SAME agent is refused when the request names a directory whose graph does not hold it:
       // success in the first call below cannot be explained by one global roster.
-      const wrongDirectory = yield* jsonRequest("/api/calendar/schedule", otherDirectory, "POST", {
+      const route = `/api/agent/${ambientCreate.agent}/schedule`
+      const wrongDirectory = yield* jsonRequest(route, otherDirectory, "POST", {
         title: "wrong directory",
         recurrence,
         prompt: "run from a directory that does not know this colleague",
-        agent: ambientCreate.agent,
       })
       expect(wrongDirectory.status).toBe(400)
       yield* wrongDirectory.text
 
-      const created = yield* jsonRequest("/api/calendar/schedule", ambientDirectory, "POST", {
+      const created = yield* jsonRequest(route, ambientDirectory, "POST", {
         title: "ambient create",
         recurrence,
         prompt: "run from the ambient folder",
-        agent: ambientCreate.agent,
       })
       expect(created.status).toBe(200)
-      const schedule = JSON.parse(yield* created.text) as { readonly id: string; readonly agent: string | null }
+      const schedule = JSON.parse(yield* created.text) as { readonly id: string; readonly agent: string }
       expect(schedule.agent).toBe(ambientCreate.agent)
 
-      // No location in the patch means the still-unvalidated replacement identity must be resolved
-      // through x-novaclaw-directory too, not through the server process directory.
-      const updated = yield* jsonRequest(`/api/calendar/schedule/${schedule.id}`, ambientDirectory, "PATCH", {
+      const updated = yield* jsonRequest(`${route}/${schedule.id}`, ambientDirectory, "PATCH", {
         title: "ambient update",
-        agent: ambientUpdate.agent,
       })
       expect(updated.status).toBe(200)
       expect(JSON.parse(yield* updated.text)).toMatchObject({
         title: "ambient update",
-        agent: ambientUpdate.agent,
+        agent: ambientCreate.agent,
       })
+      const crossAgent = yield* jsonRequest(`/api/agent/${ambientUpdate.agent}/schedule/${schedule.id}`, ambientDirectory, "PATCH", {
+        title: "wrong owner",
+      })
+      expect(crossAgent.status).toBe(400)
+      yield* crossAgent.text
     }),
   )
 })

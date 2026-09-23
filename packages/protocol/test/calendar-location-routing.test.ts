@@ -35,7 +35,7 @@ HttpApi.reflect(Api, {
 })
 
 describe("calendar location routing", () => {
-  test("create and update bind the request location used for ambient validation", () => {
+  test("create and update bind the request location", () => {
     expect(
       calendarRoutes
         .filter((route) => route.located)
@@ -44,7 +44,7 @@ describe("calendar location routing", () => {
     ).toEqual(["calendar.schedule.create", "calendar.schedule.update"])
   })
 
-  test("list, remove and fire history stay instance-global", () => {
+  test("list, remove and fire history use the explicit agent id without ambient location", () => {
     expect(
       calendarRoutes
         .filter((route) => !route.located)

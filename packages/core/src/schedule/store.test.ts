@@ -33,7 +33,7 @@ describe("CalendarStore", () => {
       Effect.gen(function* () {
         const created = yield* CalendarStore.create(
           db,
-          { title: "Morning", recurrence: daily9, prompt: "good morning" },
+          { agent: "nova", title: "Morning", recurrence: daily9, prompt: "good morning" },
           MAR10_0800,
         )
         const got = yield* CalendarStore.get(db, created.id)
@@ -42,6 +42,7 @@ describe("CalendarStore", () => {
       }),
     )
     expect(created.title).toBe("Morning")
+    expect(created.agent).toBe("nova")
     expect(created.recurrence).toEqual(daily9)
     expect(created.enabled).toBe(true)
     expect(created.nextFireAt).toBe(MAR10_0900)
@@ -53,16 +54,33 @@ describe("CalendarStore", () => {
 
   test("created disabled -> next_fire_at is null", async () => {
     const created = await withDb((db) =>
-      CalendarStore.create(db, { recurrence: daily9, prompt: "x", enabled: false }, MAR10_0800),
+      CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "x", enabled: false }, MAR10_0800),
     )
     expect(created.enabled).toBe(false)
     expect(created.nextFireAt).toBeNull()
   })
 
+  test("agent scope isolates schedules, mutations, and fire history", async () => {
+    await withDb((db) =>
+      Effect.gen(function* () {
+        const nova = yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "a" }, MAR10_0800)
+        const other = yield* CalendarStore.create(db, { agent: "other", recurrence: daily9, prompt: "b" }, MAR10_0800)
+        yield* CalendarStore.recordFire(db, { scheduleId: nova.id, occurrenceMillis: MAR10_0900, firedAt: MAR10_0900, status: "spawned" })
+        yield* CalendarStore.recordFire(db, { scheduleId: other.id, occurrenceMillis: MAR10_0900, firedAt: MAR10_0900, status: "spawned" })
+        expect((yield* CalendarStore.listForAgent(db, "nova")).map((row) => row.id)).toEqual([nova.id])
+        expect(yield* CalendarStore.getForAgent(db, "nova", other.id)).toBeUndefined()
+        expect(yield* CalendarStore.updateForAgent(db, "nova", other.id, { title: "wrong" }, MAR10_0800)).toBeUndefined()
+        expect(yield* CalendarStore.removeForAgent(db, "nova", other.id)).toBe(false)
+        expect((yield* CalendarStore.get(db, other.id))?.title).toBe("")
+        expect((yield* CalendarStore.recentFiresForAgent(db, "nova")).map((fire) => fire.scheduleId)).toEqual([nova.id])
+      }),
+    )
+  })
+
   test("update recomputes next_fire_at; disable clears it, re-enable restores it", async () => {
     const { disabled, reenabled } = await withDb((db) =>
       Effect.gen(function* () {
-        const s = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "x" }, MAR10_0800)
+        const s = yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "x" }, MAR10_0800)
         const disabled = yield* CalendarStore.update(db, s.id, { enabled: false }, MAR10_0800)
         const reenabled = yield* CalendarStore.update(db, s.id, { enabled: true }, MAR10_0800)
         return { disabled, reenabled }
@@ -72,7 +90,7 @@ describe("CalendarStore", () => {
     expect(reenabled?.nextFireAt).toBe(MAR10_0900)
   })
 
-  test("update patches the responsible agent and leaves untouched fields alone", async () => {
+  test("a schedule keeps its agent when other fields change", async () => {
     const { before, after } = await withDb((db) =>
       Effect.gen(function* () {
         const before = yield* CalendarStore.create(
@@ -80,15 +98,15 @@ describe("CalendarStore", () => {
           { recurrence: daily9, prompt: "keep me", title: "Keep", agent: "nova" },
           MAR10_0800,
         )
-        const after = yield* CalendarStore.update(db, before.id, { agent: "theron" }, MAR10_0800)
+        const after = yield* CalendarStore.update(db, before.id, { title: "Kept" }, MAR10_0800)
         return { before, after }
       }),
     )
     expect(before.agent).toBe("nova")
-    expect(after?.agent).toBe("theron")
+    expect(after?.agent).toBe("nova")
     // A one-field patch must not clobber the rest.
     expect(after?.prompt).toBe("keep me")
-    expect(after?.title).toBe("Keep")
+    expect(after?.title).toBe("Kept")
     expect(after?.nextFireAt).toBe(MAR10_0900)
   })
 
@@ -99,7 +117,7 @@ describe("CalendarStore", () => {
     const tenSecondsLate = MAR10_0900 + 10_000
     const { renamed, stillDue } = await withDb((db) =>
       Effect.gen(function* () {
-        const s = yield* CalendarStore.create(db, { recurrence: daily9, title: "Backup", prompt: "x" }, MAR10_0800)
+        const s = yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, title: "Backup", prompt: "x" }, MAR10_0800)
         // The 09:00 occurrence is due and the ticker has not reached it yet.
         const renamed = yield* CalendarStore.update(
           db,
@@ -120,7 +138,7 @@ describe("CalendarStore", () => {
     const tenSecondsLate = MAR10_0900 + 10_000
     const moved = await withDb((db) =>
       Effect.gen(function* () {
-        const s = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "x" }, MAR10_0800)
+        const s = yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "x" }, MAR10_0800)
         return yield* CalendarStore.update(
           db,
           s.id,
@@ -135,7 +153,7 @@ describe("CalendarStore", () => {
   test("a patch that only moves the offset also reschedules", async () => {
     const moved = await withDb((db) =>
       Effect.gen(function* () {
-        const s = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "x" }, MAR10_0800)
+        const s = yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "x" }, MAR10_0800)
         return yield* CalendarStore.update(db, s.id, { tzOffsetMin: 120 }, MAR10_0800)
       }),
     )
@@ -151,7 +169,7 @@ describe("CalendarStore", () => {
   test("remove deletes the schedule and its fire history", async () => {
     const after = await withDb((db) =>
       Effect.gen(function* () {
-        const s = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "x" }, MAR10_0800)
+        const s = yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "x" }, MAR10_0800)
         yield* CalendarStore.recordFire(db, {
           scheduleId: s.id,
           occurrenceMillis: MAR10_0900,
@@ -170,9 +188,9 @@ describe("CalendarStore", () => {
     const { atFire, beforeFire, disabledExcluded } = await withDb((db) =>
       Effect.gen(function* () {
         // next_fire_at = MAR10_0900
-        const s = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "x" }, MAR10_0800)
+        const s = yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "x" }, MAR10_0800)
         // a disabled schedule (next_fire_at null) must never surface
-        yield* CalendarStore.create(db, { recurrence: daily9, prompt: "y", enabled: false }, MAR10_0800)
+        yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "y", enabled: false }, MAR10_0800)
         const beforeFire = yield* CalendarStore.due(db, MAR10_0900 - 1)
         const atFire = yield* CalendarStore.due(db, MAR10_0900)
         return { atFire, beforeFire, disabledExcluded: s.id }
@@ -186,7 +204,7 @@ describe("CalendarStore", () => {
   test("recordFire is idempotent per occurrence", async () => {
     const { first, second, history } = await withDb((db) =>
       Effect.gen(function* () {
-        const s = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "x" }, MAR10_0800)
+        const s = yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "x" }, MAR10_0800)
         const first = yield* CalendarStore.recordFire(db, {
           scheduleId: s.id,
           occurrenceMillis: MAR10_0900,
@@ -213,7 +231,7 @@ describe("CalendarStore", () => {
   test("advance stamps last_fired_at and rolls next_fire_at to the next occurrence", async () => {
     const advanced = await withDb((db) =>
       Effect.gen(function* () {
-        const s = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "x" }, MAR10_0800)
+        const s = yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "x" }, MAR10_0800)
         return yield* CalendarStore.advance(db, s.id, MAR10_0900)
       }),
     )
@@ -224,8 +242,8 @@ describe("CalendarStore", () => {
   test("recentFires returns fires across schedules, newest first", async () => {
     const out = await withDb((db) =>
       Effect.gen(function* () {
-        const a = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "a" }, MAR10_0800)
-        const b = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "b" }, MAR10_0800)
+        const a = yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "a" }, MAR10_0800)
+        const b = yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "b" }, MAR10_0800)
         yield* CalendarStore.recordFire(db, {
           scheduleId: a.id,
           occurrenceMillis: 100,
@@ -248,7 +266,7 @@ describe("CalendarStore", () => {
     const old = now - retention - 1
     const out = await withDb((db) =>
       Effect.gen(function* () {
-        const s = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "x" }, MAR10_0800)
+        const s = yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "x" }, MAR10_0800)
         // The schedule's next fire is still MAR10_0900. This old claim must survive so recovery can
         // still decide whether it is an abandoned run rather than launching a duplicate.
         yield* CalendarStore.recordFire(db, {
@@ -275,7 +293,7 @@ describe("CalendarStore", () => {
   test("reconcileFireOutcomes projects terminal session states once", async () => {
     const out = await withDb((db) =>
       Effect.gen(function* () {
-        const schedule = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "x" }, MAR10_0800)
+        const schedule = yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "x" }, MAR10_0800)
         const states = [
           ["ses_succeeded", "settled"],
           ["ses_failed", "failed"],

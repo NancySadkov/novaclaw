@@ -2,12 +2,7 @@ import { Context, Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { InvalidRequestError } from "../errors"
 
-// The Calendar / cron-session-creator HTTP surface. Schedules and fire
-// history are INSTANCE-GLOBAL: listing, removal and history never acquire a location. The two write
-// endpoints do acquire the request's location so a named responsible agent can be checked where the
-// caller is working. Backed by CalendarStore (core/schedule/store.ts); the CalendarScheduler poll loop
-// fires due schedules into new goal-oriented sessions. `recurrence` is a structured discriminated union
-// (never a cron string — anti-obscurantist).
+// Scheduled agent launches use structured recurrence rules and belong to one agent.
 
 /**
  * ─── THE RUNNABLE DOMAIN ─────────────────────────────────────────────────────────────────────────
@@ -69,7 +64,7 @@ export const Schedule = Schema.Struct({
   recurrence: Recurrence,
   tzOffsetMin: TzOffsetMin,
   prompt: Schema.String,
-  agent: Schema.NullOr(Schema.String),
+  agent: Schema.String,
   enabled: Schema.Boolean,
   nextFireAt: Schema.NullOr(Schema.Finite),
   lastFiredAt: Schema.NullOr(Schema.Finite),
@@ -92,7 +87,6 @@ export const CreateInput = Schema.Struct({
   recurrence: Recurrence,
   tzOffsetMin: Schema.optional(TzOffsetMin),
   prompt: Schema.String,
-  agent: Schema.optional(Schema.String),
   enabled: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "Calendar.CreateInput" })
 
@@ -103,32 +97,32 @@ const UpdateInput = Schema.Struct({
   recurrence: Schema.optional(Recurrence),
   tzOffsetMin: Schema.optional(TzOffsetMin),
   prompt: Schema.optional(Schema.String),
-  agent: Schema.optional(Schema.NullOr(Schema.String)),
   enabled: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "Calendar.UpdateInput" })
 
 /**
- * The group is a factory because only its write endpoints need the concrete location middleware.
- * Applying middleware to the completed group would incorrectly make instance-wide reads location
- * scoped; leaving it off the writes would make their ambient fallback the server process directory.
+ * Creates resolve the target agent through the caller's location. Reads and removal use the
+ * explicit agent id in their path and need no ambient location.
  */
 export const makeCalendarGroup = <LocationId extends HttpApiMiddleware.AnyId, LocationService>(
   locationMiddleware: Context.Key<LocationId, LocationService>,
 ) =>
   HttpApiGroup.make("server.calendar")
     .add(
-      HttpApiEndpoint.get("calendar.schedule.list", "/api/calendar/schedule", {
+      HttpApiEndpoint.get("calendar.schedule.list", "/api/agent/:agentID/schedule", {
+        params: { agentID: Schema.String },
         success: Schema.Array(Schedule),
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "v2.calendar.schedule.list",
-          summary: "List calendar schedules",
-          description: "Retrieve every scheduled agent-launch task with its next-fire time.",
+          summary: "List an agent's schedules",
+          description: "Retrieve the agent's scheduled tasks with their next-fire times.",
         }),
       ),
     )
     .add(
-      HttpApiEndpoint.post("calendar.schedule.create", "/api/calendar/schedule", {
+      HttpApiEndpoint.post("calendar.schedule.create", "/api/agent/:agentID/schedule", {
+        params: { agentID: Schema.String },
         payload: CreateInput,
         success: Schedule,
         error: InvalidRequestError,
@@ -137,15 +131,15 @@ export const makeCalendarGroup = <LocationId extends HttpApiMiddleware.AnyId, Lo
         .annotateMerge(
           OpenApi.annotations({
             identifier: "v2.calendar.schedule.create",
-            summary: "Create a calendar schedule",
+            summary: "Create an agent schedule",
             description:
               "Schedule a repeatable or one-shot agent launch. The recurrence is structured (once/daily/weekly/monthly/yearly); the fired session runs the given prompt.",
           }),
         ),
     )
     .add(
-      HttpApiEndpoint.patch("calendar.schedule.update", "/api/calendar/schedule/:id", {
-        params: { id: Schema.String },
+      HttpApiEndpoint.patch("calendar.schedule.update", "/api/agent/:agentID/schedule/:id", {
+        params: { agentID: Schema.String, id: Schema.String },
         payload: UpdateInput,
         success: Schedule,
         error: InvalidRequestError,
@@ -154,33 +148,35 @@ export const makeCalendarGroup = <LocationId extends HttpApiMiddleware.AnyId, Lo
         .annotateMerge(
           OpenApi.annotations({
             identifier: "v2.calendar.schedule.update",
-            summary: "Update a calendar schedule",
+            summary: "Update an agent schedule",
             description:
-              "Patch a scheduled agent-launch task — pause/resume it (enabled), or change its title, prompt, recurrence, or responsible agent. The next-fire time is recomputed; a disabled schedule has none.",
+              "Patch an agent's scheduled task — pause/resume it (enabled), or change its title, prompt, or recurrence. The next-fire time is recomputed; a disabled schedule has none.",
           }),
         ),
     )
     .add(
-      HttpApiEndpoint.delete("calendar.schedule.remove", "/api/calendar/schedule/:id", {
-        params: { id: Schema.String },
+      HttpApiEndpoint.delete("calendar.schedule.remove", "/api/agent/:agentID/schedule/:id", {
+        params: { agentID: Schema.String, id: Schema.String },
         success: HttpApiSchema.NoContent,
+        error: InvalidRequestError,
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "v2.calendar.schedule.remove",
-          summary: "Remove a calendar schedule",
+          summary: "Remove an agent schedule",
           description: "Delete a scheduled agent-launch task by id.",
         }),
       ),
     )
     .add(
-      HttpApiEndpoint.get("calendar.fires.list", "/api/calendar/fires", {
+      HttpApiEndpoint.get("calendar.fires.list", "/api/agent/:agentID/schedule/fires", {
+        params: { agentID: Schema.String },
         success: Schema.Array(Fire),
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "v2.calendar.fires.list",
           summary: "List recent schedule fires",
-          description: "Recent scheduled-launch fires across all schedules, newest first (the run history).",
+          description: "Recent scheduled runs for one agent, newest first.",
         }),
       ),
     )
-    .annotateMerge(OpenApi.annotations({ title: "calendar", description: "Scheduled + repeatable agent launches." }))
+    .annotateMerge(OpenApi.annotations({ title: "schedule", description: "Scheduled agent launches." }))

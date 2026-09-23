@@ -1,46 +1,17 @@
 import { Clock, Effect } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Database } from "@novaclaw/core/database/database"
-import { Log } from "@novaclaw/schema/log"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { CalendarStore } from "@novaclaw/core/schedule/store"
 import { Recurrence } from "@novaclaw/core/schedule/recurrence"
-import { ScheduleExecutionSettings } from "@novaclaw/core/schedule/execution-settings"
 import { InvalidRequestError } from "@novaclaw/protocol/errors"
 import { CalendarApi, handlerLayer } from "../handler-api"
 
-// Calendar / cron-session-creator handlers. CalendarStore is the JhStore
-// deps-taking shape (functions over `db`), so — unlike the service-backed messenger handler — this pulls
-// `db` from Database.Service and `now` from Clock itself. `now` is injected into create so the stored
-// next_fire_at is deterministic. Database.Service resolves to the SAME instance the poll loop uses, so a
-// schedule created here is immediately visible to CalendarScheduler's tick.
-
-/**
- * Refuse a responsible agent that cannot run, while the user can still repair it.
- *
- * The write endpoints carry location middleware, so the schedule is checked against the request's
- * ambient roster.
- *
- * A lookup failure does not refuse the write. The roster is advisory validation here; an instance
- * mid-reload must not turn "I cannot check" into "your schedule is invalid". The fault is logged so
- * an unchecked save is not indistinguishable from a successful check.
- */
-const refuseUnrunnable = Effect.fn("Calendar.refuseUnrunnable")(function* (settings: {
-  readonly agent?: string | null
-}) {
-  if (!settings.agent) return
-
-  const known = yield* AgentV2.Service.use((agent) => agent.all()).pipe(
-    Effect.map((roster) => ({ agents: new Set(roster.map((item) => String(item.id))) })),
-    Effect.catchCause((cause) =>
-      Log.event("instance.calendar.settings.unchecked", { "instance.cause": Log.fault(cause) }).pipe(
-        Effect.as(undefined),
-      ),
-    ),
-  )
-  if (known === undefined) return
-  const refusal = ScheduleExecutionSettings.refusal(settings, known)
-  if (refusal) return yield* new InvalidRequestError({ message: refusal })
+const requireRunnableAgent = Effect.fn("Schedule.requireRunnableAgent")(function* (agentID: string) {
+  const roster = yield* AgentV2.Service.use((agent) => agent.all())
+  const selected = roster.find((agent) => String(agent.id) === agentID)
+  if (!selected || !AgentV2.isColleague(selected) || AgentV2.kindOf(selected) !== "agent")
+    return yield* new InvalidRequestError({ message: `No runnable agent named "${agentID}".` })
 })
 
 /**
@@ -77,9 +48,9 @@ export const CalendarHandler = handlerLayer(
       return handlers
         .handle(
           "calendar.schedule.list",
-          Effect.fn(function* () {
+          Effect.fn(function* (ctx) {
             const { db } = yield* Database.Service
-            return yield* CalendarStore.list(db)
+            return yield* CalendarStore.listForAgent(db, ctx.params.agentID)
           }),
         )
         .handle(
@@ -87,14 +58,14 @@ export const CalendarHandler = handlerLayer(
           Effect.fn(function* (ctx) {
             const { db } = yield* Database.Service
             const now = yield* Clock.currentTimeMillis
-            // The request's ambient location is the check's authority.
-            yield* refuseUnrunnable(ctx.payload)
-            // No narrowing left to do: the wire's recurrence IS the engine's, bounds and all.
-            const input: CalendarStore.CreateInput = ctx.payload
+            yield* requireRunnableAgent(ctx.params.agentID)
+            // The wire's recurrence is the engine's recurrence, bounds and all.
+            const input: CalendarStore.CreateInput = { ...ctx.payload, agent: ctx.params.agentID }
             return yield* CalendarStore.create(
               db,
               {
                 ...input,
+                agent: ctx.params.agentID,
                 recurrence: Recurrence.withZone(input.recurrence, hostZoneAgreeingWith(input.tzOffsetMin, now)),
               },
               now,
@@ -106,21 +77,17 @@ export const CalendarHandler = handlerLayer(
           Effect.fn(function* (ctx) {
             const { db } = yield* Database.Service
             const now = yield* Clock.currentTimeMillis
-            const existing = yield* CalendarStore.get(db, ctx.params.id)
+            const existing = yield* CalendarStore.getForAgent(db, ctx.params.agentID, ctx.params.id)
             if (existing === undefined)
               return yield* new InvalidRequestError({ message: `No such schedule: ${ctx.params.id}` })
 
-            // Validate only when the responsible agent can change. A pause or title edit must remain
-            // possible even if a colleague was retired since the schedule was written.
-            if (ctx.payload.agent !== undefined) {
-              yield* refuseUnrunnable({ agent: ctx.payload.agent })
-            }
             const patch: CalendarStore.UpdateInput = ctx.payload
             // A re-sent recurrence keeps the zone the schedule already had — the wire cannot carry one
             // yet, so reading it back off the stored rule is what stops a save from downgrading a
             // zone-correct schedule to a fixed offset.
-            const updated = yield* CalendarStore.update(
+            const updated = yield* CalendarStore.updateForAgent(
               db,
+              ctx.params.agentID,
               ctx.params.id,
               patch.recurrence === undefined
                 ? patch
@@ -143,15 +110,16 @@ export const CalendarHandler = handlerLayer(
           "calendar.schedule.remove",
           Effect.fn(function* (ctx) {
             const { db } = yield* Database.Service
-            yield* CalendarStore.remove(db, ctx.params.id)
+            const removed = yield* CalendarStore.removeForAgent(db, ctx.params.agentID, ctx.params.id)
+            if (!removed) return yield* new InvalidRequestError({ message: `No such schedule: ${ctx.params.id}` })
             return HttpApiSchema.NoContent.make()
           }),
         )
         .handle(
           "calendar.fires.list",
-          Effect.fn(function* () {
+          Effect.fn(function* (ctx) {
             const { db } = yield* Database.Service
-            return yield* CalendarStore.recentFires(db)
+            return yield* CalendarStore.recentFiresForAgent(db, ctx.params.agentID)
           }),
         )
     }),

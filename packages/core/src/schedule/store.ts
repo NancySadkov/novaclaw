@@ -85,7 +85,7 @@ export interface Schedule {
   readonly recurrence: Recurrence
   readonly tzOffsetMin: number
   readonly prompt: string
-  readonly agent: string | null
+  readonly agent: string
   readonly enabled: boolean
   readonly nextFireAt: number | null
   readonly lastFiredAt: number | null
@@ -98,7 +98,7 @@ export interface CreateInput {
   readonly recurrence: Recurrence
   readonly tzOffsetMin?: number
   readonly prompt: string
-  readonly agent?: string | null
+  readonly agent: string
   readonly enabled?: boolean
 }
 
@@ -107,7 +107,6 @@ export interface UpdateInput {
   readonly recurrence?: Recurrence
   readonly tzOffsetMin?: number
   readonly prompt?: string
-  readonly agent?: string | null
   readonly enabled?: boolean
 }
 
@@ -158,6 +157,28 @@ export const list = (db: Db): Effect.Effect<Schedule[]> =>
       Effect.map((rows) => rows.map(toSchedule)),
     )
 
+export const listForAgent = (db: Db, agentID: string): Effect.Effect<Schedule[]> =>
+  db
+    .select()
+    .from(CalendarScheduleTable)
+    .where(eq(CalendarScheduleTable.agent, agentID))
+    .all()
+    .pipe(
+      Effect.orDie,
+      Effect.map((rows) => rows.map(toSchedule)),
+    )
+
+export const getForAgent = (db: Db, agentID: string, id: string): Effect.Effect<Schedule | undefined> =>
+  db
+    .select()
+    .from(CalendarScheduleTable)
+    .where(and(eq(CalendarScheduleTable.agent, agentID), eq(CalendarScheduleTable.id, id)))
+    .get()
+    .pipe(
+      Effect.orDie,
+      Effect.map((row) => (row ? toSchedule(row) : undefined)),
+    )
+
 export const create = (db: Db, input: CreateInput, now: EpochMillis): Effect.Effect<Schedule> =>
   Effect.gen(function* () {
     const id = "cal_" + ascending()
@@ -171,7 +192,7 @@ export const create = (db: Db, input: CreateInput, now: EpochMillis): Effect.Eff
         recurrence_json: JSON.stringify(input.recurrence),
         tz_offset_min: tz,
         prompt: input.prompt,
-        agent: input.agent ?? null,
+        agent: input.agent,
         enabled,
         next_fire_at: computeNext(input.recurrence, enabled, tz, now),
         last_fired_at: null,
@@ -214,7 +235,6 @@ export const update = (db: Db, id: string, patch: UpdateInput, now: EpochMillis)
         ...(patch.recurrence !== undefined ? { recurrence_json: JSON.stringify(patch.recurrence) } : {}),
         tz_offset_min: tz,
         ...(patch.prompt !== undefined ? { prompt: patch.prompt } : {}),
-        ...(patch.agent !== undefined ? { agent: patch.agent } : {}),
         enabled,
         next_fire_at: nextFireAt,
       })
@@ -235,6 +255,16 @@ export const remove = (db: Db, id: string): Effect.Effect<void> =>
       }),
     ).pipe(Effect.orDie)
   })
+
+export const updateForAgent = (db: Db, agentID: string, id: string, patch: UpdateInput, now: EpochMillis) =>
+  getForAgent(db, agentID, id).pipe(
+    Effect.flatMap((existing) => (existing ? update(db, existing.id, patch, now) : Effect.succeed(undefined))),
+  )
+
+export const removeForAgent = (db: Db, agentID: string, id: string): Effect.Effect<boolean> =>
+  getForAgent(db, agentID, id).pipe(
+    Effect.flatMap((existing) => (existing ? remove(db, existing.id).pipe(Effect.as(true)) : Effect.succeed(false))),
+  )
 
 /** Enabled schedules whose next fire is now due (next_fire_at != null is implied by the `<=` filter). */
 export const due = (db: Db, now: EpochMillis): Effect.Effect<Schedule[]> =>
@@ -538,4 +568,18 @@ export const recentFires = (db: Db, limit = 20): Effect.Effect<Fire[]> =>
     .pipe(
       Effect.orDie,
       Effect.map((rows) => rows.map(toFire)),
+    )
+
+export const recentFiresForAgent = (db: Db, agentID: string, limit = 20): Effect.Effect<Fire[]> =>
+  db
+    .select({ fire: CalendarFireTable })
+    .from(CalendarFireTable)
+    .innerJoin(CalendarScheduleTable, eq(CalendarFireTable.schedule_id, CalendarScheduleTable.id))
+    .where(eq(CalendarScheduleTable.agent, agentID))
+    .orderBy(desc(CalendarFireTable.fired_at))
+    .limit(limit)
+    .all()
+    .pipe(
+      Effect.orDie,
+      Effect.map((rows) => rows.map((row) => toFire(row.fire))),
     )

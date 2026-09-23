@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "8814e625-5d2b-42f3-a24a-8aa102fbcbf8",
+  "id": "e8435d2f-7c99-48aa-a95d-3687b72961bd",
   "prevIds": [
-    "ddeba048-0d8e-428f-bebe-1ecc2cef46c9"
+    "8814e625-5d2b-42f3-a24a-8aa102fbcbf8"
   ],
   "ddl": [
     {
@@ -1066,7 +1066,7 @@
     },
     {
       "type": "text",
-      "notNull": false,
+      "notNull": true,
       "autoincrement": false,
       "default": null,
       "generated": null,
@@ -5592,6 +5592,20 @@
       "where": null,
       "origin": "manual",
       "name": "calendar_schedule_due_idx",
+      "entityType": "indexes",
+      "table": "calendar_schedule"
+    },
+    {
+      "columns": [
+        {
+          "value": "agent",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "calendar_schedule_agent_idx",
       "entityType": "indexes",
       "table": "calendar_schedule"
     },

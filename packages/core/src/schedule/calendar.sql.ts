@@ -15,13 +15,16 @@ export const CalendarScheduleTable = sqliteTable(
     recurrence_json: text().notNull(),
     tz_offset_min: integer().notNull().default(0),
     prompt: text().notNull(),
-    agent: text(),
+    agent: text().notNull(),
     enabled: integer({ mode: "boolean" }).notNull().default(true),
     next_fire_at: integer(),
     last_fired_at: integer(),
     ...Timestamps,
   },
-  (table) => [index("calendar_schedule_due_idx").on(table.enabled, table.next_fire_at)],
+  (table) => [
+    index("calendar_schedule_due_idx").on(table.enabled, table.next_fire_at),
+    index("calendar_schedule_agent_idx").on(table.agent),
+  ],
 )
 
 export const CalendarFireTable = sqliteTable(

@@ -87,7 +87,7 @@ describe("CalendarScheduler.tick", () => {
   test("fires a due schedule once, records the session, advances next_fire_at", async () => {
     const out = await withDb((db) =>
       Effect.gen(function* () {
-        const s = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "hi" }, MAR10_0800)
+        const s = yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "hi" }, MAR10_0800)
         const { launch, calls } = recorder("ses_1")
         const result = yield* CalendarScheduler.tick(db, launch, MAR10_1000)
         const after = yield* CalendarStore.get(db, s.id)
@@ -108,7 +108,7 @@ describe("CalendarScheduler.tick", () => {
   test("does not re-fire on a second tick (already advanced past the occurrence)", async () => {
     const out = await withDb((db) =>
       Effect.gen(function* () {
-        yield* CalendarStore.create(db, { recurrence: daily9, prompt: "hi" }, MAR10_0800)
+        yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "hi" }, MAR10_0800)
         const { launch, calls } = recorder("ses_1")
         yield* CalendarScheduler.tick(db, launch, MAR10_1000)
         const second = yield* CalendarScheduler.tick(db, launch, MAR10_1000)
@@ -122,7 +122,7 @@ describe("CalendarScheduler.tick", () => {
   test("an occurrence already claimed in the fire ledger is not re-launched", async () => {
     const out = await withDb((db) =>
       Effect.gen(function* () {
-        const s = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "hi" }, MAR10_0800)
+        const s = yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "hi" }, MAR10_0800)
         // Simulate a prior cycle having already fired this exact occurrence.
         yield* CalendarStore.recordFire(db, {
           scheduleId: s.id,
@@ -145,9 +145,9 @@ describe("CalendarScheduler.tick", () => {
     const out = await withDb((db) =>
       Effect.gen(function* () {
         // future: next_fire_at is tomorrow 09:00 relative to a `now` before it
-        yield* CalendarStore.create(db, { recurrence: daily9, prompt: "future" }, MAR10_0900)
+        yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "future" }, MAR10_0900)
         // disabled: next_fire_at null
-        yield* CalendarStore.create(db, { recurrence: daily9, prompt: "off", enabled: false }, MAR10_0800)
+        yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "off", enabled: false }, MAR10_0800)
         const { launch, calls } = recorder("ses_x")
         const result = yield* CalendarScheduler.tick(db, launch, MAR10_1000)
         return { result, calls }
@@ -163,7 +163,7 @@ describe("CalendarScheduler.tick", () => {
     const nowMar10_1200 = Date.UTC(2025, 2, 10, 12, 0)
     const out = await withDb((db) =>
       Effect.gen(function* () {
-        const s = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "catchup" }, weekAgo0800)
+        const s = yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "catchup" }, weekAgo0800)
         const { launch, calls } = recorder("ses_c")
         const result = yield* CalendarScheduler.tick(db, launch, nowMar10_1200)
         const after = yield* CalendarStore.get(db, s.id)
@@ -185,7 +185,7 @@ describe("CalendarScheduler.tick", () => {
 
   const crashedMidFire = (db: Database.Interface["db"]) =>
     Effect.gen(function* () {
-      const s = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "backup" }, MAR10_0800)
+      const s = yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "backup" }, MAR10_0800)
       const claim = yield* CalendarStore.claimOccurrence(db, {
         scheduleId: s.id,
         occurrenceMillis: MAR10_0900,
@@ -279,7 +279,7 @@ describe("CalendarScheduler.tick", () => {
   test("a launch failure is isolated: recorded as error, schedule still advances", async () => {
     const out = await withDb((db) =>
       Effect.gen(function* () {
-        const s = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "boom" }, MAR10_0800)
+        const s = yield* CalendarStore.create(db, { agent: "nova", recurrence: daily9, prompt: "boom" }, MAR10_0800)
         const { launch } = recorder(null, true)
         const result = yield* CalendarScheduler.tick(db, launch, MAR10_1000)
         const after = yield* CalendarStore.get(db, s.id)
@@ -316,7 +316,7 @@ describe("CalendarScheduler.makeLaunch", () => {
     recurrence: { kind: "yearly", time: { hour: 9, minute: 0 }, month: 1, day: 1 },
     tzOffsetMin: 0,
     prompt: "Congratulate clients",
-    agent: null,
+    agent: "nova",
     enabled: true,
     nextFireAt: 123,
     lastFiredAt: null,

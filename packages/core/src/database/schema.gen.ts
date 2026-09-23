@@ -138,7 +138,7 @@ export default {
           \`recurrence_json\` text NOT NULL,
           \`tz_offset_min\` integer DEFAULT 0 NOT NULL,
           \`prompt\` text NOT NULL,
-          \`agent\` text,
+          \`agent\` text NOT NULL,
           \`enabled\` integer DEFAULT true NOT NULL,
           \`next_fire_at\` integer,
           \`last_fired_at\` integer,
@@ -739,6 +739,7 @@ export default {
       yield* tx.run(
         `CREATE INDEX \`calendar_schedule_due_idx\` ON \`calendar_schedule\` (\`enabled\`,\`next_fire_at\`);`,
       )
+      yield* tx.run(`CREATE INDEX \`calendar_schedule_agent_idx\` ON \`calendar_schedule\` (\`agent\`);`)
       yield* tx.run(
         `CREATE INDEX \`session_quality_check_session_idx\` ON \`session_quality_check\` (\`session_id\`,\`time_created\`);`,
       )
