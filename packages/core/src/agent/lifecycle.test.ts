@@ -22,6 +22,7 @@ describe("officer lifecycle propagation", () => {
           get: () => Effect.succeed(undefined),
           children: () => Effect.succeed([]),
           attempt: () => Effect.succeed(undefined),
+          hasQueuedInput: () => Effect.succeed(false),
           interrupt: (sessionID) => Effect.sync(() => void interrupted.push(sessionID)),
           adopt: () => Effect.void,
         },
@@ -51,11 +52,29 @@ describe("officer lifecycle propagation", () => {
           get: (sessionID) => Effect.succeed(rows.get(sessionID)),
           children: (sessionID) => Effect.succeed(branches.get(sessionID) ?? []),
           attempt: (sessionID) => Effect.succeed(sessionID === root ? ({ state: "interrupted" } as never) : undefined),
+          hasQueuedInput: () => Effect.succeed(false),
           interrupt: () => Effect.void,
           adopt: (sessionID) => Effect.sync(() => void adopted.push(sessionID)),
         },
       ),
     )
     expect(adopted).toEqual([root, child])
+  })
+
+  test("unpause runs a settled root that received a message while paused", async () => {
+    const adopted: SessionSchema.ID[] = []
+    await Effect.runPromise(AgentLifecycle.propagate(
+      { agentID: "officer", paused: false },
+      {
+        roots: () => Effect.succeed([root]),
+        get: () => Effect.succeed(session(root, "done")),
+        children: () => Effect.succeed([]),
+        attempt: () => Effect.succeed({ state: "settled" } as never),
+        hasQueuedInput: () => Effect.succeed(true),
+        interrupt: () => Effect.void,
+        adopt: (sessionID) => Effect.sync(() => void adopted.push(sessionID)),
+      },
+    ))
+    expect(adopted).toEqual([root])
   })
 })

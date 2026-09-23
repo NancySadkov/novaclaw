@@ -19,6 +19,12 @@ import { Tool } from "@novaclaw/core/tool/tool"
 import { Tools } from "@novaclaw/core/tool/tools"
 import { testEffect } from "./lib/effect"
 
+test("a remote-channel post reports the exact local refusal", () => {
+  expect(CommunityTool.postFailure("not-subscribed")).toContain("not joined")
+  expect(CommunityTool.postFailure("too-large")).toContain("size limit")
+  expect(CommunityTool.postFailure("duplicate")).toContain("identical")
+})
+
 /**
  * 🔴 That the tool BUILDS and REGISTERS, which no other test here checks.
  *

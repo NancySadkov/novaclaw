@@ -74,6 +74,7 @@ const handoff = (db: Database.Interface["db"], events: EventV2.Interface, agents
     wake: () => Effect.succeed(true),
     store: {} as never,
     chat: opener(db),
+    roster: Effect.succeed([...new Set(["nova", ...Object.values(agents)])].map((id) => ({ id, superior: "nova" })) as never),
     refresh: Effect.void,
     takenNames: Effect.succeed([]),
     forget: () => Effect.void,
@@ -141,7 +142,7 @@ const admitted = (db: Database.Interface["db"]) =>
     )
 
 describe("a RING of officers terminates", () => {
-  it.effect("A→B→C→A is refused at the hop that would CLOSE it, and named as a loop", () =>
+  it.effect("A→B→C→A is stored at the closing hop without waking the cycle", () =>
     Effect.gen(function* () {
       ColleagueBound.reset()
       const { db } = yield* Database.Service
@@ -152,29 +153,22 @@ describe("a RING of officers terminates", () => {
       // 🔴 The shape no participant can see. Each colleague passes work to the NEXT one, which is a
       // perfectly reasonable thing to do, and the loop only exists when you stand outside the ring.
       const ring = ["aris", "theron", "kallias"] as const
-      let refusal: string | undefined
+      let deferred: string | undefined
       // Bounded well above the cap: if the counter did not survive the circuit this would run to the
       // limit and the assertion below would catch it, rather than the test hanging.
       for (let turn = 0; turn < 12; turn++) {
         const from = ring[turn % ring.length]!
         const to = ring[(turn + 1) % ring.length]!
         const outcome = yield* bridge.deliver({ from: SESSION_OF[from]!, colleague: to, message: `pass ${turn}` })
-        if (!outcome.delivered) {
-          refusal = outcome.refused
+        expect(outcome.delivered).toBe(true)
+        if (outcome.deferred !== undefined) {
+          deferred = outcome.deferred
           break
         }
         yield* promote(db, SESSION_OF[to]!)
       }
 
-      expect(refusal).toBeDefined()
-      // The way out is still the user — the chain resets when a person speaks, so this is the
-      // mechanism rather than a brush-off.
-      expect(refusal!.toLowerCase()).toContain("user")
-      // 🔴 NAMED AS A LOOP, and that is the point of carrying a path. Refused as "too deep" a ring
-      // sends a model to wait and retry, which is the one thing that cannot help; it also never
-      // tells anybody it WAS a ring. `hops` is a number and cannot tell A→B→C→A from A→B→C→D.
-      expect(refusal!.toLowerCase()).toContain("loop")
-      expect(refusal!.toLowerCase()).not.toContain("limit is")
+      expect(deferred).toContain("loop")
       // ⚠️ THREE, and each one is a different fact — this used to be `toBe(HOP_CAP)`.
       //
       // Two are the hops that made progress (aris→theron, theron→kallias). The circuit is then cut
@@ -210,10 +204,9 @@ describe("simultaneous hand-offs", () => {
       )
 
       const delivered = results.filter((r) => r.delivered).length
-      expect(delivered).toBeLessThanOrEqual(ColleagueBound.RATE_LIMIT)
-      // …and every refusal still SAYS something. A silently dropped hand-off is the shape this
-      // program spent a week removing.
-      for (const result of results.filter((r) => !r.delivered)) expect(result.refused).toBeTruthy()
+      expect(delivered).toBe(attempts)
+      expect(results.filter((r) => r.started).length).toBeLessThanOrEqual(ColleagueBound.RATE_LIMIT)
+      for (const result of results.filter((r) => !r.started)) expect(result.deferred).toBeTruthy()
       // What was admitted matches what was reported. If these disagree the sender is being told one
       // thing while the receiver got another.
       expect(yield* admitted(db)).toBe(delivered)
@@ -261,7 +254,7 @@ describe("simultaneous hand-offs", () => {
       // hop counter cannot bound because every lap looks like a fresh ask.
       const outcome = yield* bridge.deliver({ from: ARIS, colleague: "aris", message: "note to self" })
       expect(outcome.delivered).toBe(false)
-      expect(outcome.refused).toContain("is you")
+      expect(outcome.refused).toContain("own chat")
       // Nothing written. A refusal that still admitted would be the worst of both.
       expect(yield* admitted(db)).toBe(0)
     }).pipe(Effect.timeout(NO_HANG)),

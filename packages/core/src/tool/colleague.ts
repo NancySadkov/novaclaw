@@ -118,22 +118,6 @@ export const Input = Schema.Union([
   SetSuperiorOp,
 ])
 
-/**
- * The key for the turn's narrowed surface at the colleague-loop cap.
- *
- * 🔴 Our own standing constraint, one level down: *a wholly denied tool is withdrawn, never
- * advertised and refused*. At the cap `ask` and `ask_group` cannot succeed, so offering them is an
- * invitation to spend a turn discovering that. `list`, `hire` and `retire` have nothing to do with
- * the bound and stay — which is why this is a VARIANT rather than withholding `colleague` itself.
- *
- * ⚠️ The prompt must say WHY, and the two must land together: an absent tool teaches nothing, and the
- * refusal text is what teaches a floor model to go back to the user.
- */
-export const CAPPED = "capped"
-
-/** What `colleague` offers at the cap: everything the loop bound has nothing to do with. */
-export const CappedInput = Schema.Union([ListOp, IdentityOp, MessageWorkerOp, HireOp, RetireOp, SetSuperiorOp])
-
 const PortraitImage = Schema.Struct({ mime: Schema.String, data: Schema.String, hash: Schema.String })
 const ModelOutput = Schema.Struct({
   ok: Schema.Boolean,
@@ -221,8 +205,6 @@ export const layer = Layer.effectDiscard(
             "instance's own pool, so colleagues never read as people. `set_superior` changes an officer's " +
             "reporting line; Nova alone may organize it, and the hierarchy cannot form a cycle.",
           input: Input,
-          // At the cap the asking ops are not offered at all — see `CAPPED`.
-          variants: { [CAPPED]: CappedInput },
           output: ModelOutput,
           structured: Output,
           toStructuredOutput: ({ output }) => ({ ok: output.ok, message: output.message }),
@@ -401,32 +383,6 @@ export const layer = Layer.effectDiscard(
                       `works here — and if nobody owns this work, say so to the user rather than inventing someone.`,
                   })
 
-                // 🔴 ONE assert naming EVERY colleague, not one call per colleague in a loop.
-                //
-                // A rule can name a single colleague ("may ask the bookkeeper, not the trader"), and
-                // both shapes refuse in that case — `permission.ts` folds a multi-resource request
-                // with `effects.includes("deny") ? "deny"`, so one denied member denies the call,
-                // which is exactly the all-or-nothing a group needs.
-                //
-                // ⚠️ The loop is the WORSE shape, and the evaluator says why: project rules are
-                // resolved ONCE per evaluation on purpose, because "a multi-resource assert must be
-                // judged against ONE view of the file, or two resources in the same call could be
-                // answered from either side of an edit". Asserting in a loop re-reads that file per
-                // colleague and reintroduces exactly the split it guards against — and it would ask
-                // the user N separate times for one act.
-                yield* permission.assert({
-                  action: name,
-                  resources: named,
-                  save: ["*"],
-                  sessionID: context.sessionID,
-                  agent: context.agent,
-                  source: {
-                    type: "tool" as const,
-                    messageID: context.assistantMessageID,
-                    callID: context.toolCallID,
-                  },
-                })
-
                 const outcome = yield* handoff.deliverGroup({
                   from: context.sessionID,
                   colleagues: named,
@@ -447,29 +403,18 @@ export const layer = Layer.effectDiscard(
                 return {
                   ok: true,
                   message:
-                    `Asked ${outcome.delivered.join(", ")} together — each has it in their own chat, and they can ` +
-                    `see who else was asked. They answer in their own time; end your turn if you need their reply.` +
+                    `Stored the group message for ${outcome.delivered.join(", ")} — each has it in their own chat ` +
+                    `and can see who else was asked. ` +
+                    (outcome.redirected?.length
+                      ? `Redirected requests: ${outcome.redirected.map((one) => `${one.requested} → ${one.recipient}`).join(", ")}. `
+                      : "") +
+                    (outcome.deferred ? `Their work is queued because ${outcome.deferred}. ` : "") +
+                    `They answer in their own time; end your turn if you need their reply.` +
                     (outcome.missing.length > 0
-                      ? ` Not delivered to ${outcome.missing.join(", ")} — no open chat.`
+                      ? ` Not delivered to ${outcome.missing.join(", ")}.`
                       : ""),
                 } satisfies Output
               }
-
-              // Addressing a colleague is a capability: it spends THEIR model time and puts words in
-              // their transcript under your name. The resource is who you are addressing, so a rule
-              // can name one colleague ("may ask the bookkeeper, not the trader").
-              yield* permission.assert({
-                action: name,
-                resources: [input.colleague],
-                save: ["*"],
-                sessionID: context.sessionID,
-                agent: context.agent,
-                source: {
-                  type: "tool" as const,
-                  messageID: context.assistantMessageID,
-                  callID: context.toolCallID,
-                },
-              })
 
               const target = input.colleague.trim()
               if (target === "" || target === selfID)
@@ -494,27 +439,6 @@ export const layer = Layer.effectDiscard(
                 colleague: target,
                 message: input.message,
               })
-              // 🔴 A BOUND REFUSAL IS A TOOL FAILURE, and holo3.1 is why (measured live 2026-08-22).
-              // It was an `ok: false` result carrying the reason verbatim — the whole cross-boundary
-              // chain worked — and the model read it, then told the user *"The message was
-              // successfully delivered."* A structured `ok: false` beside a paragraph of prose is a
-              // distinction a floor model does not reliably make, and getting it wrong turns a
-              // working bound into a lie told to the person who trusted the answer.
-              //
-              // A `ToolFailure` is a different rendering path: the model sees the call FAIL. It is
-              // also the shape this very tool already uses for "no colleague called that" — a call
-              // that did nothing and needs a change of course, which is exactly this.
-              //
-              // ⚠️ **There is no second arm any more, and its absence is the fix.** `delivered: false`
-              // with no reason used to mean "they exist but have no chat, so say so and let the turn
-              // continue". That stopped being a state on 2026-09-15: a colleague's chat is a component
-              // of the colleague, reached through it, and `ColleagueHandoff.deliver` opens it rather
-              // than reporting its absence. Handing that back to the user — *"tell the user what you
-              // wanted to hand over"* — made the person do the work an org exists to do for them.
-              //
-              // The fallback below is for the TYPE only: every way a hand-off fails now carries its
-              // sentence, so reaching it means a defect. A failure is the honest rendering of that,
-              // not a friendly sentence inventing a state that no longer exists.
               if (!outcome.delivered)
                 return yield* new ToolFailure({
                   message:
@@ -534,13 +458,17 @@ export const layer = Layer.effectDiscard(
                 // the flat denial that replaced it: the answer arrives HERE, LATER, as a message from
                 // them, and this turn must not wait for it.
                 message: outcome.started
-                  ? `Left it with ${target}, in their own chat, and they have started on it. Their answer will ` +
+                  ? `Left it with ${outcome.recipient ?? target}, in their own chat, and they have started on it. ` +
+                    (outcome.redirected ? `The request to ${target} was routed to the next person in the chain of command. ` : "") +
+                    `Their answer will ` +
                     `arrive HERE as a message from them — later, in their own time. Do NOT wait for it and do not ` +
                     `stall this turn: finish what you can do yourself and tell the user who has the rest.`
                   : // Durable but dormant, and SAID so: nothing is running their chat, so a caller
                     // reporting "handed over" would promise a reply nobody is going to write.
-                    `Left it with ${target}, but nothing is running their chat right now, so it waits until someone ` +
-                    `opens it. Their answer will arrive here if and when they write it. Tell the user it is queued ` +
+                    `Stored the message in ${outcome.recipient ?? target}'s chat` +
+                    (outcome.redirected ? ` (routed to the next person in the chain of command instead of ${target})` : "") +
+                    `. It is queued${outcome.deferred ? ` because ${outcome.deferred}` : " because no executor is attached"}; ` +
+                    `their chat will read it on its next run. Their answer will arrive here if and when they write it. Tell the user it is queued ` +
                     `with that colleague rather than under way, and do not wait for it.`,
               } satisfies Output
             }).pipe(

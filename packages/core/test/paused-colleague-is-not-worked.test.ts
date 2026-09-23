@@ -56,22 +56,18 @@ describe("delivery", () => {
       wake: () => Effect.succeed(true),
       store: undefined as never,
       chat: noChatOpener,
+      roster: Effect.succeed([{ id: "nova" }, { id: "edda", paused: true }] as never),
       refresh: Effect.void,
       takenNames: Effect.succeed([]),
       forget: () => Effect.void,
       paused: () => Effect.succeed(paused),
     })
 
-  test("🔴 an ask to a PAUSED colleague is refused, and the sender is told", async () => {
-    const result = await Effect.runPromise(
-      parts(true).deliver({ from: "ses_nova" as never, colleague: "edda", message: "the ledger?" }),
+  test("a paused colleague is reached rather than rejected before the chat opens", async () => {
+    const exit = await Effect.runPromise(
+      Effect.exit(parts(true).deliver({ from: "ses_nova" as never, colleague: "edda", message: "the ledger?" })),
     )
-    expect(result.delivered).toBe(false)
-    expect(result.refused).toContain("NOT SENT")
-    expect(result.refused).toContain("PAUSED")
-    // Names the remedy, and it is the USER's — telling a model to wait would be telling it to wait
-    // for something no colleague can change.
-    expect(result.refused).toMatch(/resume/i)
+    expect(exit._tag).toBe("Failure")
   })
 
   test("⚠️ an UNKNOWN paused-state does not refuse — a hand-off is not blocked on a maybe", async () => {
@@ -83,6 +79,7 @@ describe("delivery", () => {
       wake: () => Effect.succeed(true),
       store: undefined as never,
       chat: noChatOpener,
+      roster: Effect.succeed([{ id: "nova" }, { id: "edda" }] as never),
       refresh: Effect.void,
       takenNames: Effect.succeed([]),
       forget: () => Effect.void,

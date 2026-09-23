@@ -36,6 +36,7 @@ const parts = (sessions: Record<string, string | undefined>) =>
     wake: () => Effect.succeed(true),
     store: { setLayers: () => Effect.void } as never,
     chat: noChatOpener,
+    roster: Effect.succeed([]),
     refresh: Effect.void,
     takenNames: Effect.succeed([]),
     forget: () => Effect.void,
@@ -167,6 +168,7 @@ describe("who may organize reporting lines", () => {
       } as never,
       chat: noChatOpener,
       refresh: Effect.void,
+      roster: Effect.succeed([]),
       takenNames: Effect.succeed([]),
       forget: () => Effect.sync(() => void order.push("workers")),
     })
@@ -193,6 +195,7 @@ describe("who may organize reporting lines", () => {
       } as never,
       chat: noChatOpener,
       refresh: Effect.void,
+      roster: Effect.succeed([]),
       takenNames: Effect.succeed([]),
       forget: () => Effect.die("worker purge failed"),
     })

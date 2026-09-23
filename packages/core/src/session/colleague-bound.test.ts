@@ -11,40 +11,15 @@ describe("hop cap", () => {
     expect(ColleagueBound.nextHop(0)).toBe(1)
   })
 
-  test("the two shapes that legitimately occur are NOT refused", () => {
+  test("ordinary exchanges remain inside the immediate-wake budget", () => {
     // ask→answer, and delegate→ask→answer→report. A cap that clears only the first refuses the org
     // chart doing its job, which reads to a user as the product being broken.
     expect(ColleagueBound.exceedsHopCap(2)).toBe(false)
     expect(ColleagueBound.exceedsHopCap(4)).toBe(false)
   })
 
-  test("the hand-off past the cap is refused", () => {
+  test("a deeper hand-off exceeds the immediate-wake budget", () => {
     expect(ColleagueBound.exceedsHopCap(5)).toBe(true)
-  })
-
-  // 🔴 Measured live on holo3.1 2026-08-22: told "Not delivered to theron: …" as an `ok: false`
-  // result, the model turned around and reported *"The message was successfully delivered."* The
-  // refusal now LEADS with the fact and forbids the claim outright, and rides a `ToolFailure` so the
-  // model sees the call fail rather than succeed-with-a-flag. Same model, same prompt afterwards:
-  // "The message was not sent to Theron."
-  test("the refusal LEADS with not-sent and forbids claiming otherwise", () => {
-    for (const message of [
-      ColleagueBound.hopRefusal({ colleague: "theron", hop: 5 }),
-      ColleagueBound.rateRefusal({ colleague: "theron" }),
-    ]) {
-      expect(message.startsWith("NOT SENT.")).toBe(true)
-      expect(message).toContain("has not seen it")
-      expect(message).toContain("Do NOT tell anyone it was delivered")
-    }
-  })
-
-  test("the refusal names the USER as the way out, not just the limit", () => {
-    // 🔴 A refusal that only says "no" leaves a model retrying. The chain resets when a person
-    // speaks, so naming that is the mechanism, not politeness.
-    const message = ColleagueBound.hopRefusal({ colleague: "theron", hop: 5 })
-    expect(message).toContain("theron")
-    expect(message.toLowerCase()).toContain("user")
-    expect(message).toContain(String(ColleagueBound.HOP_CAP))
   })
 })
 

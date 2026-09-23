@@ -7,6 +7,7 @@ import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
 import { SessionExecution } from "../session/execution"
 import { SessionExecutionAttempt } from "../session/execution-attempt"
+import { SessionInput } from "../session/input"
 import { SessionSchema } from "../session/schema"
 import { SessionTable } from "../session/sql"
 import { SessionStore } from "../session/store"
@@ -46,6 +47,7 @@ export interface Runtime {
   readonly get: SessionStore.Interface["get"]
   readonly children: SessionStore.Interface["children"]
   readonly attempt: SessionExecutionAttempt.Interface["get"]
+  readonly hasQueuedInput: (id: SessionSchema.ID) => Effect.Effect<boolean>
   readonly interrupt: SessionExecution.Interface["interrupt"]
   readonly adopt: SessionExecution.Interface["adopt"]
 }
@@ -71,7 +73,8 @@ export const propagate = (change: Change, runtime: Runtime): Effect.Effect<void>
         const attempt = yield* runtime.attempt(id)
         // A named root chat is normally unfinished while simply idle; do not invent a turn.
         // Workers, and a root whose execution was interrupted by Pause, had real work to resume.
-        if (session.result === undefined && (!root || attempt?.state === "interrupted")) yield* runtime.adopt(id)
+        const queued = yield* runtime.hasQueuedInput(id)
+        if (queued || (session.result === undefined && (!root || attempt?.state === "interrupted"))) yield* runtime.adopt(id)
         const children = yield* runtime.children(id)
         yield* Effect.forEach(children, (child) => resumeBranch(child, false), {
           discard: true,
@@ -110,6 +113,7 @@ export const node = makeGlobalNode({
           get: store.get,
           children: store.children,
           attempt: attempts.get,
+          hasQueuedInput: (id) => SessionInput.hasPending(db, id, "queue"),
           interrupt: execution.interrupt,
           adopt: execution.adopt,
         }),

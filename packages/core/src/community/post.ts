@@ -38,6 +38,7 @@ export interface Posted {
    * that something took it. False means it lives locally and has no audience yet.
    */
   readonly delivered: boolean
+  readonly reason?: CommunityChannels.Rejection | "proof-unavailable" | undefined
 }
 
 export interface Interface {
@@ -67,7 +68,7 @@ export const layer = Layer.effect(
          * door with an exception is a door. ~50 ms inside a send action nobody notices.
          */
         const message = CommunityWork.prove(signed)
-        if (message === undefined) return { message: { ...signed, nonce: 0 }, stored: false, delivered: false }
+        if (message === undefined) return { message: { ...signed, nonce: 0 }, stored: false, delivered: false, reason: "proof-unavailable" }
 
         /**
          * Our own message goes through the SAME ingress door as everyone else's.
@@ -83,7 +84,7 @@ export const layer = Layer.effect(
         // Publish even when storing was refused? No — a message we would not keep is not one to
         // broadcast, and the refusal reasons (not subscribed, duplicate) all mean "do not send".
         const delivered = stored ? yield* transport.publish(message) : false
-        return { message, stored, delivered } satisfies Posted
+        return { message, stored, delivered, ...("rejected" in recorded ? { reason: recorded.rejected } : {}) } satisfies Posted
       }),
     })
   }),

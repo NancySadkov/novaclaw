@@ -77,6 +77,7 @@ const handoff = (
     },
     store: {} as never,
     chat: opener(db),
+    roster: Effect.succeed([...new Set(["nova", ...Object.values(agents)])].map((id) => ({ id, superior: "nova" })) as never),
     refresh: Effect.void,
     takenNames: Effect.succeed([]),
     forget: () => Effect.void,
@@ -206,7 +207,7 @@ describe("addressing several colleagues at once", () => {
   )
 
   it.effect(
-    "a group that does not FIT the budget is refused whole — nothing is written",
+    "a group over the activity budget is stored whole but wakes nobody",
     Effect.gen(function* () {
       const { db, events } = yield* threeChats
 
@@ -219,12 +220,11 @@ describe("addressing several colleagues at once", () => {
         message: "ship review at four?",
       })
 
-      expect(outcome.refused).toBeDefined()
-      expect(outcome.delivered).toEqual([])
-      // ⚠️ All-or-nothing: a HALF-delivered conference is worse than a refused one, because the
-      // participants list the lucky half can see would name colleagues who never got it.
-      expect((yield* admitted(db, THERON)).length).toBe(0)
-      expect((yield* admitted(db, KALLIAS)).length).toBe(0)
+      expect(outcome.delivered).toEqual(["theron", "kallias"])
+      expect(outcome.started).toBe(false)
+      expect(outcome.deferred).toContain("budget")
+      expect((yield* admitted(db, THERON)).length).toBe(1)
+      expect((yield* admitted(db, KALLIAS)).length).toBe(1)
     }),
   )
 
@@ -501,7 +501,7 @@ describe("a reply INFORMS the room, it does not summon it", () => {
 
 describe("a cycle is decided per recipient, not against the whole room", () => {
   it.effect(
-    "🔴 a participant already in the chain is DROPPED and reported — the others still get it",
+    "a participant already in the chain receives the message without waking the room",
     Effect.gen(function* () {
       const { db, events } = yield* threeChats
       // A REAL ring: aris asked theron, theron asked kallias. kallias now addresses the room, and
@@ -518,21 +518,20 @@ describe("a cycle is decided per recipient, not against the whole room", () => {
 
       // ⚠️ NOT a refusal of the conference. All-or-nothing belongs to the RATE budget, which is a
       // property of the sender; one colleague being in the chain says nothing about the others.
-      expect(outcome.delivered).toEqual(["nova"])
-      expect(outcome.missing).toContain("aris")
+      expect(outcome.delivered).toEqual(["aris", "nova"])
+      expect(outcome.missing).toEqual([])
       expect(outcome.refused).toBeUndefined()
+      expect(outcome.deferred).toContain("loop")
+      expect(outcome.started).toBe(false)
       expect((yield* admitted(db, NOVA)).length).toBe(1)
-      // aris does NOT get the question — that would close the loop. What it gets is the notice that a
-      // chain it started came back around, which is a different message and the point of telling it.
       const toAris = yield* admitted(db, ARIS)
       expect(toAris.length).toBe(1)
-      expect(toAris[0]!.text).toContain("came back around")
-      expect(toAris[0]!.text).not.toContain("who owns the ledger?")
+      expect(toAris[0]!.text).toContain("who owns the ledger?")
     }),
   )
 
   it.effect(
-    "the participants list names who RECEIVED it, so a dropped node is not advertised",
+    "the participants list names every stored recipient, even when waking is deferred",
     Effect.gen(function* () {
       const { db, events } = yield* threeChats
       yield* peerMessageFrom(db, KALLIAS, "theron", ["aris", "theron"])
@@ -542,7 +541,7 @@ describe("a cycle is decided per recipient, not against the whole room", () => {
         message: "who owns the ledger?",
       })
       // Otherwise nova answers a room containing aris, who never heard the question.
-      expect((yield* admitted(db, NOVA))[0]!.origin["participants"]).toEqual(["kallias", "nova"])
+      expect((yield* admitted(db, NOVA))[0]!.origin["participants"]).toEqual(["kallias", "aris", "nova"])
     }),
   )
 
@@ -565,7 +564,7 @@ describe("a cycle is decided per recipient, not against the whole room", () => {
 
 describe("the originator is told its chain came back around", () => {
   it.effect(
-    "🔴 the agent that STARTED the chain hears about the loop, in its own chat",
+    "the agent that started the chain receives the actual message",
     Effect.gen(function* () {
       const { db, events } = yield* threeChats
       // aris started it: aris → theron → kallias. kallias now tries to pass it back to aris.
@@ -577,19 +576,16 @@ describe("the originator is told its chain came back around", () => {
         message: "who owns the ledger?",
       })
 
-      expect(outcome.delivered).toBe(false)
-      // No framework surveyed does this: everyone refuses the hop and tells the SENDER, while the one
-      // participant who can dissolve the loop — the agent holding the question it circles — is never
-      // informed.
+      expect(outcome.delivered).toBe(true)
+      expect(outcome.deferred).toContain("loop")
       const notice = yield* admitted(db, ARIS)
       expect(notice.length).toBe(1)
-      expect(notice[0]!.text).toContain("came back around")
-      expect(notice[0]!.text).toContain("aris → theron → kallias → aris")
+      expect(notice[0]!.text).toContain("who owns the ledger?")
     }),
   )
 
   it.effect(
-    "the notice is not a hand-off: it carries no peer origin and starts no chain",
+    "the deferred message retains its peer origin and path",
     Effect.gen(function* () {
       const { db, events } = yield* threeChats
       yield* peerMessageFrom(db, KALLIAS, "theron", ["aris", "theron"])
@@ -599,8 +595,8 @@ describe("the originator is told its chain came back around", () => {
       // ⚠️ A `relation: "peer"` here would put the NOTICE on the next path and make a loop detector
       // part of a loop. It also must not invite a reply — an amplifier attached to a loop detector
       // would be a poor joke.
-      expect(origin["relation"]).toBeUndefined()
-      expect(origin["path"]).toBeUndefined()
+      expect(origin["relation"]).toBe("peer")
+      expect(origin["path"]).toEqual(["aris", "theron", "kallias"])
     }),
   )
 

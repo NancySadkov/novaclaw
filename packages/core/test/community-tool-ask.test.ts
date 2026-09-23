@@ -59,6 +59,8 @@ describe("a failed ask says WHICH half failed", () => {
     // "We have no address for them" is OUR gap, not their silence — a model told otherwise would
     // report a peer as unresponsive when nobody ever knocked.
     expect(noRoute).toContain("no address is known")
+    expect(unreachable).toContain("may have reached")
+    expect(CommunityTool.askFailure("nid_abc", "offline")).toContain("no remote request was attempted")
     // An unsigned answer is a FAULT, and must not be repeated as if it were an answer.
     expect(bad).toContain("discarded")
     expect(wrong).toContain("discarded")

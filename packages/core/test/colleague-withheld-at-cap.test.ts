@@ -17,7 +17,7 @@ import { ColleagueTool } from "@novaclaw/core/tool/colleague"
 
 const json = (schema: Schema.Top) => JSON.stringify(Schema.toJsonSchemaDocument(schema))
 
-describe("what a capped turn is offered", () => {
+describe("local messaging is always available in the colleague schema", () => {
   test("the ordinary input offers the asking ops", () => {
     // The control. Without it a variant that dropped everything would look like success.
     const full = json(ColleagueTool.Input)
@@ -25,20 +25,18 @@ describe("what a capped turn is offered", () => {
     expect(full).toContain("hire")
   })
 
-  test("🔴 the capped input offers NO asking ops", () => {
-    const capped = json(ColleagueTool.CappedInput)
-    expect(capped).not.toContain("ask_group")
-    expect(capped).not.toContain('"ask"')
+  test("an unknown variant cannot withdraw asking", () => {
+    const full = json(ColleagueTool.Input)
+    expect(full).toContain("ask_group")
+    expect(full).toContain('"ask"')
   })
 
-  test("…and still offers what the bound has nothing to do with", () => {
-    // The whole reason this is a variant rather than withholding `colleague`: a chain that is too
-    // long says nothing about whether Nova may see the roster or retire somebody.
-    const capped = json(ColleagueTool.CappedInput)
-    expect(capped).toContain("list")
-    expect(capped).toContain("hire")
-    expect(capped).toContain("retire")
-    expect(capped).toContain("set_superior")
+  test("the rest of the colleague operations remain available", () => {
+    const full = json(ColleagueTool.Input)
+    expect(full).toContain("list")
+    expect(full).toContain("hire")
+    expect(full).toContain("retire")
+    expect(full).toContain("set_superior")
   })
 })
 

@@ -116,14 +116,21 @@ const chatOpener = (db: Database.Interface["db"]) => (colleague: string) =>
     Effect.map((row) => (row === undefined ? undefined : SessionSchema.ID.make(row.id))),
   )
 
-const handoff = (db: Database.Interface["db"], events: EventV2.Interface, agents: Record<string, string>) =>
+const handoff = (
+  db: Database.Interface["db"],
+  events: EventV2.Interface,
+  agents: Record<string, string>,
+  superiors: Record<string, string> = {},
+  parents: Record<string, SessionSchema.ID> = {},
+) =>
   ColleagueHandoff.fromParts({
     db,
     events,
-    session: (id) => Effect.succeed({ agent: agents[String(id)] }),
+    session: (id) => Effect.succeed({ agent: agents[String(id)], parentID: parents[String(id)] }),
     wake: () => Effect.succeed(true),
     store: {} as never,
     chat: chatOpener(db),
+    roster: Effect.succeed([...new Set(["nova", ...Object.values(agents).filter(Boolean)])].map((id) => ({ id, superior: superiors[id] ?? "nova" })) as never),
     refresh: Effect.void,
     takenNames: Effect.succeed([]),
     forget: () => Effect.void,
@@ -155,7 +162,7 @@ describe("the colleague loop is bounded by a mechanism", () => {
     }),
   )
 
-  it.effect("the chain is REFUSED at the cap, and nothing is written", () =>
+  it.effect("the chain is stored at the cap but no longer wakes another run", () =>
     Effect.gen(function* () {
       ColleagueBound.reset()
       const { db } = yield* Database.Service
@@ -166,27 +173,19 @@ describe("the colleague loop is bounded by a mechanism", () => {
 
       let from = ARIS
       let to = "theron"
-      let refused: string | undefined
+      let deferred: string | undefined
       // One more round trip than the cap allows.
       for (let n = 0; n < ColleagueBound.HOP_CAP + 1; n++) {
         const outcome = yield* deliver.deliver({ from, colleague: to, message: `turn ${n}` })
-        if (!outcome.delivered) {
-          refused = outcome.refused
-          break
-        }
+        expect(outcome.delivered).toBe(true)
+        deferred = outcome.deferred
         yield* promote(db, to === "theron" ? THERON : ARIS)
         ;[from, to] = from === ARIS ? [THERON, "aris"] : [ARIS, "theron"]
       }
 
-      // 🔴 The sender is TOLD, and told the thing that ends the loop. A refusal with no reason sends
-      // a model straight back to retrying.
-      expect(refused).toBeDefined()
-      expect(refused!.toLowerCase()).toContain("user")
-
-      // ⚠️ And the refused message was never admitted. A bound that reports a refusal while still
-      // delivering is worse than none: the receiver acts on it and the sender does not know.
+      expect(deferred).toBeDefined()
       const inbox = yield* db.select({ id: SessionInputTable.id }).from(SessionInputTable).all().pipe(Effect.orDie)
-      expect(inbox.length).toBe(ColleagueBound.HOP_CAP)
+      expect(inbox.length).toBe(ColleagueBound.HOP_CAP + 1)
     }),
   )
 
@@ -225,6 +224,70 @@ describe("the colleague loop is bounded by a mechanism", () => {
       // rather than a flag — the person re-authorizing the chain IS them speaking in it.
       yield* deliver.deliver({ from: ARIS, colleague: "theron", message: "three" })
       expect(yield* stampedHops(db, THERON)).toBe(1)
+    }),
+  )
+})
+
+describe("the chain of command is a delivery route", () => {
+  it.effect("a failed wake cannot turn a stored message into a failed send", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      yield* openChat(db, { id: ARIS, agent: "aris" })
+      yield* openChat(db, { id: THERON, agent: "theron" })
+      const bridge = ColleagueHandoff.fromParts({
+        db, events,
+        session: (id) => Effect.succeed({ agent: id === ARIS ? "aris" : "theron" }),
+        wake: () => Effect.die("executor unavailable"),
+        store: {} as never,
+        chat: chatOpener(db),
+        roster: Effect.succeed([{ id: "nova" }, { id: "aris" }, { id: "theron" }] as never),
+        refresh: Effect.void,
+        takenNames: Effect.succeed([]),
+        forget: () => Effect.void,
+      })
+      const outcome = yield* bridge.deliver({ from: ARIS, colleague: "theron", message: "important" })
+      expect(outcome.delivered).toBe(true)
+      expect(outcome.started).toBe(false)
+      expect((yield* db.select().from(SessionInputTable).where(eq(SessionInputTable.session_id, THERON)).all()).length).toBe(1)
+    }),
+  )
+
+  it.effect("an officer's message to Nova is stored with the immediate superior", () =>
+    Effect.gen(function* () {
+      ColleagueBound.reset()
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      const iris = "ses_iris" as SessionSchema.ID
+      const daedalus = "ses_daedalus" as SessionSchema.ID
+      yield* openChat(db, { id: iris, agent: "iris" })
+      yield* openChat(db, { id: daedalus, agent: "daedalus" })
+      const outcome = yield* handoff(db, events, { [iris]: "iris", [daedalus]: "daedalus" }, { iris: "daedalus" })
+        .deliver({ from: iris, colleague: "nova", message: "urgent report" })
+      expect(outcome.delivered).toBe(true)
+      expect(outcome.recipient).toBe("daedalus")
+      expect(outcome.redirected).toBe(true)
+      expect((yield* db.select().from(SessionInputTable).where(eq(SessionInputTable.session_id, daedalus)).all()).length).toBe(1)
+    }),
+  )
+
+  it.effect("an anonymous worker's attempted jump to Nova lands with its parent session", () =>
+    Effect.gen(function* () {
+      ColleagueBound.reset()
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      const parent = "ses_parent" as SessionSchema.ID
+      const worker = "ses_worker" as SessionSchema.ID
+      yield* openChat(db, { id: parent, agent: "iris" })
+      yield* openChat(db, { id: worker, agent: "worker" })
+      const outcome = yield* handoff(db, events, { [parent]: "iris", [worker]: "iris" }, { iris: "nova" }, { [worker]: parent })
+        .deliver({ from: worker, colleague: "nova", message: "worker report" })
+      expect(outcome.delivered).toBe(true)
+      expect(outcome.recipient).toBe(String(parent))
+      const queued = yield* db.select().from(SessionInputTable).where(eq(SessionInputTable.session_id, parent)).all()
+      expect(queued.length).toBe(1)
+      expect(queued[0]?.prompt.text).toContain('op "message_worker"')
+      expect(queued[0]?.prompt.text).toContain(`worker "${worker}"`)
     }),
   )
 })

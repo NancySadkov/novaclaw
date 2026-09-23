@@ -38,6 +38,7 @@ export type Turn = "ask" | "answer" | "announce"
 export const replyNote = (input: {
   readonly from: string
   readonly turn: Turn
+  readonly fromWorker?: boolean | undefined
   /**
    * The OTHER people in this conference, when it is one — everyone except the receiver.
    *
@@ -51,7 +52,9 @@ export const replyNote = (input: {
    */
   readonly group?: ReadonlyArray<string> | undefined
 }): string =>
-  input.turn === "announce"
+  input.fromWorker
+    ? `\n\n[This came from your direct worker ${input.from}. To answer or correct them, call the \`colleague\` tool with op "message_worker", worker "${input.from}", and your message. Do not forward this upward merely because the worker named a senior officer.]`
+    : input.turn === "announce"
     ? `\n\n[${input.from} answered the group. You are being kept informed — nobody is waiting on ` +
       `you and no reply is expected. If you have something the others need, call the \`colleague\` tool ` +
       `with op "ask_group" and say it; otherwise carry on with your own work.]`
@@ -66,27 +69,6 @@ export const replyNote = (input: {
       `way this landed in yours. Answer once; they are not waiting on you.]`
     : `\n\n[This is ${input.from}'s ANSWER to what you asked them. Nothing further is expected of you — ` +
       `use it and carry on. Only call the \`colleague\` tool again if you have a NEW question for them.]`
-
-/**
- * What the ORIGINATOR is told when a chain it started came back around.
- *
- * 🔴 **The part no surveyed framework does.** Everyone else refuses the hop and tells the sender; the
- * one participant who can actually dissolve the loop is the agent holding the question it is
- * circling, and nobody informs it. Its chat is a door we already have, so this costs no new
- * mechanism — principle 13 satisfied rather than bent.
- *
- * ⚠️ Deliberately NOT a hand-off. It asks for nothing, so it invites no reply and starts no chain: an
- * amplifier attached to a loop detector would be a poor joke.
- */
-export const cycleNotice = (input: {
-  readonly path: ReadonlyArray<string>
-  readonly refusedBy: string
-  readonly target: string
-}): string =>
-  `[A chain you started came back around: ${[...input.path, input.target].join(" → ")}. ` +
-  `${input.refusedBy} tried to pass it to ${input.target}, who is already in it, so that hop was ` +
-  `refused and nothing was delivered. Nobody is waiting on you — but you hold the question this is ` +
-  `circling, so you are the one who can settle it: answer it yourself, or take it to the user.]`
 
 /** Whether a delivery is a question or an answer, from what the sender's own chat last received. */
 export const turnFor = (input: { readonly askedByRecipient: boolean }): Turn =>
@@ -128,5 +110,6 @@ export const compose = (input: {
   readonly from: string
   readonly turn: Turn
   readonly group?: ReadonlyArray<string> | undefined
+  readonly fromWorker?: boolean | undefined
 }): string =>
-  `${input.message.trimEnd()}${replyNote({ from: input.from, turn: input.turn, group: input.group })}`
+  `${input.message.trimEnd()}${replyNote({ from: input.from, turn: input.turn, group: input.group, fromWorker: input.fromWorker })}`

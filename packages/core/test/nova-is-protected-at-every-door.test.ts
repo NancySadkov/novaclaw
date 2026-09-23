@@ -36,6 +36,7 @@ const parts = () =>
       removeAgent: (name: string) => Effect.sync(() => void removed.push(name)),
     } as never,
     chat: noChatOpener,
+    roster: Effect.succeed([]),
     refresh: Effect.void,
     takenNames: Effect.succeed([]),
     forget: (name) => Effect.sync(() => void removed.push(`forgot:${name}`)),

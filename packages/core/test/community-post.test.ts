@@ -67,6 +67,7 @@ describe("CommunityPost", () => {
       const result = yield* posts.post("#never-joined", "into nowhere")
       expect(result.stored).toBe(false)
       expect(result.delivered).toBe(false)
+      expect(result.reason).toBe("not-subscribed")
       expect(yield* channels.history("#never-joined")).toEqual([])
     }),
   )
@@ -89,6 +90,7 @@ describe("CommunityPost", () => {
       // Either outcome is CORRECT depending on which millisecond they landed in; what must hold is
       // that the log and the report agree, never that a post claims to be stored and is not there.
       expect(stored.length).toBe(second.stored ? 2 : 1)
+      if (!second.stored) expect(second.reason).toBe("duplicate")
     }),
   )
 })

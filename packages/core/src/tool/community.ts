@@ -126,7 +126,9 @@ export const askFailure = (peer: string, reason: string | undefined): string => 
     case "no-route":
       return `No way to reach ${peer} yet — no address is known for them. Discovery or an address from their owner would fix that.`
     case "unreachable":
-      return `${peer} could not be reached just now. Nothing was spent, and asking again later may work.`
+      return `No verified answer arrived from ${peer}. Its route may be down, or the question may have reached it before the reply was lost. Asking again later may work.`
+    case "offline":
+      return `Not sent to ${peer}: this instance is offline, so no remote request was attempted.`
     case "bad-signature":
       return `${peer} replied, but the answer was not signed by them, so it was discarded. Treat that as a fault, not an answer.`
     case "wrong-author":
@@ -142,6 +144,21 @@ export const askFailure = (peer: string, reason: string | undefined): string => 
       return `That exact question already went to ${peer} in the last minute, so it was not sent again. Answering costs them a model turn — ask something different, or wait.`
     default:
       return `Could not ask ${peer} (${reason ?? "unknown"}).`
+  }
+}
+
+export const postFailure = (reason: CommunityPost.Posted["reason"]): string => {
+  switch (reason) {
+    case "not-subscribed": return "this instance has not joined that channel"
+    case "duplicate": return "an identical signed message is already in this channel"
+    case "too-large": return "the message exceeds the channel size limit"
+    case "proof-unavailable": return "the instance could not produce the required work proof"
+    case "blocked": return "the channel blocked this author"
+    case "stale": return "the message predates this channel's retained history"
+    case "wrong-channel": return "the signed message names a different channel"
+    case "unverified": return "the message signature could not be verified"
+    case "unproven": return "the message has no valid work proof"
+    default: return "the local channel rejected the message for an unknown reason"
   }
 }
 
@@ -590,7 +607,7 @@ export const layer = Layer.effectDiscard(
                    */
                   if (!posted.stored)
                     return {
-                      message: `Not posted to ${room}: this instance refused its own message at the channel door. Nothing was stored and nothing was sent.`,
+                      message: `Not posted to ${room}: ${postFailure(posted.reason)}. Nothing was stored or sent.`,
                     }
                   return {
                     message: posted.delivered

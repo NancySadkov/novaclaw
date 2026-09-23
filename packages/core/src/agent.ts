@@ -201,6 +201,7 @@ export const resolveSuperior = (
   selfID: string,
   configured: string | undefined,
   roster: ReadonlyArray<Info>,
+  options: { readonly includePaused?: boolean } = {},
 ): Info | undefined => {
   if (selfID === NOVA_ID) return undefined
   const byID = new Map(roster.map((agent) => [String(agent.id), agent]))
@@ -208,7 +209,7 @@ export const resolveSuperior = (
   const requested = configured ?? NOVA_ID
   if (requested === selfID) return fallback
   const superior = byID.get(requested)
-  if (superior === undefined || !isColleague(superior) || superior.paused === true) return fallback
+  if (superior === undefined || !isColleague(superior) || (superior.paused === true && !options.includePaused)) return fallback
   const seen = new Set([selfID])
   let cursor: Info | undefined = superior
   while (cursor !== undefined && String(cursor.id) !== NOVA_ID) {
@@ -216,7 +217,7 @@ export const resolveSuperior = (
     if (seen.has(id)) return fallback
     seen.add(id)
     cursor = byID.get(String(cursor.superior ?? NOVA_ID))
-    if (cursor === undefined || cursor.paused === true) return fallback
+    if (cursor === undefined || (cursor.paused === true && !options.includePaused)) return fallback
   }
   return superior
 }

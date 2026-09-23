@@ -411,6 +411,8 @@ export const layer = Layer.effect(
                             ),
                           refresh: roster.reload(),
                           roster: roster.all(),
+                          paused: (colleague) =>
+                            roster.all().pipe(Effect.map((all) => all.find((one) => String(one.id) === colleague)?.paused === true)),
                           takenNames: roster
                             .all()
                             .pipe(Effect.map((all) => all.flatMap((one) => [String(one.id), one.name ?? ""]))),
