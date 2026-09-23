@@ -118,6 +118,7 @@ const deferredCoreTools = [
   "registry",
   "resource_status",
   "revert",
+  "schedule",
   "session",
   "trash",
   "write-hex",

@@ -171,8 +171,8 @@ export const POSTURE_AGENTS: ReadonlySet<string> = AgentV2.POSTURE_IDS
 /**
  * Is this agent a colleague the user can talk to, rather than staff or machinery?
  *
- * ⚠️ ONE choke point on purpose: Contacts, the Memory owner picker, the Calendar's responsible-agent
- * picker and the composer's agent selector all reach the roster through here, and a rule enforced in
+ * ⚠️ ONE choke point on purpose: Contacts, the Memory owner picker and the composer's agent selector
+ * all reach the roster through here, and a rule enforced in
  * one of them is a rule the next surface gets wrong.
  */
 export const isColleague = (agent: AgentLike): boolean => AgentV2.isColleague(agent)

@@ -11,13 +11,11 @@ import { LanguageContext } from "@/context/language"
 import { PlatformProvider } from "@/context/platform"
 import { SettingsProvider } from "@/context/settings"
 import { CommunityNetwork } from "@/pages/home-screen/community-network"
-import { CalendarPage } from "@/pages/calendar"
 import { dict as en } from "@/i18n/en"
 import { languageStub } from "./language-stub"
 
 /**
- * **A COMMUNITY THAT COULD NOT BE READ, PRESENTED AS AN EMPTY ONE YOU HAD JOINED — and a schedule
- * form that disabled itself without a word.**
+ * **A COMMUNITY THAT COULD NOT BE READ, PRESENTED AS AN EMPTY ONE YOU HAD JOINED.**
  *
  * 🔴 Ruling 2, second half: *an unavailable subsystem names itself instead of rendering empty.* The
  * community client caught every rejection and returned a fallback, so:
@@ -45,10 +43,6 @@ import { languageStub } from "./language-stub"
  * probe boundary and probe sibling below fail loudly if a rejection ever escapes an accessor again —
  * that is the original defect, and removing `softRead` is exactly the edit that could reopen it.
  *
- * ⚠️ Calendar's half is a different sentence about the same principle: three controls gated on a
- * directory that had not resolved, greyed out with nothing on screen to say why. The control is the
- * resolvable case, where the notice must be ABSENT and the buttons live.
- *
  * ⚠️ The language stub resolves against the REAL `en` dictionary, so every assertion is about the
  * sentence a person reads rather than a key echoed back.
  */
@@ -65,7 +59,6 @@ let contactsMode: ReadMode = "ok"
 let identityMode: ReadMode = "ok"
 /** Whether the instance has told us which folder it works in. */
 let storedPath: Record<string, unknown> | undefined = { home: HOME, directory: HOME }
-let calendarWrites = 0
 
 const CONTACTS = [
   { networkID: "nid_alice", petname: "Alice", routes: ["1.2.3.4:443"], blocked: false, addedAt: 1 },
@@ -120,7 +113,6 @@ afterEach(() => {
   contactsMode = "ok"
   identityMode = "ok"
   storedPath = { home: HOME, directory: HOME }
-  calendarWrites = 0
   localStorage.clear()
 })
 
@@ -133,9 +125,8 @@ const json = (body: unknown) =>
  */
 function stubFetch() {
   const original = globalThis.fetch
-  ;(globalThis as { fetch: typeof fetch }).fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  ;(globalThis as { fetch: typeof fetch }).fetch = (async (input: RequestInfo | URL) => {
     const url = typeof input === "string" ? input : ((input as Request).url ?? String(input))
-    const method = init?.method ?? (input instanceof Request ? input.method : "GET")
     if (url.includes("api/community/participation")) {
       if (participationMode === "fail") throw new TypeError("Failed to fetch")
       if (participationMode === "empty")
@@ -157,11 +148,6 @@ function stubFetch() {
     // dereference `undefined.length` — a fixture fault that looks exactly like the crash under test.
     if (url.includes("/history")) return json({ messages: [], hidden: 0, held: 0 })
     if (url.includes("/sync")) return json({ peers: 0, fetched: 0 })
-    if (url.includes("api/calendar/schedule")) {
-      if (method !== "GET") calendarWrites += 1
-      return json(method === "GET" ? [] : {})
-    }
-    if (url.includes("api/calendar/fire")) return json([])
     if (url.includes("api/community/offer/mine")) return json({ servable: true })
     return json([])
   }) as typeof fetch
@@ -321,103 +307,5 @@ describe("the key box does not sit on an ellipsis for ever", () => {
 
     expect(bodyText()).toContain("nid_this_instance")
     expect(has('[data-slot="community-key-unreadable"]')).toBe(false)
-  })
-})
-
-describe("Calendar explains a disabled Add task instead of greying out in silence", () => {
-  test("🔴 UNRESOLVED DIRECTORY — the reason is on screen, beside both the form and the list", async () => {
-    storedPath = undefined
-    mount(() => <CalendarPage />)
-    await settle()
-
-    expect(has('[data-slot="calendar-directory-problem"]')).toBe(true)
-    expect(has('[data-slot="calendar-directory-problem-form"]')).toBe(true)
-    expect(bodyText()).toContain("Waiting for this instance to say which folder it works in")
-    expect(bodyText()).toContain("Add task, Pause and Resume need it")
-
-    // ⚠️ Still disabled — the write genuinely cannot be routed, and a button that submits into an
-    // early return is the silent-failure half of the same ruling. What was missing was the sentence.
-    const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Add task"))
-    expect(submit, "the Add task button must still be rendered").toBeTruthy()
-    expect((submit as HTMLButtonElement).disabled).toBe(true)
-  })
-
-  test("CONTROL — with a resolvable directory there is no notice and Add task is live", async () => {
-    mount(() => <CalendarPage />)
-    await settle()
-
-    expect(has('[data-slot="calendar-directory-problem"]')).toBe(false)
-    expect(has('[data-slot="calendar-directory-problem-form"]')).toBe(false)
-    expect(bodyText()).not.toContain("Waiting for this instance to say which folder it works in")
-
-    const submit = [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("Add task"))
-    expect(submit, "the Add task button must still be rendered").toBeTruthy()
-    expect((submit as HTMLButtonElement).disabled).toBe(false)
-    expect(document.querySelector('[data-component="control-scope"][data-scope="draft"]')?.textContent).toContain(
-      "saved when you confirm",
-    )
-  })
-})
-
-describe("Calendar refuses impossible monthly days before sending a schedule", () => {
-  const chooseRepeat = async (value: string) => {
-    const repeat = document.querySelector<HTMLElement>("#calendar-repeat")!
-    repeat.dispatchEvent(
-      new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
-    )
-    await Promise.resolve()
-    repeat.dispatchEvent(
-      new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
-    )
-    await settle()
-    const option = document.querySelector<HTMLElement>(`[role="option"][data-key="${value}"]`)!
-    expect(option).not.toBeNull()
-    option.dispatchEvent(
-      new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
-    )
-    await Promise.resolve()
-    option.dispatchEvent(
-      new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
-    )
-    await settle()
-  }
-
-  test("empty, fractional, below-minimum and above-maximum days stay drafts and name the valid range", async () => {
-    mount(() => <CalendarPage />)
-    await settle()
-
-    await chooseRepeat("monthly")
-    const prompt = document.querySelector('textarea[aria-label="Prompt"]') as HTMLTextAreaElement
-    prompt.value = "send the report"
-    prompt.dispatchEvent(new Event("input", { bubbles: true }))
-    for (const day of ["", "1.5", "0", "32"]) {
-      const dayBox = document.querySelector(`input[aria-label="${en["calendar.page.dayOfMonth"]}"]`) as HTMLInputElement
-      dayBox.value = day
-      dayBox.dispatchEvent(new Event("input", { bubbles: true }))
-      ;[...document.querySelectorAll("button")]
-        .find((button) => button.textContent?.includes("Add task"))!
-        .dispatchEvent(new MouseEvent("click", { bubbles: true }))
-      await settle()
-      expect(calendarWrites).toBe(0)
-      expect(bodyText()).toContain("Choose a whole day from 1 to 31")
-      expect(dayBox.value).toBe(day)
-    }
-  })
-
-  test("CONTROL — a real monthly day is sent unchanged", async () => {
-    mount(() => <CalendarPage />)
-    await settle()
-    await chooseRepeat("monthly")
-    const prompt = document.querySelector('textarea[aria-label="Prompt"]') as HTMLTextAreaElement
-    prompt.value = "send the report"
-    prompt.dispatchEvent(new Event("input", { bubbles: true }))
-    const dayBox = document.querySelector(`input[aria-label="${en["calendar.page.dayOfMonth"]}"]`) as HTMLInputElement
-    dayBox.value = "31"
-    dayBox.dispatchEvent(new Event("input", { bubbles: true }))
-    ;[...document.querySelectorAll("button")]
-      .find((button) => button.textContent?.includes("Add task"))!
-      .dispatchEvent(new MouseEvent("click", { bubbles: true }))
-    await settle()
-    expect(calendarWrites).toBe(1)
   })
 })

@@ -2150,8 +2150,6 @@ export const dict = {
   "home.app.contacts.stat.running": "running",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "memory",
-  "home.app.calendar.name": "Calendar",
-  "home.app.calendar.subtitle": "Schedule agents to run on a repeating date",
   "home.app.recipes.name": "Recipes",
   "home.app.recipes.subtitle": "Ready-made prompts your agents can cook",
   "home.app.files.name": "Files",
@@ -2629,31 +2627,6 @@ export const dict = {
   "recipes.page.cancel": "Cancel",
   "recipes.page.importingNeverReplacesARecipeYou":
     "Importing never replaces a recipe you already have — a name that is taken gets the next free one.",
-
-  // ── Calendar page — keyed 2026-09-03; these strings shipped as literals until then. ──
-  "calendar.page.editTask": "Edit task",
-  "calendar.page.deleteTask": "Delete task",
-  "calendar.page.titleEGNewYearGreeting": "Title (e.g. New Year greeting)",
-  "calendar.page.promptTheAgentRunsEG":
-    "Prompt the agent runs — e.g. Congratulate our clients with the New Year and unobtrusively promote our product.",
-  "calendar.page.runOnceAt": "Run once at",
-  "calendar.page.runAt": "Run at",
-  "calendar.page.dayOfMonth": "Day of month",
-  "calendar.page.nextRun": "Next run",
-  "calendar.page.noUpcomingRunsScheduled": "No upcoming runs scheduled.",
-  "calendar.page.scheduledTasks": "Scheduled tasks",
-  "calendar.page.couldNotReadTheRecentRun": "Could not read the recent-run history.",
-  "calendar.page.recentRuns": "Recent runs",
-  "calendar.page.timesAreInYourLocalTimezone": "Times are in your local timezone.",
-  "calendar.page.now": "Now",
-  "calendar.page.loadingYourScheduledTasks": "Loading your scheduled tasks…",
-  "calendar.page.couldNotReadYourScheduledTasks":
-    "Could not read your scheduled tasks. They are still on the instance and still running — only this list failed to arrive, so there is nothing here to add again.",
-  "calendar.page.noTasksYetAddOneBelow": "No tasks yet — add one below.",
-  "calendar.page.edit": "Edit",
-  "calendar.page.cancel": "Cancel",
-  "calendar.page.repeat": "Repeat",
-  "calendar.page.responsible": "Responsible",
 
   // ── Memory graph page — keyed 2026-09-03; these strings shipped as literals until then. ──
 }

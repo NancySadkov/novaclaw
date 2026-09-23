@@ -191,8 +191,7 @@ export const HOST_MUTATING_ACTIONS: readonly string[] = [...new Set(MODE_RULES.y
 //
 // WHERE THE SWITCH LIVES: nowhere new. Both halves already exist and already compose.
 //   1. Attendance is a property of the chain ROOT (`attendedRoot`, the Agent Jail doctrine) —
-//      switchable per chat by the composer's Mode control, per schedule by the Calendar, and per
-//      spawn by `SessionSpawner`.
+//      switchable per chat by the composer's Mode control and per spawn by `SessionSpawner`.
 //   2. The escape hatch is already a permission MODE: `yolo` is the ONE mode whose overlay ALLOWS
 //      external WRITES outright (MODE_RULES above) — the documented "everything, incl. outside
 //      the project". Reads are available in every mode and are not part of this stance.
@@ -201,7 +200,7 @@ export const HOST_MUTATING_ACTIONS: readonly string[] = [...new Set(MODE_RULES.y
 // bypassing it: a spawned child can never reach `yolo` past a lower parent (`moreRestrictive`
 // clamps it), so a sub-session can never escape the stance its root chose. The intended
 // unattended posture is therefore `bypass` — act freely INSIDE the work folder, hard-denied
-// outside it — which is exactly what the Calendar already defaults a schedule to.
+// outside it.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**

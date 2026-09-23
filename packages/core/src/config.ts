@@ -127,8 +127,8 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   // Strict detail, affective sampling and judge detail, resolved through `AgentDefaults` and
   // merged field-wise by `session/officer-harness.ts`. Stored rows for these keys are skipped
   // by the per-key settings decode (no migration, no boot failure — principle 1: pre-release,
-  // drop them). The shipped code defaults remain the base layer (`Nudge.defaults()`,
-  // `Introspection.resolve(undefined)`, sampling/model defaults at the readers).
+  // drop them). Shipped Nudge defaults resolve per officer in AgentConfigStore's configured
+  // projection; other defaults resolve at their readers.
   mcp: ConfigMCP.Info.pipe(Schema.optional).annotate({
     description: "MCP server configuration",
   }),

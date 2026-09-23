@@ -718,6 +718,7 @@ const NO_EXTERNAL = [
   "deferred/register-app.gen.ts",
   "deferred/resource-status.gen.ts",
   "deferred/revert.gen.ts",
+  "deferred/schedule.gen.ts",
   "deferred/session.gen.ts",
   "deferred/trash.gen.ts",
   "deferred/write-hex.gen.ts",
@@ -803,6 +804,8 @@ const NO_EXTERNAL = [
   // process measured about the machine it is running on; no party other than the user is involved.
   "resource-status.ts",
   "revert.ts",
+  // Returns this instance's own per-officer schedule definitions and window ledger.
+  "schedule.ts",
   // Reads the CALLING AGENT'S OWN configuration row and says it back to that same agent — its model,
   // memory setting, step budget, job title. No party other than the user is on the path.
   //

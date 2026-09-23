@@ -15,7 +15,7 @@ import { stripComments } from "@/utils/strip-comments"
  *
  * ⚠️ A SOURCE ledger, and it says so. Proving *"the app survives a 500 from
  * `/api/community/contact`"* needs the real router and the real boundary, which this package's tests
- * do not stand up; `test-browser/community-calendar-degraded-render.test.tsx` mounts the panel and
+ * do not stand up; `test-browser/community-degraded-render.test.tsx` mounts the panel and
  * proves the three renderings. What this file proves is the pair of structural facts those
  * renderings rest on: **no handler here invents a value**, and **every read is held in a
  * `createSettledResource`** — the wrapper whose accessor cannot throw and whose `failed` is distinct

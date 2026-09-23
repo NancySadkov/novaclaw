@@ -1425,7 +1425,7 @@ function foldLayers<A>(layers: Record<string, A[]>, encode: (layer: A) => unknow
  * collapse to one layer (`collapseLayers`), so this fold is normally over a single entry; it still
  * compacts the multi-source SEEDED layers, and any entity last written before that fix.
  */
-export const overlay = (base: Record<string, unknown>) =>
+export const overlay = (base: Record<string, unknown>, view: "stored" | "settings" = "stored") =>
   Effect.gen(function* () {
     const result: Record<string, unknown> = { ...base }
 
@@ -1443,7 +1443,7 @@ export const overlay = (base: Record<string, unknown>) =>
     if (defaultModel !== undefined) result.model = defaultModel
 
     const agents = yield* AgentConfigStore.Service
-    const agentLayers = yield* agents.agents()
+    const agentLayers = yield* (view === "settings" ? agents.configured() : agents.agents())
     if (Object.keys(agentLayers).length > 0) {
       result.agents = foldLayers(agentLayers, Schema.encodeSync(ConfigAgent.Info))
     }

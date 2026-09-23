@@ -110,21 +110,6 @@ export function useBuiltinApps(): () => HomeApp[] {
       open: () => navigate("/models"),
     },
     {
-      id: "calendar",
-      get title() {
-        return name("calendar")
-      },
-      icon: "calendar",
-      tile: "/assets/skin/glyphs/calendar.png",
-      tileNeedsFrame: true,
-      accent: "#6366f1",
-      get subtitle() {
-        return sub("calendar")
-      },
-      source: "builtin",
-      open: () => navigate("/calendar"),
-    },
-    {
       id: "recipes",
       get title() {
         return name("recipes")

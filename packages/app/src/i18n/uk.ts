@@ -537,8 +537,6 @@ export const dict = {
   "home.app.contacts.stat.running": "виконується",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "пам'ять",
-  "home.app.calendar.name": "Календар",
-  "home.app.calendar.subtitle": "Плануйте агентів на повторювані дати",
   "home.app.recipes.name": "Рецепти",
   "home.app.recipes.subtitle": "Готові запити, які можуть приготувати ваші агенти",
   "home.app.files.name": "Файли",

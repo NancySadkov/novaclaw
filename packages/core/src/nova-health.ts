@@ -175,15 +175,15 @@ export const fromProvider = (input: {
 })
 
 /**
- * Scheduled runs — the CALENDAR scheduler.
+ * Scheduled work — the agent schedule service.
  *
  * 🔴 **This used to read the wrong subsystem.** It took a boolean derived from
  * `SessionScheduler.snapshot()`, which is per-device ADMISSION control — how many generations may
  * run at once — and has nothing to do with running scheduled work. The thing that fires due
- * schedules is `CalendarScheduler` (`schedule/scheduler.ts`), and it is the one behind a capability
+ * schedules is `ScheduleScheduler` (`schedule/scheduler.ts`), and it is the one behind a capability
  * edge, so it is also the one that can be `unavailable` while everything else is fine. The row was
  * labelled "Scheduled runs" and detailed "Scheduled work is not being started" the whole time — the
- * copy described the calendar scheduler while the reading came from a different module with a
+ * copy described the schedule service while the reading came from a different module with a
  * similar name.
  *
  * ⚠️ Takes the capability's recorded state, which the registry already holds, so reading it starts
@@ -198,7 +198,7 @@ export const fromScheduler = (state: "idle" | "starting" | "ready" | "unavailabl
       id: "scheduler",
       label: "Scheduled runs",
       status: "problem",
-      detail: "Scheduled work is not being started, so anything on the calendar will not run.",
+      detail: "Scheduled work is not being started, so scheduled work will not run.",
       action: "Restart the app; if it persists, check the error log in Debug.",
     }
   if (state === "ready") return { id: "scheduler", label: "Scheduled runs", status: "ok" }
@@ -345,7 +345,7 @@ export const fromWorldMemory = (input: {
 /**
  * Any OTHER optional capability that is down — the generic row.
  *
- * 🔴 Five capability edges are registered (`calendar-scheduler`, `local-model`, `memory`,
+ * 🔴 Five capability edges are registered (`schedule-scheduler`, `local-model`, `memory`,
  * `messenger`, `messenger-login`) and until 2026-08-12 only two could ever reach this board. The
  * rest were observable solely through `/api/capability`, a Developer-mode surface, so a first user
  * whose messenger gateway or local model refused to start had nothing to look at — the same silence
@@ -359,7 +359,7 @@ export const fromWorldMemory = (input: {
  * state, which is strictly better than the edge's (memory's engine can be broken while its
  * capability reads `ready`), and two rows for one thing would read as two faults.
  */
-export const NAMED_CAPABILITY_ROWS: ReadonlySet<string> = new Set(["memory", "calendar-scheduler"])
+export const NAMED_CAPABILITY_ROWS: ReadonlySet<string> = new Set(["memory", "schedule-scheduler"])
 
 export const fromCapability = (name: string): Signal => ({
   id: `capability:${name}`,

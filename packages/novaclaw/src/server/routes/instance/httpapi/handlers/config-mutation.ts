@@ -34,5 +34,5 @@ export const mutateConfig = Effect.fn("ConfigHttpApi.mutate")(function* (input: 
   if (consumed.size > 0) yield* config.invalidate()
 
   const base = (yield* (input.readView === "global" ? config.getGlobal() : config.get())) as Record<string, unknown>
-  return Schema.decodeUnknownSync(ConfigV2.Info)(yield* ConfigStoreWrite.overlay(base))
+  return Schema.decodeUnknownSync(ConfigV2.Info)(yield* ConfigStoreWrite.overlay(base, "settings"))
 })

@@ -14,11 +14,9 @@ import { expectAppVisible } from "../utils/waits"
 
 const routes = [
   ["Contacts", "/tasks"],
-  ["Notes", "/notes"],
-  ["Calendar", "/calendar"],
+  ["Models", "/models"],
   ["Recipes", "/recipes"],
   ["Files", "/files"],
-  ["Trash", "/trash"],
 ] as const
 
 test.beforeEach(async ({ page }) => {

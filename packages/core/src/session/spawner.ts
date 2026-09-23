@@ -65,7 +65,7 @@ export interface SpawnInput {
   /**
    * The spawning session — becomes the child's `parentID`, the root of config inheritance.
    *
-   * ⚠️ **Optional since 2026-08-11, for ROOTLESS launches (Calendar).** A scheduled run has no
+   * ⚠️ **Optional since 2026-08-11, for ROOTLESS launches.** A rootless run has no
    * parent, and inventing one to satisfy this field would put a lie in the session tree — the child
    * would inherit config from a session that never asked for it, and `wait` would offer a join to a
    * supervisor that does not exist. So it is absent, and the three fork-bomb guards are SKIPPED
@@ -169,8 +169,8 @@ export const layer = Layer.effect(
         // decision, so the lock is only keeping `createSessionRecord` orderly.
         const child = yield* spawnLocks.withLock(root?.id ?? "@rootless")(
           Effect.gen(function* () {
-            // The instance-wide host verdict comes first, including for rootless calendar launches.
-            // A schedule has no parent quota to inspect, but it still creates a worker on this host.
+            // The instance-wide host verdict comes first, including for rootless launches.
+            // A rootless launch has no parent quota to inspect, but it still creates a worker on this host.
             const admission = yield* SpawnAdmission.check()
             if (admission.refuse !== undefined)
               return yield* Effect.fail(new SpawnLimitError({ reason: "pressure", depth: 0, limit: 0 }))

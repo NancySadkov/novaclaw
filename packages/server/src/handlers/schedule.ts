@@ -2,10 +2,10 @@ import { Clock, Effect } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Database } from "@novaclaw/core/database/database"
 import { AgentV2 } from "@novaclaw/core/agent"
-import { CalendarStore } from "@novaclaw/core/schedule/store"
+import { ScheduleStore } from "@novaclaw/core/schedule/store"
 import { Recurrence } from "@novaclaw/core/schedule/recurrence"
 import { InvalidRequestError } from "@novaclaw/protocol/errors"
-import { CalendarApi, handlerLayer } from "../handler-api"
+import { ScheduleApi, handlerLayer } from "../handler-api"
 
 const requireRunnableAgent = Effect.fn("Schedule.requireRunnableAgent")(function* (agentID: string) {
   const roster = yield* AgentV2.Service.use((agent) => agent.all())
@@ -42,62 +42,67 @@ const hostZoneAgreeingWith = (tzOffsetMin: number | undefined, now: number): str
   return Recurrence.zoneOffsetMinutes(zone, now) === tzOffsetMin ? zone : undefined
 }
 
-export const CalendarHandler = handlerLayer(
-  HttpApiBuilder.group(CalendarApi, "server.calendar", (handlers) =>
+const requireUsableZone = (recurrence: Recurrence.Recurrence, now: number) =>
+  Effect.gen(function* () {
+    const zone = Recurrence.zoneOf(recurrence)
+    if (zone !== undefined && Recurrence.zoneOffsetMinutes(zone, now) === undefined)
+      return yield* new InvalidRequestError({ message: `Unknown time zone: ${zone}` })
+    return recurrence
+  })
+
+export const ScheduleHandler = handlerLayer(
+  HttpApiBuilder.group(ScheduleApi, "server.schedule", (handlers) =>
     Effect.gen(function* () {
       return handlers
         .handle(
-          "calendar.schedule.list",
+          "schedule.list",
           Effect.fn(function* (ctx) {
             const { db } = yield* Database.Service
-            return yield* CalendarStore.listForAgent(db, ctx.params.agentID)
+            return yield* ScheduleStore.listForAgent(db, ctx.params.agentID)
           }),
         )
         .handle(
-          "calendar.schedule.create",
+          "schedule.create",
           Effect.fn(function* (ctx) {
             const { db } = yield* Database.Service
             const now = yield* Clock.currentTimeMillis
             yield* requireRunnableAgent(ctx.params.agentID)
             // The wire's recurrence is the engine's recurrence, bounds and all.
-            const input: CalendarStore.CreateInput = { ...ctx.payload, agent: ctx.params.agentID }
-            return yield* CalendarStore.create(
+            const input: ScheduleStore.CreateInput = { ...ctx.payload, agent: ctx.params.agentID }
+            const recurrence = yield* requireUsableZone(
+              Recurrence.withZone(input.recurrence, hostZoneAgreeingWith(input.tzOffsetMin, now)),
+              now,
+            )
+            return yield* ScheduleStore.create(
               db,
               {
                 ...input,
                 agent: ctx.params.agentID,
-                recurrence: Recurrence.withZone(input.recurrence, hostZoneAgreeingWith(input.tzOffsetMin, now)),
+                recurrence,
               },
               now,
             )
           }),
         )
         .handle(
-          "calendar.schedule.update",
+          "schedule.update",
           Effect.fn(function* (ctx) {
             const { db } = yield* Database.Service
             const now = yield* Clock.currentTimeMillis
-            const existing = yield* CalendarStore.getForAgent(db, ctx.params.agentID, ctx.params.id)
+            const existing = yield* ScheduleStore.getForAgent(db, ctx.params.agentID, ctx.params.id)
             if (existing === undefined)
               return yield* new InvalidRequestError({ message: `No such schedule: ${ctx.params.id}` })
 
-            const patch: CalendarStore.UpdateInput = ctx.payload
-            // A re-sent recurrence keeps the zone the schedule already had — the wire cannot carry one
-            // yet, so reading it back off the stored rule is what stops a save from downgrading a
-            // zone-correct schedule to a fixed offset.
-            const updated = yield* CalendarStore.updateForAgent(
+            const patch: ScheduleStore.UpdateInput = ctx.payload
+            const recurrence =
+              patch.recurrence === undefined
+                ? undefined
+                : yield* requireUsableZone(patch.recurrence, now)
+            const updated = yield* ScheduleStore.updateForAgent(
               db,
               ctx.params.agentID,
               ctx.params.id,
-              patch.recurrence === undefined
-                ? patch
-                : {
-                    ...patch,
-                    recurrence: Recurrence.withZone(
-                      patch.recurrence,
-                      Recurrence.zoneOf(existing.recurrence) ?? hostZoneAgreeingWith(patch.tzOffsetMin, now),
-                    ),
-                  },
+              recurrence === undefined ? patch : { ...patch, recurrence },
               now,
             )
             // A concurrent delete between the read and write is still a client error, not a 500.
@@ -107,19 +112,36 @@ export const CalendarHandler = handlerLayer(
           }),
         )
         .handle(
-          "calendar.schedule.remove",
+          "schedule.remove",
           Effect.fn(function* (ctx) {
             const { db } = yield* Database.Service
-            const removed = yield* CalendarStore.removeForAgent(db, ctx.params.agentID, ctx.params.id)
+            const removed = yield* ScheduleStore.removeForAgent(db, ctx.params.agentID, ctx.params.id)
             if (!removed) return yield* new InvalidRequestError({ message: `No such schedule: ${ctx.params.id}` })
             return HttpApiSchema.NoContent.make()
           }),
         )
         .handle(
-          "calendar.fires.list",
+          "schedule.fires.list",
           Effect.fn(function* (ctx) {
             const { db } = yield* Database.Service
-            return yield* CalendarStore.recentFiresForAgent(db, ctx.params.agentID)
+            return yield* ScheduleStore.recentFiresForAgent(db, ctx.params.agentID)
+          }),
+        )
+        .handle(
+          "schedule.confirm",
+          Effect.fn(function* (ctx) {
+            const { db } = yield* Database.Service
+            const now = yield* Clock.currentTimeMillis
+            const confirmed = yield* ScheduleStore.confirmForAgent(
+              db,
+              ctx.params.agentID,
+              ctx.params.id,
+              ctx.payload.occurrenceMillis,
+              now,
+            )
+            if (confirmed === undefined)
+              return yield* new InvalidRequestError({ message: "This scheduled window is no longer open for confirmation." })
+            return confirmed
           }),
         )
     }),

@@ -11,6 +11,7 @@ import {
 import * as Socket from "effect/unstable/socket/Socket"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import { NudgeService } from "@novaclaw/core/nudge-service"
 import { ConfigSeedStartup } from "@novaclaw/core/config-seed-startup"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
@@ -56,7 +57,7 @@ import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionReceipt } from "@novaclaw/core/session/receipt"
-import { CalendarScheduler } from "@novaclaw/core/schedule/scheduler"
+import { ScheduleScheduler } from "@novaclaw/core/schedule/scheduler"
 import { RecipeBuiltin } from "@novaclaw/core/recipe-builtin"
 import { LocalModelRuntime } from "@/local-model/runtime"
 import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
@@ -254,6 +255,7 @@ const app = LayerNode.group([
   FSUtil.node,
   Global.node,
   AgentConfigStore.node,
+  NudgeService.node,
   CatalogStore.node,
   CommandConfigStore.node,
   SettingsConfigStore.node,
@@ -432,15 +434,15 @@ const messengerCapabilityStartup = Layer.effectDiscard(
     yield* Effect.forkScoped(gateway.get.pipe(Effect.asVoid))
   }),
 ).pipe(Layer.provide(messengerCapabilityHandles))
-const calendarSchedulerCapability = LayerNode.compile(CalendarScheduler.sharedCapabilityNode)
-const calendarSchedulerStartup = Layer.effectDiscard(
+const scheduleSchedulerCapability = LayerNode.compile(ScheduleScheduler.sharedCapabilityNode)
+const scheduleSchedulerStartup = Layer.effectDiscard(
   Effect.gen(function* () {
     const registry = yield* CapabilityRegistry.Service
-    const scheduler = yield* CalendarScheduler.CapabilityService
-    yield* registry.register("calendar-scheduler", scheduler)
+    const scheduler = yield* ScheduleScheduler.CapabilityService
+    yield* registry.register("schedule-scheduler", scheduler)
     yield* Effect.forkScoped(scheduler.get.pipe(Effect.asVoid))
   }),
-).pipe(Layer.provide(calendarSchedulerCapability))
+).pipe(Layer.provide(scheduleSchedulerCapability))
 
 // Settings → SQLite: run the ONE first-boot import pass (every per-subsystem store) at server
 // startup, BEFORE any location boots — so every dir (incl. the shared scratch dir) sees the
@@ -506,7 +508,7 @@ export function createRoutes(
     Layer.provideMerge(messengerCapabilityStartup),
     // The scheduler capability starts asynchronously and captures the shared SessionV2/Database/Global.
     // A constructor refusal is registered as recovery data instead of killing the server layer.
-    Layer.provideMerge(calendarSchedulerStartup),
+    Layer.provideMerge(scheduleSchedulerStartup),
     Layer.provide(
       SessionV2.defaultLayer.pipe(
         // Close SessionV2's execution requirement at its own provider boundary. This is the same

@@ -23,12 +23,6 @@ import path from "node:path"
 const read = (...parts: string[]) => fs.readFileSync(path.join(import.meta.dir, ...parts), "utf8")
 
 describe("no page owns a second, uncaught roster fetch", () => {
-  test("🔴 calendar reads the server context's shared roster", () => {
-    const source = read("calendar.tsx")
-    expect(source).toContain("rosterCtx()?.agents.list()")
-    expect(source).not.toContain("listAgents(")
-  })
-
   test("🔴 memory-graph reads the server context's shared roster", () => {
     const source = read("memory-graph.tsx")
     expect(source).toContain("context()?.agents.list()")

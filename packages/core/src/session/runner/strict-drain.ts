@@ -471,7 +471,7 @@ export const make = (dependencies: Dependencies) => {
       // type, whether an untrusted messenger chat drives the turn, the operator's configured
       // shell, and the live offline policy — and without them the gate refuses to invent an
       // attendance nobody declared and runs raw. Handing them over is what makes an UNATTENDED
-      // Strict chain (a Calendar fire, a messenger dispatch with strict.enabled) bwrap-confined on
+      // Strict chain (a scheduled nudge, a messenger dispatch with strict.enabled) bwrap-confined on
       // a host with a sandbox backend, exactly like the `bash` tool.
       const rootType = yield* rootSessionType(sessionID, (id) => store.get(id as SessionSchema.ID))
       // messenger-plan §3.4: the binding can sit on an ANCESTOR (a bound session spawning a worker

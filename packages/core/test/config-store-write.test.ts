@@ -1,6 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Effect, Exit, Schema } from "effect"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import { ConfigAgent } from "@novaclaw/core/config/agent"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
 import { Config } from "@novaclaw/core/config"
@@ -12,6 +13,7 @@ import { ProviderV2 } from "@novaclaw/core/provider"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { LogSettings } from "@novaclaw/core/observability/log-settings"
+import { Nudge } from "@novaclaw/core/nudge"
 import { testEffect } from "./lib/effect"
 
 // Config→SQLite step 7 gates: the updateConfig patch router (per-store semantics) + the
@@ -327,6 +329,21 @@ describe("ConfigStoreWrite export→import round-trip (step 8)", () => {
 })
 
 describe("ConfigStoreWrite.overlay", () => {
+  it.effect("shows officer Nudges in settings without adding them to stored export", () =>
+    Effect.gen(function* () {
+      const agents = yield* AgentConfigStore.Service
+      yield* agents.setLayers("postal", [Schema.decodeUnknownSync(ConfigAgent.Info)({ title: "Postal agent" })])
+      const stored = (yield* ConfigStoreWrite.overlay({})) as { agents?: Record<string, { nudges?: unknown[] }> }
+      const settings = (yield* ConfigStoreWrite.overlay({}, "settings")) as {
+        agents?: Record<string, { nudges?: { id: string }[] }>
+      }
+      expect(stored.agents?.nova).toBeUndefined()
+      expect(stored.agents?.postal?.nudges).toBeUndefined()
+      expect(settings.agents?.nova?.nudges?.map((item) => item.id)).toEqual(Nudge.defaults().map((item) => item.id))
+      expect(settings.agents?.postal?.nudges?.map((item) => item.id)).toEqual(Nudge.defaults().map((item) => item.id))
+    }),
+  )
+
   it.effect("mirrors settings, folded providers, and defaults over the file view", () =>
     Effect.gen(function* () {
       const settings = yield* SettingsConfigStore.Service

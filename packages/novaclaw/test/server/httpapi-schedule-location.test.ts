@@ -15,10 +15,10 @@ type ExecutionIdentity = {
 }
 
 const ambientCreate: ExecutionIdentity = {
-  agent: AgentV2.ID.make("calendar-http-ambient-create"),
+  agent: AgentV2.ID.make("schedule-http-ambient-create"),
 }
 const ambientUpdate: ExecutionIdentity = {
-  agent: AgentV2.ID.make("calendar-http-ambient-update"),
+  agent: AgentV2.ID.make("schedule-http-ambient-update"),
 }
 
 const locationRef = (directory: string) => Location.Ref.make({ directory: AbsolutePath.make(directory) })
@@ -33,7 +33,7 @@ const seedLocation = (
     yield* agents.transform((draft) => {
       for (const identity of identities) {
         draft.update(identity.agent, (agent) => {
-          agent.description = `HTTP calendar fixture ${identity.agent}`
+          agent.description = `HTTP schedule fixture ${identity.agent}`
         })
       }
     })
@@ -56,7 +56,7 @@ afterEach(async () => {
   await resetDatabase()
 })
 
-describe("calendar location routing over HTTP", () => {
+describe("schedule location routing over HTTP", () => {
   it.effect("binds an agent schedule to its target and checks the ambient roster", () =>
     Effect.gen(function* () {
       const ambientDirectory = yield* tmpdirScoped({ git: true })

@@ -5,6 +5,7 @@ import { Effect, Layer, Schema } from "effect"
 import { AgentConfigStore } from "../agent-config-store"
 import { AgentV2 } from "../agent"
 import { ConfigNudge } from "../config/nudge"
+import { ConfigAgent } from "../config/agent"
 import { TIER_ACTION } from "../config-tier"
 import { makeLocationNode } from "../effect/app-node"
 import { PermissionV2 } from "../permission"
@@ -49,7 +50,8 @@ export const layer = Layer.effectDiscard(
                   return yield* failure("Nothing changed: an officer may manage only its own nudges.")
 
                 const allAgentLayers = yield* agents.agents()
-                const readPersonal = (id: string) => AgentConfigStore.fold(allAgentLayers[id] ?? [])
+                const configured = yield* agents.configured()
+                const readPersonal = (id: string) => AgentConfigStore.fold(configured[id] ?? [])
 
                 if (input.op === "list") {
                   const personal = readPersonal(target)?.nudges ?? []
@@ -76,7 +78,11 @@ export const layer = Layer.effectDiscard(
                 const writePersonal = (id: string, patch: { nudges?: readonly ConfigNudge.Info[] }) =>
                   Effect.gen(function* () {
                     const layers = allAgentLayers[id]
-                    if (!layers?.length) return yield* failure(`No officer named ${id}.`)
+                    if (!layers?.length && id !== AgentV2.NOVA_ID) return yield* failure(`No officer named ${id}.`)
+                    if (!layers?.length) {
+                      yield* agents.setLayers(id, [{ ...patch } as ConfigAgent.Info])
+                      return
+                    }
                     const last = layers.at(-1)!
                     yield* agents.setLayers(id, [...layers.slice(0, -1), { ...last, ...patch }])
                   })

@@ -34,6 +34,7 @@ import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useTabs } from "@/context/tabs"
 import { ServerConnection } from "@/context/server"
 import { SettingsNudgesV2 } from "@/components/settings-v2/nudges"
+import { SettingsScheduleV2 } from "@/components/settings-v2/schedule"
 import { PresetFieldV2 } from "@/components/settings-v2/parts/preset-field"
 import { OfficerRecipes } from "@/components/officer-recipes"
 import type { Recipe as AdhocRecipe } from "@/components/settings-v2/tools-draft"
@@ -253,13 +254,14 @@ export function AgentConfigScreen(props: {
     | "introspection"
     | "tools"
     | "nudges"
+    | "schedule"
     | "memory"
     | "workers"
     | "io"
     | "chat"
   const [activeTab, setActiveTab] = createSignal<SettingsTab>("profile")
   const desktopSettings = createMediaQuery("(min-width: 768px)")
-  const settingsTabs = createMemo(() => [
+  const settingsTabs = () => [
     { id: "profile" as const, label: "Profile", icon: "user" as const },
     { id: "mind" as const, label: "Mind", icon: "brain" as const },
     { id: "work" as const, label: "Work", icon: "task" as const },
@@ -268,11 +270,12 @@ export function AgentConfigScreen(props: {
     { id: "introspection" as const, label: "Introspection", icon: "eye" as const },
     { id: "tools" as const, label: "Tools", icon: "code" as const },
     { id: "nudges" as const, label: "Nudges", icon: "prompt" as const },
+    ...(postureValue() === "agent" ? [{ id: "schedule" as const, label: "Schedule", icon: "calendar" as const }] : []),
     { id: "memory" as const, label: "Memory", icon: "archive" as const },
     { id: "workers" as const, label: "Workers", icon: "branch" as const },
     { id: "io" as const, label: "Input / Output", icon: "chats" as const },
     ...(props.tuning ? [{ id: "chat" as const, label: "This chat", icon: "chats" as const }] : []),
-  ])
+  ]
   /**
    * ⚠️ Through the dialog STACK, not as a nested `<Dialog>`. The first attempt rendered
    * `<AgentHelpDialog>` inside this component's tree and nothing appeared: the shell's content is a
@@ -2539,6 +2542,14 @@ export function AgentConfigScreen(props: {
               {(id) => (
                 <section class="agent-settings-card" data-settings-tab="nudges" data-section="nudges">
                   <SettingsNudgesV2 fixedAgentID={id()} />
+                </section>
+              )}
+            </Show>
+
+            <Show when={activeTab() === "schedule" && postureValue() === "agent" ? props.agentID : undefined}>
+              {(id) => (
+                <section class="agent-settings-card" data-settings-tab="schedule" data-section="schedule">
+                  <SettingsScheduleV2 agentID={id()} />
                 </section>
               )}
             </Show>

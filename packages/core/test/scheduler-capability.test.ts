@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Effect, Layer } from "effect"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { CalendarScheduler } from "@novaclaw/core/schedule/scheduler"
+import { ScheduleScheduler } from "@novaclaw/core/schedule/scheduler"
 
 /**
  * Fault-injection for the SCHEDULER edge — `` §1: *"Boot reaches a usable shell
@@ -27,20 +27,20 @@ describe("scheduler capability", () => {
     let refuse = true
     let builds = 0
     const poisoned = Layer.effect(
-      CalendarScheduler.Service,
+      ScheduleScheduler.Service,
       Effect.sync(() => {
         builds++
         if (refuse) throw new Error("forced scheduler boot defect")
-        return CalendarScheduler.Service.of({} as never)
+        return ScheduleScheduler.Service.of({} as never)
       }),
     )
-    const graph = AppNodeBuilder.build(LayerNode.group([CalendarScheduler.capabilityNode]), [
-      [CalendarScheduler.node, poisoned],
+    const graph = AppNodeBuilder.build(LayerNode.group([ScheduleScheduler.capabilityNode]), [
+      [ScheduleScheduler.node, poisoned],
     ])
 
     await Effect.runPromise(
       Effect.gen(function* () {
-        const capability = yield* CalendarScheduler.capabilityNode.service
+        const capability = yield* ScheduleScheduler.capabilityNode.service
 
         // Booting the graph must not acquire it. A scheduled-work subsystem that is built eagerly
         // turns "my calendar backend is broken" into "the app will not start".
@@ -52,7 +52,7 @@ describe("scheduler capability", () => {
         expect(result.ok).toBe(false)
         expect(yield* capability.status).toMatchObject({
           state: "unavailable",
-          reason: { capability: "calendar-scheduler", kind: "failed" },
+          reason: { capability: "schedule-scheduler", kind: "failed" },
           attempts: 1,
         })
 
@@ -77,19 +77,19 @@ describe("scheduler capability", () => {
    */
   test("the same defect, wired without the capability edge, does kill the boot", async () => {
     const poisoned = Layer.effect(
-      CalendarScheduler.Service,
+      ScheduleScheduler.Service,
       Effect.sync((): never => {
         throw new Error("forced scheduler boot defect")
       }),
     )
-    const graph = AppNodeBuilder.build(LayerNode.group([CalendarScheduler.node]), [[CalendarScheduler.node, poisoned]])
+    const graph = AppNodeBuilder.build(LayerNode.group([ScheduleScheduler.node]), [[ScheduleScheduler.node, poisoned]])
 
     // ⚠️ A constructor that THROWS produces a defect, not a typed failure — `Effect.match` and
     // `catchAll` sail straight past it. That is the whole reason the capability edge has to exist:
     // ordinary error handling around a boot node would not have caught this.
     const outcome = await Effect.runPromise(
       Effect.gen(function* () {
-        return yield* CalendarScheduler.Service
+        return yield* ScheduleScheduler.Service
       }).pipe(Effect.provide(graph)),
     ).then(
       () => "survived",

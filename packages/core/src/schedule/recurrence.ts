@@ -1,4 +1,4 @@
-// P0 of the Calendar / cron-session creator.
+// Wall-clock recurrence for agent schedules.
 //
 // Pure recurrence engine: `nextFire` returns the next fire instant STRICTLY AFTER `after`. This is
 // deterministic and unit-testable: `after` is always passed in, and only the millis-arg `Date`

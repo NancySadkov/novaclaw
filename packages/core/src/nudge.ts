@@ -2,9 +2,9 @@ export * as Nudge from "./nudge"
 
 import path from "node:path"
 import type { ConfigNudge } from "./config/nudge"
-import { resolved, validPattern } from "./nudge-definition"
+import { validPattern } from "./nudge-definition"
 
-export { defaults, JAVASCRIPT_TIME_ID, LOW_RESOURCE_ID, NEW_DAY_ID, resolved, validPattern } from "./nudge-definition"
+export { defaults, JAVASCRIPT_TIME_ID, LOW_RESOURCE_ID, NEW_DAY_ID, validPattern } from "./nudge-definition"
 
 export type Event =
   | {

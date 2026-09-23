@@ -3294,125 +3294,149 @@ class ApiV2Messenger extends NovaClawApiClient {
   }
 }
 
-class ApiV2CalendarSchedule extends NovaClawApiClient {
-  /**
-   * List calendar schedules
-   *
-   * Retrieve every scheduled agent-launch task with its next-fire time.
-   */
-  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<
-      T.V2CalendarScheduleListResponses,
-      T.V2CalendarScheduleListErrors,
-      ThrowOnError
-    >({
-      url: "/api/calendar/schedule",
-      ...options,
-    })
-  }
-
-  /**
-   * Create a calendar schedule
-   *
-   * Schedule a repeatable or one-shot agent launch. The recurrence is structured (once/daily/weekly/monthly/yearly); the fired session runs the given prompt.
-   */
-  public create<ThrowOnError extends boolean = false>(
-    parameters: {
-      calendarCreateInput: T.CalendarCreateInput
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const body = parameters?.["calendarCreateInput"]
-    return (options?.client ?? this.client).post<
-      T.V2CalendarScheduleCreateResponses,
-      T.V2CalendarScheduleCreateErrors,
-      ThrowOnError
-    >({
-      url: "/api/calendar/schedule",
-      ...options,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Update a calendar schedule
-   *
-   * Patch a scheduled agent-launch task — pause/resume it (enabled), or change its title, prompt, recurrence, or responsible agent. The next-fire time is recomputed; a disabled schedule has none.
-   */
-  public update<ThrowOnError extends boolean = false>(
-    parameters: {
-      id: string
-      calendarUpdateInput: T.CalendarUpdateInput
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { id: parameters?.["id"] }
-    const body = parameters?.["calendarUpdateInput"]
-    return (options?.client ?? this.client).patch<
-      T.V2CalendarScheduleUpdateResponses,
-      T.V2CalendarScheduleUpdateErrors,
-      ThrowOnError
-    >({
-      url: "/api/calendar/schedule/{id}",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
-   * Remove a calendar schedule
-   *
-   * Delete a scheduled agent-launch task by id.
-   */
-  public remove<ThrowOnError extends boolean = false>(
-    parameters: {
-      id: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { id: parameters?.["id"] }
-    return (options?.client ?? this.client).delete<
-      T.V2CalendarScheduleRemoveResponses,
-      T.V2CalendarScheduleRemoveErrors,
-      ThrowOnError
-    >({
-      url: "/api/calendar/schedule/{id}",
-      ...options,
-      path,
-    })
-  }
-}
-
-class ApiV2CalendarFires extends NovaClawApiClient {
+class ApiV2ScheduleFires extends NovaClawApiClient {
   /**
    * List recent schedule fires
    *
-   * Recent scheduled-launch fires across all schedules, newest first (the run history).
+   * Recent scheduled runs for one agent, newest first.
    */
-  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      agentID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { agentID: parameters?.["agentID"] }
     return (options?.client ?? this.client).get<
-      T.V2CalendarFiresListResponses,
-      T.V2CalendarFiresListErrors,
+      T.V2ScheduleFiresListResponses,
+      T.V2ScheduleFiresListErrors,
       ThrowOnError
     >({
-      url: "/api/calendar/fires",
+      url: "/api/agent/{agentID}/schedule/fires",
       ...options,
+      path,
     })
   }
 }
 
-class ApiV2Calendar extends NovaClawApiClient {
-  private _schedule?: ApiV2CalendarSchedule
-  get schedule(): ApiV2CalendarSchedule {
-    return (this._schedule ??= new ApiV2CalendarSchedule({ client: this.client }))
+class ApiV2Schedule extends NovaClawApiClient {
+  /**
+   * List an agent's schedules
+   *
+   * Retrieve the agent's scheduled tasks with their next-fire times.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      agentID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { agentID: parameters?.["agentID"] }
+    return (options?.client ?? this.client).get<T.V2ScheduleListResponses, T.V2ScheduleListErrors, ThrowOnError>({
+      url: "/api/agent/{agentID}/schedule",
+      ...options,
+      path,
+    })
   }
 
-  private _fires?: ApiV2CalendarFires
-  get fires(): ApiV2CalendarFires {
-    return (this._fires ??= new ApiV2CalendarFires({ client: this.client }))
+  /**
+   * Create an agent schedule
+   *
+   * Schedule a repeatable or one-shot work window. The recurrence is structured (once/daily/weekly/monthly/yearly); the agent receives a task and periodic reminders until it confirms completion.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters: {
+      agentID: string
+      scheduleCreateInput: T.ScheduleCreateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { agentID: parameters?.["agentID"] }
+    const body = parameters?.["scheduleCreateInput"]
+    return (options?.client ?? this.client).post<T.V2ScheduleCreateResponses, T.V2ScheduleCreateErrors, ThrowOnError>({
+      url: "/api/agent/{agentID}/schedule",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Update an agent schedule
+   *
+   * Patch an agent's scheduled task — pause/resume it (enabled), or change its title, prompt, or recurrence. The next-fire time is recomputed; a disabled schedule has none.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      agentID: string
+      id: string
+      scheduleUpdateInput: T.ScheduleUpdateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { agentID: parameters?.["agentID"], id: parameters?.["id"] }
+    const body = parameters?.["scheduleUpdateInput"]
+    return (options?.client ?? this.client).patch<T.V2ScheduleUpdateResponses, T.V2ScheduleUpdateErrors, ThrowOnError>({
+      url: "/api/agent/{agentID}/schedule/{id}",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Remove an agent schedule
+   *
+   * Delete an agent's scheduled task by id.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      agentID: string
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { agentID: parameters?.["agentID"], id: parameters?.["id"] }
+    return (options?.client ?? this.client).delete<T.V2ScheduleRemoveResponses, T.V2ScheduleRemoveErrors, ThrowOnError>(
+      {
+        url: "/api/agent/{agentID}/schedule/{id}",
+        ...options,
+        path,
+      },
+    )
+  }
+
+  /**
+   * Confirm a scheduled window
+   *
+   * Mark one occurrence of an agent's task complete before its window closes.
+   */
+  public confirm<ThrowOnError extends boolean = false>(
+    parameters: {
+      agentID: string
+      id: string
+      scheduleConfirmInput: T.ScheduleConfirmInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { agentID: parameters?.["agentID"], id: parameters?.["id"] }
+    const body = parameters?.["scheduleConfirmInput"]
+    return (options?.client ?? this.client).post<T.V2ScheduleConfirmResponses, T.V2ScheduleConfirmErrors, ThrowOnError>(
+      {
+        url: "/api/agent/{agentID}/schedule/{id}/confirm",
+        ...options,
+        path,
+        body,
+        headers: { "Content-Type": "application/json", ...options?.headers },
+      },
+    )
+  }
+
+  private _fires?: ApiV2ScheduleFires
+  get fires(): ApiV2ScheduleFires {
+    return (this._fires ??= new ApiV2ScheduleFires({ client: this.client }))
   }
 }
 
@@ -4537,9 +4561,9 @@ class ApiV2 extends NovaClawApiClient {
     return (this._messenger ??= new ApiV2Messenger({ client: this.client }))
   }
 
-  private _calendar?: ApiV2Calendar
-  get calendar(): ApiV2Calendar {
-    return (this._calendar ??= new ApiV2Calendar({ client: this.client }))
+  private _schedule?: ApiV2Schedule
+  get schedule(): ApiV2Schedule {
+    return (this._schedule ??= new ApiV2Schedule({ client: this.client }))
   }
 
   private _recipe?: ApiV2Recipe

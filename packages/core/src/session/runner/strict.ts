@@ -773,7 +773,7 @@ export interface RunArgs {
    * every command starts from the curated, secret-free environment, because a harness command is
    * never approved by a human (`consent: "none"`). The CONFINEMENT half cannot engage without a
    * declared root type — the gate will not invent an attendance nobody told it — so commands run
-   * raw. `session/runner/llm.ts` must pass this for an unattended Strict chain (a Calendar fire, a
+   * raw. `session/runner/llm.ts` must pass this for an unattended Strict chain (a scheduled nudge, a
    * messenger dispatch) to be confined or denied the way the `bash` tool already is.
    */
   readonly host?: HostExec.SessionHost

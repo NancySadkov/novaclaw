@@ -100,18 +100,23 @@ describe("NudgeService", () => {
     }),
   )
 
-  it.effect("an officer's own list adds to the shipped defaults and applies without rebuilding the layer", () =>
+  it.effect("an officer's explicit list replaces its defaults and applies without rebuilding the layer", () =>
     Effect.gen(function* () {
       const service = yield* NudgeService.Service
       const agents = yield* AgentConfigStore.Service
       const event = { type: "tool" as const, id: "call-1", name: "bash", input: {} }
-      // The instance-wide stored list is GONE (per-agent tuning owns instructions): the shipped
-      // defaults always ship, and an officer's list is additive. This used to assert a stored
-      // array REPLACED them, which is the behavior that no longer exists.
       yield* agents.setLayers("writer", [{ nudges: [] }])
       expect(yield* service.claim({ sessionID: "ses_b", agentID: "writer", directory: process.cwd(), event })).toEqual(
         [],
       )
+      expect(
+        yield* service.claim({
+          sessionID: "ses_b_defaults_disabled",
+          agentID: "writer",
+          directory: process.cwd(),
+          event: { type: "tool", id: "write-1", name: "write", input: { content: "const elapsed = endedAt - startedAt" } },
+        }),
+      ).toEqual([])
 
       yield* agents.setLayers("writer", [
         {

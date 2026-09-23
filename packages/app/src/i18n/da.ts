@@ -526,8 +526,6 @@ export const dict = {
   "home.app.contacts.stat.running": "kører",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "hukommelse",
-  "home.app.calendar.name": "Kalender",
-  "home.app.calendar.subtitle": "Planlæg agenter til at køre på en gentagen dato",
   "home.app.recipes.name": "Opskrifter",
   "home.app.recipes.subtitle": "Færdige prompts, dine agenter kan koge",
   "home.app.files.name": "Filer",

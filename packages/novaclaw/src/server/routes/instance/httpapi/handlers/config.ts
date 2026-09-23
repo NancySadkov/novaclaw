@@ -18,7 +18,7 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
       // (`sync().data.config` — the composer's strict/tuning global defaults) read the same
       // values the runtime's synthetic document serves.
       const base = (yield* configSvc.get()) as Record<string, unknown>
-      return Schema.decodeUnknownSync(ConfigV2.Info)(yield* ConfigStoreWrite.overlay(base))
+      return Schema.decodeUnknownSync(ConfigV2.Info)(yield* ConfigStoreWrite.overlay(base, "settings"))
     })
 
     // Config→SQLite step 9: settings are instance-wide, so the instance-scoped update routes

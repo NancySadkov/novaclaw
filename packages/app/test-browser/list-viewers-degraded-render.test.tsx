@@ -13,22 +13,16 @@ import { PlatformProvider } from "@/context/platform"
 import { SettingsProvider } from "@/context/settings"
 import { SettingsTrashV2 } from "@/components/settings-v2/trash"
 import { FilesPage } from "@/pages/files"
-import { CalendarPage } from "@/pages/calendar"
 import { RecipesPage } from "@/pages/recipes"
 import { dict as en } from "@/i18n/en"
 import { languageStub } from "./language-stub"
 
 /**
- * **SIX LIST VIEWERS, RENDERED AGAINST A SUBSYSTEM THAT WILL NOT ANSWER.**
+ * List viewers render against a subsystem that will not answer.
  *
  * 🔴 Ruling 2: *an unavailable subsystem names itself instead of rendering empty.* Every page here
  * broke it in the same way — a failed listing became `[]` (or `undefined`) and the screen printed
- * the sentence it prints when there is genuinely nothing, so *"Trash is empty."*, *"No notes yet"*,
- * *"No recipes yet"* and *"No skills yet"* were each told to someone whose data was still there.
- *
- * ⚠️ **Calendar's is the one with consequences beyond a wrong word.** *"No tasks yet — add one
- * below"* is an INVITATION, and the schedules it denies are still firing on the instance: acting on
- * that sentence gives every unattended task a duplicate.
+ * the sentence it prints when there is genuinely nothing.
  *
  * ⚠️ **Three cases per viewer, and the second is what keeps the fix honest.**
  *   1. The read fails → the page NAMES the failure, and the boundary around it did not fire.
@@ -67,24 +61,6 @@ const NOTE_ROWS = [
 ]
 const RECIPE_ROWS = [
   { slug: "hundred-digits", name: "Hundred digits of pi", description: "A Machin-like formula", prompt: "Compute it.", assets: [], builtin: true, updatedAt: 1 },
-]
-const SCHEDULE_ROWS = [
-  {
-    id: "sch1",
-    title: "Water the plants",
-    recurrence: { kind: "daily", time: { hour: 9, minute: 0 } },
-    tzOffsetMin: 0,
-    prompt: "Remind me",
-    agent: null,
-    model: null,
-    location: null,
-    permissionMode: null,
-    enabled: true,
-    nextFireAt: Date.now() + 3_600_000,
-    lastFiredAt: null,
-    timeCreated: 1,
-    timeUpdated: 1,
-  },
 ]
 
 const boom = () => {
@@ -153,11 +129,6 @@ function stubFetch() {
       if (faulty("trash")) throw new TypeError("Failed to fetch")
       return json(blank("trash") ? [] : TRASHED)
     }
-    if (url.includes("api/calendar/schedule")) {
-      if (faulty("schedules")) throw new TypeError("Failed to fetch")
-      return json(blank("schedules") ? [] : SCHEDULE_ROWS)
-    }
-    if (url.includes("api/calendar/fires")) return json([])
     if (url.includes("api/recipe")) {
       if (faulty("recipes")) throw new TypeError("Failed to fetch")
       return json(blank("recipes") ? [] : RECIPE_ROWS)
@@ -268,14 +239,6 @@ const VIEWERS: readonly Viewer[] = [
     reveal: openFilesTrash,
   },
   {
-    title: "Calendar",
-    page: () => <CalendarPage />,
-    target: "schedules",
-    failure: "Could not read your scheduled tasks",
-    empty: "No tasks yet",
-    loaded: "Water the plants",
-  },
-  {
     title: "Recipes",
     page: () => <RecipesPage />,
     target: "recipes",
@@ -336,20 +299,3 @@ for (const viewer of VIEWERS) {
     })
   })
 }
-
-describe("Calendar never invites a duplicate schedule over a listing it could not read", () => {
-  test("the invitation and the count are both withheld when the read failed", async () => {
-    // 🔴 The severity argument, asserted rather than described. "No tasks yet — add one below" is
-    // an instruction, and following it while the real schedules keep firing is how one unattended
-    // task becomes two. "(0)" is the same claim in numerals, so it is withheld too.
-    target = "schedules"
-    mode = "fail"
-    mount(() => <CalendarPage />)
-    await settle()
-
-    expect(bodyText()).not.toContain("No tasks yet — add one below.")
-    expect(bodyText()).not.toContain("Scheduled tasks (0)")
-    expect(document.querySelector('[data-slot="calendar-schedules-failed"]')).not.toBeNull()
-    expect(boundaryFired()).toBe(false)
-  })
-})

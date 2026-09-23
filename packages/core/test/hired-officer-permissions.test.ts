@@ -39,6 +39,7 @@ const memoryStore = () => {
   let defaultAgent: string | undefined
   return AgentConfigStore.Service.of({
     agents: () => Effect.sync(() => Object.fromEntries(layers)),
+    configured: () => Effect.sync(() => Object.fromEntries(layers)),
     setLayers: (name, next) => Effect.sync(() => void layers.set(name, [...next])),
     removeAgent: (name) => Effect.sync(() => void layers.delete(name)),
     getDefault: () => Effect.sync(() => defaultAgent),

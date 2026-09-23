@@ -131,5 +131,6 @@ export const migrations = (
     import("./migration/20260918014107_drop_calendar_overrides"),
     import("./migration/20260918045440_drop_permission_table"),
     import("./migration/20260923161501_late_wendell_vaughn"),
+    import("./migration/20260923190000_agent_schedule"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

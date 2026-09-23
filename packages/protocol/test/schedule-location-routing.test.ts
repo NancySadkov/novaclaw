@@ -4,16 +4,16 @@ import { makeDefaultApi } from "../src/api"
 import { InvalidRequestError, SessionNotFoundError } from "../src/errors"
 
 class TestLocationMiddleware extends HttpApiMiddleware.Service<TestLocationMiddleware>()(
-  "@novaclaw/protocol/test/calendar-location/LocationMiddleware",
+  "@novaclaw/protocol/test/schedule-location/LocationMiddleware",
 ) {}
 
 class TestSessionLocationMiddleware extends HttpApiMiddleware.Service<TestSessionLocationMiddleware>()(
-  "@novaclaw/protocol/test/calendar-location/SessionLocationMiddleware",
+  "@novaclaw/protocol/test/schedule-location/SessionLocationMiddleware",
   { error: [InvalidRequestError, SessionNotFoundError] },
 ) {}
 
 class TestWorkspaceRoutingMiddleware extends HttpApiMiddleware.Service<TestWorkspaceRoutingMiddleware>()(
-  "@novaclaw/protocol/test/calendar-location/WorkspaceRoutingMiddleware",
+  "@novaclaw/protocol/test/schedule-location/WorkspaceRoutingMiddleware",
 ) {}
 
 const Api = makeDefaultApi({
@@ -22,38 +22,38 @@ const Api = makeDefaultApi({
   workspaceRoutingMiddleware: TestWorkspaceRoutingMiddleware,
 })
 
-const calendarRoutes: Array<{ readonly name: string; readonly located: boolean }> = []
+const scheduleRoutes: Array<{ readonly name: string; readonly located: boolean }> = []
 HttpApi.reflect(Api, {
   onGroup() {},
   onEndpoint({ endpoint, group }) {
-    if (group.identifier !== "server.calendar") return
-    calendarRoutes.push({
+    if (group.identifier !== "server.schedule") return
+    scheduleRoutes.push({
       name: endpoint.name,
       located: [...endpoint.middlewares].some((key) => key === (TestLocationMiddleware as never)),
     })
   },
 })
 
-describe("calendar location routing", () => {
+describe("schedule location routing", () => {
   test("create and update bind the request location", () => {
     expect(
-      calendarRoutes
+      scheduleRoutes
         .filter((route) => route.located)
         .map((route) => route.name)
         .sort(),
-    ).toEqual(["calendar.schedule.create", "calendar.schedule.update"])
+    ).toEqual(["schedule.create", "schedule.update"])
   })
 
   test("list, remove and fire history use the explicit agent id without ambient location", () => {
     expect(
-      calendarRoutes
+      scheduleRoutes
         .filter((route) => !route.located)
         .map((route) => route.name)
         .sort(),
-    ).toEqual(["calendar.fires.list", "calendar.schedule.list", "calendar.schedule.remove"])
+    ).toEqual(["schedule.confirm", "schedule.fires.list", "schedule.list", "schedule.remove"])
   })
 
-  test("the sweep found the whole calendar group", () => {
-    expect(calendarRoutes).toHaveLength(5)
+  test("the sweep found the whole schedule group", () => {
+    expect(scheduleRoutes).toHaveLength(6)
   })
 })

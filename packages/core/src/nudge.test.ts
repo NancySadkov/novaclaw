@@ -141,10 +141,6 @@ describe("Nudge", () => {
     expect(Nudge.occurrence({ type: "clock", at: new Date(2026, 8, 8, 23, 0) })).toBe("clock:2026-09-08")
   })
 
-  test("stored empty list intentionally disables every shipped default", () => {
-    expect(Nudge.resolved(undefined)).toHaveLength(3)
-    expect(Nudge.resolved([])).toEqual([])
-  })
 })
 
 /**

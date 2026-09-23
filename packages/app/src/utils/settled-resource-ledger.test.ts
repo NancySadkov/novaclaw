@@ -332,7 +332,6 @@ describe("the settled-resource ledger", () => {
     // The six viewers this ledger opened with are converted, and must stay converted.
     for (const converted of [
       "components/settings-v2/trash.tsx",
-      "pages/calendar.tsx",
       // The largest single conversion in the tree — thirteen bare reads in one file, every one of
       // them behind an api helper that swallowed its own rejection into a plausible empty value.
       "pages/home-screen/community-network.tsx",

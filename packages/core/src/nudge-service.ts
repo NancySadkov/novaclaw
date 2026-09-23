@@ -15,8 +15,19 @@ import { SessionOrigin } from "./session/origin"
 import { SessionSchema } from "./session/schema"
 import { SessionCompactionTable } from "./session/sql"
 import { NudgeDeliveryTable } from "./nudge-delivery.sql"
+import { SessionInput } from "./session/input"
+import { SessionMessage } from "./session/message"
 
 export interface Interface {
+  readonly deliverScheduled: (input: {
+    readonly sessionID: string
+    readonly sessionEpoch: number
+    readonly scheduleID: string
+    readonly occurrence: string
+    readonly text: string
+    readonly admittedAt: number
+    readonly admit: (messageID: SessionMessage.ID, text: string) => Effect.Effect<string, unknown>
+  }) => Effect.Effect<void, unknown>
   /** Select applicable definitions (shipped defaults plus the owning officer's own list),
    *  and atomically claim each new occurrence for this session. A claimed match is safe to
    *  lower through SessionInput.steer once. */
@@ -55,6 +66,22 @@ export const layer = Layer.effect(
         .get()
         .pipe(Effect.orDie)
     return Service.of({
+      deliverScheduled: Effect.fn("NudgeService.deliverScheduled")(function* (input) {
+        const messageID = SessionMessage.ID.make("msg_" + createHash("sha256")
+          .update(`${input.sessionID}:${input.sessionEpoch}:${input.scheduleID}:${input.occurrence}`)
+          .digest("hex").slice(0, 32))
+        const admittedSessionID = yield* input.admit(messageID, SessionInput.applySteerProvenance(input.text))
+        yield* db.insert(NudgeDeliveryTable).values({
+          session_id: admittedSessionID,
+          nudge_id: `schedule:${input.scheduleID}`,
+          occurrence: input.occurrence,
+          fired_at: input.admittedAt,
+        }).onConflictDoUpdate({
+          target: [NudgeDeliveryTable.session_id, NudgeDeliveryTable.nudge_id],
+          set: { occurrence: input.occurrence, fired_at: input.admittedAt },
+          setWhere: ne(NudgeDeliveryTable.occurrence, input.occurrence),
+        }).run().pipe(Effect.orDie)
+      }),
       claim: Effect.fn("NudgeService.claim")(function* (input) {
         // One read per event, not per definition: the quiet rule asks whether the context this nudge
         // was delivered into still exists, and a session has at most one answer to that.
@@ -67,15 +94,9 @@ export const layer = Layer.effect(
           .get()
           .pipe(Effect.orDie)
         let suppressed = 0
-        // Officer nudges plus the shipped code defaults. The instance-wide stored list is gone
-        // (per-agent tuning owns instructions): every officer inherits the SHAPE of the shipped
-        // defaults — the same registry, where a stored array used to replace the set — and its
-        // own list is its whole configuration. A stored `nudges` row from before the removal
-        // decodes to nothing here because there is no key to read it through.
         const agent =
-          input.agentID === undefined ? undefined : AgentConfigStore.fold((yield* agents.agents())[input.agentID] ?? [])
+          input.agentID === undefined ? undefined : AgentConfigStore.fold((yield* agents.configured())[input.agentID] ?? [])
         const definitions: Nudge.ScopedDefinition[] = [
-          ...Nudge.defaults().map((nudge) => ({ nudge, deliveryID: `default:${nudge.id}` })),
           ...(input.agentID === undefined
             ? []
             : (agent?.nudges ?? []).map((nudge) => ({

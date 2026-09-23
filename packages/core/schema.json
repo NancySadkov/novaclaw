@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "e8435d2f-7c99-48aa-a95d-3687b72961bd",
+  "id": "2ef66f84-2281-4280-a6fa-b8da480c563b",
   "prevIds": [
-    "8814e625-5d2b-42f3-a24a-8aa102fbcbf8"
+    "00000000-0000-0000-0000-000000000000"
   ],
   "ddl": [
     {
@@ -48,14 +48,6 @@
     },
     {
       "name": "session_nudge_delivery",
-      "entityType": "tables"
-    },
-    {
-      "name": "calendar_fire",
-      "entityType": "tables"
-    },
-    {
-      "name": "calendar_schedule",
       "entityType": "tables"
     },
     {
@@ -200,6 +192,14 @@
     },
     {
       "name": "reference_config",
+      "entityType": "tables"
+    },
+    {
+      "name": "agent_schedule",
+      "entityType": "tables"
+    },
+    {
+      "name": "agent_schedule_window",
       "entityType": "tables"
     },
     {
@@ -943,186 +943,6 @@
       "name": "fired_at",
       "entityType": "columns",
       "table": "session_nudge_delivery"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "id",
-      "entityType": "columns",
-      "table": "calendar_fire"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "schedule_id",
-      "entityType": "columns",
-      "table": "calendar_fire"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "occurrence_millis",
-      "entityType": "columns",
-      "table": "calendar_fire"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "fired_at",
-      "entityType": "columns",
-      "table": "calendar_fire"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "session_id",
-      "entityType": "columns",
-      "table": "calendar_fire"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "status",
-      "entityType": "columns",
-      "table": "calendar_fire"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "'pending'",
-      "generated": null,
-      "name": "outcome",
-      "entityType": "columns",
-      "table": "calendar_fire"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "id",
-      "entityType": "columns",
-      "table": "calendar_schedule"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "''",
-      "generated": null,
-      "name": "title",
-      "entityType": "columns",
-      "table": "calendar_schedule"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "recurrence_json",
-      "entityType": "columns",
-      "table": "calendar_schedule"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "0",
-      "generated": null,
-      "name": "tz_offset_min",
-      "entityType": "columns",
-      "table": "calendar_schedule"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "prompt",
-      "entityType": "columns",
-      "table": "calendar_schedule"
-    },
-    {
-      "type": "text",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "agent",
-      "entityType": "columns",
-      "table": "calendar_schedule"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": "true",
-      "generated": null,
-      "name": "enabled",
-      "entityType": "columns",
-      "table": "calendar_schedule"
-    },
-    {
-      "type": "integer",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "next_fire_at",
-      "entityType": "columns",
-      "table": "calendar_schedule"
-    },
-    {
-      "type": "integer",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "last_fired_at",
-      "entityType": "columns",
-      "table": "calendar_schedule"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "time_created",
-      "entityType": "columns",
-      "table": "calendar_schedule"
-    },
-    {
-      "type": "integer",
-      "notNull": true,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "time_updated",
-      "entityType": "columns",
-      "table": "calendar_schedule"
     },
     {
       "type": "text",
@@ -3230,6 +3050,246 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "agent_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "agent",
+      "entityType": "columns",
+      "table": "agent_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "''",
+      "generated": null,
+      "name": "title",
+      "entityType": "columns",
+      "table": "agent_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "recurrence_json",
+      "entityType": "columns",
+      "table": "agent_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "tz_offset_min",
+      "entityType": "columns",
+      "table": "agent_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "prompt",
+      "entityType": "columns",
+      "table": "agent_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "60",
+      "generated": null,
+      "name": "duration_minutes",
+      "entityType": "columns",
+      "table": "agent_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "10",
+      "generated": null,
+      "name": "heartbeat_minutes",
+      "entityType": "columns",
+      "table": "agent_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "true",
+      "generated": null,
+      "name": "escalate_on_failure",
+      "entityType": "columns",
+      "table": "agent_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "true",
+      "generated": null,
+      "name": "enabled",
+      "entityType": "columns",
+      "table": "agent_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "next_fire_at",
+      "entityType": "columns",
+      "table": "agent_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_fired_at",
+      "entityType": "columns",
+      "table": "agent_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "agent_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "agent_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "agent_schedule_window"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "schedule_id",
+      "entityType": "columns",
+      "table": "agent_schedule_window"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "occurrence_millis",
+      "entityType": "columns",
+      "table": "agent_schedule_window"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "window_end_at",
+      "entityType": "columns",
+      "table": "agent_schedule_window"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "next_heartbeat_at",
+      "entityType": "columns",
+      "table": "agent_schedule_window"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_heartbeat_at",
+      "entityType": "columns",
+      "table": "agent_schedule_window"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "confirmed_at",
+      "entityType": "columns",
+      "table": "agent_schedule_window"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "failed_at",
+      "entityType": "columns",
+      "table": "agent_schedule_window"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "escalated_at",
+      "entityType": "columns",
+      "table": "agent_schedule_window"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'active'",
+      "generated": null,
+      "name": "outcome",
+      "entityType": "columns",
+      "table": "agent_schedule_window"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
       "name": "session_id",
       "entityType": "columns",
       "table": "session_auto_grant"
@@ -4656,21 +4716,6 @@
     },
     {
       "columns": [
-        "schedule_id"
-      ],
-      "tableTo": "calendar_schedule",
-      "columnsTo": [
-        "id"
-      ],
-      "onUpdate": "NO ACTION",
-      "onDelete": "CASCADE",
-      "nameExplicit": false,
-      "name": "fk_calendar_fire_schedule_id_calendar_schedule_id_fk",
-      "entityType": "fks",
-      "table": "calendar_fire"
-    },
-    {
-      "columns": [
         "active_account_id"
       ],
       "tableTo": "account",
@@ -4698,6 +4743,21 @@
       "name": "fk_event_aggregate_id_event_sequence_aggregate_id_fk",
       "entityType": "fks",
       "table": "event"
+    },
+    {
+      "columns": [
+        "schedule_id"
+      ],
+      "tableTo": "agent_schedule",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_agent_schedule_window_schedule_id_agent_schedule_id_fk",
+      "entityType": "fks",
+      "table": "agent_schedule_window"
     },
     {
       "columns": [
@@ -5049,24 +5109,6 @@
     },
     {
       "columns": [
-        "id"
-      ],
-      "nameExplicit": false,
-      "name": "calendar_fire_pk",
-      "table": "calendar_fire",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "id"
-      ],
-      "nameExplicit": false,
-      "name": "calendar_schedule_pk",
-      "table": "calendar_schedule",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
         "session_id"
       ],
       "nameExplicit": false,
@@ -5337,6 +5379,24 @@
     },
     {
       "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "agent_schedule_pk",
+      "table": "agent_schedule",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "agent_schedule_window_pk",
+      "table": "agent_schedule_window",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
         "session_id"
       ],
       "nameExplicit": false,
@@ -5548,70 +5608,6 @@
     {
       "columns": [
         {
-          "value": "schedule_id",
-          "isExpression": false
-        },
-        {
-          "value": "occurrence_millis",
-          "isExpression": false
-        }
-      ],
-      "isUnique": true,
-      "where": null,
-      "origin": "manual",
-      "name": "calendar_fire_occurrence_idx",
-      "entityType": "indexes",
-      "table": "calendar_fire"
-    },
-    {
-      "columns": [
-        {
-          "value": "fired_at",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "calendar_fire_fired_at_idx",
-      "entityType": "indexes",
-      "table": "calendar_fire"
-    },
-    {
-      "columns": [
-        {
-          "value": "enabled",
-          "isExpression": false
-        },
-        {
-          "value": "next_fire_at",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "calendar_schedule_due_idx",
-      "entityType": "indexes",
-      "table": "calendar_schedule"
-    },
-    {
-      "columns": [
-        {
-          "value": "agent",
-          "isExpression": false
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "origin": "manual",
-      "name": "calendar_schedule_agent_idx",
-      "entityType": "indexes",
-      "table": "calendar_schedule"
-    },
-    {
-      "columns": [
-        {
           "value": "session_id",
           "isExpression": false
         },
@@ -5808,6 +5804,74 @@
       "name": "messenger_inbound_routed_idx",
       "entityType": "indexes",
       "table": "messenger_inbound"
+    },
+    {
+      "columns": [
+        {
+          "value": "enabled",
+          "isExpression": false
+        },
+        {
+          "value": "next_fire_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "agent_schedule_due_idx",
+      "entityType": "indexes",
+      "table": "agent_schedule"
+    },
+    {
+      "columns": [
+        {
+          "value": "agent",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "agent_schedule_agent_idx",
+      "entityType": "indexes",
+      "table": "agent_schedule"
+    },
+    {
+      "columns": [
+        {
+          "value": "schedule_id",
+          "isExpression": false
+        },
+        {
+          "value": "occurrence_millis",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "agent_schedule_window_occurrence_idx",
+      "entityType": "indexes",
+      "table": "agent_schedule_window"
+    },
+    {
+      "columns": [
+        {
+          "value": "outcome",
+          "isExpression": false
+        },
+        {
+          "value": "next_heartbeat_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "agent_schedule_window_heartbeat_idx",
+      "entityType": "indexes",
+      "table": "agent_schedule_window"
     },
     {
       "columns": [

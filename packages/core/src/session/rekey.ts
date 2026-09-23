@@ -25,7 +25,6 @@ const SESSION_REFERENCE_TABLES = [
   "session_policy_decision",
   "session_execution",
   "messenger_binding",
-  "calendar_fire",
 ] as const
 
 /**

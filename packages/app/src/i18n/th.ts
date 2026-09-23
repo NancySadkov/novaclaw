@@ -522,8 +522,6 @@ export const dict = {
   "home.app.contacts.stat.running": "กำลังทำงาน",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "หน่วยความจำ",
-  "home.app.calendar.name": "ปฏิทิน",
-  "home.app.calendar.subtitle": "ตั้งเวลาให้เอเจนต์ทำงานตามวันที่ซ้ำ",
   "home.app.recipes.name": "สูตร",
   "home.app.recipes.subtitle": "พรอมป์ตสำเร็จรูปที่เอเจนต์ของคุณปรุงได้",
   "home.app.files.name": "ไฟล์",

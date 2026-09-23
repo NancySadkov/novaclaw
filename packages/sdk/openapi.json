@@ -19411,11 +19411,20 @@
         ]
       }
     },
-    "/api/calendar/schedule": {
+    "/api/agent/{agentID}/schedule": {
       "get": {
-        "tags": ["calendar"],
-        "operationId": "v2.calendar.schedule.list",
-        "parameters": [],
+        "tags": ["schedule"],
+        "operationId": "v2.schedule.list",
+        "parameters": [
+          {
+            "name": "agentID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
         "security": [],
         "responses": {
           "200": {
@@ -19425,7 +19434,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/CalendarSchedule"
+                    "$ref": "#/components/schemas/ScheduleSchedule"
                   }
                 }
               }
@@ -19452,27 +19461,36 @@
             }
           }
         },
-        "description": "Retrieve every scheduled agent-launch task with its next-fire time.",
-        "summary": "List calendar schedules",
+        "description": "Retrieve the agent's scheduled tasks with their next-fire times.",
+        "summary": "List an agent's schedules",
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.calendar.schedule.list({\n  ...\n})"
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.schedule.list({\n  ...\n})"
           }
         ]
       },
       "post": {
-        "tags": ["calendar"],
-        "operationId": "v2.calendar.schedule.create",
-        "parameters": [],
+        "tags": ["schedule"],
+        "operationId": "v2.schedule.create",
+        "parameters": [
+          {
+            "name": "agentID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
         "security": [],
         "responses": {
           "200": {
-            "description": "Calendar.Schedule",
+            "description": "Schedule.Schedule",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CalendarSchedule"
+                  "$ref": "#/components/schemas/ScheduleSchedule"
                 }
               }
             }
@@ -19498,13 +19516,13 @@
             }
           }
         },
-        "description": "Schedule a repeatable or one-shot agent launch. The recurrence is structured (once/daily/weekly/monthly/yearly); the fired session runs the given prompt.",
-        "summary": "Create a calendar schedule",
+        "description": "Schedule a repeatable or one-shot work window. The recurrence is structured (once/daily/weekly/monthly/yearly); the agent receives a task and periodic reminders until it confirms completion.",
+        "summary": "Create an agent schedule",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CalendarCreateInput"
+                "$ref": "#/components/schemas/ScheduleCreateInput"
               }
             }
           },
@@ -19513,16 +19531,24 @@
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.calendar.schedule.create({\n  ...\n})"
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.schedule.create({\n  ...\n})"
           }
         ]
       }
     },
-    "/api/calendar/schedule/{id}": {
+    "/api/agent/{agentID}/schedule/{id}": {
       "patch": {
-        "tags": ["calendar"],
-        "operationId": "v2.calendar.schedule.update",
+        "tags": ["schedule"],
+        "operationId": "v2.schedule.update",
         "parameters": [
+          {
+            "name": "agentID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
           {
             "name": "id",
             "in": "path",
@@ -19535,11 +19561,11 @@
         "security": [],
         "responses": {
           "200": {
-            "description": "Calendar.Schedule",
+            "description": "Schedule.Schedule",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CalendarSchedule"
+                  "$ref": "#/components/schemas/ScheduleSchedule"
                 }
               }
             }
@@ -19565,13 +19591,13 @@
             }
           }
         },
-        "description": "Patch a scheduled agent-launch task — pause/resume it (enabled), or change its title, prompt, recurrence, or responsible agent. The next-fire time is recomputed; a disabled schedule has none.",
-        "summary": "Update a calendar schedule",
+        "description": "Patch an agent's scheduled task — pause/resume it (enabled), or change its title, prompt, or recurrence. The next-fire time is recomputed; a disabled schedule has none.",
+        "summary": "Update an agent schedule",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CalendarUpdateInput"
+                "$ref": "#/components/schemas/ScheduleUpdateInput"
               }
             }
           },
@@ -19580,14 +19606,22 @@
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.calendar.schedule.update({\n  ...\n})"
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.schedule.update({\n  ...\n})"
           }
         ]
       },
       "delete": {
-        "tags": ["calendar"],
-        "operationId": "v2.calendar.schedule.remove",
+        "tags": ["schedule"],
+        "operationId": "v2.schedule.remove",
         "parameters": [
+          {
+            "name": "agentID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
           {
             "name": "id",
             "in": "path",
@@ -19623,21 +19657,30 @@
             }
           }
         },
-        "description": "Delete a scheduled agent-launch task by id.",
-        "summary": "Remove a calendar schedule",
+        "description": "Delete an agent's scheduled task by id.",
+        "summary": "Remove an agent schedule",
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.calendar.schedule.remove({\n  ...\n})"
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.schedule.remove({\n  ...\n})"
           }
         ]
       }
     },
-    "/api/calendar/fires": {
+    "/api/agent/{agentID}/schedule/fires": {
       "get": {
-        "tags": ["calendar"],
-        "operationId": "v2.calendar.fires.list",
-        "parameters": [],
+        "tags": ["schedule"],
+        "operationId": "v2.schedule.fires.list",
+        "parameters": [
+          {
+            "name": "agentID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
         "security": [],
         "responses": {
           "200": {
@@ -19647,7 +19690,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/CalendarFire"
+                    "$ref": "#/components/schemas/ScheduleFire"
                   }
                 }
               }
@@ -19674,12 +19717,87 @@
             }
           }
         },
-        "description": "Recent scheduled-launch fires across all schedules, newest first (the run history).",
+        "description": "Recent scheduled runs for one agent, newest first.",
         "summary": "List recent schedule fires",
         "x-codeSamples": [
           {
             "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.calendar.fires.list({\n  ...\n})"
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.schedule.fires.list({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/agent/{agentID}/schedule/{id}/confirm": {
+      "post": {
+        "tags": ["schedule"],
+        "operationId": "v2.schedule.confirm",
+        "parameters": [
+          {
+            "name": "agentID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Schedule.Fire",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleFire"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Mark one occurrence of an agent's task complete before its window closes.",
+        "summary": "Confirm a scheduled window",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleConfirmInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.schedule.confirm({\n  ...\n})"
           }
         ]
       }
@@ -42386,7 +42504,7 @@
         "required": ["status", "time"],
         "additionalProperties": false
       },
-      "CalendarRecurrence": {
+      "ScheduleRecurrence": {
         "anyOf": [
           {
             "type": "object",
@@ -42425,6 +42543,9 @@
                 },
                 "required": ["hour", "minute"],
                 "additionalProperties": false
+              },
+              "zone": {
+                "type": "string"
               }
             },
             "required": ["kind", "time"],
@@ -42461,6 +42582,9 @@
                   "enum": [0, 1, 2, 3, 4, 5, 6]
                 },
                 "minItems": 1
+              },
+              "zone": {
+                "type": "string"
               }
             },
             "required": ["kind", "time", "weekdays"],
@@ -42494,6 +42618,9 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 31
+              },
+              "zone": {
+                "type": "string"
               }
             },
             "required": ["kind", "time", "day"],
@@ -42532,6 +42659,9 @@
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 31
+              },
+              "zone": {
+                "type": "string"
               }
             },
             "required": ["kind", "time", "month", "day"],
@@ -42539,7 +42669,7 @@
           }
         ]
       },
-      "CalendarSchedule": {
+      "ScheduleSchedule": {
         "type": "object",
         "properties": {
           "id": {
@@ -42549,7 +42679,7 @@
             "type": "string"
           },
           "recurrence": {
-            "$ref": "#/components/schemas/CalendarRecurrence"
+            "$ref": "#/components/schemas/ScheduleRecurrence"
           },
           "tzOffsetMin": {
             "type": "integer",
@@ -42560,14 +42690,20 @@
             "type": "string"
           },
           "agent": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "type": "string"
+          },
+          "durationMinutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1440
+          },
+          "heartbeatMinutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1440
+          },
+          "escalateOnFailure": {
+            "type": "boolean"
           },
           "enabled": {
             "type": "boolean"
@@ -42606,6 +42742,9 @@
           "tzOffsetMin",
           "prompt",
           "agent",
+          "durationMinutes",
+          "heartbeatMinutes",
+          "escalateOnFailure",
           "enabled",
           "nextFireAt",
           "lastFiredAt",
@@ -42614,14 +42753,14 @@
         ],
         "additionalProperties": false
       },
-      "CalendarCreateInput": {
+      "ScheduleCreateInput": {
         "type": "object",
         "properties": {
           "title": {
             "type": "string"
           },
           "recurrence": {
-            "$ref": "#/components/schemas/CalendarRecurrence"
+            "$ref": "#/components/schemas/ScheduleRecurrence"
           },
           "tzOffsetMin": {
             "type": "integer",
@@ -42631,8 +42770,18 @@
           "prompt": {
             "type": "string"
           },
-          "agent": {
-            "type": "string"
+          "durationMinutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1440
+          },
+          "heartbeatMinutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1440
+          },
+          "escalateOnFailure": {
+            "type": "boolean"
           },
           "enabled": {
             "type": "boolean"
@@ -42641,14 +42790,14 @@
         "required": ["recurrence", "prompt"],
         "additionalProperties": false
       },
-      "CalendarUpdateInput": {
+      "ScheduleUpdateInput": {
         "type": "object",
         "properties": {
           "title": {
             "type": "string"
           },
           "recurrence": {
-            "$ref": "#/components/schemas/CalendarRecurrence"
+            "$ref": "#/components/schemas/ScheduleRecurrence"
           },
           "tzOffsetMin": {
             "type": "integer",
@@ -42658,15 +42807,18 @@
           "prompt": {
             "type": "string"
           },
-          "agent": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
+          "durationMinutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1440
+          },
+          "heartbeatMinutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1440
+          },
+          "escalateOnFailure": {
+            "type": "boolean"
           },
           "enabled": {
             "type": "boolean"
@@ -42674,7 +42826,7 @@
         },
         "additionalProperties": false
       },
-      "CalendarFire": {
+      "ScheduleFire": {
         "type": "object",
         "properties": {
           "id": {
@@ -42689,26 +42841,87 @@
           "firedAt": {
             "type": "number"
           },
-          "sessionId": {
+          "outcome": {
+            "type": "string",
+            "enum": ["pending", "confirmed", "failed"]
+          },
+          "windowEndAt": {
+            "type": "number"
+          },
+          "lastHeartbeatAt": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "number"
               },
               {
                 "type": "null"
               }
             ]
           },
-          "status": {
-            "type": "string",
-            "enum": ["spawned", "skipped", "error"]
+          "confirmedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
-          "outcome": {
-            "type": "string",
-            "enum": ["pending", "succeeded", "failed", "interrupted"]
+          "failedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "escalatedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nextHeartbeatAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
-        "required": ["id", "scheduleId", "occurrenceMillis", "firedAt", "sessionId", "status", "outcome"],
+        "required": [
+          "id",
+          "scheduleId",
+          "occurrenceMillis",
+          "firedAt",
+          "outcome",
+          "windowEndAt",
+          "lastHeartbeatAt",
+          "confirmedAt",
+          "failedAt",
+          "escalatedAt",
+          "nextHeartbeatAt"
+        ],
+        "additionalProperties": false
+      },
+      "ScheduleConfirmInput": {
+        "type": "object",
+        "properties": {
+          "occurrenceMillis": {
+            "type": "number"
+          }
+        },
+        "required": ["occurrenceMillis"],
         "additionalProperties": false
       },
       "RecipeInfo": {
@@ -49279,8 +49492,8 @@
       "description": "Messenger driver discovery and account routes."
     },
     {
-      "name": "calendar",
-      "description": "Scheduled + repeatable agent launches."
+      "name": "schedule",
+      "description": "Agent work windows and completion."
     },
     {
       "name": "recipe",

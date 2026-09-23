@@ -12,7 +12,7 @@ import type { SettledResource } from "@/utils/settled-resource"
  * had failed; four more pages folded a rejected list into `[]` and invited the user to add their
  * first item over data they already had.
  *
- * ⚠️ **Calendar's was the one with teeth.** *"No tasks yet — add one below"* over a schedule list
+ * ⚠️ **Schedule has teeth.** *"No tasks yet — add one below"* over a schedule list
  * that failed to load is not merely wrong, it is an INVITATION: the schedules are still firing
  * server-side, and the screen is asking the user to create them again.
  *

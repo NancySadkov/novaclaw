@@ -533,8 +533,6 @@ export const dict = {
   "home.app.contacts.stat.running": "en curso",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "memoria",
-  "home.app.calendar.name": "Calendario",
-  "home.app.calendar.subtitle": "Programa agentes para que se ejecuten en una fecha periódica",
   "home.app.recipes.name": "Recetas",
   "home.app.recipes.subtitle": "Prompts listos para que tus agentes los cocinen",
   "home.app.files.name": "Archivos",

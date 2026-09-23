@@ -188,7 +188,7 @@ export const LOOKBACK_MS = 24 * 60 * 60_000
  * ⚠️ **Lands DORMANT.** It obeys the wake discipline: a stall notice that summons a worker to read it
  * has traded one waste for another. It is read when that chat next runs.
  *
- * ⚠️ **Never throws into the caller.** This rides the calendar tick rather than a timer of its own
+ * ⚠️ **Never throws into the caller.** This rides the schedule tick rather than a timer of its own
  * (a sweeper for one notice is a subsystem to keep alive), so a failure here must not stop schedules
  * from firing.
  */

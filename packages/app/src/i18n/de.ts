@@ -477,8 +477,6 @@ export const dict = {
   "home.app.contacts.stat.running": "aktiv",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "Speicher",
-  "home.app.calendar.name": "Kalender",
-  "home.app.calendar.subtitle": "Agenten für wiederkehrende Termine einplanen",
   "home.app.recipes.name": "Rezepte",
   "home.app.recipes.subtitle": "Fertige Prompts, die deine Agenten kochen können",
   "home.app.files.name": "Dateien",

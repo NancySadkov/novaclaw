@@ -6079,7 +6079,7 @@ export type MessengerLoginStatus = {
   }
 }
 
-export type CalendarRecurrence =
+export type ScheduleRecurrence =
   | {
       kind: "once"
       at: number
@@ -6090,6 +6090,7 @@ export type CalendarRecurrence =
         hour: number
         minute: number
       }
+      zone?: string
     }
   | {
       kind: "weekly"
@@ -6098,6 +6099,7 @@ export type CalendarRecurrence =
         minute: number
       }
       weekdays: Array<0 | 1 | 2 | 3 | 4 | 5 | 6>
+      zone?: string
     }
   | {
       kind: "monthly"
@@ -6106,6 +6108,7 @@ export type CalendarRecurrence =
         minute: number
       }
       day: number
+      zone?: string
     }
   | {
       kind: "yearly"
@@ -6115,15 +6118,19 @@ export type CalendarRecurrence =
       }
       month: number
       day: number
+      zone?: string
     }
 
-export type CalendarSchedule = {
+export type ScheduleSchedule = {
   id: string
   title: string
-  recurrence: CalendarRecurrence
+  recurrence: ScheduleRecurrence
   tzOffsetMin: number
   prompt: string
-  agent: string | null
+  agent: string
+  durationMinutes: number
+  heartbeatMinutes: number
+  escalateOnFailure: boolean
   enabled: boolean
   nextFireAt: number | null
   lastFiredAt: number | null
@@ -6131,32 +6138,44 @@ export type CalendarSchedule = {
   timeUpdated: number
 }
 
-export type CalendarCreateInput = {
+export type ScheduleCreateInput = {
   title?: string
-  recurrence: CalendarRecurrence
+  recurrence: ScheduleRecurrence
   tzOffsetMin?: number
   prompt: string
-  agent?: string
+  durationMinutes?: number
+  heartbeatMinutes?: number
+  escalateOnFailure?: boolean
   enabled?: boolean
 }
 
-export type CalendarUpdateInput = {
+export type ScheduleUpdateInput = {
   title?: string
-  recurrence?: CalendarRecurrence
+  recurrence?: ScheduleRecurrence
   tzOffsetMin?: number
   prompt?: string
-  agent?: string | null
+  durationMinutes?: number
+  heartbeatMinutes?: number
+  escalateOnFailure?: boolean
   enabled?: boolean
 }
 
-export type CalendarFire = {
+export type ScheduleFire = {
   id: string
   scheduleId: string
   occurrenceMillis: number
   firedAt: number
-  sessionId: string | null
-  status: "spawned" | "skipped" | "error"
-  outcome: "pending" | "succeeded" | "failed" | "interrupted"
+  outcome: "pending" | "confirmed" | "failed"
+  windowEndAt: number
+  lastHeartbeatAt: number | null
+  confirmedAt: number | null
+  failedAt: number | null
+  escalatedAt: number | null
+  nextHeartbeatAt: number | null
+}
+
+export type ScheduleConfirmInput = {
+  occurrenceMillis: number
 }
 
 export type RecipeInfo = {
@@ -16620,14 +16639,16 @@ export type V2MessengerLoginCompleteResponses = {
 export type V2MessengerLoginCompleteResponse =
   V2MessengerLoginCompleteResponses[keyof V2MessengerLoginCompleteResponses]
 
-export type V2CalendarScheduleListData = {
+export type V2ScheduleListData = {
   body?: never
-  path?: never
+  path: {
+    agentID: string
+  }
   query?: never
-  url: "/api/calendar/schedule"
+  url: "/api/agent/{agentID}/schedule"
 }
 
-export type V2CalendarScheduleListErrors = {
+export type V2ScheduleListErrors = {
   /**
    * InvalidRequestError
    */
@@ -16638,25 +16659,27 @@ export type V2CalendarScheduleListErrors = {
   401: UnauthorizedError
 }
 
-export type V2CalendarScheduleListError = V2CalendarScheduleListErrors[keyof V2CalendarScheduleListErrors]
+export type V2ScheduleListError = V2ScheduleListErrors[keyof V2ScheduleListErrors]
 
-export type V2CalendarScheduleListResponses = {
+export type V2ScheduleListResponses = {
   /**
    * Success
    */
-  200: Array<CalendarSchedule>
+  200: Array<ScheduleSchedule>
 }
 
-export type V2CalendarScheduleListResponse = V2CalendarScheduleListResponses[keyof V2CalendarScheduleListResponses]
+export type V2ScheduleListResponse = V2ScheduleListResponses[keyof V2ScheduleListResponses]
 
-export type V2CalendarScheduleCreateData = {
-  body: CalendarCreateInput
-  path?: never
+export type V2ScheduleCreateData = {
+  body: ScheduleCreateInput
+  path: {
+    agentID: string
+  }
   query?: never
-  url: "/api/calendar/schedule"
+  url: "/api/agent/{agentID}/schedule"
 }
 
-export type V2CalendarScheduleCreateErrors = {
+export type V2ScheduleCreateErrors = {
   /**
    * InvalidRequestError
    */
@@ -16667,28 +16690,28 @@ export type V2CalendarScheduleCreateErrors = {
   401: UnauthorizedError
 }
 
-export type V2CalendarScheduleCreateError = V2CalendarScheduleCreateErrors[keyof V2CalendarScheduleCreateErrors]
+export type V2ScheduleCreateError = V2ScheduleCreateErrors[keyof V2ScheduleCreateErrors]
 
-export type V2CalendarScheduleCreateResponses = {
+export type V2ScheduleCreateResponses = {
   /**
-   * Calendar.Schedule
+   * Schedule.Schedule
    */
-  200: CalendarSchedule
+  200: ScheduleSchedule
 }
 
-export type V2CalendarScheduleCreateResponse =
-  V2CalendarScheduleCreateResponses[keyof V2CalendarScheduleCreateResponses]
+export type V2ScheduleCreateResponse = V2ScheduleCreateResponses[keyof V2ScheduleCreateResponses]
 
-export type V2CalendarScheduleUpdateData = {
-  body: CalendarUpdateInput
+export type V2ScheduleUpdateData = {
+  body: ScheduleUpdateInput
   path: {
+    agentID: string
     id: string
   }
   query?: never
-  url: "/api/calendar/schedule/{id}"
+  url: "/api/agent/{agentID}/schedule/{id}"
 }
 
-export type V2CalendarScheduleUpdateErrors = {
+export type V2ScheduleUpdateErrors = {
   /**
    * InvalidRequestError
    */
@@ -16699,28 +16722,28 @@ export type V2CalendarScheduleUpdateErrors = {
   401: UnauthorizedError
 }
 
-export type V2CalendarScheduleUpdateError = V2CalendarScheduleUpdateErrors[keyof V2CalendarScheduleUpdateErrors]
+export type V2ScheduleUpdateError = V2ScheduleUpdateErrors[keyof V2ScheduleUpdateErrors]
 
-export type V2CalendarScheduleUpdateResponses = {
+export type V2ScheduleUpdateResponses = {
   /**
-   * Calendar.Schedule
+   * Schedule.Schedule
    */
-  200: CalendarSchedule
+  200: ScheduleSchedule
 }
 
-export type V2CalendarScheduleUpdateResponse =
-  V2CalendarScheduleUpdateResponses[keyof V2CalendarScheduleUpdateResponses]
+export type V2ScheduleUpdateResponse = V2ScheduleUpdateResponses[keyof V2ScheduleUpdateResponses]
 
-export type V2CalendarScheduleRemoveData = {
+export type V2ScheduleRemoveData = {
   body?: never
   path: {
+    agentID: string
     id: string
   }
   query?: never
-  url: "/api/calendar/schedule/{id}"
+  url: "/api/agent/{agentID}/schedule/{id}"
 }
 
-export type V2CalendarScheduleRemoveErrors = {
+export type V2ScheduleRemoveErrors = {
   /**
    * InvalidRequestError
    */
@@ -16731,26 +16754,27 @@ export type V2CalendarScheduleRemoveErrors = {
   401: UnauthorizedError
 }
 
-export type V2CalendarScheduleRemoveError = V2CalendarScheduleRemoveErrors[keyof V2CalendarScheduleRemoveErrors]
+export type V2ScheduleRemoveError = V2ScheduleRemoveErrors[keyof V2ScheduleRemoveErrors]
 
-export type V2CalendarScheduleRemoveResponses = {
+export type V2ScheduleRemoveResponses = {
   /**
    * <No Content>
    */
   204: void
 }
 
-export type V2CalendarScheduleRemoveResponse =
-  V2CalendarScheduleRemoveResponses[keyof V2CalendarScheduleRemoveResponses]
+export type V2ScheduleRemoveResponse = V2ScheduleRemoveResponses[keyof V2ScheduleRemoveResponses]
 
-export type V2CalendarFiresListData = {
+export type V2ScheduleFiresListData = {
   body?: never
-  path?: never
+  path: {
+    agentID: string
+  }
   query?: never
-  url: "/api/calendar/fires"
+  url: "/api/agent/{agentID}/schedule/fires"
 }
 
-export type V2CalendarFiresListErrors = {
+export type V2ScheduleFiresListErrors = {
   /**
    * InvalidRequestError
    */
@@ -16761,16 +16785,48 @@ export type V2CalendarFiresListErrors = {
   401: UnauthorizedError
 }
 
-export type V2CalendarFiresListError = V2CalendarFiresListErrors[keyof V2CalendarFiresListErrors]
+export type V2ScheduleFiresListError = V2ScheduleFiresListErrors[keyof V2ScheduleFiresListErrors]
 
-export type V2CalendarFiresListResponses = {
+export type V2ScheduleFiresListResponses = {
   /**
    * Success
    */
-  200: Array<CalendarFire>
+  200: Array<ScheduleFire>
 }
 
-export type V2CalendarFiresListResponse = V2CalendarFiresListResponses[keyof V2CalendarFiresListResponses]
+export type V2ScheduleFiresListResponse = V2ScheduleFiresListResponses[keyof V2ScheduleFiresListResponses]
+
+export type V2ScheduleConfirmData = {
+  body: ScheduleConfirmInput
+  path: {
+    agentID: string
+    id: string
+  }
+  query?: never
+  url: "/api/agent/{agentID}/schedule/{id}/confirm"
+}
+
+export type V2ScheduleConfirmErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2ScheduleConfirmError = V2ScheduleConfirmErrors[keyof V2ScheduleConfirmErrors]
+
+export type V2ScheduleConfirmResponses = {
+  /**
+   * Schedule.Fire
+   */
+  200: ScheduleFire
+}
+
+export type V2ScheduleConfirmResponse = V2ScheduleConfirmResponses[keyof V2ScheduleConfirmResponses]
 
 export type V2RecipeListData = {
   body?: never

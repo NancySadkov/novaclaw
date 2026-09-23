@@ -215,7 +215,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     // Settings UI reads exactly what the write router stored (the file no longer carries them).
     const configGet = Effect.fn("GlobalHttpApi.configGet")(function* () {
       const base = (yield* config.getGlobal()) as Record<string, unknown>
-      return Schema.decodeUnknownSync(ConfigV2.Info)(yield* ConfigStoreWrite.overlay(base))
+      return Schema.decodeUnknownSync(ConfigV2.Info)(yield* ConfigStoreWrite.overlay(base, "settings"))
     })
 
     const configUpdate = Effect.fn("GlobalHttpApi.configUpdate")(function* (ctx) {

@@ -15,6 +15,7 @@ import * as DbRegistryTool from "./deferred/db-registry.gen"
 import * as LogTool from "./deferred/log.gen"
 import * as MessengerTool from "./deferred/messenger.gen"
 import * as NudgeTool from "./deferred/nudge.gen"
+import * as ScheduleTool from "./deferred/schedule.gen"
 import * as PermissionTool from "./deferred/permission.gen"
 import * as ProfileTool from "./deferred/profile.gen"
 import { SelfTool } from "./self"
@@ -69,6 +70,7 @@ export const node = makeLocationNode({
     MemoSetTool.node,
     MessengerTool.node,
     NudgeTool.node,
+    ScheduleTool.node,
     PermissionTool.node,
     ProfileTool.node,
     QualityProvisionTool.node,

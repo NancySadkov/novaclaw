@@ -7,6 +7,7 @@ import { makeGlobalNode } from "./effect/app-node"
 import { AgentConfigTable, AgentSettingTable } from "./agent-config/sql"
 import { ConfigAgent } from "./config/agent"
 import { AvatarAssignment } from "./agent/avatar-assignment"
+import { Nudge } from "./nudge"
 
 const DEFAULT_AGENT_KEY = "default_agent"
 
@@ -20,6 +21,7 @@ const DEFAULT_AGENT_KEY = "default_agent"
 export interface Interface {
   /** Every stored agent's config layers, keyed by agent name (apply in order to merge). */
   readonly agents: () => Effect.Effect<Record<string, ConfigAgent.Info[]>>
+  readonly configured: () => Effect.Effect<Record<string, ConfigAgent.Info[]>>
   /** Insert or replace the full ordered layer list for one agent. */
   readonly setLayers: (name: string, layers: ConfigAgent.Info[]) => Effect.Effect<void>
   /** Remove one agent's stored config. */
@@ -68,6 +70,23 @@ export const layer = Layer.effect(
     return Service.of({
       agents: Effect.fn("AgentConfigStore.agents")(function* () {
         return yield* agents.all()
+      }),
+      configured: Effect.fn("AgentConfigStore.configured")(function* () {
+        const stored = yield* agents.all()
+        const configured: Record<string, ConfigAgent.Info[]> = {}
+        for (const [name, layers] of Object.entries(stored)) {
+          const folded = fold(layers)
+          if (!folded || folded.nudges !== undefined || folded.kind === "human" || folded.kind === "chat" || folded.shortChat)
+            configured[name] = layers
+          else
+            configured[name] = [
+              ...layers.slice(0, -1),
+              Schema.decodeUnknownSync(ConfigAgent.Info)({ ...layers.at(-1)!, nudges: Nudge.defaults() }),
+            ]
+        }
+        if (configured.nova === undefined)
+          configured.nova = [Schema.decodeUnknownSync(ConfigAgent.Info)({ nudges: Nudge.defaults() })]
+        return configured
       }),
       setLayers: Effect.fn("AgentConfigStore.setLayers")(function* (name, layers) {
         yield* agents.setLayers(name, layers)

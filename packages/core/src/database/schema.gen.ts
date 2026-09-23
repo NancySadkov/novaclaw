@@ -120,33 +120,6 @@ export default {
         );
       `)
       yield* tx.run(`
-        CREATE TABLE \`calendar_fire\` (
-          \`id\` text PRIMARY KEY,
-          \`schedule_id\` text NOT NULL,
-          \`occurrence_millis\` integer NOT NULL,
-          \`fired_at\` integer NOT NULL,
-          \`session_id\` text,
-          \`status\` text NOT NULL,
-          \`outcome\` text DEFAULT 'pending' NOT NULL,
-          CONSTRAINT \`fk_calendar_fire_schedule_id_calendar_schedule_id_fk\` FOREIGN KEY (\`schedule_id\`) REFERENCES \`calendar_schedule\`(\`id\`) ON DELETE CASCADE
-        );
-      `)
-      yield* tx.run(`
-        CREATE TABLE \`calendar_schedule\` (
-          \`id\` text PRIMARY KEY,
-          \`title\` text DEFAULT '' NOT NULL,
-          \`recurrence_json\` text NOT NULL,
-          \`tz_offset_min\` integer DEFAULT 0 NOT NULL,
-          \`prompt\` text NOT NULL,
-          \`agent\` text NOT NULL,
-          \`enabled\` integer DEFAULT true NOT NULL,
-          \`next_fire_at\` integer,
-          \`last_fired_at\` integer,
-          \`time_created\` integer NOT NULL,
-          \`time_updated\` integer NOT NULL
-        );
-      `)
-      yield* tx.run(`
         CREATE TABLE \`session_compaction_request\` (
           \`session_id\` text PRIMARY KEY,
           \`requested_at\` integer NOT NULL
@@ -509,6 +482,39 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`agent_schedule\` (
+          \`id\` text PRIMARY KEY,
+          \`agent\` text NOT NULL,
+          \`title\` text DEFAULT '' NOT NULL,
+          \`recurrence_json\` text NOT NULL,
+          \`tz_offset_min\` integer DEFAULT 0 NOT NULL,
+          \`prompt\` text NOT NULL,
+          \`duration_minutes\` integer DEFAULT 60 NOT NULL,
+          \`heartbeat_minutes\` integer DEFAULT 10 NOT NULL,
+          \`escalate_on_failure\` integer DEFAULT true NOT NULL,
+          \`enabled\` integer DEFAULT true NOT NULL,
+          \`next_fire_at\` integer,
+          \`last_fired_at\` integer,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`agent_schedule_window\` (
+          \`id\` text PRIMARY KEY,
+          \`schedule_id\` text NOT NULL,
+          \`occurrence_millis\` integer NOT NULL,
+          \`window_end_at\` integer NOT NULL,
+          \`next_heartbeat_at\` integer,
+          \`last_heartbeat_at\` integer,
+          \`confirmed_at\` integer,
+          \`failed_at\` integer,
+          \`escalated_at\` integer,
+          \`outcome\` text DEFAULT 'active' NOT NULL,
+          CONSTRAINT \`fk_agent_schedule_window_schedule_id_agent_schedule_id_fk\` FOREIGN KEY (\`schedule_id\`) REFERENCES \`agent_schedule\`(\`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`session_auto_grant\` (
           \`session_id\` text PRIMARY KEY,
           \`mode\` text NOT NULL,
@@ -733,14 +739,6 @@ export default {
         `CREATE INDEX \`model_prefix_cache_model_expires_idx\` ON \`model_prefix_cache\` (\`model\`,\`expires_at\`);`,
       )
       yield* tx.run(
-        `CREATE UNIQUE INDEX \`calendar_fire_occurrence_idx\` ON \`calendar_fire\` (\`schedule_id\`,\`occurrence_millis\`);`,
-      )
-      yield* tx.run(`CREATE INDEX \`calendar_fire_fired_at_idx\` ON \`calendar_fire\` (\`fired_at\`);`)
-      yield* tx.run(
-        `CREATE INDEX \`calendar_schedule_due_idx\` ON \`calendar_schedule\` (\`enabled\`,\`next_fire_at\`);`,
-      )
-      yield* tx.run(`CREATE INDEX \`calendar_schedule_agent_idx\` ON \`calendar_schedule\` (\`agent\`);`)
-      yield* tx.run(
         `CREATE INDEX \`session_quality_check_session_idx\` ON \`session_quality_check\` (\`session_id\`,\`time_created\`);`,
       )
       yield* tx.run(
@@ -762,6 +760,14 @@ export default {
       )
       yield* tx.run(`CREATE INDEX \`messenger_binding_session_idx\` ON \`messenger_binding\` (\`session_id\`);`)
       yield* tx.run(`CREATE INDEX \`messenger_inbound_routed_idx\` ON \`messenger_inbound\` (\`time_routed\`);`)
+      yield* tx.run(`CREATE INDEX \`agent_schedule_due_idx\` ON \`agent_schedule\` (\`enabled\`,\`next_fire_at\`);`)
+      yield* tx.run(`CREATE INDEX \`agent_schedule_agent_idx\` ON \`agent_schedule\` (\`agent\`);`)
+      yield* tx.run(
+        `CREATE UNIQUE INDEX \`agent_schedule_window_occurrence_idx\` ON \`agent_schedule_window\` (\`schedule_id\`,\`occurrence_millis\`);`,
+      )
+      yield* tx.run(
+        `CREATE INDEX \`agent_schedule_window_heartbeat_idx\` ON \`agent_schedule_window\` (\`outcome\`,\`next_heartbeat_at\`);`,
+      )
       yield* tx.run(
         `CREATE UNIQUE INDEX \`session_compaction_session_seq_idx\` ON \`session_compaction\` (\`session_id\`,\`seq\`);`,
       )

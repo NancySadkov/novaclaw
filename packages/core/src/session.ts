@@ -301,7 +301,7 @@ export type Error = NotFoundError | MessageDecodeError | OperationUnavailableErr
 /**
  * Where the child's location graph comes from — a UNION, so the compiler settles it rather than a
  * runtime branch. With a parent it is the parent's (one lookup, so the two cannot disagree). Without
- * one — a rootless launch such as Calendar — the caller must name it, because there is nothing to
+ * one — a rootless launch — the caller must name it, because there is nothing to
  * inherit and defaulting to the process cwd is how a scheduled run lands in the wrong tree.
  */
 export type SpawnAt =
@@ -329,7 +329,7 @@ export interface Interface {
    * dispatch could place sixteen live children and then the agent's own `spawn` would refuse with
    * `reason: "children"` — a quota spent by a path that checked none of it.
    *
-   * ⚠️ Requires a parent. A ROOTLESS launch (Calendar) cannot use this and must not fake a parent to
+   * ⚠️ Requires a parent. A ROOTLESS launch cannot use this and must not fake a parent to
    * get in; see `notes/reports/session-launch-sites-2026-08-11.md`.
    */
   readonly spawn: (

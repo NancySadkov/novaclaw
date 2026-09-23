@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
 import { HttpApi } from "effect/unstable/httpapi"
 import { Recurrence } from "@novaclaw/core/schedule/recurrence"
-import { CreateInput as WireCreateInput, Recurrence as WireRecurrence } from "@novaclaw/protocol/groups/calendar"
-import { CalendarApi } from "../handler-api"
+import { CreateInput as WireCreateInput, Recurrence as WireRecurrence } from "@novaclaw/protocol/groups/schedule"
+import { ScheduleApi } from "../handler-api"
 
 /**
  * ─── THE WIRE'S RECURRENCE IS THE ENGINE'S RECURRENCE ────────────────────────────────────────────
@@ -46,10 +46,10 @@ const decode = <S extends Schema.Top>(schema: S, value: unknown): { ok: boolean;
 /** The schemas the SERVED endpoints actually carry, so this file cannot pass against an unused copy. */
 const servedCreatePayload = (() => {
   let found: Schema.Top | undefined
-  HttpApi.reflect(CalendarApi, {
+  HttpApi.reflect(ScheduleApi, {
     onGroup() {},
     onEndpoint({ endpoint }) {
-      if (endpoint.name === "calendar.schedule.create") found = endpoint.payload.get("application/json")?.schemas[0]
+      if (endpoint.name === "schedule.create") found = endpoint.payload.get("application/json")?.schemas[0]
     },
   })
   return found
@@ -57,10 +57,10 @@ const servedCreatePayload = (() => {
 
 const servedCreateSuccess = (() => {
   let found: Schema.Top | undefined
-  HttpApi.reflect(CalendarApi, {
+  HttpApi.reflect(ScheduleApi, {
     onGroup() {},
     onEndpoint({ endpoint }) {
-      if (endpoint.name === "calendar.schedule.create") found = [...endpoint.success][0]
+      if (endpoint.name === "schedule.create") found = [...endpoint.success][0]
     },
   })
   return found
@@ -75,6 +75,7 @@ const RUNNABLE: ReadonlyArray<{ readonly label: string; readonly recurrence: unk
   { label: "once, later today", recurrence: { kind: "once", at: AFTER + 60_000 } },
   { label: "daily at midnight", recurrence: { kind: "daily", time: at(0, 0) } },
   { label: "daily at 23:59", recurrence: { kind: "daily", time: at(23, 59) } },
+  { label: "daily in Berlin", recurrence: { kind: "daily", time: at(1, 0), zone: "Europe/Berlin" } },
   ...[0, 1, 2, 3, 4, 5, 6].map((day) => ({
     label: `weekly on weekday ${day}`,
     recurrence: { kind: "weekly", time: at(9, 0), weekdays: [day] },
@@ -113,7 +114,7 @@ const UNRUNNABLE: ReadonlyArray<{ readonly label: string; readonly recurrence: u
   { label: "once at Infinity", recurrence: { kind: "once", at: "Infinity" }, names: "at" },
 ]
 
-describe("the calendar wire's runnable domain", () => {
+describe("the schedule wire's runnable domain", () => {
   test("the served create endpoint is the schema this file checks", () => {
     expect(servedCreatePayload).toBeDefined()
     expect(servedCreateSuccess).toBeDefined()

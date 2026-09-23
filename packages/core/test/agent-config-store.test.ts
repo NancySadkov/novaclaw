@@ -11,6 +11,7 @@ import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { FSUtil } from "@novaclaw/core/fs-util"
+import { Nudge } from "@novaclaw/core/nudge"
 import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 
@@ -36,6 +37,26 @@ const withWarnings = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   })
 
 describe("AgentConfigStore", () => {
+  it.effect("resolves shipped Nudges in each officer's settings and honors an explicit empty list", () =>
+    Effect.gen(function* () {
+      const store = yield* AgentConfigStore.Service
+      yield* store.setLayers("postal", [decodeAgent({ title: "Postal agent" })])
+      yield* store.setLayers("chat", [decodeAgent({ kind: "chat" })])
+      const configured = yield* store.configured()
+      expect(AgentConfigStore.fold(configured.postal ?? [])?.nudges?.map((item) => item.id)).toEqual(
+        Nudge.defaults().map((item) => item.id),
+      )
+      expect(AgentConfigStore.fold(configured.nova ?? [])?.nudges?.map((item) => item.id)).toEqual(
+        Nudge.defaults().map((item) => item.id),
+      )
+      expect(AgentConfigStore.fold(configured.chat ?? [])?.nudges).toBeUndefined()
+      expect(AgentConfigStore.fold((yield* store.agents()).postal ?? [])?.nudges).toBeUndefined()
+
+      yield* store.setLayers("postal", [decodeAgent({ title: "Postal agent", nudges: [] })])
+      expect(AgentConfigStore.fold((yield* store.configured()).postal ?? [])?.nudges).toEqual([])
+    }),
+  )
+
   it.effect("round-trips ordered layers, replaces on set, removes, and reports emptiness", () =>
     Effect.gen(function* () {
       const store = yield* AgentConfigStore.Service

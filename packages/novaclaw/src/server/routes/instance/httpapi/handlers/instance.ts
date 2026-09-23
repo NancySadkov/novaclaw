@@ -188,7 +188,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
             Effect.flatMap((registry) => registry.inspect()),
             Effect.orElseSucceed(() => [] as ReadonlyArray<CapabilitySnapshot>),
           )
-          const schedulerState = capabilities.find((row) => row.name === "calendar-scheduler")?.status.state
+          const schedulerState = capabilities.find((row) => row.name === "schedule-scheduler")?.status.state
           // Every OTHER edge that is down gets a row. Without this they were visible only through
           // /api/capability, which lives behind Developer mode.
           const downCapabilities = capabilities

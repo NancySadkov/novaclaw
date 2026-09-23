@@ -17,7 +17,7 @@ import { LocationHandler } from "./handlers/location"
 import { IntegrationHandler } from "./handlers/integration"
 import { CredentialHandler } from "./handlers/credential"
 import { MessengerHandler } from "./handlers/messenger"
-import { CalendarHandler } from "./handlers/calendar"
+import { ScheduleHandler } from "./handlers/schedule"
 import { RecipeHandler } from "./handlers/recipe"
 import { AppHandler } from "./handlers/app"
 import { ConfigHandler } from "./handlers/config"
@@ -37,7 +37,7 @@ type HandlerLayers =
   | typeof IntegrationHandler
   | typeof CredentialHandler
   | typeof MessengerHandler
-  | typeof CalendarHandler
+  | typeof ScheduleHandler
   | typeof RecipeHandler
   | typeof AppHandler
   | typeof FileSystemHandler
@@ -68,7 +68,7 @@ export const handlers: Layer.Layer<
   IntegrationHandler,
   CredentialHandler,
   MessengerHandler,
-  CalendarHandler,
+  ScheduleHandler,
   RecipeHandler,
   AppHandler,
   FileSystemHandler,

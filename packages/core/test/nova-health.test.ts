@@ -87,7 +87,7 @@ describe("mapping each subsystem's vocabulary", () => {
     // It was labelled "Scheduled runs" while measuring a different module with a similar name.
     expect(NovaHealth.fromScheduler("starting").status).toBe("unknown")
     expect(NovaHealth.fromScheduler("idle").status).toBe("unknown")
-    expect(NovaHealth.fromScheduler("unavailable").detail).toContain("calendar")
+    expect(NovaHealth.fromScheduler("unavailable").detail).toContain("scheduled work")
   })
 
   // ⚠️ UPDATER_ENABLED lives in the desktop main process. Claiming updates are OFF when the server
@@ -255,7 +255,7 @@ describe("NovaHealth.fromCapability — the generic edge row", () => {
     // ⚠️ Those rows read the SUBSYSTEM's own state, which is strictly better than the edge's:
     // memory's engine can be broken while its capability still reads `ready`.
     expect(NovaHealth.NAMED_CAPABILITY_ROWS.has("memory")).toBe(true)
-    expect(NovaHealth.NAMED_CAPABILITY_ROWS.has("calendar-scheduler")).toBe(true)
+    expect(NovaHealth.NAMED_CAPABILITY_ROWS.has("schedule-scheduler")).toBe(true)
     expect(NovaHealth.NAMED_CAPABILITY_ROWS.has("messenger")).toBe(false)
   })
 

@@ -63,7 +63,7 @@ describe("instance HttpApi", () => {
           { name: "local-model", status: { state: "idle" } },
           { name: "world-memory", status: { state: "idle" } },
           { name: "messenger-login", status: { state: "idle" } },
-          expect.objectContaining({ name: "calendar-scheduler" }),
+          expect.objectContaining({ name: "schedule-scheduler" }),
           expect.objectContaining({ name: "messenger" }),
         ]),
       )

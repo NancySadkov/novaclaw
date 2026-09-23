@@ -935,21 +935,6 @@ export const EVENTS = {
     file: "packages/core/src/event.ts",
   },
   /**
-   * The calendar could not read the roster or catalog, so a schedule's `agent`/`model` went
-   * UNCHECKED and was saved as written.
-   *
-   * ⚠️ Logged because the check's failure and its "nothing wrong" answer are the same silence. The
-   * first live run of this validation accepted a bogus agent without a word — the lookup had failed
-   * and been swallowed, and from outside that is indistinguishable from a setting that passed.
-   */
-  "instance.calendar.settings.unchecked": {
-    level: "warn",
-    message: "could not verify a schedule's agent/model; saving it unchecked",
-    attributes: { "instance.cause": "fault" },
-    content: "user",
-    file: "packages/server/src/handlers/calendar.ts",
-  },
-  /**
    * A lifecycle-triggered status sample failed. The observer isolates it from the foreground turn,
    * but the failure remains visible instead of becoming indistinguishable from an event not seen.
    */
@@ -961,23 +946,11 @@ export const EVENTS = {
     file: "packages/core/src/agent-status/sampler.ts",
   },
   /** One scheduler tick failed. The loop keeps its cadence; a tick is retried by the next interval. */
-  "instance.scheduler.tick.failed": {
+  "instance.schedule.tick.failed": {
     level: "error",
-    message: "calendar scheduler tick failed",
+    message: "agent schedule tick failed",
     attributes: { "instance.cause": "fault" },
     content: "user",
-    file: "packages/core/src/schedule/scheduler.ts",
-  },
-  /**
-   * A fired schedule's session was created and its prompt admitted, but nothing in this process
-   * picked it up — no executor was attached to the wake relay. The work is durable and will run when
-   * one is, so this is a WARNING, not a failure: the launch succeeded and the run did not begin.
-   */
-  "instance.scheduler.launch.unstarted": {
-    level: "warn",
-    message: "scheduled session was queued but no executor started it",
-    attributes: { "session.id": "correlate" },
-    content: "correlated",
     file: "packages/core/src/schedule/scheduler.ts",
   },
   /**

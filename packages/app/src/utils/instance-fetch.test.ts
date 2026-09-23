@@ -11,7 +11,7 @@ import {
   instanceUrl,
 } from "@/utils/instance-fetch"
 import { MessengerApiError, messengerDrivers, messengerUpdateAccount } from "@/utils/messenger-api"
-import { createSchedule, listSchedules, removeSchedule, updateSchedule } from "@/utils/calendar-api"
+import { createSchedule, listScheduleFires, listSchedules, removeSchedule, updateSchedule } from "@/utils/schedule-api"
 import { adhocDiscard, fsWrite, switchFeature } from "@/utils/fs-api"
 import { discoverInstances } from "@/utils/instance-discovery"
 import { importRecipeArchive, MAX_RECIPE_ARCHIVE_BYTES, recipeArchive, runRecipe } from "@/utils/recipe-api"
@@ -412,39 +412,26 @@ describe("every collapsed client still puts the same request on the wire", () =>
     return { url: seen.url, method: seen.init?.method ?? "GET", headers, body: seen.init?.body }
   }
 
-  test("calendar-api -> instance-global reads carry no directory", async () => {
-    const sent = await wire(() => listSchedules(server), { status: 200, body: [] })
-    expect(sent.url).toBe("http://instance.test:4096/api/calendar/schedule")
-    expect(sent.method).toBe("GET")
-    expect(sent.headers.Authorization).toBe(auth)
-    expect(sent.headers["content-type"]).toBe("application/json")
-  })
+  test("schedule-api addresses one officer, with routing location only on writes", async () => {
+    const listed = await wire(() => listSchedules(server, "postal agent"), { status: 200, body: [] })
+    expect(listed.url).toBe("http://instance.test:4096/api/agent/postal%20agent/schedule")
+    expect(listed.headers["x-novaclaw-directory"]).toBeUndefined()
+    const fires = await wire(() => listScheduleFires(server, "postal agent"), { status: 200, body: [] })
+    expect(fires.url).toBe("http://instance.test:4096/api/agent/postal%20agent/schedule/fires")
 
-  test("calendar-api -> create/update route the ambient directory in a header, outside the schedule body", async () => {
-    const recurrence = { kind: "daily" as const, time: { hour: 9, minute: 0 } }
-    const created = await wire(() => createSchedule(server, "C:/work/Календарь", { recurrence, prompt: "review" }), {
-      status: 200,
-      body: {},
-    })
-    expect(created.url).toBe("http://instance.test:4096/api/calendar/schedule")
-    expect(created.method).toBe("POST")
-    expect(created.headers["x-novaclaw-directory"]).toBe(encodeURIComponent("C:/work/Календарь"))
-    expect(created.body).toBe(JSON.stringify({ recurrence, prompt: "review" }))
+    const recurrence = { kind: "daily" as const, time: { hour: 1, minute: 0 }, zone: "Europe/Berlin" }
+    const input = { title: "Mail", recurrence, prompt: "Sort mail", durationMinutes: 60, heartbeatMinutes: 10, escalateOnFailure: true }
+    const created = await wire(() => createSchedule(server, "C:/work/post", "postal agent", input), { status: 200, body: {} })
+    expect(created.url).toBe("http://instance.test:4096/api/agent/postal%20agent/schedule")
+    expect(created.headers["x-novaclaw-directory"]).toBe(encodeURIComponent("C:/work/post"))
+    expect(created.body).toBe(JSON.stringify(input))
 
-    const updated = await wire(() => updateSchedule(server, "/work/current", "sch 1", { agent: "nova" }), {
-      status: 200,
-      body: {},
-    })
-    expect(updated.url).toBe("http://instance.test:4096/api/calendar/schedule/sch%201")
-    expect(updated.method).toBe("PATCH")
-    expect(updated.headers["x-novaclaw-directory"]).toBe(encodeURIComponent("/work/current"))
-    expect(updated.body).toBe(JSON.stringify({ agent: "nova" }))
-  })
-
-  test("calendar-api -> DELETE tolerates the declared 204 rather than throwing on an empty body", async () => {
-    const sent = await wire(() => removeSchedule(server, "sch 1"))
-    expect(sent.url).toBe("http://instance.test:4096/api/calendar/schedule/sch%201")
-    expect(sent.method).toBe("DELETE")
+    const updated = await wire(() => updateSchedule(server, "C:/work/post", "postal agent", "task 1", { enabled: false }), { status: 200, body: {} })
+    expect(updated.url).toBe("http://instance.test:4096/api/agent/postal%20agent/schedule/task%201")
+    expect(updated.body).toBe(JSON.stringify({ enabled: false }))
+    const removed = await wire(() => removeSchedule(server, "postal agent", "task 1"))
+    expect(removed.url).toBe(updated.url)
+    expect(removed.method).toBe("DELETE")
   })
 
   test("recipe-api -> POST /api/recipe/{slug}/run, slug encoded, body carried", async () => {

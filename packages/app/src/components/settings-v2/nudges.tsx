@@ -12,7 +12,6 @@ import { useServer } from "@/context/server"
 import { useConfirm } from "@/components/dialog-confirm"
 import { reportedWrite } from "@/utils/config-write"
 import { showToast } from "@/utils/toast"
-import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { planNudgeSave, type Refusal } from "./nudges-draft"
 
@@ -170,24 +169,34 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
   const patchHook = (patch: Record<string, string>) =>
     setDraft((item) => ({ ...item, hook: { ...item.hook, ...patch } as ConfigNudge.Hook }))
   return (
-    <>
-      <div class="settings-v2-tab-header settings-v2-tab-header--stacked">
-        <h2 class="settings-v2-tab-title">{language.t("settings.nudges.title")}</h2>
-        <p class="settings-v2-tab-description">{language.t("settings.nudges.description")}</p>
+    <div class="nudge-surface">
+      <div class="nudge-heading">
+        <div>
+          <span class="nudge-eyebrow">OFFICER INSTINCTS</span>
+          <h2>{language.t("settings.nudges.title")}</h2>
+          <p>{language.t("settings.nudges.description")}</p>
+        </div>
+        <Show when={editingID() === undefined}>
+          <ButtonV2 variant="gold" onClick={() => open()}>
+            {language.t("settings.nudges.add")}
+          </ButtonV2>
+        </Show>
       </div>
       <div class="settings-v2-tab-body">
         <div class="settings-v2-section">
-          <SettingsListV2>
+          <Show when={nudges().length === 0}>
+            <p class="schedule-empty">This officer has no nudges yet. Add one to guide it at a useful moment.</p>
+          </Show>
+          <div class="nudge-cards">
             <For each={nudges()}>
               {(item) => (
-                <SettingsRowV2 title={item.name} description={language.t(HOOK_KEY[item.hook.type])}>
-                  <div class="settings-v2-models-row-actions">
-                    <ButtonV2 size="small" variant="neutral" onClick={() => open(item)}>
-                      {language.t("common.edit")}
-                    </ButtonV2>
-                    <ButtonV2 size="small" variant="neutral" onClick={() => void remove(item)}>
-                      {language.t("common.delete")}
-                    </ButtonV2>
+                <article class="nudge-card" data-disabled={item.enabled === false}>
+                  <div class="nudge-card-top">
+                    <span class="nudge-status-dot" data-state={item.enabled === false ? "off" : "on"} />
+                    <div class="nudge-card-title">
+                      <h4>{item.name}</h4>
+                      <p>{language.t(HOOK_KEY[item.hook.type])}</p>
+                    </div>
                     <Switch
                       checked={item.enabled !== false}
                       onChange={(enabled) =>
@@ -198,19 +207,29 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
                       {item.name}
                     </Switch>
                   </div>
-                </SettingsRowV2>
+                  <p class="nudge-card-prompt">{item.text}</p>
+                  <div class="nudge-card-foot">
+                    <span>
+                      {item.spammable ? "Repeats whenever triggered" : "Quiet delivery"}
+                      {item.script ? " · Dynamic text" : ""}
+                    </span>
+                    <div class="nudge-actions">
+                      <button type="button" onClick={() => open(item)}>
+                        {language.t("common.edit")}
+                      </button>
+                      <button type="button" onClick={() => void remove(item)}>
+                        {language.t("common.delete")}
+                      </button>
+                    </div>
+                  </div>
+                </article>
               )}
             </For>
-          </SettingsListV2>
-          <Show when={editingID() === undefined}>
-            <ButtonV2 size="small" variant="neutral" onClick={() => open()}>
-              {language.t("settings.nudges.add")}
-            </ButtonV2>
-          </Show>
+          </div>
         </div>
 
         <Show when={editingID() !== undefined}>
-          <div class="settings-v2-section" data-component="settings-nudges-editor">
+          <div class="settings-v2-section nudge-editor" data-component="settings-nudges-editor">
             <h3 class="settings-v2-section-title">
               {editingID() ? language.t("settings.nudges.edit") : language.t("settings.nudges.add")}
             </h3>
@@ -379,6 +398,6 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
           </div>
         </Show>
       </div>
-    </>
+    </div>
   )
 }

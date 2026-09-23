@@ -45,9 +45,6 @@ export const defaults = (): ReadonlyArray<ConfigNudge.Info> => [
   },
 ]
 
-export const resolved = (stored: readonly ConfigNudge.Info[] | undefined): ReadonlyArray<ConfigNudge.Info> =>
-  stored === undefined ? defaults() : stored
-
 export const validPattern = (pattern: string): boolean => {
   try {
     new RegExp(pattern, "i")

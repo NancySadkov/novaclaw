@@ -6,7 +6,7 @@ import { FileSystem } from "effect"
 import { AgentConfigStore } from "../agent-config-store"
 import { AgentStatus } from "../agent-status"
 import { GraphRegistry } from "./graph-registry"
-import { CalendarScheduleTable } from "../schedule/calendar.sql"
+import { AgentScheduleTable } from "../schedule/sql"
 import { Scratch } from "../scratch"
 import * as AppNodePlatform from "../effect/app-node-platform"
 import { Database } from "../database/database"
@@ -174,12 +174,10 @@ export const node = makeGlobalNode({
         removeWorkers({ db, events, execution, scheduler, memory, agent: agentID }),
       )
       yield* AgentRetire.registerCleaner("schedules", (agentID) =>
-        // A retired colleague's tasks must stop firing. Left behind they do not merely linger: the
-        // scheduler hands an unrunnable owner's task to NOVA, so a retirement would quietly turn
-        // somebody's scheduled work into the CEO's.
+          // A retired colleague's scheduled tasks must stop firing with its other components.
         db
-          .delete(CalendarScheduleTable)
-          .where(eq(CalendarScheduleTable.agent, agentID))
+          .delete(AgentScheduleTable)
+          .where(eq(AgentScheduleTable.agent, agentID))
           .run()
           .pipe(Effect.asVoid, Effect.orDie),
       )

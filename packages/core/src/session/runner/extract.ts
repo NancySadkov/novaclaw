@@ -15,7 +15,7 @@ import type { SessionMessage } from "../message"
 // Durable auto-extraction accepts only an attended, user-authored chat. This table is deliberately
 // exhaustive over the schema's CLOSED session-kind vocabulary: adding a new kind cannot silently
 // inherit permission to write candidates that consolidation may later promote to GLOBAL memory.
-// `auto-prompting` covers heartbeat-style work; Calendar launches scheduled work as `goal-oriented`.
+// `auto-prompting` covers heartbeat-style work.
 const DURABLE_MEMORY_BY_SESSION_TYPE = {
   interactive: true,
   "sub-agent": false,
