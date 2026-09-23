@@ -878,16 +878,17 @@ async function run(job: Job, sharded: number | undefined, overlapped: () => bool
   else runs.push(await spawnWithUpstreamRetry(name, kind, dir, argv, wallclockMs))
 
   const captured = runs.map((r) => r.captured).join("\n")
+  const complete = runs.every((r) => r.ok)
   // A skip count is only meaningful if EVERY shard produced a summary — one unreadable shard makes the
   // total an undercount, which the ledger would then read as a skip that disappeared.
   const perShardSkips = kind === "test" ? runs.map((r) => readSkipCount(r.captured)) : []
   const perShardCounts = kind === "test" ? runs.map((r) => readTestCount(r.captured)) : []
   const skipped =
-    kind !== "test" || perShardSkips.some((s) => s === undefined)
+    kind !== "test" || !complete || perShardSkips.some((s) => s === undefined)
       ? undefined
       : perShardSkips.reduce<number>((a, s) => a + (s ?? 0), 0)
   const testCount =
-    kind !== "test" || perShardCounts.some((count) => count === undefined)
+    kind !== "test" || !complete || perShardCounts.some((count) => count === undefined)
       ? undefined
       : perShardCounts.reduce<number>((a, count) => a + (count ?? 0), 0)
   const peaks = runs.map((r) => r.peakMb).filter((mb): mb is number => mb !== undefined)

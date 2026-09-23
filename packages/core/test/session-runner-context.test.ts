@@ -90,8 +90,8 @@ describe("SessionRunnerLLM — the one prompt baseline", () => {
       expect(harness.requests[2]!.tools).toEqual(harness.requests[1]!.tools)
     },
   )
-  test("normal dispatch retains a short conversation from 4K through 1M", async () => {
-    for (let context = 4096; context <= 1048576; context *= 2) {
+  for (let context = 4096; context <= 1048576; context *= 2) {
+    test(`normal dispatch retains a short conversation at ${context} tokens`, async () => {
       const harness = makeRunnerHarness({
         turns: [completeTurn("first", "I remember cobalt."), completeTurn("second", "cobalt")],
       })
@@ -113,8 +113,8 @@ describe("SessionRunnerLLM — the one prompt baseline", () => {
       )
       expect(JSON.stringify(harness.requests[1]!.messages)).toContain("I remember cobalt.")
       expect(JSON.stringify(harness.requests[1]!.messages)).toContain("What launch code did I give you?")
-    }
-  })
+    })
+  }
 
   test("a retired ambient source changing does NOT rewrite the prompt on a casual turn", async () => {
     const harness = makeRunnerHarness({ turns: [completeTurn("t1", "One"), completeTurn("t2", "Two")] })
