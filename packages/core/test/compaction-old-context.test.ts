@@ -3,7 +3,6 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { SessionCompaction } from "@novaclaw/core/session/compaction"
-import type { Config } from "@novaclaw/core/config"
 import type { EventV2 } from "@novaclaw/core/event"
 import { SessionEvent } from "@novaclaw/core/session/event"
 import { SessionMessage } from "@novaclaw/core/session/message"
@@ -92,7 +91,7 @@ const drive = async (input: { readonly scratchFolder?: string }) => {
           LLMEvent.stepFinish({ index: 0, reason: "stop" }),
         ]),
     },
-    config: [{ type: "document", info: { compaction: { keep: { tokens: 8 } } } } as unknown as Config.Entry],
+    override: { keep: { tokens: 8 } } as never,
     prefixHash: () => Effect.succeed("0".repeat(64)),
   })
   const compacted = await Effect.runPromise(

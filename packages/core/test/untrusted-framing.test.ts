@@ -296,6 +296,7 @@ describe("websearch frames the third-party results", () => {
 // alone is not the check.
 
 const messengerAccount = new Messenger.AccountInfo({
+  agentID: "build",
   id: Messenger.AccountID.make("msa_framing"),
   driverID: "fake",
   label: "Test",

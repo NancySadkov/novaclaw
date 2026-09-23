@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
+import * as ts from "typescript"
 
 /**
  * **Every path the API declares is either under `/api/*`, or it is on the ledger below.** todo.md
@@ -427,12 +428,13 @@ export function protocolDeclaredApiPaths(dir: string = PROTOCOL_GROUPS): Set<str
   if (!fs.existsSync(dir)) return declared
   for (const name of fs.readdirSync(dir)) {
     if (!name.endsWith(".ts")) continue
-    const source = fs
-      .readFileSync(path.join(dir, name), "utf8")
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/(^|[^:])\/\/[^\n]*/g, "$1")
-    for (const match of source.matchAll(/"(\/api\/[^"]*)"/g))
-      declared.add(match[1]!.replace(/:([A-Za-z0-9_]+)/g, "{$1}"))
+    const source = fs.readFileSync(path.join(dir, name), "utf8")
+    const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, source)
+    for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
+      if (token !== ts.SyntaxKind.StringLiteral) continue
+      const literal = scanner.getTokenText().slice(1, -1)
+      if (literal.startsWith("/api/")) declared.add(literal.replace(/:([A-Za-z0-9_]+)/g, "{$1}"))
+    }
   }
   return declared
 }

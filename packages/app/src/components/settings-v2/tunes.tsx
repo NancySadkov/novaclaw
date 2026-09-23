@@ -48,22 +48,26 @@ const THRESHOLD_MAX = 95
  * ⚠️ The percentages are editable by whoever can see the tab (Advanced), not only Developer. The
  * tab itself is the gate; a drag with no effect would be a control that lies (AGENTS.md 12).
  */
-export const SettingsTunesV2: Component = () => {
+export const OfficerContext: Component<{
+  agentID: string
+  config: () => Record<string, unknown> | undefined
+  onChanged?: () => void
+}> = (props) => {
   const language = useLanguage()
   const serverSync = useServerSync()
 
-  const stored = () => serverSync().data.config as { context?: ContextConfig; compaction?: CompactionConfig }
-  const context = (): ContextConfig => stored().context ?? {}
-  const guardOn = () => context().enabled !== false
+  const stored = () => props.config() as { context?: ContextConfig; compaction?: CompactionConfig; contextBudget?: boolean } | undefined
+  const context = (): ContextConfig => stored()?.context ?? {}
+  const guardOn = () => stored()?.["contextBudget"] !== false && context().enabled !== false
 
   const persistContext = (next: ContextConfig) =>
     reportedWrite(
-      () => serverSync().updateConfig({ context: next }),
+      () => serverSync().updateConfig({ agents: { [props.agentID]: { context: next, ...(next.enabled === undefined ? {} : { contextBudget: next.enabled }) } } } as never).then(() => props.onChanged?.()),
       (error) => showToast({ variant: "error", title: language.t("settings.tunes.toast.failed"), description: error }),
     )
   const persistCompaction = (threshold: number) =>
     reportedWrite(
-      () => serverSync().updateConfig({ compaction: { ...(stored().compaction ?? {}), threshold } }),
+      () => serverSync().updateConfig({ agents: { [props.agentID]: { compaction: { ...(stored()?.compaction ?? {}), threshold } } } } as never).then(() => props.onChanged?.()),
       (error) => showToast({ variant: "error", title: language.t("settings.tunes.toast.failed"), description: error }),
     )
 
@@ -82,15 +86,10 @@ export const SettingsTunesV2: Component = () => {
   const reminderBudget = () => context().todo_reminder?.max_tokens ?? 256
   // The number the runner actually uses when nothing is stored — showing a blank box would state a
   // value the config does not hold and hide the shipped 80% (AGENTS.md 12d).
-  const compactionThreshold = () => stored().compaction?.threshold ?? DEFAULT_COMPACTION_THRESHOLD
+  const compactionThreshold = () => stored()?.compaction?.threshold ?? DEFAULT_COMPACTION_THRESHOLD
 
   return (
     <>
-      <div class="settings-v2-tab-header settings-v2-tab-header--stacked">
-        <h2 class="settings-v2-tab-title">{language.t("settings.tunes.title")}</h2>
-        <p class="settings-v2-tab-description">{language.t("settings.tunes.description")}</p>
-      </div>
-
       <div class="settings-v2-tab-body">
         {/* The guard card: its own switch sits directly above the split it governs, so the two read
             as one control rather than as a switch here and twelve rows somewhere below. */}
@@ -98,7 +97,6 @@ export const SettingsTunesV2: Component = () => {
           <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.tunes.context.enabled.title")}
-              description={language.t("settings.tunes.context.enabled.description")}
               info={language.t("settings.tunes.context.enabled.description.more")}
             >
               <Switch
@@ -113,7 +111,6 @@ export const SettingsTunesV2: Component = () => {
 
           <div class="settings-v2-allocation-block">
             <h3 class="settings-v2-section-title">{language.t("settings.tunes.profiles.title")}</h3>
-            <p class="settings-v2-field-description">{language.t("settings.tunes.profiles.description")}</p>
             <ul class="settings-v2-allocation-legend">
               <For each={ALLOCATION_CATEGORIES}>
                 {(category) => (
@@ -161,11 +158,9 @@ export const SettingsTunesV2: Component = () => {
 
         <section class="settings-v2-section">
           <h3 class="settings-v2-section-title">{language.t("settings.tunes.compaction.title")}</h3>
-          <p class="settings-v2-field-description">{language.t("settings.tunes.compaction.description")}</p>
           <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.tunes.compaction.threshold.title")}
-              description={language.t("settings.tunes.compaction.threshold.description")}
               info={language.t("settings.tunes.compaction.threshold.description.more")}
             >
               <SettingsNumberFieldV2
@@ -183,11 +178,9 @@ export const SettingsTunesV2: Component = () => {
 
         <section class="settings-v2-section">
           <h3 class="settings-v2-section-title">{language.t("settings.tunes.todo.title")}</h3>
-          <p class="settings-v2-field-description">{language.t("settings.tunes.todo.description")}</p>
           <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.tunes.todo.enabled.title")}
-              description={language.t("settings.tunes.todo.enabled.description")}
             >
               <Switch
                 checked={context().todo_reminder?.enabled !== false}
@@ -199,7 +192,6 @@ export const SettingsTunesV2: Component = () => {
             </SettingsRowV2>
             <SettingsRowV2
               title={language.t("settings.tunes.todo.cadence.title")}
-              description={language.t("settings.tunes.todo.cadence.description")}
             >
               <SettingsNumberFieldV2
                 class="settings-v2-tunes-input"
@@ -213,7 +205,6 @@ export const SettingsTunesV2: Component = () => {
             </SettingsRowV2>
             <SettingsRowV2
               title={language.t("settings.tunes.todo.budget.title")}
-              description={language.t("settings.tunes.todo.budget.description")}
             >
               <SettingsNumberFieldV2
                 class="settings-v2-tunes-input"

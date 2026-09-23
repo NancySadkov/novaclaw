@@ -263,6 +263,7 @@ export class LoginStatus extends Schema.Class<LoginStatus>("Messenger.LoginStatu
 
 export class AccountInfo extends Schema.Class<AccountInfo>("Messenger.AccountInfo")({
   id: AccountID,
+  agentID: Schema.String,
   driverID: Schema.String,
   label: Schema.String,
   enabled: Schema.Boolean,

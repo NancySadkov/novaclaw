@@ -1,6 +1,6 @@
 import type { Page, Route } from "@playwright/test"
 
-const emptyList = new Set(["/skill", "/command", "/app"])
+const emptyList = new Set(["/skill", "/command", "/app", "/api/recipe/deployed", "/api/messenger/driver", "/api/messenger/account"])
 
 /**
  * The `{ location, data }` envelope every `/api` route answers in. The VCS family joined them on

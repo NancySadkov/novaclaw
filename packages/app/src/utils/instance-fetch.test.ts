@@ -420,13 +420,26 @@ describe("every collapsed client still puts the same request on the wire", () =>
     expect(fires.url).toBe("http://instance.test:4096/api/agent/postal%20agent/schedule/fires")
 
     const recurrence = { kind: "daily" as const, time: { hour: 1, minute: 0 }, zone: "Europe/Berlin" }
-    const input = { title: "Mail", recurrence, prompt: "Sort mail", durationMinutes: 60, heartbeatMinutes: 10, escalateOnFailure: true }
-    const created = await wire(() => createSchedule(server, "C:/work/post", "postal agent", input), { status: 200, body: {} })
+    const input = {
+      title: "Mail",
+      recurrence,
+      prompt: "Sort mail",
+      durationMinutes: 60,
+      heartbeatMinutes: 10,
+      escalateOnFailure: true,
+    }
+    const created = await wire(() => createSchedule(server, "C:/work/post", "postal agent", input), {
+      status: 200,
+      body: {},
+    })
     expect(created.url).toBe("http://instance.test:4096/api/agent/postal%20agent/schedule")
     expect(created.headers["x-novaclaw-directory"]).toBe(encodeURIComponent("C:/work/post"))
     expect(created.body).toBe(JSON.stringify(input))
 
-    const updated = await wire(() => updateSchedule(server, "C:/work/post", "postal agent", "task 1", { enabled: false }), { status: 200, body: {} })
+    const updated = await wire(
+      () => updateSchedule(server, "C:/work/post", "postal agent", "task 1", { enabled: false }),
+      { status: 200, body: {} },
+    )
     expect(updated.url).toBe("http://instance.test:4096/api/agent/postal%20agent/schedule/task%201")
     expect(updated.body).toBe(JSON.stringify({ enabled: false }))
     const removed = await wire(() => removeSchedule(server, "postal agent", "task 1"))
@@ -587,8 +600,8 @@ describe("every collapsed client still puts the same request on the wire", () =>
   })
 
   test("messenger-api -> a mutation carries its body and tolerates the declared 204", async () => {
-    const sent = await wire(() => messengerUpdateAccount(server, "acc_1", { enabled: false }))
-    expect(sent.url).toBe("http://instance.test:4096/api/messenger/account/acc_1")
+    const sent = await wire(() => messengerUpdateAccount(server, "acc_1", "nova", { enabled: false }))
+    expect(sent.url).toBe("http://instance.test:4096/api/messenger/account/acc_1?agentID=nova")
     expect(sent.method).toBe("PATCH")
     expect(sent.body).toBe(JSON.stringify({ enabled: false }))
   })

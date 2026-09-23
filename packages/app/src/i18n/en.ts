@@ -255,7 +255,6 @@ export const dict = {
     "This is a helper the main chat started. You can't message it directly — go back to the main chat to continue.",
   "session.child.backToParent": "Back to the main chat.",
 
-
   "prompt.dropzone.label": "Drop images, PDFs, or text files here",
   "prompt.context.removeFile": "Remove file from context",
   "prompt.action.attachFile": "Add files",
@@ -296,7 +295,6 @@ export const dict = {
   "prompt.permissionMode.surgical": "Surgical",
   "prompt.permissionMode.bypass": "Modify",
   "prompt.permissionMode.yolo": "Admin",
-
 
   "prompt.features.popover.title": "Tune this chat",
   "prompt.features.popover.description":
@@ -644,7 +642,6 @@ export const dict = {
   "language.th": "ไทย",
   "language.tr": "Türkçe",
 
-
   "toast.model.none.title": "No model selected",
   "toast.model.none.description": "Connect an AI service to summarize this chat",
 
@@ -710,7 +707,6 @@ export const dict = {
   "error.chain.configFrontmatterError": "Failed to parse frontmatter in {{path}}:\n{{message}}",
   "error.chain.configInvalid": "Config file at {{path}} is invalid",
   "error.chain.configInvalidWithMessage": "Config file at {{path}} is invalid: {{message}}",
-
 
   "notification.session.responseReady.title": "Response ready",
   "notification.session.recovery.title": "Chat paused safely",
@@ -814,7 +810,6 @@ export const dict = {
   "session.files.selectToOpen": "Select a file to open",
   "session.files.all": "All files",
   "session.files.empty": "No files",
-
 
   "session.todo.collapse": "Collapse",
   "session.todo.expand": "Expand",
@@ -1869,7 +1864,7 @@ export const dict = {
     "Messages there that don't start with that are ignored, so your own notes to self stay private. The first one you send links that chat to a new session automatically.",
   "settings.messengers.add": "Add account",
   "settings.messengers.addThenLogin": "Add & log in",
-  "settings.messengers.empty": "No messenger accounts yet. Add one to let NovaClaw talk where you talk.",
+  "settings.messengers.empty": "No accounts yet.",
   "settings.messengers.airgapped":
     "Messengers are off while NovaClaw is offline or airgapped — nothing connects until you go back online.",
   "settings.messengers.enabled": "Enabled",
@@ -2217,7 +2212,7 @@ export const dict = {
   "agentConfig.jobTitlePlaceholder": "Talent Scout, Expense Manager, Dungeon Master…",
   "agentConfig.portrait": "Portrait",
   "agentConfig.portraitHint":
-    "Stored on this NovaClaw and shown to the model when it looks at its colleagues. PNG, JPEG, GIF or WebP, up to 5 MB.",
+    "PNG, JPEG, GIF or WebP · up to 5 MB.",
   "agentConfig.portraitRemove": "Remove uploaded portrait",
   "agentConfig.portraitChoose": "Choose image",
   "agentConfig.portraitNone": "No image chosen",
@@ -2229,9 +2224,9 @@ export const dict = {
   // force in BOTH positions, which is the rule a control has to obey to be readable when it is off.
   "agentConfig.unattended": "Unattended",
   "agentConfig.unattended.on":
-    "On — the agent loops toward the goal below on its own. When the plan stops changing it sleeps for 10 minutes without holding model capacity, then checks the environment again. Its shell commands run under the same guardrails as auto-prompting.",
+    "Works toward its goal between messages and rests when idle.",
   "agentConfig.unattended.off":
-    "Off — you drive. The agent answers and waits for you. The goal below is kept for when you switch this on.",
+    "Answers, then waits for your next message.",
   // Said when the mode was saved onto the colleague but the chat ON SCREEN could not be switched with
   // it. The two halves really are separate: the profile write has already committed, and a sentence
   // that claimed the whole thing worked would be false about the thing the user is looking at.
@@ -2284,14 +2279,10 @@ export const dict = {
   "agentConfig.reasoningBudgetCustom": "Wrap up reasoning after about {{tokens}} tokens, then answer.",
   "agentConfig.maxToolTimeout": "Maximum tool wait (minutes)",
   "agentConfig.maxToolTimeoutDefault": "10 minutes",
-  "agentConfig.maxToolTimeoutHelpDefault":
-    "Tools return control after at most 10 minutes. Spawned workers inherit this limit.",
-  "agentConfig.maxToolTimeoutHelpCustom":
-    "Tools return control after at most {{minutes}} minutes. Spawned workers inherit this limit.",
   "agentConfig.superior": "Superior",
   "agentConfig.superiorNova": "Nova — CEO (default)",
   "agentConfig.superiorDescription":
-    "This colleague asks its superior to resolve overlapping work and conflicts. Reporting lines cannot form a loop.",
+    "Resolves overlapping work. Reporting lines cannot loop.",
   "agentConfig.needsTaxonomy": "Model class this colleague needs",
   "agentConfig.needsTaxonomyNone": "No requirement",
   "agentConfig.needsTaxonomyHelp":
@@ -2302,20 +2293,16 @@ export const dict = {
   // the user is assigning a person to a job, and the folder is how that is expressed.
   // The standing WORK choices — how this colleague operates, every time. Moved off the composer
   // 2026-08-21: re-choosing per chat is a question asked again for a decision that never changes.
-  "agentConfig.work": "How it works",
+  "agentConfig.work": "Work style",
   "agentConfig.posture": "Mode",
   "agentConfig.strict": "Strict — verify each step, and retry a step that fails",
   "agentConfig.toolLabels": "Caption each command",
-  "agentConfig.toolLabels.on":
-    "On — every command costs one extra model call to name it, on the same model this colleague is thinking with",
-  "agentConfig.toolLabels.off":
-    "Off — commands run unnamed, and nothing waits on the model for a caption. Spawned chats keep their default name.",
   "agentConfig.computerUse": "Computer Use — see the screen and drive the mouse and keyboard",
   "agentConfig.computerUse.on": "On — this colleague can control the desktop, and asks before installing anything new",
   "agentConfig.computerUse.off":
     "Off — the tool is taken out of this colleague's reach entirely, not just refused when it tries",
-  "agentConfig.folder": "What it works on",
-  "agentConfig.folderScratch": "Its own workspace",
+  "agentConfig.folder": "Project folder",
+  "agentConfig.folderScratch": "Own workspace",
   "agentConfig.folderOwn": "Back to its own",
   // Browsing the colleague's own workspace (owner, 2026-08-22). Worded as a place belonging to
   // SOMEBODY — "Open workspace" would read as a generic folder, and the whole point is that this one
@@ -2535,7 +2522,6 @@ export const dict = {
   "community.channels.hiddenByFilters.other": "{{count}} messages hidden by your words below.",
   "community.channels.archivedEntry.one": "{{name}} — {{count}} message",
   "community.channels.archivedEntry.other": "{{name}} — {{count}} messages",
-
 
   // The composer, when a read it depends on did not answer. Each of these replaces a sentence that
   // would otherwise be false: an empty message box that looks like "you had no draft", and a

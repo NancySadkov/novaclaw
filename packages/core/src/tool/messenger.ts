@@ -3,6 +3,7 @@ export * as MessengerTool from "./messenger"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { ToolFailure } from "@novaclaw/llm"
+import { AgentV2 } from "../agent"
 import { Effect, Layer, Schema } from "effect"
 import { Messenger } from "@novaclaw/schema/messenger"
 import type { ModerationAct } from "../messenger/driver"
@@ -308,7 +309,7 @@ export const initiationRefusal = (hostility: HostExec.Hostility): Output | undef
         "I couldn't start a new conversation: this instance's messenger database can't be read, so I " +
         "can't tell whether this session is being driven by somebody else's chat. Writing to a person " +
         "who has never messaged us is only allowed when that question has an answer, so nothing was " +
-        "sent and nothing was lost. The user can check Settings → Messengers.",
+        "sent and nothing was lost. The user can check Officer Settings → Messengers.",
     } satisfies Output
   return {
     outcome: "failed",
@@ -327,7 +328,7 @@ export const initiationRefusal = (hostility: HostExec.Hostility): Output | undef
 const STORE_UNAVAILABLE =
   "This instance's messenger database could not be read, so I can't tell which accounts, chats or " +
   "bindings exist. That is a fault in this NovaClaw instance, not in your request — the user can " +
-  "check Settings → Messengers."
+  "check Officer Settings → Messengers."
 
 // --- linearized rendering (pure; unit-tested) --------------------------------------------------
 
@@ -481,7 +482,7 @@ export const metadata = {
     '"private — never cite" is the user\'s correspondence and "unlabelled"/"unconfirmed" means nobody ' +
     "has said yet — in all three cases you may still read the chat as correspondence when the user " +
     "asked you to, but nothing from it may be quoted, summarized or cited outside this conversation. " +
-    "If you need one of those as a source, ask the user to mark it public in Settings → Messengers; " +
+    "If you need one of those as a source, ask the user to mark it public in Officer Settings → Messengers; " +
     "you cannot mark it yourself, and that is deliberate.",
   input: Input,
   output: Output,
@@ -498,7 +499,7 @@ export const layer = Layer.effectDiscard(
     const sessions = yield* SessionStore.Service
 
     const OFFLINE_GATEWAY =
-      "The messenger service isn't running on this instance (offline/airgapped, or still starting). Check Settings → Messengers."
+      "The messenger service isn't running on this instance (offline/airgapped, or still starting). Check Officer Settings → Messengers."
 
     // messenger-plan §3.4 — is any session in this chain bound to a client/audience chat? The walk
     // itself lives in `host-exec.ts` because `tool/bash.ts` and the Strict runner already ask this
@@ -525,18 +526,19 @@ export const layer = Layer.effectDiscard(
     // Resolve the account by id, label, or driver id — or the sole account when unambiguous.
     const resolveAccount = (
       selector: string | undefined,
+      agentID: AgentV2.ID,
       allowed?: ReadonlySet<Messenger.AccountID>,
     ): Effect.Effect<Resolved> =>
       Effect.gen(function* () {
         const listed = yield* MessengerStore.attempted(store.listAccounts())
         if (!listed.read) return { miss: { outcome: "unavailable", message: STORE_UNAVAILABLE } satisfies Output }
-        const accounts =
-          allowed === undefined ? listed.value : listed.value.filter((account) => allowed.has(account.id))
+        const owned = listed.value.filter((account) => agentID === AgentV2.MESSENGER_ID || account.agentID === agentID)
+        const accounts = allowed === undefined ? owned : owned.filter((account) => allowed.has(account.id))
         if (accounts.length === 0)
           return {
             miss: {
               outcome: "failed",
-              message: "No messenger accounts are set up. Ask the user to add one in Settings → Messengers.",
+              message: "No messenger accounts are set up. Ask the user to add one in Officer Settings → Messengers.",
             } satisfies Output,
           }
         if (selector === undefined) {
@@ -652,7 +654,7 @@ export const layer = Layer.effectDiscard(
                     // ⚠️ THE headline lie this whole change exists for. `status` is the op the tool's
                     // own description tells the model to START with, and an unreadable account table
                     // used to reach it as "No messenger accounts are set up. Ask the user to add one
-                    // in Settings → Messengers" — a database fault rendered as a claim about the
+                    // in Officer Settings → Messengers" — a database fault rendered as a claim about the
                     // user's setup, on the one surface a model consults before deciding it has no
                     // messaging at all.
                     const scope = yield* readScope(context.sessionID)
@@ -660,14 +662,16 @@ export const layer = Layer.effectDiscard(
                     const listed = yield* MessengerStore.attempted(store.listAccounts())
                     if (!listed.read) return { outcome: "unavailable", message: STORE_UNAVAILABLE } satisfies Output
                     const allowedAccounts = scopedAccounts(scope)
+                    const owned = listed.value.filter(
+                      (account) => context.agent === AgentV2.MESSENGER_ID || account.agentID === context.agent,
+                    )
                     const accounts =
-                      allowedAccounts === undefined
-                        ? listed.value
-                        : listed.value.filter((account) => allowedAccounts.has(account.id))
+                      allowedAccounts === undefined ? owned : owned.filter((account) => allowedAccounts.has(account.id))
                     if (accounts.length === 0)
                       return {
                         outcome: "failed",
-                        message: "No messenger accounts are set up. Ask the user to add one in Settings → Messengers.",
+                        message:
+                          "No messenger accounts are set up. Ask the user to add one in Officer Settings → Messengers.",
                       } satisfies Output
                     const status =
                       gateway === undefined
@@ -706,7 +710,7 @@ export const layer = Layer.effectDiscard(
                     const scope = yield* readScope(context.sessionID)
                     const refusal = scopedReadRefusal(scope)
                     if (refusal !== undefined) return refusal
-                    const resolved = yield* resolveAccount(input.account)
+                    const resolved = yield* resolveAccount(input.account, context.agent)
                     if (resolved.account === undefined) return resolved.miss
                     const outcome = yield* gateway.chats(resolved.account.id)
                     if (!outcome.ok) return { outcome: "failed", message: outcome.reason } satisfies Output
@@ -724,7 +728,7 @@ export const layer = Layer.effectDiscard(
                     if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
                     const scope = yield* readScope(context.sessionID)
                     if (scope === "unknown") return scopedReadRefusal(scope)!
-                    const resolved = yield* resolveAccount(input.account, scopedAccounts(scope))
+                    const resolved = yield* resolveAccount(input.account, context.agent, scopedAccounts(scope))
                     if (resolved.account === undefined) return resolved.miss
                     const refusal = scopedReadRefusal(scope, `${resolved.account.id}:${input.chat.trim()}`)
                     if (refusal !== undefined) return refusal
@@ -745,7 +749,7 @@ export const layer = Layer.effectDiscard(
                   }
                   case "send": {
                     if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
-                    const resolved = yield* resolveAccount(input.account)
+                    const resolved = yield* resolveAccount(input.account, context.agent)
                     if (resolved.account === undefined) return resolved.miss
                     const chatID = input.chat.trim()
                     const resource = `${resolved.account.id}:${chatID}`
@@ -822,7 +826,7 @@ export const layer = Layer.effectDiscard(
                     return { outcome: "ok", message: "Sent (paced at human typing speed)." } satisfies Output
                   }
                   case "connect": {
-                    const resolved = yield* resolveAccount(input.account)
+                    const resolved = yield* resolveAccount(input.account, context.agent)
                     if (resolved.account === undefined) return resolved.miss
                     const chatID = input.chat.trim()
                     const resource = `${resolved.account.id}:${chatID}`
@@ -877,7 +881,7 @@ export const layer = Layer.effectDiscard(
                   }
                   case "upload": {
                     if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
-                    const resolved = yield* resolveAccount(input.account)
+                    const resolved = yield* resolveAccount(input.account, context.agent)
                     if (resolved.account === undefined) return resolved.miss
                     const caps = drivers.get(resolved.account.driverID)?.capabilities(resolved.account)
                     if (caps !== undefined && !caps.files.up)
@@ -898,7 +902,10 @@ export const layer = Layer.effectDiscard(
                       Effect.orElseSucceed(() => undefined),
                     )
                     if (stat === undefined || !stat.isFile())
-                      return { outcome: "failed", message: `No file at ${displayPath(input.path.trim())}.` } satisfies Output
+                      return {
+                        outcome: "failed",
+                        message: `No file at ${displayPath(input.path.trim())}.`,
+                      } satisfies Output
                     const maxBytes = caps?.files.maxBytes
                     if (maxBytes !== undefined && stat.size > maxBytes)
                       return {
@@ -915,7 +922,9 @@ export const layer = Layer.effectDiscard(
                       source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
                     })
                     const data = yield* Effect.tryPromise(() => fs.readFile(filePath)).pipe(
-                      Effect.mapError(() => new ToolFailure({ message: `Could not read ${displayPath(input.path.trim())}.` })),
+                      Effect.mapError(
+                        () => new ToolFailure({ message: `Could not read ${displayPath(input.path.trim())}.` }),
+                      ),
                     )
                     const outcome = yield* gateway.sendFile({
                       accountID: resolved.account.id,
@@ -940,7 +949,7 @@ export const layer = Layer.effectDiscard(
                     if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
                     const scope = yield* readScope(context.sessionID)
                     if (scope === "unknown") return scopedReadRefusal(scope)!
-                    const resolved = yield* resolveAccount(input.account, scopedAccounts(scope))
+                    const resolved = yield* resolveAccount(input.account, context.agent, scopedAccounts(scope))
                     if (resolved.account === undefined) return resolved.miss
                     const refusal = scopedReadRefusal(scope, `${resolved.account.id}:${input.chat.trim()}`)
                     if (refusal !== undefined) return refusal
@@ -998,7 +1007,7 @@ export const layer = Layer.effectDiscard(
                     } satisfies Output
                   }
                   case "disconnect": {
-                    const resolved = yield* resolveAccount(input.account)
+                    const resolved = yield* resolveAccount(input.account, context.agent)
                     if (resolved.account === undefined) return resolved.miss
                     // ⚠️ An empty list here used to mean "This session has no messenger binding to
                     // disconnect" — which the model relays as "you weren't connected". Said while the
@@ -1024,7 +1033,7 @@ export const layer = Layer.effectDiscard(
                   }
                   case "moderate": {
                     if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
-                    const resolved = yield* resolveAccount(input.account)
+                    const resolved = yield* resolveAccount(input.account, context.agent)
                     if (resolved.account === undefined) return resolved.miss
                     const built = buildModerationAct(input)
                     if ("error" in built) return { outcome: "failed", message: built.error } satisfies Output

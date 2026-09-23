@@ -3,9 +3,9 @@ import { ToolDefinition } from "@novaclaw/llm"
 import { makeLocationNode } from "../../effect/app-node"
 import { LazyBuiltin } from "../lazy-builtin"
 import { Location } from "../../location"
+import { AgentConfigStore } from "../../agent-config-store"
 import { PermissionV2 } from "../../permission"
 import { AppProcess } from "../../process"
-import { SettingsConfigStore } from "../../settings-config-store"
 import { ToolRegistry } from ".././registry"
 
 export const node = makeLocationNode({
@@ -13,7 +13,7 @@ name: "tool/quality-provision",
 layer: LazyBuiltin.layer({
 definition: new ToolDefinition({
   "name": "quality_provision",
-  "description": "Provision this project's QUALITY commands (QE): scan the project's own manifests — package.json, Cargo.toml, go.mod, pyproject.toml, requirements.txt, setup.py, Makefile, CMakeLists.txt, build.gradle, pom.xml, *.sln, *.csproj, Gemfile — for typecheck/test/lint commands, verify each candidate actually runs (a red check still verifies — only a missing toolchain drops it), and save the result to the instance quality settings (the record Settings → Quality edits). Pass explicit `commands` to override or fill gaps; a per-file `check` or `syntax` command may use `{file}` for the path of the file that was just written. Newly saved commands activate for future sessions.",
+  "description": "Provision this project's QUALITY commands (QE): scan the project's own manifests — package.json, Cargo.toml, go.mod, pyproject.toml, requirements.txt, setup.py, Makefile, CMakeLists.txt, build.gradle, pom.xml, *.sln, *.csproj, Gemfile — for typecheck/test/lint commands, verify each candidate actually runs (a red check still verifies — only a missing toolchain drops it), and save the result to this officer's Quality settings. Pass explicit `commands` to override or fill gaps; a per-file `check` or `syntax` command may use `{file}` for the path of the file that was just written. Newly saved commands activate for future sessions.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -48,7 +48,7 @@ definition: new ToolDefinition({
             "type": "null"
           }
         ],
-        "description": "Save the resolved commands to this instance's quality settings (default true)."
+        "description": "Save the resolved commands to this officer's Quality settings (default true)."
       }
     },
     "additionalProperties": false,
@@ -204,5 +204,5 @@ sideEffect: "external-unknown",
 load: () => import("../quality-provision"),
 
 }),
-deps: [ToolRegistry.node, PermissionV2.node, Location.node, AppProcess.node, SettingsConfigStore.node],
+deps: [ToolRegistry.node, PermissionV2.node, Location.node, AppProcess.node, AgentConfigStore.node],
 })

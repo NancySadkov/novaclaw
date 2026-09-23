@@ -170,11 +170,33 @@ test("officer tiles keep dimensions across widths and expose actions without clu
   await page.locator('[data-slot="titlebar-tabs"]').getByRole("link", { name: "Theron", exact: true }).click()
   await expect(page).toHaveURL(/officers\/officer-2\/settings/)
   await expect(settings.getByText("Theron", { exact: true }).first()).toBeVisible()
+  await expect(settings.locator("[data-active-tab]")).toHaveAttribute("data-active-tab", "work")
+  const folderTop = await settings.locator('[data-settings-tab="work"] h3').first().evaluate((element) => element.getBoundingClientRect().top)
+  const workTop = await settings.locator('[data-section="work"] h3').evaluate((element) => element.getBoundingClientRect().top)
+  expect(folderTop).toBeLessThan(workTop)
   for (const width of [390, 1280]) {
     await page.setViewportSize({ width, height: 900 })
     await page.screenshot({ path: info.outputPath(`officer-settings-${width}.png`) })
+    const app = await page.locator('[data-component="app-page"]').boundingBox()
+    const screen = await settings.boundingBox()
+    expect(app!.x).toBeLessThanOrEqual(1)
+    expect(app!.width).toBeGreaterThanOrEqual(width - 2)
+    const bottomGap = await page.locator('[data-component="app-page"]').evaluate((element) =>
+      element.parentElement!.getBoundingClientRect().bottom - element.getBoundingClientRect().bottom,
+    )
+    expect(Math.abs(bottomGap)).toBeLessThanOrEqual(1)
+    expect(screen).toEqual(app)
     const actions = await settings.locator('[data-slot="agent-settings-actions"]').boundingBox()
     expect(actions!.x + actions!.width).toBeLessThanOrEqual(width)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+  }
+  await settings.getByRole("tab", { name: "Capabilities" }).click()
+  await expect(settings.locator('[data-section="workers"]')).toBeVisible()
+  await expect(settings.getByLabel("Maximum active workers")).toBeVisible()
+  await expect(settings.getByRole("button", { name: /^Permission mode/ })).toBeVisible()
+  for (const tab of ["Context", "Quality", "Messengers"]) {
+    await settings.getByRole("tab", { name: tab, exact: true }).click()
+    await expect(settings.locator(`[data-section="${tab.toLowerCase()}"]`)).toBeVisible()
   }
   expect(errors).toEqual([])
 })

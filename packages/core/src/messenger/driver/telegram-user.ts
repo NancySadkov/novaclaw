@@ -164,7 +164,7 @@ const parseAccountConfig = (
     return Effect.fail(
       new ConnectError({
         reason:
-          "This account is missing its Telegram API ID / hash — get them at my.telegram.org (API development tools) and fill both fields in Settings → Messengers.",
+          "This account is missing its Telegram API ID / hash — get them at my.telegram.org (API development tools) and fill both fields in Officer Settings → Messengers.",
       }),
     )
   return Effect.succeed({ apiId, apiHash })
@@ -314,7 +314,7 @@ export const make = (factory: UserClientFactory): Driver => {
         if (session === undefined || session.length === 0)
           return yield* Effect.fail(
             new ConnectError({
-              reason: "This account isn't logged in yet — finish the Telegram login in Settings → Messengers.",
+              reason: "This account isn't logged in yet — finish the Telegram login in Officer Settings → Messengers.",
             }),
           )
         const config = yield* parseAccountConfig(ctx.account)

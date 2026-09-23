@@ -66,6 +66,7 @@ export interface ContactInfo {
 }
 
 export interface AccountInput {
+  readonly agentID: string
   readonly driverID: string
   readonly label: string
   readonly enabled: boolean
@@ -341,6 +342,7 @@ type ContactRow = typeof MessengerContactTable.$inferSelect
 const accountFromRow = (row: AccountRow): Messenger.AccountInfo =>
   new Messenger.AccountInfo({
     id: row.id,
+    agentID: row.agent_id,
     driverID: row.driver_id,
     label: row.label,
     enabled: row.enabled,
@@ -458,6 +460,7 @@ export const layer = Layer.effect(
           .insert(MessengerAccountTable)
           .values({
             id,
+            agent_id: input.agentID,
             driver_id: input.driverID,
             label: input.label,
             enabled: input.enabled,
@@ -468,6 +471,7 @@ export const layer = Layer.effect(
           .pipe(Effect.orDie)
         return new Messenger.AccountInfo({
           id,
+          agentID: input.agentID,
           driverID: input.driverID,
           label: input.label,
           enabled: input.enabled,

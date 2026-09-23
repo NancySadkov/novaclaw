@@ -41,8 +41,6 @@ export const Flag = {
     return env("NOVACLAW_IMAGEMAGICK_PATH")
   },
   NOVACLAW_CONFIG_CONTENT: env("NOVACLAW_CONFIG_CONTENT"),
-  NOVACLAW_DISABLE_PRUNE: truthy("NOVACLAW_DISABLE_PRUNE"),
-  NOVACLAW_DISABLE_AUTOCOMPACT: truthy("NOVACLAW_DISABLE_AUTOCOMPACT"),
   NOVACLAW_DISABLE_MODELS_FETCH: truthy("NOVACLAW_DISABLE_MODELS_FETCH"),
   // The Ladybug graph-memory engine (WASM, in-process — no sidecar; §2.0 pivot). Instance/deployment-
   // level, so it rides an env flag like NOVACLAW_DB, not location config. ON enables it; the launcher

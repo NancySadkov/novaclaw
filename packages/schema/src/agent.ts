@@ -5,6 +5,7 @@ import { optional } from "./schema"
 import { Model } from "./model"
 import { Permission } from "./permission"
 import { Provider } from "./provider"
+import { Quality } from "./quality"
 import { NonNegativeInt, PositiveInt, statics } from "./schema"
 
 export const ID = Schema.String.pipe(Schema.brand("AgentV2.ID"))
@@ -124,6 +125,25 @@ export const Info = Schema.Struct({
     }),
   ]).pipe(optional),
   quality: Schema.Boolean.pipe(optional),
+  qualityConfig: Quality.Config.pipe(optional),
+  context: Schema.Struct({
+    enabled: Schema.Boolean.pipe(optional),
+    profiles: Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.Int)).pipe(optional),
+    todo_reminder: Schema.Struct({
+      enabled: Schema.Boolean.pipe(optional),
+      cadence: Schema.Finite.pipe(optional),
+      max_tokens: Schema.Finite.pipe(optional),
+    }).pipe(optional),
+  }).pipe(optional),
+  compaction: Schema.Struct({
+    auto: Schema.Boolean.pipe(optional),
+    prune: Schema.Boolean.pipe(optional),
+    summarize: Schema.Boolean.pipe(optional),
+    summarizeInput: PositiveInt.pipe(optional),
+    keep: Schema.Struct({ tokens: NonNegativeInt.pipe(optional) }).pipe(optional),
+    buffer: NonNegativeInt.pipe(optional),
+    threshold: Schema.Int.pipe(optional),
+  }).pipe(optional),
   affective: Schema.Union([
     Schema.Boolean,
     Schema.Struct({

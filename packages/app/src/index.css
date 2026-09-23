@@ -18,10 +18,12 @@
 @import "./components/titlebar.css" layer(components);
 @import "./components/titlebar-tab-nav.css" layer(components);
 @import "./components/settings-v2/settings-v2.css" layer(components);
+@import "./components/settings-v2/about.css" layer(components);
 @import "./pages/session/file-tabs.css" layer(components);
 @import "./pages/session/session-surface.css" layer(components);
 @import "./pages/home-screen/home-screen.css" layer(components);
 @import "./pages/contacts.css" layer(components);
+@import "./pages/recipes.css" layer(components);
 
 @font-face {
   font-family: "JetBrainsMono Nerd Font Mono";
@@ -1223,39 +1225,75 @@ body[data-new-layout] [data-slot="dialog-container"] {
     420px 420px;
   border-radius: 16px;
 }
-/* Officer settings is an app screen. Only the selected family is mounted visually; the horizontal
-   phone rail becomes a stable left navigation on wider screens. */
 .agent-settings-panels [data-settings-tab] {
   display: none;
 }
+.agent-settings-panels[data-active-tab="work"] [data-settings-tab="work"],
+.agent-settings-panels[data-active-tab="capabilities"] [data-settings-tab="capabilities"],
 .agent-settings-panels[data-active-tab="profile"] [data-settings-tab="profile"],
 .agent-settings-panels[data-active-tab="mind"] [data-settings-tab="mind"],
-.agent-settings-panels[data-active-tab="work"] [data-settings-tab="work"],
-.agent-settings-panels[data-active-tab="strict"] [data-settings-tab="strict"],
-.agent-settings-panels[data-active-tab="affective"] [data-settings-tab="affective"],
-.agent-settings-panels[data-active-tab="introspection"] [data-settings-tab="introspection"],
-.agent-settings-panels[data-active-tab="tools"] [data-settings-tab="tools"],
+.agent-settings-panels[data-active-tab="context"] [data-settings-tab="context"],
+.agent-settings-panels[data-active-tab="quality"] [data-settings-tab="quality"],
+.agent-settings-panels[data-active-tab="memory"] [data-settings-tab="memory"],
+.agent-settings-panels[data-active-tab="messengers"] [data-settings-tab="messengers"],
 .agent-settings-panels[data-active-tab="nudges"] [data-settings-tab="nudges"],
 .agent-settings-panels[data-active-tab="schedule"] [data-settings-tab="schedule"],
-.agent-settings-panels[data-active-tab="memory"] [data-settings-tab="memory"],
-.agent-settings-panels[data-active-tab="workers"] [data-settings-tab="workers"],
-.agent-settings-panels[data-active-tab="io"] [data-settings-tab="io"],
 .agent-settings-panels[data-active-tab="chat"] [data-settings-tab="chat"] {
   display: block;
 }
 .agent-settings-card {
-  border: 1px solid var(--v2-border-border-base);
-  border-radius: 1rem;
-  background: color-mix(in srgb, var(--v2-background-bg-base) 82%, var(--v2-background-bg-layer-01));
-  padding: 1rem;
-  box-shadow: 0 16px 45px rgb(0 0 0 / 0.06);
+  border: 1px solid color-mix(in srgb, var(--v2-border-border-base) 70%, #a77a47);
+  border-radius: 0.85rem;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--v2-background-bg-layer-02) 90%, #4b3165), var(--v2-background-bg-layer-01));
+  padding: 0.9rem 1rem;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.12);
 }
 .agent-settings-card + .agent-settings-card {
-  margin-top: 1rem;
+  margin-top: 0.7rem;
 }
 @media (min-width: 640px) {
   .agent-settings-card {
-    padding: 1.5rem;
+    padding: 1.15rem 1.3rem;
+  }
+}
+
+[data-component="agent-settings"] [data-slot="agent-settings-header"] {
+  background: linear-gradient(100deg, color-mix(in srgb, var(--v2-background-bg-layer-02) 86%, #51345f), var(--v2-background-bg-base));
+}
+
+[data-component="agent-settings"] [data-action="agent-config-save"] {
+  border-color: #a98a54;
+  background: linear-gradient(120deg, #ad8748, #e3bd76 48%, #9c7136);
+  color: #211628;
+}
+
+[data-component="agent-settings"] [data-slot="agent-settings-nav"] [data-active="true"] {
+  border-color: color-mix(in srgb, #d7b36d 58%, transparent);
+  background: linear-gradient(105deg, color-mix(in srgb, #806394 24%, var(--v2-background-bg-layer-03)), var(--v2-background-bg-layer-02));
+  box-shadow: inset 2px 0 #d7b36d;
+}
+
+[data-component="agent-settings"] .settings-v2-tab-body {
+  gap: 1rem;
+  padding: 0;
+}
+
+[data-component="agent-settings"] .settings-v2-section {
+  gap: 0.65rem;
+}
+
+[data-component="agent-settings"] [data-component="settings-v2-row"] {
+  gap: 0.7rem;
+  padding-block: 0.7rem;
+}
+
+[data-component="agent-settings"] [data-slot="settings-v2-row-copy"] {
+  gap: 0.35rem;
+}
+
+@media (max-width: 767px) {
+  [data-component="agent-settings"] [data-slot="agent-settings-nav"] [data-active="true"] {
+    box-shadow: inset 0 -2px #d7b36d;
   }
 }
 

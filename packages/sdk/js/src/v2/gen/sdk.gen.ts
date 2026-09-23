@@ -2935,7 +2935,13 @@ class ApiV2MessengerAccount extends NovaClawApiClient {
    *
    * Retrieve every configured messenger account with its live connection status.
    */
-  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      agentID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { agentID: parameters?.["agentID"] }
     return (options?.client ?? this.client).get<
       T.V2MessengerAccountListResponses,
       T.V2MessengerAccountListErrors,
@@ -2943,6 +2949,7 @@ class ApiV2MessengerAccount extends NovaClawApiClient {
     >({
       url: "/api/messenger/account",
       ...options,
+      query,
     })
   }
 
@@ -2953,6 +2960,7 @@ class ApiV2MessengerAccount extends NovaClawApiClient {
    */
   public create<ThrowOnError extends boolean = false>(
     parameters: {
+      agentID: string
       driverID: string
       label: string
       enabled: boolean
@@ -2964,6 +2972,7 @@ class ApiV2MessengerAccount extends NovaClawApiClient {
     options?: Options<never, ThrowOnError>,
   ) {
     const body = {
+      agentID: parameters?.["agentID"],
       driverID: parameters?.["driverID"],
       label: parameters?.["label"],
       enabled: parameters?.["enabled"],
@@ -2990,6 +2999,7 @@ class ApiV2MessengerAccount extends NovaClawApiClient {
   public update<ThrowOnError extends boolean = false>(
     parameters: {
       accountID: string
+      agentID: string
       label?: string
       enabled?: boolean
       settings?: {
@@ -3000,6 +3010,7 @@ class ApiV2MessengerAccount extends NovaClawApiClient {
     options?: Options<never, ThrowOnError>,
   ) {
     const path = { accountID: parameters?.["accountID"] }
+    const query = { agentID: parameters?.["agentID"] }
     const body = {
       label: parameters?.["label"],
       enabled: parameters?.["enabled"],
@@ -3014,6 +3025,7 @@ class ApiV2MessengerAccount extends NovaClawApiClient {
       url: "/api/messenger/account/{accountID}",
       ...options,
       path,
+      query,
       body,
       headers: { "Content-Type": "application/json", ...options?.headers },
     })
@@ -3027,10 +3039,12 @@ class ApiV2MessengerAccount extends NovaClawApiClient {
   public remove<ThrowOnError extends boolean = false>(
     parameters: {
       accountID: string
+      agentID: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
     const path = { accountID: parameters?.["accountID"] }
+    const query = { agentID: parameters?.["agentID"] }
     return (options?.client ?? this.client).delete<
       T.V2MessengerAccountRemoveResponses,
       T.V2MessengerAccountRemoveErrors,
@@ -3039,6 +3053,7 @@ class ApiV2MessengerAccount extends NovaClawApiClient {
       url: "/api/messenger/account/{accountID}",
       ...options,
       path,
+      query,
     })
   }
 
@@ -3442,6 +3457,252 @@ class ApiV2Schedule extends NovaClawApiClient {
 
 class ApiV2Recipe extends NovaClawApiClient {
   /**
+   * Preview a recipe archive
+   */
+  public archivePreview<ThrowOnError extends boolean = false>(
+    parameters: {
+      body: Blob | File
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = parameters?.["body"]
+    return (options?.client ?? this.client).post<
+      T.V2RecipeArchivePreviewResponses,
+      T.V2RecipeArchivePreviewErrors,
+      ThrowOnError
+    >({
+      url: "/api/recipe/archive/preview",
+      ...options,
+      body,
+      bodySerializer: null,
+      headers: { "Content-Type": "application/zip", ...options?.headers },
+    })
+  }
+
+  /**
+   * List deployed recipes
+   */
+  public deployedList<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.V2RecipeDeployedListResponses,
+      T.V2RecipeDeployedListErrors,
+      ThrowOnError
+    >({
+      url: "/api/recipe/deployed",
+      ...options,
+    })
+  }
+
+  /**
+   * Undeploy a recipe
+   */
+  public undeploy<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    return (options?.client ?? this.client).delete<T.V2RecipeUndeployResponses, T.V2RecipeUndeployErrors, ThrowOnError>(
+      {
+        url: "/api/recipe/deployed/{slug}",
+        ...options,
+        path,
+      },
+    )
+  }
+
+  /**
+   * Launch a deployed recipe
+   */
+  public deployedLaunch<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    return (options?.client ?? this.client).post<
+      T.V2RecipeDeployedLaunchResponses,
+      T.V2RecipeDeployedLaunchErrors,
+      ThrowOnError
+    >({
+      url: "/api/recipe/deployed/{slug}/launch",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Read a deployed recipe file
+   */
+  public deployedFile<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.V2RecipeDeployedFileResponses,
+      T.V2RecipeDeployedFileErrors,
+      ThrowOnError
+    >({
+      url: "/api/recipe-preview/*",
+      ...options,
+    })
+  }
+
+  /**
+   * Deploy a recipe
+   */
+  public deploy<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+      body: {
+        [key: string]: unknown
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    const body = parameters?.["body"]
+    return (options?.client ?? this.client).post<T.V2RecipeDeployResponses, T.V2RecipeDeployErrors, ThrowOnError>({
+      url: "/api/recipe/{slug}/deploy",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Replace recipe source
+   */
+  public replaceSource<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+      markdown: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    const body = { markdown: parameters?.["markdown"] }
+    return (options?.client ?? this.client).put<
+      T.V2RecipeReplaceSourceResponses,
+      T.V2RecipeReplaceSourceErrors,
+      ThrowOnError
+    >({
+      url: "/api/recipe/{slug}/source",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Read a recipe's file, and what it needs and produces
+   *
+   * The bytes of recipe.md exactly as they are on disk — the readable part of the folder — plus the host-capability facts it declares checked against THIS machine, the artifacts a finished cook should leave, and the shelf it is on. Read-only: the capability probe resolves names on PATH and stats paths, and never runs a candidate.
+   */
+  public source<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    return (options?.client ?? this.client).get<T.V2RecipeSourceResponses, T.V2RecipeSourceErrors, ThrowOnError>({
+      url: "/api/recipe/{slug}/source",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * List recipe assets
+   */
+  public assets<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    return (options?.client ?? this.client).get<T.V2RecipeAssetsResponses, T.V2RecipeAssetsErrors, ThrowOnError>({
+      url: "/api/recipe/{slug}/assets",
+      ...options,
+      path,
+    })
+  }
+
+  /**
+   * Read a recipe asset
+   */
+  public assetRead<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+      path: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    const query = { path: parameters?.["path"] }
+    return (options?.client ?? this.client).get<T.V2RecipeAssetReadResponses, T.V2RecipeAssetReadErrors, ThrowOnError>({
+      url: "/api/recipe/{slug}/asset",
+      ...options,
+      path,
+      query,
+    })
+  }
+
+  /**
+   * Write a recipe asset
+   */
+  public assetWrite<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+      path: string
+      content: string
+      encoding: "utf8" | "base64"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    const body = { path: parameters?.["path"], content: parameters?.["content"], encoding: parameters?.["encoding"] }
+    return (options?.client ?? this.client).put<
+      T.V2RecipeAssetWriteResponses,
+      T.V2RecipeAssetWriteErrors,
+      ThrowOnError
+    >({
+      url: "/api/recipe/{slug}/asset",
+      ...options,
+      path,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
+   * Remove a recipe asset
+   */
+  public assetRemove<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+      path: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { slug: parameters?.["slug"] }
+    const query = { path: parameters?.["path"] }
+    return (options?.client ?? this.client).delete<
+      T.V2RecipeAssetRemoveResponses,
+      T.V2RecipeAssetRemoveErrors,
+      ThrowOnError
+    >({
+      url: "/api/recipe/{slug}/asset",
+      ...options,
+      path,
+      query,
+    })
+  }
+
+  /**
    * List recipes
    *
    * Every recipe on this install, name-sorted. `builtin` marks the ones NovaClaw shipped.
@@ -3525,25 +3786,6 @@ class ApiV2Recipe extends NovaClawApiClient {
     const path = { slug: parameters?.["slug"] }
     return (options?.client ?? this.client).delete<T.V2RecipeRemoveResponses, T.V2RecipeRemoveErrors, ThrowOnError>({
       url: "/api/recipe/{slug}",
-      ...options,
-      path,
-    })
-  }
-
-  /**
-   * Read a recipe's file, and what it needs and produces
-   *
-   * The bytes of recipe.md exactly as they are on disk — the readable part of the folder — plus the host-capability facts it declares checked against THIS machine, the artifacts a finished cook should leave, and the shelf it is on. Read-only: the capability probe resolves names on PATH and stats paths, and never runs a candidate.
-   */
-  public source<ThrowOnError extends boolean = false>(
-    parameters: {
-      slug: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { slug: parameters?.["slug"] }
-    return (options?.client ?? this.client).get<T.V2RecipeSourceResponses, T.V2RecipeSourceErrors, ThrowOnError>({
-      url: "/api/recipe/{slug}/source",
       ...options,
       path,
     })

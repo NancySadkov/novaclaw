@@ -36,7 +36,13 @@ describe("MessengerStore", () => {
   it.effect("🔴 an inbound message is claimed once — replay is `delivered`, a crash leaves `recovering`", () =>
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
-      const account = yield* store.createAccount({ driverID: "fake", label: "ledger", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "fake",
+        label: "ledger",
+        enabled: true,
+        settings: {},
+      })
       const key = { accountID: account.id, chatID: "c1", messageID: "m1" }
 
       expect(yield* store.hasInbound(account.id, "c1")).toBe(false)
@@ -65,7 +71,13 @@ describe("MessengerStore", () => {
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
       const { db } = yield* Database.Service
-      const account = yield* store.createAccount({ driverID: "fake", label: "retention", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "fake",
+        label: "retention",
+        enabled: true,
+        settings: {},
+      })
       const now = 100 * 24 * 60 * 60_000
       const retention = 30 * 24 * 60 * 60_000
       const old = now - retention - 1
@@ -102,6 +114,7 @@ describe("MessengerStore", () => {
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
       const account = yield* store.createAccount({
+        agentID: "nova",
         driverID: "telegram",
         label: "Nova bot",
         enabled: true,
@@ -128,7 +141,13 @@ describe("MessengerStore", () => {
   it.effect("seen-chat cache upserts (title/kind refresh, last_seen advances) and sorts newest-first", () =>
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
-      const account = yield* store.createAccount({ driverID: "telegram", label: "t", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "telegram",
+        label: "t",
+        enabled: true,
+        settings: {},
+      })
       yield* store.seenChat({ accountID: account.id, chatID: "42", kind: "dm", title: "Nancy", at: 100 })
       yield* store.seenChat({ accountID: account.id, chatID: "77", kind: "group", title: "Support", at: 300 })
       yield* store.seenChat({ accountID: account.id, chatID: "42", kind: "dm", title: "Nancy L", at: 200 })
@@ -148,7 +167,13 @@ describe("MessengerStore", () => {
   it.effect("one session per chat: the second bind fails typed, naming the holder", () =>
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
-      const account = yield* store.createAccount({ driverID: "telegram", label: "t", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "telegram",
+        label: "t",
+        enabled: true,
+        settings: {},
+      })
       const binding = yield* store.createBinding({
         accountID: account.id,
         chatID: "42",
@@ -184,7 +209,13 @@ describe("MessengerStore", () => {
   it.effect("contacts upsert by (account, sender) and pairing state round-trips", () =>
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
-      const account = yield* store.createAccount({ driverID: "irc", label: "t", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "irc",
+        label: "t",
+        enabled: true,
+        settings: {},
+      })
       yield* store.upsertContact({
         accountID: account.id,
         senderID: "u1",
@@ -218,7 +249,13 @@ describe("MessengerStore", () => {
   it.effect("cursors upsert whole-value and read back", () =>
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
-      const account = yield* store.createAccount({ driverID: "telegram", label: "t", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "telegram",
+        label: "t",
+        enabled: true,
+        settings: {},
+      })
       expect(yield* store.getCursor(account.id)).toBeUndefined()
       yield* store.setCursor(account.id, { offset: 12 })
       yield* store.setCursor(account.id, { offset: 99 })
@@ -242,7 +279,13 @@ describe("MessengerStore", () => {
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
       const { db } = yield* Database.Service
-      const account = yield* store.createAccount({ driverID: "telegram", label: "t", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "telegram",
+        label: "t",
+        enabled: true,
+        settings: {},
+      })
       yield* store.createBinding({ accountID: account.id, chatID: "1", sessionID: "ses_guard", trust: "client" })
       expect((yield* store.bindingsForSession("ses_guard")).map((entry) => entry.chatID)).toEqual(["1"])
 
@@ -277,7 +320,13 @@ describe("MessengerStore", () => {
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
       const { db } = yield* Database.Service
-      const account = yield* store.createAccount({ driverID: "telegram", label: "t", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "telegram",
+        label: "t",
+        enabled: true,
+        settings: {},
+      })
       yield* store.createBinding({ accountID: account.id, chatID: "1", sessionID: "ses_relay", trust: "client" })
       yield* db.run("DROP TABLE messenger_binding")
 
@@ -303,7 +352,13 @@ describe("MessengerStore", () => {
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
       const { db } = yield* Database.Service
-      const account = yield* store.createAccount({ driverID: "telegram", label: "t", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "telegram",
+        label: "t",
+        enabled: true,
+        settings: {},
+      })
       yield* store.seenChat({ accountID: account.id, chatID: "9", kind: "dm", title: "Nancy", at: 1 })
       yield* store.claimInbound({ accountID: account.id, chatID: "9", messageID: "msg-9" })
       yield* store.createBinding({ accountID: account.id, chatID: "9", sessionID: "ses_dead", trust: "client" })
@@ -350,7 +405,7 @@ describe("MessengerStore", () => {
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
       const { db } = yield* Database.Service
-      yield* store.createAccount({ driverID: "telegram", label: "t", enabled: true, settings: {} })
+      yield* store.createAccount({ agentID: "nova", driverID: "telegram", label: "t", enabled: true, settings: {} })
 
       const before = yield* MessengerStore.attempted(store.listAccounts())
       expect(before.read).toBe(true)
@@ -366,7 +421,13 @@ describe("MessengerStore", () => {
   it.effect("removing an account cascades chats, contacts, bindings, and cursor", () =>
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
-      const account = yield* store.createAccount({ driverID: "telegram", label: "t", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "telegram",
+        label: "t",
+        enabled: true,
+        settings: {},
+      })
       yield* store.seenChat({ accountID: account.id, chatID: "1", kind: "dm", title: "x", at: 1 })
       yield* store.claimInbound({ accountID: account.id, chatID: "1", messageID: "m1" })
       yield* store.upsertContact({

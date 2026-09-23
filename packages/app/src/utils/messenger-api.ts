@@ -1,8 +1,7 @@
 import type { ServerConnection } from "@/context/server"
 import { InstanceFetchError, instanceFetch, instanceFetchList, type InstanceFault } from "@/utils/instance-fetch"
 
-// The instance-global `/api/messenger/*` endpoints — what the
-// Settings → Messengers tab binds to. Secrets flow IN through `secret` only and never come back
+// The `/api/messenger/*` endpoints. Secrets flow IN through `secret` only and never come back
 // (responses carry credentialID references); the login flow's session credential never touches the
 // client at all — the wire carries only the phone/code the user types.
 //
@@ -47,6 +46,7 @@ export type AccountStatus =
 
 export interface AccountInfo {
   readonly id: string
+  readonly agentID: string
   readonly driverID: string
   readonly label: string
   readonly enabled: boolean
@@ -126,15 +126,27 @@ export function messengerDrivers(server: ServerConnection.HttpBase) {
   return callList<DriverMeta>(server, "api/messenger/driver", "drivers")
 }
 
-export function messengerAccounts(server: ServerConnection.HttpBase) {
-  return callList<AccountWithStatus>(server, "api/messenger/account", "accounts")
+export function messengerAccounts(server: ServerConnection.HttpBase, agentID?: string) {
+  return callList<AccountWithStatus>(
+    server,
+    `api/messenger/account${agentID ? `?agentID=${encodeURIComponent(agentID)}` : ""}`,
+    "accounts",
+  )
 }
 
 export function messengerCreateAccount(
   server: ServerConnection.HttpBase,
-  input: { driverID: string; label: string; enabled: boolean; settings: Record<string, string>; secret?: string },
+  input: {
+    agentID: string
+    driverID: string
+    label: string
+    enabled: boolean
+    settings: Record<string, string>
+    secret?: string
+  },
 ) {
   return call<AccountInfo>(server, "POST", "api/messenger/account", {
+    agentID: input.agentID,
     driverID: input.driverID,
     label: input.label,
     enabled: input.enabled,
@@ -146,13 +158,14 @@ export function messengerCreateAccount(
 export function messengerUpdateAccount(
   server: ServerConnection.HttpBase,
   accountID: string,
+  agentID: string,
   patch: { label?: string; enabled?: boolean; settings?: Record<string, string>; secret?: string },
 ) {
-  return call<void>(server, "PATCH", `api/messenger/account/${accountID}`, patch)
+  return call<void>(server, "PATCH", `api/messenger/account/${accountID}?agentID=${encodeURIComponent(agentID)}`, patch)
 }
 
-export function messengerRemoveAccount(server: ServerConnection.HttpBase, accountID: string) {
-  return call<void>(server, "DELETE", `api/messenger/account/${accountID}`)
+export function messengerRemoveAccount(server: ServerConnection.HttpBase, accountID: string, agentID: string) {
+  return call<void>(server, "DELETE", `api/messenger/account/${accountID}?agentID=${encodeURIComponent(agentID)}`)
 }
 
 export function messengerMintPairing(

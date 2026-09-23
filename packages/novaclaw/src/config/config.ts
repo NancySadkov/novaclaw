@@ -421,13 +421,6 @@ export const layer = Layer.effect(
           }
         }
 
-        if (Flag.NOVACLAW_DISABLE_AUTOCOMPACT) {
-          result.compaction = { ...result.compaction, auto: false }
-        }
-        if (Flag.NOVACLAW_DISABLE_PRUNE) {
-          result.compaction = { ...result.compaction, prune: false }
-        }
-
         return {
           config: result,
           directories,

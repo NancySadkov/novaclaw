@@ -1,4 +1,4 @@
-import { Component, createMemo, createResource, createSignal, For, Index, onCleanup, onMount, Show } from "solid-js"
+import { Component, createMemo, createSignal, For, Index, onCleanup, onMount, Show } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import {
   DragDropProvider,
@@ -18,6 +18,7 @@ import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { ServerConnection, useServer } from "@/context/server"
 import { showToast } from "@/utils/toast"
+import { createSettledResource } from "@/utils/settled-resource"
 import { registeredApps, type HomeApp } from "@/apps/registry"
 import { listDeployedRecipes, launchRecipe, undeployRecipe, type RecipeDeployment } from "@/utils/recipe-api"
 import { sessionHref } from "@/utils/session-route"
@@ -117,7 +118,7 @@ export const HomeScreen: Component = () => {
   const server = useServer()
   const global = useGlobal()
   const connection = createMemo(() => server.current ?? global.servers.list()[0])
-  const [deployed, { refetch: refreshDeployed }] = createResource(
+  const [deployed, { refetch: refreshDeployed }] = createSettledResource(
     () => connection()?.http,
     (http) => listDeployedRecipes(http),
   )
@@ -343,6 +344,12 @@ export const HomeScreen: Component = () => {
 
   return (
     <div data-component="home-launcher" tabindex={0} onKeyDown={onKey}>
+      <Show when={deployed.failed}>
+        <div role="status" class="flex items-center justify-center gap-3 px-3 py-2 text-xs text-v2-state-fg-warning">
+          <span>Deployed recipes unavailable.</span>
+          <button type="button" class="underline" onClick={() => void refreshDeployed()}>Try again</button>
+        </div>
+      </Show>
       {/* No logo, no greeting (owner 2026-07-26). They cost ~7rem above the fold to say nothing the user
           does not know — on a phone that pushed the tiles themselves off screen. The brand still lives in
           the titlebar; the home screen is for launching things. */}

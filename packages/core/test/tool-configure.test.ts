@@ -172,8 +172,6 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
     expect(of("operational")).toEqual([
       "$schema",
       "attachments",
-      "compaction",
-      "context",
       // v0.2.0 B2. Priced operational deliberately: an endpoint listed under `devices` is COMPARED
       // against a model's own `api.url` and never called, nothing here is executed or egresses, and
       // no string reaches a prompt. The worst a hostile entry does is group unrelated backends,
@@ -262,7 +260,6 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "offline",
       "permissions",
       "providers",
-      "quality",
       "references",
       "server",
       "telemetry",

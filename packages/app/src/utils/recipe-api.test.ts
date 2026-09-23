@@ -3,7 +3,7 @@ import fs from "node:fs"
 import path from "node:path"
 import type { ServerConnection } from "@/context/server"
 import { InstanceFetchError } from "@/utils/instance-fetch"
-import { importRecipeArchive, RecipeArchiveError, recipeArchive } from "@/utils/recipe-api"
+import { importRecipeArchive, listDeployedRecipes, RecipeArchiveError, recipeArchive } from "@/utils/recipe-api"
 
 /**
  * **A failure that is MATERIALISED as a plausible artifact.**
@@ -37,6 +37,18 @@ afterEach(() => {
 const answering = (response: Response) => {
   globalThis.fetch = (() => Promise.resolve(response)) as unknown as typeof globalThis.fetch
 }
+
+describe("deployed recipe list", () => {
+  test("accepts an empty list", async () => {
+    answering(new Response("[]", { status: 200, headers: { "content-type": "application/json" } }))
+    expect(await listDeployedRecipes(server)).toEqual([])
+  })
+
+  test("refuses an object where a list is required", async () => {
+    answering(new Response("{}", { status: 200, headers: { "content-type": "application/json" } }))
+    await expect(listDeployedRecipes(server)).rejects.toThrow("invalid list")
+  })
+})
 
 describe("downloading a recipe archive — an archive, or nothing at all", () => {
   test("a real body still produces the bytes, verbatim", async () => {

@@ -17,6 +17,7 @@ import {
 import { showToast } from "@/utils/toast"
 
 export function AgentRemoteChat(props: {
+  agentID: string
   sessionID: () => string | undefined
   ensureSession: () => Promise<string | undefined>
 }) {
@@ -27,7 +28,7 @@ export function AgentRemoteChat(props: {
   const connection = createMemo(() => server.current ?? global.servers.list()[0])
   const http = () => connection()?.http
   const [drivers] = createSettledResource(http, messengerDrivers)
-  const [accounts, accountActions] = createSettledResource(http, messengerAccounts)
+  const [accounts, accountActions] = createSettledResource(http, (target) => messengerAccounts(target, props.agentID))
   const [bindings, bindingActions] = createSettledResource(http, messengerBindings)
   const driverName = (id: string) => (drivers() ?? []).find((driver) => driver.id === id)?.name ?? id
   const failed = (error: unknown) =>

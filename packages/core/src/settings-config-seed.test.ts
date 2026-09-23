@@ -55,12 +55,10 @@ const VALID: Record<string, unknown> = {
       resources: { estimated_resident_bytes: 256 * 1024 * 1024, estimated_peak_bytes: 512 * 1024 * 1024 },
     },
   },
-  compaction: {},
   computer: { display: ":99" },
   // Community participation. ⚠️ `consented` alone is the ON state — `enabled` defaults true once the
   // warning has been accepted, so a fixture setting both would not exercise the shape the app writes.
   community: { consented: true },
-  context: { enabled: true },
   provider_capability: {
     "spark-holo/holo3.1": {
       choice: "native",
@@ -100,7 +98,6 @@ const VALID: Record<string, unknown> = {
   offline: true,
   telemetry: { enabled: false },
   memory: { enabled: true },
-  quality: { enabled: true, cadence: 3 },
   web_search: { timeoutMs: 8000 },
   // `tool_policy` is a SPARSE per-id switch map whose absent entry means ON, so a fixture entry has
   // to write the OFF state or it exercises nothing — `enabled: true` is defined to be the same as
@@ -158,12 +155,12 @@ describe("settingsInfoFromStore — per-key fallback (B5)", () => {
   })
 
   test("an all-bad snapshot yields no document and names every key — never a silent empty", () => {
-    const input = { mcp: "nope", watcher: 7, compaction: "nope" }
+    const input = { mcp: "nope", watcher: 7 }
     expect(wholeDocumentDecode(input)).toBeUndefined()
 
     const { info, skipped } = settingsInfoFromStore(input)
     expect(info).toBeUndefined()
-    expect(skipped.map((entry) => entry.key).sort()).toEqual(["compaction", "mcp", "watcher"])
+    expect(skipped.map((entry) => entry.key).sort()).toEqual(["mcp", "watcher"])
     // A fault is never described falsely (ruling 2): total loss reports total loss, not silence.
     expect(skipped.every((entry) => entry.reason.length > 0)).toBe(true)
   })

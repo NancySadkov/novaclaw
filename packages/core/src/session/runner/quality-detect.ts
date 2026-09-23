@@ -9,7 +9,7 @@ import { QualityProvision } from "./quality-provision"
  * **Rung 0 against a real directory: read the manifests, run the scan.**
  *
  * 🔴 This is the ONE loader, and it exists because there were about to be two. `tool/quality-provision.ts`
- * had this block inline, and Settings → Quality needed the same answer for its "Detect from this
+ * had this block inline, and Officer Settings → Quality needed the same answer for its "Detect from this
  * project" button — a second copy would have drifted the moment either side gained a manifest, in
  * the way the tool's own header warns about at length. The tool and the route now call this.
  *

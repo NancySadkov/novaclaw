@@ -89,7 +89,7 @@ export const FILE_RENDERED_SLOTS: readonly (keyof Commands)[] = ["syntax", "chec
  *
  * ⚠️ This is the TOOL's door only, and that is deliberate. The template here is MODEL-authored in
  * this very call, so asking it to write `{file}` where the path goes costs nothing and removes the
- * guess. Settings → Quality is the USER's door: a hand-written `ruff check` with no placeholder is
+ * guess. Officer Settings → Quality is the USER's door: a hand-written `ruff check` with no placeholder is
  * correct there (`Quality.renderCommand` appends the path), which is why the migration refuses to
  * judge by "has no `{file}`" and why this predicate is not applied to stored values.
  */
@@ -252,7 +252,7 @@ export function migrateCommands(commands: Commands): CommandMigration {
       to: taken,
       note:
         `${head} It was removed, because your ${taken} command is already set to ` +
-        `${JSON.stringify(next[taken] ?? "")}. Nothing else changed — re-add it in Settings → Quality if you want it back.`,
+        `${JSON.stringify(next[taken] ?? "")}. Nothing else changed — re-add it in Officer Settings → Quality if you want it back.`,
     })
   }
 

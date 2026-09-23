@@ -515,15 +515,12 @@ describe("authored annotations cannot drift", () => {
       value: ConfigComputer.DEFAULT_SCREENSHOT_PATH,
       source: "config/computer.ts DEFAULT_SCREENSHOT_PATH",
     })
-    // A field with no declaration reports nothing rather than guessing — `context.todo_reminder.cadence`
-    // says "(default 6)" in its PROSE and the projection deliberately does not parse that.
-    // (`strict.wallMinutes` stood here until 2026-09-18; the instance `strict` key left the schema with
-    // per-agent tuning, and another prose-default field was needed to keep the claim alive.)
-    expect(ConfigProjection.describe(["context", "todo_reminder", "cadence"], 0)!.default).toBeUndefined()
+    // A field with no declaration reports nothing rather than guessing from its prose.
+    expect(ConfigProjection.describe(["web_search", "disabledEngines"], 0)!.default).toBeUndefined()
     // ⚠️ Asserted per LINE, not with `not.toContain`: a field's own DESCRIPTION can say "(default: 6)",
     // so a substring check would have failed for the wrong reason and then been "fixed" by deleting the
     // claim. The claim is that the projection emits no `default:` LINE.
-    const emitted = ConfigProjection.renderKey("context", 2)
+    const emitted = ConfigProjection.renderKey("web_search", 2)
       .split("\n")
       .filter((line) => line.trim().startsWith("default:"))
     expect(emitted).toEqual([])

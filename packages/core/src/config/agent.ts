@@ -7,6 +7,9 @@ import { NonNegativeInt, PositiveInt } from "../schema"
 import { ModelV2 } from "../model"
 import { ConfigNudge } from "./nudge"
 import { ConfigAdhocTools } from "./adhoc-tools"
+import { ConfigContext } from "./context"
+import { ConfigCompaction } from "./compaction"
+import { Info as QualityConfig } from "./quality"
 
 /** Per-officer Strict detail. Sparse: every field optional, absent = inherit the
  *  shipped default (same `undefined = inherit` as the session chain). The session
@@ -184,6 +187,9 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   surgicalEdits: Schema.Boolean.pipe(Schema.optional),
   introspection: Schema.Union([Schema.Boolean, IntrospectionDetail]).pipe(Schema.optional),
   quality: Schema.Boolean.pipe(Schema.optional),
+  qualityConfig: QualityConfig.pipe(Schema.optional),
+  context: ConfigContext.Info.pipe(Schema.optional),
+  compaction: ConfigCompaction.Info.pipe(Schema.optional),
   affective: Schema.Union([Schema.Boolean, AffectiveDetail]).pipe(Schema.optional),
   /** Nudges owned by this officer. They are private role configuration, not a filtered global row. */
   nudges: ConfigNudge.List.pipe(Schema.optional),

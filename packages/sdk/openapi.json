@@ -18557,7 +18557,16 @@
       "get": {
         "tags": ["messenger"],
         "operationId": "v2.messenger.account.list",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "agentID",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
         "security": [],
         "responses": {
           "200": {
@@ -18648,6 +18657,9 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "agentID": {
+                    "type": "string"
+                  },
                   "driverID": {
                     "type": "string"
                   },
@@ -18667,7 +18679,7 @@
                     "type": "string"
                   }
                 },
-                "required": ["driverID", "label", "enabled", "settings"],
+                "required": ["agentID", "driverID", "label", "enabled", "settings"],
                 "additionalProperties": false
               }
             }
@@ -18693,6 +18705,14 @@
             "schema": {
               "type": "string",
               "pattern": "^msa_"
+            },
+            "required": true
+          },
+          {
+            "name": "agentID",
+            "in": "query",
+            "schema": {
+              "type": "string"
             },
             "required": true
           }
@@ -18770,6 +18790,14 @@
             "schema": {
               "type": "string",
               "pattern": "^msa_"
+            },
+            "required": true
+          },
+          {
+            "name": "agentID",
+            "in": "query",
+            "schema": {
+              "type": "string"
             },
             "required": true
           }
@@ -19802,6 +19830,860 @@
         ]
       }
     },
+    "/api/recipe/archive/preview": {
+      "post": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.archivePreview",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "prompt": {
+                      "type": "string"
+                    },
+                    "assets": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": ["name", "prompt", "assets"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Preview a recipe archive",
+        "requestBody": {
+          "content": {
+            "application/zip": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.archivePreview({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/recipe/deployed": {
+      "get": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.deployedList",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "slug": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "state": {
+                        "type": "string",
+                        "enum": ["deploying", "ready"]
+                      },
+                      "sessionID": {
+                        "type": "string"
+                      },
+                      "launch": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": ["html", "executable"]
+                          },
+                          "path": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["kind", "path"],
+                        "additionalProperties": false
+                      }
+                    },
+                    "required": ["slug", "name", "state"],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List deployed recipes",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.deployedList({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/recipe/deployed/{slug}": {
+      "delete": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.undeploy",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Undeploy a recipe",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.undeploy({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/recipe/deployed/{slug}/launch": {
+      "post": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.deployedLaunch",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": ["chat", "html", "console"]
+                    },
+                    "sessionID": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string"
+                    },
+                    "ptyID": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["kind"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Launch a deployed recipe",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.deployedLaunch({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/recipe-preview/*": {
+      "get": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.deployedFile",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read a deployed recipe file",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.deployedFile({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/recipe/{slug}/deploy": {
+      "post": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.deploy",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "slug": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": ["deploying", "ready"]
+                    },
+                    "sessionID": {
+                      "type": "string"
+                    },
+                    "launch": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": ["html", "executable"]
+                        },
+                        "path": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["kind", "path"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["slug", "name", "state"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Deploy a recipe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.deploy({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/recipe/{slug}/source": {
+      "put": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.replaceSource",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Recipe.Info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Replace recipe source",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "markdown": {
+                    "type": "string"
+                  }
+                },
+                "required": ["markdown"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.replaceSource({\n  ...\n})"
+          }
+        ]
+      },
+      "get": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.source",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Recipe.Source",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeSource"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "The bytes of recipe.md exactly as they are on disk — the readable part of the folder — plus the host-capability facts it declares checked against THIS machine, the artifacts a finished cook should leave, and the shelf it is on. Read-only: the capability probe resolves names on PATH and stats paths, and never runs a candidate.",
+        "summary": "Read a recipe's file, and what it needs and produces",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.source({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/recipe/{slug}/assets": {
+      "get": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.assets",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "path": {
+                        "type": "string"
+                      },
+                      "bytes": {
+                        "type": "number"
+                      }
+                    },
+                    "required": ["path", "bytes"],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List recipe assets",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.assets({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/recipe/{slug}/asset": {
+      "get": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.assetRead",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "content": {
+                      "type": "string"
+                    },
+                    "encoding": {
+                      "type": "string",
+                      "enum": ["utf8", "base64"]
+                    }
+                  },
+                  "required": ["path", "content", "encoding"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read a recipe asset",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.assetRead({\n  ...\n})"
+          }
+        ]
+      },
+      "put": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.assetWrite",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "content": {
+                      "type": "string"
+                    },
+                    "encoding": {
+                      "type": "string",
+                      "enum": ["utf8", "base64"]
+                    }
+                  },
+                  "required": ["path", "content", "encoding"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Write a recipe asset",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "type": "string"
+                  },
+                  "encoding": {
+                    "type": "string",
+                    "enum": ["utf8", "base64"]
+                  }
+                },
+                "required": ["path", "content", "encoding"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.assetWrite({\n  ...\n})"
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.assetRemove",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "path",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Remove a recipe asset",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.assetRemove({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/recipe": {
       "get": {
         "tags": ["recipe"],
@@ -20073,63 +20955,6 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.remove({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/api/recipe/{slug}/source": {
-      "get": {
-        "tags": ["recipe"],
-        "operationId": "v2.recipe.source",
-        "parameters": [
-          {
-            "name": "slug",
-            "in": "path",
-            "schema": {
-              "type": "string"
-            },
-            "required": true
-          }
-        ],
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Recipe.Source",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RecipeSource"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          }
-        },
-        "description": "The bytes of recipe.md exactly as they are on disk — the readable part of the folder — plus the host-capability facts it declares checked against THIS machine, the artifacts a finished cook should leave, and the shelf it is on. Read-only: the capability probe resolves names on PATH and stats paths, and never runs a candidate.",
-        "summary": "Read a recipe's file, and what it needs and produces",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.source({\n  ...\n})"
           }
         ]
       }
@@ -27941,6 +28766,27 @@
         "required": ["directory", "payload"],
         "additionalProperties": false
       },
+      "QualityCommands": {
+        "type": "object",
+        "properties": {
+          "syntax": {
+            "type": "string"
+          },
+          "check": {
+            "type": "string"
+          },
+          "typecheck": {
+            "type": "string"
+          },
+          "test": {
+            "type": "string"
+          },
+          "lint": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "ResourcePressure": {
         "type": "object",
         "properties": {
@@ -29373,27 +30219,6 @@
           }
         },
         "required": ["file", "additions", "deletions"],
-        "additionalProperties": false
-      },
-      "QualityCommands": {
-        "type": "object",
-        "properties": {
-          "syntax": {
-            "type": "string"
-          },
-          "check": {
-            "type": "string"
-          },
-          "typecheck": {
-            "type": "string"
-          },
-          "test": {
-            "type": "string"
-          },
-          "lint": {
-            "type": "string"
-          }
-        },
         "additionalProperties": false
       },
       "QualityDetection": {
@@ -35389,6 +36214,126 @@
         },
         "additionalProperties": false
       },
+      "ConfigV2ContextProfile": {
+        "type": "object",
+        "properties": {
+          "system": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "messages": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "retrieval": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "memory": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "tool_output": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfigV2ContextProfiles": {
+        "type": "object",
+        "properties": {
+          "interactive": {
+            "$ref": "#/components/schemas/ConfigV2ContextProfile"
+          },
+          "sub-agent": {
+            "$ref": "#/components/schemas/ConfigV2ContextProfile"
+          },
+          "auto-prompting": {
+            "$ref": "#/components/schemas/ConfigV2ContextProfile"
+          },
+          "goal-oriented": {
+            "$ref": "#/components/schemas/ConfigV2ContextProfile"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfigV2ContextTodoReminder": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "cadence": {
+            "type": "number"
+          },
+          "max_tokens": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfigV2Context": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "profiles": {
+            "$ref": "#/components/schemas/ConfigV2ContextProfiles"
+          },
+          "todo_reminder": {
+            "$ref": "#/components/schemas/ConfigV2ContextTodoReminder"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfigV2CompactionKeep": {
+        "type": "object",
+        "properties": {
+          "tokens": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfigV2Compaction": {
+        "type": "object",
+        "properties": {
+          "auto": {
+            "type": "boolean"
+          },
+          "prune": {
+            "type": "boolean"
+          },
+          "summarize": {
+            "type": "boolean"
+          },
+          "summarizeInput": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "keep": {
+            "$ref": "#/components/schemas/ConfigV2CompactionKeep"
+          },
+          "buffer": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "threshold": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "additionalProperties": false
+      },
       "ConfigV2Nudge": {
         "type": "object",
         "properties": {
@@ -35712,6 +36657,30 @@
           },
           "quality": {
             "type": "boolean"
+          },
+          "qualityConfig": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "cadence": {
+                "type": "number"
+              },
+              "testTimeout": {
+                "type": "number"
+              },
+              "commands": {
+                "$ref": "#/components/schemas/QualityCommands"
+              }
+            },
+            "additionalProperties": false
+          },
+          "context": {
+            "$ref": "#/components/schemas/ConfigV2Context"
+          },
+          "compaction": {
+            "$ref": "#/components/schemas/ConfigV2Compaction"
           },
           "affective": {
             "anyOf": [
@@ -36221,126 +37190,6 @@
                 }
               ]
             }
-          }
-        },
-        "additionalProperties": false
-      },
-      "ConfigV2CompactionKeep": {
-        "type": "object",
-        "properties": {
-          "tokens": {
-            "type": "integer",
-            "minimum": 0
-          }
-        },
-        "additionalProperties": false
-      },
-      "ConfigV2Compaction": {
-        "type": "object",
-        "properties": {
-          "auto": {
-            "type": "boolean"
-          },
-          "prune": {
-            "type": "boolean"
-          },
-          "summarize": {
-            "type": "boolean"
-          },
-          "summarizeInput": {
-            "type": "integer",
-            "exclusiveMinimum": 0
-          },
-          "keep": {
-            "$ref": "#/components/schemas/ConfigV2CompactionKeep"
-          },
-          "buffer": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "threshold": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          }
-        },
-        "additionalProperties": false
-      },
-      "ConfigV2ContextProfile": {
-        "type": "object",
-        "properties": {
-          "system": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 100
-          },
-          "messages": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 100
-          },
-          "retrieval": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 100
-          },
-          "memory": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 100
-          },
-          "tool_output": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 100
-          }
-        },
-        "additionalProperties": false
-      },
-      "ConfigV2ContextProfiles": {
-        "type": "object",
-        "properties": {
-          "interactive": {
-            "$ref": "#/components/schemas/ConfigV2ContextProfile"
-          },
-          "sub-agent": {
-            "$ref": "#/components/schemas/ConfigV2ContextProfile"
-          },
-          "auto-prompting": {
-            "$ref": "#/components/schemas/ConfigV2ContextProfile"
-          },
-          "goal-oriented": {
-            "$ref": "#/components/schemas/ConfigV2ContextProfile"
-          }
-        },
-        "additionalProperties": false
-      },
-      "ConfigV2ContextTodoReminder": {
-        "type": "object",
-        "properties": {
-          "enabled": {
-            "type": "boolean"
-          },
-          "cadence": {
-            "type": "number"
-          },
-          "max_tokens": {
-            "type": "number"
-          }
-        },
-        "additionalProperties": false
-      },
-      "ConfigV2Context": {
-        "type": "object",
-        "properties": {
-          "enabled": {
-            "type": "boolean"
-          },
-          "profiles": {
-            "$ref": "#/components/schemas/ConfigV2ContextProfiles"
-          },
-          "todo_reminder": {
-            "$ref": "#/components/schemas/ConfigV2ContextTodoReminder"
           }
         },
         "additionalProperties": false
@@ -37271,12 +38120,6 @@
           "mcp": {
             "$ref": "#/components/schemas/ConfigV2MCP"
           },
-          "compaction": {
-            "$ref": "#/components/schemas/ConfigV2Compaction"
-          },
-          "context": {
-            "$ref": "#/components/schemas/ConfigV2Context"
-          },
           "provider_connection": {
             "$ref": "#/components/schemas/ConfigV2ProviderConnection"
           },
@@ -37425,42 +38268,6 @@
                     "type": "string"
                   },
                   "model": {
-                    "type": "string"
-                  }
-                },
-                "additionalProperties": false
-              }
-            },
-            "additionalProperties": false
-          },
-          "quality": {
-            "type": "object",
-            "properties": {
-              "enabled": {
-                "type": "boolean"
-              },
-              "cadence": {
-                "type": "number"
-              },
-              "testTimeout": {
-                "type": "number"
-              },
-              "commands": {
-                "type": "object",
-                "properties": {
-                  "syntax": {
-                    "type": "string"
-                  },
-                  "check": {
-                    "type": "string"
-                  },
-                  "typecheck": {
-                    "type": "string"
-                  },
-                  "test": {
-                    "type": "string"
-                  },
-                  "lint": {
                     "type": "string"
                   }
                 },
@@ -38200,6 +39007,93 @@
           },
           "quality": {
             "type": "boolean"
+          },
+          "qualityConfig": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "cadence": {
+                "type": "number"
+              },
+              "testTimeout": {
+                "type": "number"
+              },
+              "commands": {
+                "$ref": "#/components/schemas/QualityCommands"
+              }
+            },
+            "additionalProperties": false
+          },
+          "context": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "profiles": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "integer"
+                  }
+                }
+              },
+              "todo_reminder": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "cadence": {
+                    "type": "number"
+                  },
+                  "max_tokens": {
+                    "type": "number"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          "compaction": {
+            "type": "object",
+            "properties": {
+              "auto": {
+                "type": "boolean"
+              },
+              "prune": {
+                "type": "boolean"
+              },
+              "summarize": {
+                "type": "boolean"
+              },
+              "summarizeInput": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "keep": {
+                "type": "object",
+                "properties": {
+                  "tokens": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "additionalProperties": false
+              },
+              "buffer": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "threshold": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": false
           },
           "affective": {
             "anyOf": [
@@ -42323,6 +43217,9 @@
             "type": "string",
             "pattern": "^msa_"
           },
+          "agentID": {
+            "type": "string"
+          },
           "driverID": {
             "type": "string"
           },
@@ -42342,7 +43239,7 @@
             }
           }
         },
-        "required": ["id", "driverID", "label", "enabled", "settings"],
+        "required": ["id", "agentID", "driverID", "label", "enabled", "settings"],
         "additionalProperties": false
       },
       "MessengerAccountWithStatus": {

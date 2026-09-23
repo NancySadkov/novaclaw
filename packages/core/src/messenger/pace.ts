@@ -35,7 +35,7 @@ export interface PaceOptions {
   readonly maxMs?: number
 }
 
-// Per-account typing-speed bounds (the Settings → Messengers control). The user MAY go fast, but a
+// Per-account typing-speed bounds (the Officer Settings → Messengers control). The user MAY go fast, but a
 // hard ceiling keeps even a reckless setting from effectively turning pacing off (which is what
 // gets an account banned). Above RISKY the UI shows a ban warning.
 export const PACE_CPS_DEFAULT = CHARS_PER_SECOND

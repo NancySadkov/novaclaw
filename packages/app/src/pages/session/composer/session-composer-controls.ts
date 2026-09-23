@@ -288,7 +288,10 @@ export function createPromptInputController(input: {
   // the distinction this section needs most: an empty account list and an unanswered question are
   // different facts, and only one of them may be rendered as "No messenger accounts yet".
   const [remoteDrivers] = createSettledResource(() => messengerServer(), messengerDrivers)
-  const [remoteAccounts, remoteAccountsRes] = createSettledResource(() => messengerServer(), messengerAccounts)
+  const [remoteAccounts, remoteAccountsRes] = createSettledResource(
+    () => [messengerServer(), (sessionView.record() as { agent?: string } | undefined)?.agent ?? "nova"] as const,
+    ([http, agentID]) => messengerAccounts(http, agentID),
+  )
   const [remoteBindings, remoteBindingsRes] = createSettledResource(() => messengerServer(), messengerBindings)
   onMount(() => {
     const unsub = serverSDK().event.listen((e) => {

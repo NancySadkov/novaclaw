@@ -22,6 +22,9 @@ import { SessionScheduler } from "../session/scheduler"
 import { SessionSchema } from "../session/schema"
 import { SessionTable } from "../session/sql"
 import { Avatar } from "./avatar"
+import { Credential } from "../credential"
+import { MessengerStore } from "../messenger/store"
+import { MessengerGatewayHandle } from "../messenger/gateway-handle"
 
 // RETIRING A COLLEAGUE THAT WAS REMOVED THROUGH THE CONFIG DOOR.
 //
@@ -169,12 +172,14 @@ export const node = makeGlobalNode({
       // Declared in `AgentRetire.CLEANERS`, so one that is never wired is REPORTED rather than
       // silently skipped — which is the failure mode this whole list exists to answer.
       const store = yield* AgentConfigStore.Service
+      const messengerStore = yield* MessengerStore.Service
+      const credentials = yield* Credential.Service
       const fs = yield* FileSystem.FileSystem
       yield* AgentRetire.registerCleaner("workers", (agentID) =>
         removeWorkers({ db, events, execution, scheduler, memory, agent: agentID }),
       )
       yield* AgentRetire.registerCleaner("schedules", (agentID) =>
-          // A retired colleague's scheduled tasks must stop firing with its other components.
+        // A retired colleague's scheduled tasks must stop firing with its other components.
         db
           .delete(AgentScheduleTable)
           .where(eq(AgentScheduleTable.agent, agentID))
@@ -218,6 +223,17 @@ export const node = makeGlobalNode({
       yield* AgentRetire.registerCleaner("avatar", (agentID) =>
         Effect.tryPromise(() => Avatar.remove(agentID)).pipe(Effect.orDie),
       )
+      yield* AgentRetire.registerCleaner("messengers", (agentID) =>
+        Effect.gen(function* () {
+          const accounts = yield* messengerStore.listAccounts().pipe(Effect.orDie)
+          for (const account of accounts.filter((entry) => entry.agentID === agentID)) {
+            if (account.credentialID !== undefined) yield* credentials.remove(account.credentialID)
+            yield* messengerStore.removeAccount(account.id)
+          }
+          const gateway = MessengerGatewayHandle.get()
+          if (gateway !== undefined && accounts.some((entry) => entry.agentID === agentID)) yield* gateway.reload()
+        }),
+      )
       yield* register((agentID) =>
         AgentRetire.everything({ db, events, memory, agent: agentID, at: Date.now() }).pipe(Effect.asVoid),
       )
@@ -225,10 +241,12 @@ export const node = makeGlobalNode({
   ),
   deps: [
     AgentConfigStore.node,
+    Credential.node,
     AgentStatus.node,
     AppNodePlatform.filesystem,
     Database.node,
     EventV2.node,
+    MessengerStore.node,
     SessionExecution.node,
     SessionScheduler.node,
     WorldMemory.node,

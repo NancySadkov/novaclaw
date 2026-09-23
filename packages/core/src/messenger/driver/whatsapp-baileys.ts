@@ -123,7 +123,7 @@ export type WAClientFactory = (config: WAClientConfig) => Promise<WAClient>
 
 const failureText = (failure: WAClientFailure): string =>
   failure.kind === "logged-out"
-    ? "WhatsApp unlinked this device — re-link it in Settings → Messengers."
+    ? "WhatsApp unlinked this device — re-link it in Officer Settings → Messengers."
     : failure.message
 
 /** Maps a rejected client promise onto the driver error vocabulary: a logged-out/challenge parks the
@@ -300,7 +300,7 @@ export const make = (factory: WAClientFactory): Driver => {
         if (session === undefined || session.length === 0)
           return yield* Effect.fail(
             new ConnectError({
-              reason: "This WhatsApp account isn't linked yet — finish linking in Settings → Messengers.",
+              reason: "This WhatsApp account isn't linked yet — finish linking in Officer Settings → Messengers.",
             }),
           )
         const client = yield* acquire({ session })

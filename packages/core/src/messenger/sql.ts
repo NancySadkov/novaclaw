@@ -8,6 +8,7 @@ import type { Messenger } from "@novaclaw/schema/messenger"
 
 export const MessengerAccountTable = sqliteTable("messenger_account", {
   id: text().$type<Messenger.AccountID>().primaryKey(),
+  agent_id: text().notNull(),
   driver_id: text().notNull(),
   label: text().notNull(),
   enabled: integer({ mode: "boolean" }).notNull(),

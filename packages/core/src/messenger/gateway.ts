@@ -30,6 +30,7 @@ import { MessengerDrivers } from "./drivers"
 import { MessengerPace } from "./pace"
 import { MessengerPipeline } from "./pipeline"
 import { MessengerStore } from "./store"
+import { MessengerOwnership } from "./ownership"
 
 // The Messenger gateway: the ONE instance-global service owning
 // every live platform connection. UI and runtime need never be colocated (the P2P stance), so
@@ -203,7 +204,7 @@ const COLD_START_UNKNOWABLE =
   "I couldn't send that: this instance's messenger database can't be read, so I can't tell whether " +
   "this conversation was started by the other person. Writing to someone uninvited can get the " +
   "account flagged, so nothing was sent and nothing was lost. Ask the user to check " +
-  "Settings → Messengers before trying again."
+  "Officer Settings → Messengers before trying again."
 
 /**
  * The initiation was ALLOWED and still did not go out, because the durable daily budget could not be
@@ -218,19 +219,19 @@ const COLD_START_UNKNOWABLE =
 const INITIATION_UNCOUNTABLE =
   "I couldn't start that conversation: this instance's messenger database can't be read, so I can't " +
   "count it against today's new-conversation limit. Starting conversations we don't count is how an " +
-  "account gets flagged, so nothing was sent. Check Settings → Messengers and try again."
+  "account gets flagged, so nothing was sent. Check Officer Settings → Messengers and try again."
 
 /** What an operator's chat is told when a `/status`-style question cannot be answered at all. */
 const STATE_UNREADABLE =
   "I can't reach this instance's messenger database right now, so I can't tell what this chat is " +
-  "linked to. Nothing has been lost — check Settings → Messengers in the app and try again."
+  "linked to. Nothing has been lost — check Officer Settings → Messengers in the app and try again."
 
 /** What an operator's chat is told when `/use` cannot safely bind, because the read that would say
  *  what this chat is ALREADY bound to never happened. Binding anyway would silently steal a chat. */
 const BIND_UNREADABLE =
   "I couldn't link this chat: this instance's messenger database can't be read, so I can't see what " +
   "it is already linked to and I won't overwrite something I can't see. Nothing was changed — check " +
-  "Settings → Messengers and try again."
+  "Officer Settings → Messengers and try again."
 
 /** What a trusted correspondent is told when their message cannot be routed, because the read that
  *  says which session this chat drives never happened. Said ONCE per chat per outage (see below). */
@@ -274,7 +275,7 @@ const researchRefusal = (
   return (
     `Nobody has said whether "${title}" is public, so it can't be cited as a source yet` +
     (proposed === "public" ? " — the driver thinks it is public, but that's a guess, not the user's word" : "") +
-    `. Ask the user to mark it public in Settings → Messengers, or read it as correspondence. ${keepOut}`
+    `. Ask the user to mark it public in Officer Settings → Messengers, or read it as correspondence. ${keepOut}`
   )
 }
 
@@ -588,7 +589,7 @@ const build = (options: Options) =>
         )
       })
 
-    // Per-account typing speed (§2.3, user-tunable in Settings → Messengers): recorded per live
+    // Per-account typing speed (§2.3, user-tunable in Officer Settings → Messengers): recorded per live
     // connection so paceSend applies the right speed without threading the account through every
     // call site. Set when the connection opens (attempt); the WeakMap drops it when the connection
     // is GC'd. The global serialization ("one hand") is unaffected — only the per-message delay.
@@ -612,12 +613,8 @@ const build = (options: Options) =>
 
     /** One sentence for either arm — the two errors carry differently-named fields. */
     const sendFailureText = (
-      error:
-        | MessengerDriverContract.SendError
-        | MessengerDriverContract.ChallengeError
-        | MessengerPace.TimeoutError,
-    ) =>
-      isChallenge(error) ? `verification required — ${error.message}` : error.reason
+      error: MessengerDriverContract.SendError | MessengerDriverContract.ChallengeError | MessengerPace.TimeoutError,
+    ) => (isChallenge(error) ? `verification required — ${error.message}` : error.reason)
 
     /** One bounded retry for a transport hiccup, while the original global pacing permit remains
      * held. Challenges and permanent provider refusals never retry. A second failure is final.
@@ -975,26 +972,13 @@ const build = (options: Options) =>
         // makes a session's working folder one of the three places NovaClaw may WRITE, so picking it
         // by accident is picking where a stranger's disk gets written by accident.
         //
-        /**
-         * 🔴 **The console belongs to the MESSENGER, and every account is one of its sub-sessions**
-         * (owner, 2026-08-28: *"if something needs special treatment, it needs a service/system
-         * agent, which can be named and pointed at … TLDR: no ghosthouse architecture"*).
-         *
-         * This used to create a session with NO agent — a row belonging to nobody, on no roster, and
-         * reachable from nowhere once its binding was forgotten.
-         *
-         * ⚠️ A CHILD, not a second root. One live root per agent is enforced in the database, so a
-         * second messaging account cannot be another messenger root; it is a sub-session of the
-         * messenger's own chat. `createSessionRecord` returns the existing root rather than making a
-         * sibling, so the first call here is idempotent and needs no "does it exist" dance.
-         */
         const root = yield* sessions.create({
-          agent: AgentV2.MESSENGER_ID,
+          agent: AgentV2.ID.make(account.agentID),
           location: { directory: AbsolutePath.make(global.home) },
           title: "Messenger",
         })
         const session = yield* sessions.create({
-          agent: AgentV2.MESSENGER_ID,
+          agent: AgentV2.ID.make(account.agentID),
           parentID: root.id,
           location: { directory: AbsolutePath.make(global.home) },
           title: `${account.label} console`,
@@ -1008,6 +992,11 @@ const build = (options: Options) =>
         yield* Log.event("messenger.console.bind.created", { "messenger.account_label": account.label })
         return binding
       }).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+
+    const sessionBelongsToAccount = (account: Messenger.AccountInfo, sessionID: string) =>
+      MessengerOwnership.belongsTo(account.agentID, sessionID, (id) =>
+        sessions.get(id as Session.ID).pipe(Effect.orElseSucceed(() => undefined)),
+      )
 
     const dispatch = (
       account: Messenger.AccountInfo,
@@ -1114,8 +1103,7 @@ const build = (options: Options) =>
                   // of accounts.
                   if (isChallenge(error)) {
                     const parked = yield* parkEntry(accountID, error.message)
-                    if (parked?.oldFiber !== undefined)
-                      yield* Fiber.interrupt(parked.oldFiber).pipe(Effect.asVoid)
+                    if (parked?.oldFiber !== undefined) yield* Fiber.interrupt(parked.oldFiber).pipe(Effect.asVoid)
                   }
                   return sendFailureText(error)
                 }),
@@ -1164,7 +1152,7 @@ const build = (options: Options) =>
             yield* reply(
               connection,
               event.chat.chatID,
-              "That pairing code is invalid or expired. Mint a fresh one in Settings → Messengers.",
+              "That pairing code is invalid or expired. Mint a fresh one in Officer Settings → Messengers.",
             )
             return
           }
@@ -1223,6 +1211,14 @@ const build = (options: Options) =>
               return
             }
             const binding = lookup.value
+            if (binding !== undefined && !(yield* sessionBelongsToAccount(account, binding.sessionID))) {
+              yield* reply(
+                connection,
+                event.chat.chatID,
+                "This chat is linked to another officer. Run /sessions to relink it.",
+              )
+              return
+            }
             const address = account.settings["address"] ?? MessengerPipeline.DEFAULT_ADDRESS
             yield* reply(
               connection,
@@ -1237,8 +1233,9 @@ const build = (options: Options) =>
           }
           case "sessions": {
             const list = yield* sessions.list({ order: "desc" }).pipe(Effect.orElseSucceed(() => []))
+            const owned = yield* Effect.filter(list, (entry) => sessionBelongsToAccount(account, entry.id))
             const rendered = MessengerPipeline.renderSessions(
-              list.map((session) => ({
+              owned.map((session) => ({
                 id: session.id,
                 ...(session.title ? { title: session.title } : {}),
                 ...(session.agent ? { agent: session.agent } : {}),
@@ -1260,6 +1257,15 @@ const build = (options: Options) =>
               yield* reply(connection, event.chat.chatID, "Run /sessions first, then /use a number from that list.")
               return
             }
+            if (!(yield* sessionBelongsToAccount(account, sessionID))) {
+              listings.delete(key)
+              yield* reply(
+                connection,
+                event.chat.chatID,
+                "That session belongs to another officer. Run /sessions again.",
+              )
+              return
+            }
             // ⚠️ REFUSE rather than bind on an unread row. `/use` is a rebind: it deletes whatever
             // this chat already drives and links the chosen session instead. An `undefined` from an
             // unreadable table would skip the delete and hand the chat to `createBinding`, whose
@@ -1276,10 +1282,13 @@ const build = (options: Options) =>
             const binding = yield* store
               .createBinding({ accountID: account.id, chatID: event.chat.chatID, sessionID, trust: "operator" })
               .pipe(Effect.orElseSucceed(() => undefined))
-            if (binding !== undefined)
-              yield* events
-                .publish(Messenger.Event.BindingUpdated, { bindingID: binding.id, sessionID: sessionID as Session.ID })
-                .pipe(Effect.ignore)
+            if (binding === undefined) {
+              yield* reply(connection, event.chat.chatID, "I couldn't link that session. Run /sessions and try again.")
+              return
+            }
+            yield* events
+              .publish(Messenger.Event.BindingUpdated, { bindingID: binding.id, sessionID: sessionID as Session.ID })
+              .pipe(Effect.ignore)
             const address = account.settings["address"] ?? MessengerPipeline.DEFAULT_ADDRESS
             yield* reply(
               connection,
@@ -1576,6 +1585,14 @@ const build = (options: Options) =>
           yield* reply(connection, event.chat.chatID, "No session is linked here yet. /sessions then /use <n>.")
           return yield* settle(delivered)
         }
+        if (!(yield* sessionBelongsToAccount(account, binding.sessionID))) {
+          yield* reply(
+            connection,
+            event.chat.chatID,
+            "This chat is linked to another officer. Choose one of this officer's sessions with /sessions.",
+          )
+          return yield* settle(delivered)
+        }
         // Flood cap (§7.6): a chat firing faster than a human gets dropped past the cap, with a
         // single throttled slow-down reply. (Audience already coalesces, but a hard flood would
         // still flush size-batches back-to-back — the cap bounds that too.) `floodCleared` carries
@@ -1776,7 +1793,7 @@ const build = (options: Options) =>
           })
           entry.connection = connection
           connectionCapabilities.set(connection, driver.capabilities(account))
-          // Apply this account's user-set typing speed (Settings → Messengers) to its outbound.
+          // Apply this account's user-set typing speed (Officer Settings → Messengers) to its outbound.
           const pace = MessengerPace.paceFromSettings(account.settings)
           if (pace !== undefined) connectionPace.set(connection, pace)
           yield* Effect.addFinalizer(() => Effect.sync(() => (entry.connection = undefined)))

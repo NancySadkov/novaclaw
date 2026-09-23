@@ -75,10 +75,6 @@ describe("HarnessConfig.derive", () => {
         document({ expertise: "developer" }),
         document({
           expertise: "normal",
-          quality: { enabled: true, cadence: 7 },
-          context: new ConfigContext.Info({
-            todo_reminder: new ConfigContext.TodoReminder({ enabled: true, cadence: 9, max_tokens: 320 }),
-          }),
           tool_routing: new ConfigToolRouting.Info({
             rules: [new ConfigToolRouting.Rule({ model: "qwen", tools: { write: false } })],
           }),
@@ -88,7 +84,7 @@ describe("HarnessConfig.derive", () => {
       { shell: "/bin/supplied" },
     )
     expect(derived.expertiseHint).toBe(HarnessConfig.EXPERTISE_HINT)
-    expect(derived.quality).toMatchObject({ enabled: true, cadence: 7 })
+    expect(derived.quality).toMatchObject({ enabled: false, cadence: 2 })
     expect(derived.shell).toBe("/bin/supplied")
     // The instance-stored strict/affective/introspection blocks are GONE (per-agent tuning
     // owns them): the derivation starts at the shipped unset base and the officer fold is the
@@ -96,7 +92,7 @@ describe("HarnessConfig.derive", () => {
     expect(derived.strict).toBeUndefined()
     expect(derived.affective).toBeUndefined()
     expect(derived.introspection).toMatchObject({ enabled: false, cadence: 3 })
-    expect(derived.context?.todo_reminder).toMatchObject({ enabled: true, cadence: 9, max_tokens: 320 })
+    expect(derived.context).toBeUndefined()
     expect(derived.toolRouting?.rules[0]?.tools).toEqual({ write: false })
     expect(derived.providerStallTimeoutMs).toBe(420_000)
   })
@@ -110,9 +106,9 @@ describe("HarnessConfig.derive", () => {
     // The regression this guards is a memo added "for cost": it would re-freeze exactly what B7
     // unfroze, invisibly, since the type and every call site stay identical. Measured through
     // `quality`, which still reads an instance key; the strict/affective blocks no longer do.
-    const on = HarnessConfig.derive([document({ quality: { enabled: true } })])
-    const off = HarnessConfig.derive([document({ quality: { enabled: false } })])
-    const onAgain = HarnessConfig.derive([document({ quality: { enabled: true } })])
+    const on = HarnessConfig.withOfficer(HarnessConfig.derive([]), { qualityConfig: { enabled: true } })
+    const off = HarnessConfig.withOfficer(HarnessConfig.derive([]), { qualityConfig: { enabled: false } })
+    const onAgain = HarnessConfig.withOfficer(HarnessConfig.derive([]), { qualityConfig: { enabled: true } })
     expect([on.quality.enabled, off.quality.enabled, onAgain.quality.enabled]).toEqual([true, false, true])
   })
 })
@@ -131,6 +127,19 @@ describe("HarnessConfig.withOfficer", () => {
   test("officer Strict detail overlays the shipped base field-wise", () => {
     const derived = HarnessConfig.withOfficer(instance(), { strict: { enabled: true, attempts: 3, wallMinutes: 45 } })
     expect(derived.strict).toMatchObject({ enabled: true, attempts: 3, wallMinutes: 45 })
+  })
+
+  test("officer Quality and Context override instance settings for the selected turn", () => {
+    const base = HarnessConfig.derive([])
+    const first = HarnessConfig.withOfficer(base, {
+      qualityConfig: { enabled: true, cadence: 3 },
+      context: new ConfigContext.Info({ enabled: false }),
+    })
+    const second = HarnessConfig.withOfficer(base, { qualityConfig: { enabled: false } })
+    expect(first.quality).toMatchObject({ enabled: true, cadence: 3 })
+    expect(first.context?.enabled).toBe(false)
+    expect(second.quality.enabled).toBe(false)
+    expect(base.quality.cadence).toBe(2)
   })
 
   test("officer affective/introspection detail is the whole answer now", () => {
@@ -181,8 +190,8 @@ const withLocation = <A, E, R>(body: (location: Location.Ref) => Effect.Effect<A
 
 /** Every settings key the harness derivation still consumes. Strengthened to a PIN by the
  *  per-agent tuning removal: the cut keys are listed as gone, so re-adding one fails here. */
-const HARNESS_KEYS = ["expertise", "quality", "context", "tool_routing"] as const
-const REMOVED_HARNESS_KEYS = ["strict", "affective", "introspection"] as const
+const HARNESS_KEYS = ["expertise", "tool_routing"] as const
+const REMOVED_HARNESS_KEYS = ["strict", "affective", "introspection", "quality", "context", "compaction"] as const
 
 describe("the harness derivation follows the settings store", () => {
   it.live("a Settings edit reaches every harness key on the NEXT derivation — no layer rebuild", () =>
@@ -216,19 +225,17 @@ describe("the harness derivation follows the settings store", () => {
             expect(before.toolRouting).toBeUndefined()
 
             yield* store.set("expertise", "normal")
-            yield* store.set("quality", { enabled: true, cadence: 7 })
-            yield* store.set("context", { todo_reminder: { enabled: true, cadence: 9, max_tokens: 320 } })
             yield* store.set("tool_routing", { rules: [{ provider: "qwen", tools: { write: false } }] })
 
             const after = yield* derive()
             expect(after.expertiseHint).toBe(HarnessConfig.EXPERTISE_HINT)
-            expect(after.quality).toMatchObject({ enabled: true, cadence: 7 })
+            expect(after.quality).toMatchObject({ enabled: false, cadence: 2 })
             expect(after.shell).toBe(HarnessConfig.DEFAULT_AGENT_SHELL)
             // Still unset, despite the stored rows above: there is no instance layer for these.
             expect(after.strict).toBeUndefined()
             expect(after.affective).toBeUndefined()
             expect(after.introspection).toMatchObject({ enabled: false })
-            expect(after.context?.todo_reminder).toMatchObject({ enabled: true, cadence: 9, max_tokens: 320 })
+            expect(after.context).toBeUndefined()
             expect(after.toolRouting?.rules[0]?.tools).toEqual({ write: false })
 
             // …and a REMOVAL falls back too, so this is read-through and not merely write-visible.
@@ -351,6 +358,10 @@ describe("runner/llm.ts derives the harness per TURN, never at layer scope", () 
       source.split("config.entries()").length - 1,
       "runner/llm.ts: `config.entries()` is read somewhere other than `harnessConfig`",
     ).toBe(1)
+    expect(
+      home!.text.includes("yield* agents.select(officerID)"),
+      "runner/llm.ts: an officer snapshot captured before the turn would keep Quality and Context stale",
+    ).toBe(true)
   })
 
   test("the turn loop re-derives before every turn", () => {
@@ -359,7 +370,7 @@ describe("runner/llm.ts derives the harness per TURN, never at layer scope", () 
     expect(loop, "runner/llm.ts: the turn loop is gone — re-point this ratchet").toBeGreaterThan(0)
     expect(turn, "runner/llm.ts: the `runTurn` call moved out of the turn loop").toBeGreaterThan(loop)
     expect(
-      source.slice(loop, turn).includes("yield* harnessConfig()"),
+      source.slice(loop, turn).includes("yield* harnessConfig(handoff.agent as AgentV2.ID)"),
       "runner/llm.ts: the turn loop no longer re-derives the harness — every turn after the first would run on stale settings",
     ).toBe(true)
     // …and the turn is actually GIVEN that derivation rather than reaching for an outer one.

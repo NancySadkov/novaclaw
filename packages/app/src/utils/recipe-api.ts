@@ -272,7 +272,10 @@ export const deleteRecipeAsset = (server: ServerConnection.HttpBase, slug: strin
   instanceFetch<void>(server, { method: "DELETE", route: `api/recipe/${encodeURIComponent(slug)}/asset`, query: { path } })
 
 export const listDeployedRecipes = (server: ServerConnection.HttpBase) =>
-  call<RecipeDeployment[]>(server, "GET", "api/recipe/deployed")
+  call<unknown>(server, "GET", "api/recipe/deployed").then((value) => {
+    if (!Array.isArray(value)) throw new Error("Deployed recipes returned an invalid list")
+    return value as RecipeDeployment[]
+  })
 
 export const deployRecipe = (server: ServerConnection.HttpBase, slug: string) =>
   call<RecipeDeployment>(server, "POST", `api/recipe/${encodeURIComponent(slug)}/deploy`, {})

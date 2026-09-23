@@ -249,7 +249,7 @@ export const make = (factory: IrcSocketFactory): Driver => ({
       if (host.length === 0 || nick.length === 0)
         return yield* Effect.fail(
           new ConnectError({
-            reason: "This IRC account needs a server host and a nickname — fill both in Settings → Messengers.",
+            reason: "This IRC account needs a server host and a nickname — fill both in Officer Settings → Messengers.",
           }),
         )
       if (!Number.isInteger(port) || port <= 0 || port > 65535)

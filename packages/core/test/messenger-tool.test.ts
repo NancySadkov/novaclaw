@@ -97,6 +97,7 @@ describe("MessengerTool.buildModerationAct", () => {
 
 const sessionID = SessionV2.ID.make("ses_messenger_tool_test")
 const account = new Messenger.AccountInfo({
+  agentID: "build",
   id: Messenger.AccountID.make("msa_test"),
   driverID: "fake",
   label: "Test",
@@ -104,6 +105,7 @@ const account = new Messenger.AccountInfo({
   settings: {},
 })
 const otherAccount = new Messenger.AccountInfo({
+  agentID: "build",
   id: Messenger.AccountID.make("msa_other"),
   driverID: "fake",
   label: "Other Account",
@@ -781,7 +783,7 @@ describe("only the gated tool may ask the gateway to cold-start", () => {
 // ── the dead-letter class, as the MODEL experiences it ─────────────────────────────────────────
 // `status` is the op this tool's own description tells a model to call FIRST ("do NOT assume you
 // have no access — START by calling {"op":"status"}"). An unreadable messenger database used to
-// reach it as "No messenger accounts are set up. Ask the user to add one in Settings → Messengers"
+// reach it as "No messenger accounts are set up. Ask the user to add one in Officer Settings → Messengers"
 // — a sqlite fault rendered as a claim about the user's setup, on the one surface a model consults
 // before concluding it has no messaging at all. It would then tell the user to go set up an
 // account they already have.

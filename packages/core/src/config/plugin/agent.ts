@@ -122,6 +122,9 @@ function applyFields(agent: AgentRecord, agentID: AgentV2.ID, item: ConfigAgent.
   if (item.surgicalEdits !== undefined) runtime["surgicalEdits"] = item.surgicalEdits
   if (item.introspection !== undefined) runtime["introspection"] = item.introspection
   if (item.quality !== undefined) runtime["quality"] = item.quality
+  if (item.qualityConfig !== undefined) runtime["qualityConfig"] = item.qualityConfig
+  if (item.context !== undefined) runtime["context"] = item.context
+  if (item.compaction !== undefined) runtime["compaction"] = item.compaction
   if (item.affective !== undefined) runtime["affective"] = item.affective
   if (item.tools !== undefined) runtime["tools"] = item.tools
   if (item.reasoningBudget !== undefined) agent.reasoningBudget = item.reasoningBudget

@@ -29,6 +29,13 @@ export const Commands = Schema.Struct({
 }).annotate({ identifier: "QualityCommands" })
 export type Commands = Schema.Schema.Type<typeof Commands>
 
+export const Config = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.optional),
+  cadence: Schema.Finite.pipe(Schema.optional),
+  testTimeout: Schema.Finite.pipe(Schema.optional),
+  commands: Commands.pipe(Schema.optional),
+})
+
 /**
  * What a manifest scan proposes, and WHY — the evidence is not decoration. A detection that fills
  * five boxes without saying which manifest produced which command asks the user to trust it; the

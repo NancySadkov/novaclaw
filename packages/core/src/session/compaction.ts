@@ -4,7 +4,7 @@ import { LLM, LLMError, LLMEvent, Message, type FinishReason, type LLMRequest, t
 import { DateTime, Effect, Stream } from "effect"
 import { OldContext } from "./old-context"
 import { displayPath } from "../util/path"
-import type { Config } from "../config"
+import type { ConfigCompaction } from "../config/compaction"
 import type { EventV2 } from "../event"
 import { CompactionPrune } from "./compaction-prune"
 import { SessionEvent } from "./event"
@@ -137,7 +137,7 @@ type Dependencies = {
   readonly llm: {
     readonly stream: (request: LLMRequest) => Stream.Stream<LLMEvent, LLMError>
   }
-  readonly config: readonly Config.Entry[]
+  readonly override?: ConfigCompaction.Info
   readonly prefixHash: (sessionID: SessionSchema.ID, prefixSeq: number) => Effect.Effect<string>
   readonly scheduler?: SessionScheduler.Interface
 }
@@ -304,11 +304,8 @@ export const serializeMessage = (message: SessionMessage.Message, complete = fal
   return ""
 }
 
-export const settings = (documents: readonly Config.Entry[]) => {
-  const configured = documents
-    .filter((entry): entry is Config.Document => entry.type === "document")
-    .flatMap((entry) => (entry.info.compaction ? [entry.info.compaction] : []))
-  return configured.reduce<Settings>(
+export const settings = (override?: ConfigCompaction.Info) => {
+  return (override === undefined ? [] : [override]).reduce<Settings>(
     (result, current) => ({
       auto: current.auto ?? result.auto,
       buffer: current.buffer ?? result.buffer,
@@ -433,7 +430,7 @@ export const trimSummaryHead = (
 }
 
 export const make = (dependencies: Dependencies) => {
-  const config = settings(dependencies.config)
+  const config = settings(dependencies.override)
   const summarize = Effect.fn("SessionCompaction.summarize")(function* (input: {
     readonly request: LLMRequest
     readonly model: Model

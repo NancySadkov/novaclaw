@@ -115,8 +115,12 @@ const acquireSlugLease = async (root: string, slug: string): Promise<() => Promi
   const lock = path.join(root, `.${slug}.recipe-write`)
   const owner = JSON.stringify({ pid: process.pid, token: randomUUID() })
   while (true) {
-    const handle = await fs.open(lock, "wx").catch((error) => {
+    const handle = await fs.open(lock, "wx").catch(async (error) => {
       if (error instanceof Error && "code" in error && error.code === "EEXIST") return undefined
+      if (error instanceof Error && "code" in error && error.code === "EPERM") {
+        const occupied = await fs.lstat(lock).then(() => true, () => false)
+        if (occupied) return undefined
+      }
       throw error
     })
     if (handle) {
@@ -1765,8 +1769,14 @@ interface SlugClaim {
 }
 
 const claimedSlug = async (root: string, wanted: string, firstIndex = 1): Promise<SlugClaim | undefined> => {
-  for (let index = firstIndex; index < 100; index++) {
-    const candidate = index === 1 ? wanted : suffixedSlug(wanted, index)
+  const numbered = /^(.*)-([1-9][0-9]*)$/.exec(wanted)
+  const ordinal = numbered ? Number(numbered[2]) : 1
+  const hasOrdinal = numbered !== null && ordinal >= 2 && Number.isSafeInteger(ordinal) && ordinal < Number.MAX_SAFE_INTEGER - 100
+  const base = hasOrdinal ? numbered![1]! : wanted
+  const initialIndex = hasOrdinal ? ordinal + (firstIndex > 1 ? 1 : 0) : firstIndex
+  for (let attempt = 0; attempt < 99; attempt++) {
+    const index = initialIndex + attempt
+    const candidate = index === 1 ? wanted : suffixedSlug(base, index)
     const target = path.join(root, candidate)
     const release = await acquireSlugLease(root, candidate)
     let taken: boolean

@@ -13,8 +13,6 @@ import { Policy } from "./policy"
 import { AbsolutePath } from "./schema"
 import { ConfigAgent } from "./config/agent"
 import { ConfigAttachments } from "./config/attachments"
-import { ConfigCompaction } from "./config/compaction"
-import { ConfigContext } from "./config/context"
 import { ConfigCommand } from "./config/command"
 import { ConfigCapabilityService } from "./config/capability-service"
 import { ConfigDevice } from "./config/device"
@@ -131,13 +129,6 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   // projection; other defaults resolve at their readers.
   mcp: ConfigMCP.Info.pipe(Schema.optional).annotate({
     description: "MCP server configuration",
-  }),
-  compaction: ConfigCompaction.Info.pipe(Schema.optional).annotate({
-    description: "Conversation compaction behavior",
-  }),
-  context: ConfigContext.Info.pipe(Schema.optional).annotate({
-    description:
-      "Typed context-window guard: live instance default plus per-session-type share ceilings and the bounded, periodic task-checklist reminder",
   }),
   provider_connection: ConfigProviderConnection.Info.pipe(Schema.optional).annotate({
     description:
@@ -437,29 +428,6 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     .pipe(Schema.optional)
     .annotate({
       description: "Graph-memory (KB-G) privacy switch — the lay Memory on/off",
-    }),
-  quality: Schema.Struct({
-    enabled: Schema.Boolean.pipe(Schema.optional),
-    cadence: Schema.Finite.pipe(Schema.optional).annotate({
-      description: "Run the whole-module typecheck every N writes (default 2)",
-    }),
-    testTimeout: Schema.Finite.pipe(Schema.optional).annotate({
-      description: "Hard timeout for the test gate in ms (default 300000)",
-    }),
-    commands: Schema.Struct({
-      syntax: Schema.String.pipe(Schema.optional).annotate({
-        description: "Per-file syntax check ({file} placeholder)",
-      }),
-      check: Schema.String.pipe(Schema.optional).annotate({ description: "Per-file incremental verifier ({file})" }),
-      typecheck: Schema.String.pipe(Schema.optional).annotate({ description: "Whole-module type/compile check" }),
-      test: Schema.String.pipe(Schema.optional).annotate({ description: "Test-gate command" }),
-      lint: Schema.String.pipe(Schema.optional).annotate({ description: "Structural/lint pass" }),
-    }).pipe(Schema.optional),
-  })
-    .pipe(Schema.optional)
-    .annotate({
-      description:
-        "Quality Enforcement mode (QE): provisioned check commands run at write/turn boundaries; failures steer the agent to fix and re-run — per-project override is first-class",
     }),
   web_search: Schema.Struct({
     searxngUrl: Schema.String.pipe(Schema.optional).annotate({

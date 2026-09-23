@@ -4,7 +4,7 @@ import path from "node:path"
 import { CompactionPrune } from "@novaclaw/core/session/compaction-prune"
 import { SessionCompaction } from "@novaclaw/core/session/compaction"
 import { applySteerProvenance } from "@novaclaw/core/session/steer-provenance"
-import type { Config } from "@novaclaw/core/config"
+import type { ConfigCompaction } from "@novaclaw/core/config/compaction"
 import type { EventV2 } from "@novaclaw/core/event"
 import type { SessionMessage } from "@novaclaw/core/session/message"
 import type { SessionSchema } from "@novaclaw/core/session/schema"
@@ -284,24 +284,20 @@ describe("prune commits only if the reclaim clears 20k", () => {
 // NOTHING until now. `settings()` folded `auto`/`buffer`/`tokens` and silently dropped `prune` —
 // a missing key in a reduce compiles green, which is exactly the defect class ruling 1 names.
 describe("the prune flag is honoured, and absent means inert", () => {
-  const document = (compaction: Record<string, unknown>) =>
-    ({ type: "document", info: { compaction } }) as unknown as Config.Entry
+  const officer = (compaction: Record<string, unknown>) => compaction as ConfigCompaction.Info
 
   test("absent: prune is off, so an unconfigured instance behaves exactly as before", () => {
-    expect(SessionCompaction.settings([]).prune).toBe(false)
-    expect(SessionCompaction.settings([document({ auto: true })]).prune).toBe(false)
+    expect(SessionCompaction.settings().prune).toBe(false)
+    expect(SessionCompaction.settings(officer({ auto: true })).prune).toBe(false)
   })
 
   test("explicit false is off; explicit true is on", () => {
-    expect(SessionCompaction.settings([document({ prune: false })]).prune).toBe(false)
-    expect(SessionCompaction.settings([document({ prune: true })]).prune).toBe(true)
+    expect(SessionCompaction.settings(officer({ prune: false })).prune).toBe(false)
+    expect(SessionCompaction.settings(officer({ prune: true })).prune).toBe(true)
   })
 
-  test("later documents win, per key, without clobbering the other keys", () => {
-    const folded = SessionCompaction.settings([
-      document({ prune: true, buffer: 1_000, auto: false }),
-      document({ prune: false }),
-    ])
+  test("an officer's settings resolve together", () => {
+    const folded = SessionCompaction.settings(officer({ prune: false, buffer: 1_000, auto: false }))
     expect(folded).toEqual({
       auto: false,
       buffer: 1_000,
@@ -317,14 +313,14 @@ describe("the prune flag is honoured, and absent means inert", () => {
   // of `prune`, because summarising is what has always happened: an absent value must keep doing it,
   // and only an explicit false stops it. A default of false would silently change every install.
   test("summarize defaults TRUE and only an explicit false turns it off", () => {
-    expect(SessionCompaction.settings([]).summarize).toBe(true)
-    expect(SessionCompaction.settings([document({ prune: true })]).summarize).toBe(true)
-    expect(SessionCompaction.settings([document({ summarize: false })]).summarize).toBe(false)
-    expect(SessionCompaction.settings([document({ summarize: true })]).summarize).toBe(true)
+    expect(SessionCompaction.settings().summarize).toBe(true)
+    expect(SessionCompaction.settings(officer({ prune: true })).summarize).toBe(true)
+    expect(SessionCompaction.settings(officer({ summarize: false })).summarize).toBe(false)
+    expect(SessionCompaction.settings(officer({ summarize: true })).summarize).toBe(true)
   })
 
   test("the other keys still fold — the reduce was not broken by adding prune", () => {
-    expect(SessionCompaction.settings([])).toEqual({
+    expect(SessionCompaction.settings()).toEqual({
       auto: true,
       buffer: 20_000,
       tokens: 8_000,
@@ -333,7 +329,7 @@ describe("the prune flag is honoured, and absent means inert", () => {
       summarizeInput: 32_000,
       threshold: 80,
     })
-    expect(SessionCompaction.settings([document({ keep: { tokens: 2_000 } })]).tokens).toBe(2_000)
+    expect(SessionCompaction.settings(officer({ keep: { tokens: 2_000 } })).tokens).toBe(2_000)
   })
 })
 
@@ -365,12 +361,7 @@ describe("the cheap tier runs inside compactAfterOverflow, ahead of the summariz
       } as never,
       // `keep.tokens` is small so the transcript lands in the summarized HEAD rather than the
       // verbatim tail — the head is what carries the tool results this tier erases.
-      config: [
-        {
-          type: "document",
-          info: { compaction: { keep: { tokens: 100 }, ...(input.prune ? { prune: true } : {}) } },
-        } as unknown as Config.Entry,
-      ],
+      override: { keep: { tokens: 100 }, ...(input.prune ? { prune: true } : {}) } as ConfigCompaction.Info,
       prefixHash: () => Effect.succeed("0".repeat(64)),
     })
     const compacted = Effect.runSync(

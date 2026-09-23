@@ -4,21 +4,13 @@ import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { Show, createSignal, type Component } from "solid-js"
 import { showToast } from "@/utils/toast"
 import { useLanguage } from "@/context/language"
-import { useServerSDK } from "@/context/server-sdk"
+import { useGlobal } from "@/context/global"
+import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { SettingsNumberFieldV2 } from "./parts/number-field"
 import { MINUTE_MS, fromMs } from "./units"
-
-// QE-D — the Quality Enforcement settings tab. Edits the QE-C config: the
-// provisioned check commands the runner executes at write/turn boundaries, the
-// typecheck cadence, and the test-gate timeout. Empty command = that step is
-// skipped ("not everything has an automatic check"). Persist via updateConfig
-// (the golden config-write rule); cleared fields write "" which resolve()
-// treats as unset. QE-A (SHIPPED) lets the model provision these itself via the
-// quality_provision tool (manifest scan → verify → write project novaclaw.jsonc);
-// this tab is the manual path + where you review/override what QE-A wrote.
 
 interface QualityCommands {
   syntax?: string
@@ -50,19 +42,26 @@ const COMMAND_FIELDS: Array<{ key: keyof QualityCommands; placeholder: string }>
   { key: "lint", placeholder: "biome check ." },
 ]
 
-export const SettingsQualityV2: Component = () => {
+export const OfficerQuality: Component<{
+  agentID: string
+  config: () => Record<string, unknown> | undefined
+  directory?: () => string | undefined
+  onChanged?: () => void
+}> = (props) => {
   const language = useLanguage()
   const serverSync = useServerSync()
-  const serverSdk = useServerSDK()
+  const global = useGlobal()
+  const server = useServer()
   const [detecting, setDetecting] = createSignal(false)
   const [evidence, setEvidence] = createSignal<readonly string[]>([])
 
-  const current = (): QualityConfig => (serverSync().data.config as { quality?: QualityConfig }).quality ?? {}
+  const current = (): QualityConfig => (props.config()?.["qualityConfig"] as QualityConfig | undefined) ?? {}
 
   async function persist(patch: Partial<QualityConfig>) {
     const next = { ...current(), ...patch }
     await serverSync()
-      .updateConfig({ quality: next } as never)
+      .updateConfig({ agents: { [props.agentID]: { qualityConfig: next, ...(patch.enabled === undefined ? {} : { quality: patch.enabled }) } } } as never)
+      .then(() => props.onChanged?.())
       .catch((error: unknown) => {
         showToast({
           variant: "error",
@@ -84,7 +83,10 @@ export const SettingsQualityV2: Component = () => {
   async function detectFromProject() {
     setDetecting(true)
     try {
-      const response = await serverSdk().client.v2.quality.detect()
+      const directory = props.directory?.()
+      const connection = server.current ?? global.servers.list()[0]
+      if (!connection) throw new Error("No instance is connected")
+      const response = await global.ensureServerCtx(connection).sdk.client.v2.quality.detect(directory ? { location: { directory } } : {})
       const detected = response.data?.data
       if (!detected) throw new Error(language.t("settings.quality.detect.empty"))
       const existing = current().commands ?? {}
@@ -116,20 +118,14 @@ export const SettingsQualityV2: Component = () => {
 
   return (
     <>
-      <div class="settings-v2-tab-header settings-v2-tab-header--stacked">
-        <h2 class="settings-v2-tab-title">{language.t("settings.quality.title")}</h2>
-        <p class="settings-v2-tab-description">{language.t("settings.quality.description")}</p>
-      </div>
-
       <div class="settings-v2-tab-body">
         <div class="settings-v2-section">
           <SettingsListV2>
             <SettingsRowV2
               title={language.t("settings.quality.row.enabled.title")}
-              description={language.t("settings.quality.row.enabled.description")}
             >
               <Switch
-                checked={current().enabled === true}
+                checked={props.config()?.["quality"] === true || (props.config()?.["quality"] === undefined && current().enabled === true)}
                 onChange={(checked) => void persist({ enabled: checked })}
                 hideLabel
               >
@@ -139,7 +135,6 @@ export const SettingsQualityV2: Component = () => {
 
             <SettingsRowV2
               title={language.t("settings.quality.row.cadence.title")}
-              description={language.t("settings.quality.row.cadence.description")}
             >
               <SettingsNumberFieldV2
                 class="w-full sm:w-[100px]"
@@ -155,7 +150,6 @@ export const SettingsQualityV2: Component = () => {
 
             <SettingsRowV2
               title={language.t("settings.quality.row.testTimeout.title")}
-              description={language.t("settings.quality.row.testTimeout.description")}
             >
               {/* Minutes in, milliseconds stored. `300000` asked a person to count zeros to say
                   "five minutes"; the config keeps ms, which is right, and only the box changes. */}
@@ -180,7 +174,6 @@ export const SettingsQualityV2: Component = () => {
 
         <div class="settings-v2-section">
           <h3 class="settings-v2-section-title">{language.t("settings.quality.commands.title")}</h3>
-          <p class="settings-v2-field-description">{language.t("settings.quality.commands.description")}</p>
           {/* 12(b)'s offer, for a list that has to be COMPUTED to be offered. The boxes stay as the
               override — this fills what is empty and never argues with what a person typed. */}
           <div class="flex flex-wrap items-center gap-2 pb-2">
@@ -195,9 +188,6 @@ export const SettingsQualityV2: Component = () => {
                 ? language.t("settings.quality.detect.running")
                 : language.t("settings.quality.detect.action")}
             </ButtonV2>
-            <span class="text-[11px] leading-4 text-v2-text-text-faint">
-              {language.t("settings.quality.detect.description")}
-            </span>
           </div>
           {/* The trail, so the proposal can be checked rather than trusted. */}
           <Show when={evidence().length > 0}>
@@ -211,7 +201,6 @@ export const SettingsQualityV2: Component = () => {
             {COMMAND_FIELDS.map((field) => (
               <SettingsRowV2
                 title={language.t(`settings.quality.command.${field.key}.title`)}
-                description={language.t(`settings.quality.command.${field.key}.description`)}
               >
                 <div class="w-full sm:w-[320px]">
                   <TextInputV2

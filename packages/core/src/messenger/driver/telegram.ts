@@ -207,7 +207,7 @@ export const make = (fetchImpl: FetchLike): Driver => ({
     Effect.gen(function* () {
       const token = ctx.secret
       if (token === undefined || token.length === 0)
-        return yield* Effect.fail(new ConnectError({ reason: "No bot token — add one in Settings → Messengers." }))
+        return yield* Effect.fail(new ConnectError({ reason: "No bot token — add one in Officer Settings → Messengers." }))
 
       const call = (method: string, body?: unknown) =>
         Effect.tryPromise({
@@ -233,7 +233,7 @@ export const make = (fetchImpl: FetchLike): Driver => ({
             reason:
               `Telegram rejected this bot token` +
               (me.value.description ? ` (${me.value.description})` : "") +
-              ` — check it in Settings → Messengers.`,
+              ` — check it in Officer Settings → Messengers.`,
           }),
         )
       const selfID = me._tag === "Some" && me.value.result ? me.value.result.id : undefined

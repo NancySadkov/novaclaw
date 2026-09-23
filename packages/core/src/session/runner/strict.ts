@@ -299,7 +299,7 @@ export function flagsFor(
 // `JhEngine.Deps.taskComplete` is the engine's slot for a better answer, but it wants the EXPECTED
 // OUTPUT and only a benchmark rig has that — so the production answer has to be a verifier that
 // EXECUTES rather than one that knows, and the product already has one: the instance's provisioned
-// quality commands (Settings → Quality, or auto-derived by the `quality_provision` tool), which the
+// quality commands (Officer Settings → Quality, or auto-derived by the `quality_provision` tool), which the
 // ordinary drain loop already runs as steers. Strict — the mode whose entire premise is verification —
 // was the only place ignoring them.
 //
@@ -778,7 +778,7 @@ export interface RunArgs {
    */
   readonly host?: HostExec.SessionHost
   /**
-   * The instance's quality configuration (`Settings → Quality`, the same block the normal drain loop
+   * The officer's quality configuration (`Officer Settings → Quality`, the same block the normal drain loop
    * runs as steers). Supplies the COMPLETION GATE: with whole-project commands configured, a Strict run
    * cannot report the task complete until they actually pass. Omitted, or configured with no
    * whole-project command, and completion stays exactly as it is today — the model's own goal-check.

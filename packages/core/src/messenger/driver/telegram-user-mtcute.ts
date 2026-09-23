@@ -75,7 +75,7 @@ export const classify = (error: unknown): UserClientError => {
   )
     return new UserClientError({
       kind: "challenge",
-      message: `Telegram rejected this account's session (${text}) — log in again from Settings → Messengers.`,
+      message: `Telegram rejected this account's session (${text}) — log in again from Officer Settings → Messengers.`,
     })
   return new UserClientError({ kind: "error", message: text })
 }

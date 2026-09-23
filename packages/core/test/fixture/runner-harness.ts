@@ -37,6 +37,7 @@ import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import type { ModelV2 } from "@novaclaw/core/model"
 import { Config } from "@novaclaw/core/config"
 import { ConfigCompaction } from "@novaclaw/core/config/compaction"
+import { ConfigAgent } from "@novaclaw/core/config/agent"
 import { Tool } from "@novaclaw/core/tool/tool"
 import {
   SessionCompactionTable,
@@ -352,8 +353,8 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
      */
     systemLoadHook: undefined as Effect.Effect<void> | undefined,
     /**
-     * Compaction settings, read on every `Config.entries()` call so a claim can change them mid-test.
-     * The compaction family is about behaviour AT a threshold, so the threshold has to be reachable.
+     * Compaction settings for the seeded Nova officer. The compaction family is about behaviour AT a
+     * threshold, so the threshold has to be reachable.
      */
     compactionBuffer: 3_000,
     compactionKeepTokens: 1_000,
@@ -762,10 +763,6 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
           new Config.Document({
             type: "document",
             info: new Config.Info({
-              compaction: new ConfigCompaction.Info({
-                buffer: controls.compactionBuffer,
-                keep: new ConfigCompaction.Keep({ tokens: controls.compactionKeepTokens }),
-              }),
               ...(controls.harnessDrives === undefined ? {} : { harness_drives: controls.harnessDrives }),
             }),
           }),
@@ -899,6 +896,15 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     const plugins = yield* PluginV2.Service
     yield* plugins.markReady
     yield* seedSession(HARNESS_SESSION)
+    const agentConfigs = yield* AgentConfigStore.Service
+    yield* agentConfigs.setLayers("nova", [
+      new ConfigAgent.Info({
+        compaction: new ConfigCompaction.Info({
+          buffer: controls.compactionBuffer,
+          keep: new ConfigCompaction.Keep({ tokens: controls.compactionKeepTokens }),
+        }),
+      }),
+    ])
     // 🔴 **THE OTHER HALF OF THE ISOLATION `assertIsolationHolds` ONLY BUYS FOR SQLITE.**
     // `NOVACLAW_DB=":memory:"` gives every harness its own database. The MEMORY GRAPH is a different
     // store: `test/preload.ts` points `NOVACLAW_HOME` at a PID-scoped directory, which isolates it

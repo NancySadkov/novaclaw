@@ -4,8 +4,7 @@ import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/un
 import { InvalidRequestError } from "../errors"
 
 // The Messenger module's HTTP surface, P0 slice: driver discovery +
-// account CRUD. INSTANCE-GLOBAL routes (no location middleware — accounts span locations, like
-// health). Secrets ride the `secret` payload field into the credential store and NEVER come back
+// account CRUD. Secrets ride the `secret` payload field into the credential store and NEVER come back
 // out: every response carries `credentialID` references only. P3 adds the picker's data (an
 // account's chats) + the binding surface (list/create/remove — trust always explicit, edge #3
 // steal semantics). P1.7 adds the `login`-auth attempt trio (begin/status/complete + cancel) for drivers
@@ -31,6 +30,7 @@ export const MessengerGroup = HttpApiGroup.make("server.messenger")
   )
   .add(
     HttpApiEndpoint.get("messenger.account.list", "/api/messenger/account", {
+      query: Schema.Struct({ agentID: Schema.optional(Schema.String) }),
       success: Schema.Array(AccountWithStatus),
       error: InvalidRequestError,
     }).annotateMerge(
@@ -44,6 +44,7 @@ export const MessengerGroup = HttpApiGroup.make("server.messenger")
   .add(
     HttpApiEndpoint.post("messenger.account.create", "/api/messenger/account", {
       payload: Schema.Struct({
+        agentID: Schema.String,
         driverID: Schema.String,
         label: Schema.String,
         enabled: Schema.Boolean,
@@ -64,6 +65,7 @@ export const MessengerGroup = HttpApiGroup.make("server.messenger")
   .add(
     HttpApiEndpoint.patch("messenger.account.update", "/api/messenger/account/:accountID", {
       params: { accountID: Messenger.AccountID },
+      query: Schema.Struct({ agentID: Schema.String }),
       payload: Schema.Struct({
         label: Schema.optional(Schema.String),
         enabled: Schema.optional(Schema.Boolean),
@@ -83,6 +85,7 @@ export const MessengerGroup = HttpApiGroup.make("server.messenger")
   .add(
     HttpApiEndpoint.delete("messenger.account.remove", "/api/messenger/account/:accountID", {
       params: { accountID: Messenger.AccountID },
+      query: Schema.Struct({ agentID: Schema.String }),
       success: HttpApiSchema.NoContent,
       error: InvalidRequestError,
     }).annotateMerge(

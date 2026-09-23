@@ -386,7 +386,7 @@ const parseConfig = (account: Messenger.AccountInfo): Effect.Effect<RedditConfig
       return yield* Effect.fail(
         new ConnectError({
           reason:
-            "Reddit needs your own app's client ID (Settings → Messengers). Reddit's rate limit is per client ID, so each instance uses its own.",
+            "Reddit needs your own app's client ID (Officer Settings → Messengers). Reddit's rate limit is per client ID, so each instance uses its own.",
         }),
       )
     if (username.length === 0)
@@ -517,7 +517,7 @@ export const make = (
       if (stored === undefined)
         return yield* Effect.fail(
           new ConnectError({
-            reason: "This Reddit account isn't signed in yet — use Log in in Settings → Messengers.",
+            reason: "This Reddit account isn't signed in yet — use Log in in Officer Settings → Messengers.",
           }),
         )
 
@@ -537,7 +537,7 @@ export const make = (
             reason === "invalid_grant"
               ? new ChallengeError({
                   message:
-                    "Reddit no longer accepts this sign-in (access was revoked). Log in again in Settings → Messengers.",
+                    "Reddit no longer accepts this sign-in (access was revoked). Log in again in Officer Settings → Messengers.",
                 })
               : new ConnectError({ reason: `Reddit refused the token refresh (${reason}).` }),
           )
@@ -589,7 +589,7 @@ export const make = (
       const meResponse = yield* api("/api/v1/me")
       if (meResponse.status === 401 || meResponse.status === 403)
         return yield* Effect.fail(
-          new ConnectError({ reason: "Reddit rejected this sign-in — log in again in Settings → Messengers." }),
+          new ConnectError({ reason: "Reddit rejected this sign-in — log in again in Officer Settings → Messengers." }),
         )
       const selfName = str((meResponse.body as Record<string, unknown> | undefined)?.["name"]) ?? config.username
 

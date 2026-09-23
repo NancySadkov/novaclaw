@@ -56,17 +56,17 @@ export function AgentPortrait(props: {
       style={props.background ? { "background-color": props.background } : undefined}
       aria-hidden="true"
     >
-      <Show when={visible()} fallback={fallback()}>
+      <Show when={visible()} fallback={fallback()} keyed>
         {(src) => (
           <img
-            src={src()}
+            src={src}
             alt=""
             loading="lazy"
             decoding="async"
             class="size-full object-cover"
             onError={() => {
               const image = loaded()
-              if (image?.source === src()) setFailed(image.route)
+              if (image?.source === src) setFailed(image.route)
             }}
           />
         )}

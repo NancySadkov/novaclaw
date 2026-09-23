@@ -84,7 +84,15 @@ export const cabinetOf = (agent: string): string | undefined => MemoryAccess.age
  * {@link everything} reports any that nothing registered: a cleaner that was never wired is a fact
  * about this instance, not a silence.
  */
-export const CLEANERS = ["workers", "schedules", "default-agent", "workspace", "status", "avatar"] as const
+export const CLEANERS = [
+  "workers",
+  "schedules",
+  "default-agent",
+  "workspace",
+  "status",
+  "avatar",
+  "messengers",
+] as const
 
 export type CleanerName = (typeof CLEANERS)[number]
 

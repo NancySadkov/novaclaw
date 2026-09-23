@@ -30,6 +30,7 @@ export * as HarnessConfig from "./harness-config"
 // not a fix. The runner therefore threads one `Derived` through the whole turn.
 
 import { Config } from "../../config"
+import { ConfigAgent } from "../../config/agent"
 import { ConfigHarnessDrives } from "../../config/harness-drives"
 import { ConfigProviderConnection } from "../../config/provider-connection"
 import { Introspection } from "./introspection"
@@ -78,7 +79,7 @@ export interface Derived {
   readonly introspection: Introspection.Resolved
   /** The live automatic continuations applied to a finished-looking turn. */
   readonly drives: ConfigHarnessDrives.Resolved
-  readonly context: Config.Info["context"]
+  readonly context: ConfigAgent.Info["context"]
   readonly toolRouting: Config.Info["tool_routing"]
   readonly providerStallTimeoutMs: number
 }
@@ -89,6 +90,8 @@ export interface Derived {
  * stances stay on the chain, where the narrowing rules already live.
  */
 export interface OfficerLayer {
+  readonly qualityConfig?: Quality.RawConfig
+  readonly context?: ConfigAgent.Info["context"]
   readonly strict?: OfficerHarness.StrictDetail
   readonly affective?: { readonly temperature?: number; readonly extended?: boolean }
   readonly introspection?: {
@@ -132,6 +135,8 @@ export const withOfficer = <T extends Derived>(derived: T, officer: OfficerLayer
   // folds over the shipped defaults directly. `Introspection.resolve(undefined)` is that base.
   return {
     ...derived,
+    quality: officer.qualityConfig === undefined ? derived.quality : Quality.resolve(officer.qualityConfig),
+    context: officer.context ?? derived.context,
     strict: OfficerHarness.resolveStrict(undefined, officer.strict, undefined),
     affective:
       officerAffective === undefined
@@ -152,7 +157,7 @@ export const derive = (entries: readonly Config.Entry[], options: Options = {}):
   return {
     entries,
     expertiseHint: Config.latest(entries, "expertise") === "normal" ? EXPERTISE_HINT : undefined,
-    quality: Quality.resolve(Config.latest(entries, "quality")),
+    quality: Quality.resolve(undefined),
     shell: options.shell ?? DEFAULT_AGENT_SHELL,
     // No instance layer: Strict, affective sampling and the judge are per-officer tuning
     // (slices 1–4), so the derivation starts from the shipped defaults and the officer fold
@@ -162,7 +167,7 @@ export const derive = (entries: readonly Config.Entry[], options: Options = {}):
     affective: undefined,
     introspection: Introspection.resolve(undefined),
     drives: ConfigHarnessDrives.resolve(Config.latest(entries, "harness_drives")),
-    context: Config.latest(entries, "context"),
+    context: undefined,
     toolRouting: Config.latest(entries, "tool_routing"),
     providerStallTimeoutMs: ConfigProviderConnection.stallTimeoutMs(Config.latest(entries, "provider_connection")),
   }

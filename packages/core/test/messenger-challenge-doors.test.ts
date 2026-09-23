@@ -198,7 +198,13 @@ describe("MessengerGateway challenge doors (#9(c))", () => {
 
       // ── DOOR 1: connect ──────────────────────────────────────────────────────────────────────
       fake.state.challengeAtConnect = true
-      const atConnect = yield* store.createAccount({ driverID: "fake", label: "door-1", enabled: true, settings: {} })
+      const atConnect = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "fake",
+        label: "door-1",
+        enabled: true,
+        settings: {},
+      })
       yield* gateway.reload()
       const afterConnect = yield* eventually(
         gateway.status(),
@@ -210,7 +216,13 @@ describe("MessengerGateway challenge doors (#9(c))", () => {
 
       // Doors 2 and 3 get an account EACH, so the third door can only pass by parking an account
       // that is `connected` at the moment it is asked to read — never on door 2's leftover status.
-      const sender = yield* store.createAccount({ driverID: "fake", label: "door-2", enabled: true, settings: {} })
+      const sender = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "fake",
+        label: "door-2",
+        enabled: true,
+        settings: {},
+      })
       yield* gateway.reload()
       yield* eventually(gateway.status(), (map) => map.get(sender.id)?.state === "connected", "door 2 connected")
       const queue = fake.state.queue
@@ -220,7 +232,13 @@ describe("MessengerGateway challenge doors (#9(c))", () => {
       yield* Queue.offer(queue, message("770"))
       yield* eventually(store.hasInbound(sender.id, "770"), (seen) => seen === true, "inbound 770")
 
-      const reader = yield* store.createAccount({ driverID: "fake", label: "door-3", enabled: true, settings: {} })
+      const reader = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "fake",
+        label: "door-3",
+        enabled: true,
+        settings: {},
+      })
       yield* gateway.reload()
       yield* eventually(gateway.status(), (map) => map.get(reader.id)?.state === "connected", "door 3 connected")
 

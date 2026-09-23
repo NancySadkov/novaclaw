@@ -198,6 +198,7 @@ describe("Telegram user account: a dead update loop", () => {
 
       // ── CONTROL A: a healthy loop ────────────────────────────────────────────────────────────
       const healthy = yield* store.createAccount({
+        agentID: "nova",
         driverID: "telegram-user",
         label: "healthy",
         enabled: true,
@@ -214,6 +215,7 @@ describe("Telegram user account: a dead update loop", () => {
 
       // ── THE DEFECT: a loop that dies of an ordinary transport fault ──────────────────────────
       const transient = yield* store.createAccount({
+        agentID: "nova",
         driverID: "telegram-user",
         label: "transient",
         enabled: true,
@@ -235,6 +237,7 @@ describe("Telegram user account: a dead update loop", () => {
 
       // ── THE ROUTE INTO THE PARKING MACHINERY: a loop that died because the session is gone ───
       const revoked = yield* store.createAccount({
+        agentID: "nova",
         driverID: "telegram-user",
         label: "revoked",
         enabled: true,

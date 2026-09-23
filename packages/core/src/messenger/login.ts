@@ -13,7 +13,7 @@ import { MessengerStore } from "./store"
 // The `login`-auth attempt manager (messenger-plan §0.2): phone → the provider texts a code →
 // complete(code) → the session credential lands in the credential store and the account row
 // points at it. Mirrors the Integration OAuth-attempt machinery (pending/complete/failed/expired,
-// TTL, scrub) but lives HERE because messenger accounts are instance-global while
+// TTL, scrub) but lives HERE because messenger accounts live in the instance database while
 // Integration.Service is location-scoped — and the credential lands under the same per-account
 // synthetic integration id the account routes established in P0 (`messenger.<driver>.<account>`),
 // so two accounts on one platform never clobber each other's credential.

@@ -77,21 +77,20 @@ describe("ConfigStoreWrite.apply", () => {
   it.effect("routes settings keys with merge-in-place and reports consumed keys", () =>
     Effect.gen(function* () {
       const settings = yield* SettingsConfigStore.Service
-      yield* settings.set("quality", { enabled: true, checks: { build: "make" } })
+      yield* settings.set("telemetry", { enabled: true, retained: { source: "manual" } })
 
       const consumed = yield* ConfigStoreWrite.apply(
         decodeInfo({
-          quality: { enabled: false },
+          telemetry: { enabled: false },
           snapshots: false,
           model_order: ["spark/m2", "spark/m1"],
           officer_order: ["theron", "aris"],
         }),
       )
-      expect([...consumed].sort()).toEqual(["model_order", "officer_order", "quality", "snapshots"])
+      expect([...consumed].sort()).toEqual(["model_order", "officer_order", "snapshots", "telemetry"])
 
       const all = yield* settings.all()
-      // Deep merge: the patch flips `enabled`, the stored `checks` survives.
-      expect(all.quality).toEqual({ enabled: false, checks: { build: "make" } })
+      expect(all.telemetry).toEqual({ enabled: false, retained: { source: "manual" } })
       expect(all.snapshots).toBe(false)
       // `SettingsConfigStore` reads the runtime_setting SQLite table. This is the persistence gate:
       // ordering is instance data, not a browser-only preference that another client contradicts.

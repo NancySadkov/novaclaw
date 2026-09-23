@@ -72,7 +72,7 @@ async function compact(input: {
         )
       },
     },
-    config: [{ type: "document", info: { compaction: { summarize: input.summarize } } }] as never,
+    override: { summarize: input.summarize } as never,
     prefixHash: () => Effect.succeed("a".repeat(64)),
   })
   const request =

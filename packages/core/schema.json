@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "2ef66f84-2281-4280-a6fa-b8da480c563b",
+  "id": "5b3864ee-b9de-4ed0-8327-27a6aef4dfaf",
   "prevIds": [
-    "00000000-0000-0000-0000-000000000000"
+    "2ef66f84-2281-4280-a6fa-b8da480c563b"
   ],
   "ddl": [
     {
@@ -2541,6 +2541,16 @@
       "default": null,
       "generated": null,
       "name": "id",
+      "entityType": "columns",
+      "table": "messenger_account"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "agent_id",
       "entityType": "columns",
       "table": "messenger_account"
     },

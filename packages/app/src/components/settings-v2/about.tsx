@@ -1,19 +1,11 @@
-import { type Component, For } from "solid-js"
+import { type Component, For, Show, createSignal, onCleanup, onMount } from "solid-js"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
-
-// The About tab — a small piece of pride and the license attribution the third-party MIT/Apache
-// components require. The product name is set in a fancy branded wordmark (gold gradient serif); the
-// credits list is factual data (name · version · license), so it lives here rather than in i18n.
-// `platform.version` is the same source the settings nav footer uses; it and the fallback are now the
-// SAME number (both trace to the root package.json), so the two can no longer disagree.
+import { startAboutScene, type AboutScene } from "./about-scene"
 
 type Credit = { name: string; version?: string; license: string }
 
-// The foundational open-source stack NovaClaw is built on. Versions come from the workspace catalog /
-// package manifests (package.json / bun.lock); update them when the dependencies are bumped. This is a
-// curated highlight, not the exhaustive tree — the trailing note points at NOTICE for the full list.
 const CREDITS: Credit[] = [
   { name: "Bun", version: "1.3.14", license: "MIT" },
   { name: "Electron", version: "42.3.3", license: "MIT" },
@@ -36,42 +28,66 @@ export const SettingsAboutV2: Component = () => {
   const language = useLanguage()
   const platform = usePlatform()
   const version = () => platform.version ?? InstallationVersion
+  const [needsPlay, setNeedsPlay] = createSignal(false)
+  let canvas!: HTMLCanvasElement
+  let audio!: HTMLAudioElement
+  let stage!: HTMLDivElement
+  let scene: AboutScene | undefined
+  let disposed = false
+
+  const play = () => {
+    void Promise.all([audio.play(), scene?.resumeAudio()]).then(
+      () => { if (!disposed) setNeedsPlay(false) },
+      () => { if (!disposed) setNeedsPlay(true) },
+    )
+  }
+
+  onMount(() => {
+    scene = startAboutScene(canvas, audio, stage)
+    play()
+    onCleanup(() => {
+      disposed = true
+      audio.pause()
+      audio.removeAttribute("src")
+      audio.load()
+      scene?.stop()
+    })
+  })
 
   return (
-    <>
-      <div class="settings-v2-tab-header">
-        <h2 class="settings-v2-tab-title">{language.t("settings.tab.about")}</h2>
-      </div>
-
-      <div class="settings-v2-tab-body">
-        <div class="settings-v2-about-brand">
-          {/* Brand wordmark — a proper noun, never translated. */}
-          <div class="settings-v2-about-title">NovaClaw</div>
-          <div class="settings-v2-about-version">v{version()}</div>
-          <div class="settings-v2-about-author">{language.t("settings.about.author")}</div>
+    <div class="settings-v2-about" ref={stage}>
+      <div class="settings-v2-about-stage">
+        <canvas ref={canvas} class="settings-v2-about-canvas" aria-hidden="true" />
+        <div class="settings-v2-about-vignette" aria-hidden="true" />
+        <div class="settings-v2-about-heading">
+          <span class="settings-v2-about-overline">THE UNSLEEPING EYE</span>
+          <h2 class="settings-v2-about-title">NovaClaw</h2>
+          <span class="settings-v2-about-version">v{version()}</span>
         </div>
-
-        <div class="settings-v2-about-divider" />
-
-        <div class="settings-v2-section">
-          <h3 class="settings-v2-section-title">{language.t("settings.about.credits.title")}</h3>
-          <p class="settings-v2-field-description">{language.t("settings.about.credits.description")}</p>
+        <div class="settings-v2-about-lower">
+          <span class="settings-v2-about-author">{language.t("settings.about.author")}</span>
+          <Show when={needsPlay()}>
+            <button type="button" class="settings-v2-about-play" onClick={play}>Play soundtrack</button>
+          </Show>
+        </div>
+      </div>
+      <div class="settings-v2-about-credits-window">
+        <div class="settings-v2-about-credits-track">
+          <span class="settings-v2-about-credits-kicker">{language.t("settings.about.credits.title")}</span>
           <ul class="settings-v2-about-credits">
             <For each={CREDITS}>
               {(credit) => (
                 <li class="settings-v2-about-credit">
-                  <span class="settings-v2-about-credit-name">{credit.name}</span>
-                  <span class="settings-v2-about-credit-meta">
-                    {credit.version ? `${credit.version} · ` : ""}
-                    {credit.license}
-                  </span>
+                  <span>{credit.name}</span>
+                  <span class="settings-v2-about-credit-meta">{credit.version ? `${credit.version} · ` : ""}{credit.license}</span>
                 </li>
               )}
             </For>
           </ul>
-          <p class="settings-v2-about-note settings-v2-about-note--muted">{language.t("settings.about.more")}</p>
+          <p class="settings-v2-about-note">{language.t("settings.about.more")}</p>
         </div>
       </div>
-    </>
+      <audio ref={audio} src="/assets/audio/nova.ogg" preload="auto" loop aria-hidden="true" />
+    </div>
   )
 }

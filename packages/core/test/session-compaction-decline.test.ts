@@ -20,7 +20,6 @@ import { CompactionBackoff } from "@novaclaw/core/session/runner/compaction-back
 import { packRequest } from "@novaclaw/core/session/runner/context-pack"
 import type { PromptEstimate } from "@novaclaw/core/session/runner/prompt-estimate"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
-import type { Config } from "@novaclaw/core/config"
 import type { EventV2 } from "@novaclaw/core/event"
 import type { SessionMessage } from "@novaclaw/core/session/message"
 import type { SessionSchema } from "@novaclaw/core/session/schema"
@@ -86,18 +85,11 @@ const drive = (input: {
         ])
       },
     } as never,
-    config: [
-      {
-        type: "document",
-        info: {
-          compaction: {
-            keep: { tokens: input.keepTokens ?? 8 },
-            ...(input.summarize === false ? { summarize: false } : {}),
-            ...(input.auto === false ? { auto: false } : {}),
-          },
-        },
-      } as unknown as Config.Entry,
-    ],
+    override: {
+      keep: { tokens: input.keepTokens ?? 8 },
+      ...(input.summarize === false ? { summarize: false } : {}),
+      ...(input.auto === false ? { auto: false } : {}),
+    } as never,
     prefixHash: () => Effect.succeed("0".repeat(64)),
   })
   const call = {
@@ -474,12 +466,7 @@ describe("the Geryon sleep-recovery regression", () => {
           return Stream.never
         },
       },
-      config: [
-        {
-          type: "document",
-          info: { compaction: { keep: { tokens: 8 } } },
-        } as unknown as Config.Entry,
-      ],
+      override: { keep: { tokens: 8 } } as never,
       prefixHash: () => Effect.succeed("0".repeat(64)),
     })
     const compactionInput = {

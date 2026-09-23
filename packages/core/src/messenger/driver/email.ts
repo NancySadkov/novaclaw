@@ -282,7 +282,7 @@ export const parseEmailConfig = (
     if (email.length === 0)
       return yield* Effect.fail(
         new ConnectError({
-          reason: "This email account needs the mailbox address — fill it in Settings → Messengers.",
+          reason: "This email account needs the mailbox address — fill it in Officer Settings → Messengers.",
         }),
       )
     const port = (key: string, fallback: number) => {
@@ -336,14 +336,14 @@ export const resolveEmailAuth = (
     if (refresh === undefined)
       return yield* Effect.fail(
         new ConnectError({
-          reason: "This OAuth mailbox is missing its client ID — re-add it in Settings → Messengers.",
+          reason: "This OAuth mailbox is missing its client ID — re-add it in Officer Settings → Messengers.",
         }),
       )
     const token = yield* Effect.tryPromise({
       try: () => refresh(stored.refreshToken),
       catch: (error) =>
         new ChallengeError({
-          message: `${providerLabel} rejected the saved sign-in for ${config.email} (${String(error)}) — sign in again in Settings → Messengers.`,
+          message: `${providerLabel} rejected the saved sign-in for ${config.email} (${String(error)}) — sign in again in Officer Settings → Messengers.`,
         }),
     })
     return { user: config.email, accessToken: token.accessToken } satisfies EmailAuth
@@ -373,7 +373,7 @@ export const makeConnect =
       if (ctx.secret === undefined || ctx.secret.length === 0)
         return yield* Effect.fail(
           new ConnectError({
-            reason: "This mailbox isn't signed in yet — sign in (or paste an app password) in Settings → Messengers.",
+            reason: "This mailbox isn't signed in yet — sign in (or paste an app password) in Officer Settings → Messengers.",
           }),
         )
 

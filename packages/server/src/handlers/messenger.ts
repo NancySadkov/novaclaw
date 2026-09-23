@@ -1,13 +1,19 @@
 import { Credential } from "@novaclaw/core/credential"
+import { AgentV2 } from "@novaclaw/core/agent"
+import { Database } from "@novaclaw/core/database/database"
+import { SessionTable } from "@novaclaw/core/session/sql"
+import { SessionSchema } from "@novaclaw/core/session/schema"
 import { EventV2 } from "@novaclaw/core/event"
 import { MessengerDrivers } from "@novaclaw/core/messenger/drivers"
 import { MessengerGateway } from "@novaclaw/core/messenger/gateway"
 import { MessengerLogin } from "@novaclaw/core/messenger/login"
+import { MessengerOwnership } from "@novaclaw/core/messenger/ownership"
 import { MessengerStore } from "@novaclaw/core/messenger/store"
 import type { Integration } from "@novaclaw/schema/integration"
 import { Messenger } from "@novaclaw/schema/messenger"
 import { InvalidRequestError } from "@novaclaw/protocol/errors"
 import { Effect } from "effect"
+import { eq } from "drizzle-orm"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { MessengerApi, handlerLayer } from "../handler-api"
 
@@ -57,17 +63,19 @@ export const MessengerHandler = handlerLayer(
         )
         .handle(
           "messenger.account.list",
-          Effect.fn(function* () {
+          Effect.fn(function* (ctx) {
             const store = yield* MessengerStore.Service
             const gateway = yield* acquireGateway
             const accounts = yield* store.listAccounts().pipe(Effect.orDie)
             const status = yield* gateway.status()
-            return accounts.map((account) => ({
-              account,
-              status:
-                status.get(account.id) ??
-                ({ state: account.enabled ? "connecting" : "disabled" } satisfies Messenger.AccountStatus),
-            }))
+            return accounts
+              .filter((account) => ctx.query.agentID === undefined || account.agentID === ctx.query.agentID)
+              .map((account) => ({
+                account,
+                status:
+                  status.get(account.id) ??
+                  ({ state: account.enabled ? "connecting" : "disabled" } satisfies Messenger.AccountStatus),
+              }))
           }),
         )
         .handle(
@@ -77,6 +85,11 @@ export const MessengerHandler = handlerLayer(
             const store = yield* MessengerStore.Service
             const gateway = yield* acquireGateway
             const credentials = yield* Credential.Service
+            const owner = yield* AgentV2.Service.use((agents) => agents.get(AgentV2.ID.make(ctx.payload.agentID)))
+            if (owner === undefined)
+              return yield* Effect.fail(
+                new InvalidRequestError({ message: "Unknown officer.", kind: "messenger_agent_unknown" }),
+              )
             if (drivers.get(ctx.payload.driverID) === undefined)
               return yield* Effect.fail(
                 new InvalidRequestError({
@@ -85,6 +98,7 @@ export const MessengerHandler = handlerLayer(
                 }),
               )
             const account = yield* store.createAccount({
+              agentID: ctx.payload.agentID,
               driverID: ctx.payload.driverID,
               label: ctx.payload.label,
               enabled: ctx.payload.enabled,
@@ -113,6 +127,13 @@ export const MessengerHandler = handlerLayer(
             if (account === undefined)
               return yield* Effect.fail(
                 new InvalidRequestError({ message: "Unknown messenger account.", kind: "messenger_account_unknown" }),
+              )
+            if (account.agentID !== ctx.query.agentID)
+              return yield* Effect.fail(
+                new InvalidRequestError({
+                  message: "That account belongs to another officer.",
+                  kind: "messenger_account_owner_mismatch",
+                }),
               )
             if (ctx.payload.secret !== undefined && ctx.payload.secret.length > 0) {
               if (account.credentialID !== undefined) {
@@ -144,6 +165,13 @@ export const MessengerHandler = handlerLayer(
             const gateway = yield* acquireGateway
             const credentials = yield* Credential.Service
             const account = yield* store.getAccount(ctx.params.accountID)
+            if (account !== undefined && account.agentID !== ctx.query.agentID)
+              return yield* Effect.fail(
+                new InvalidRequestError({
+                  message: "That account belongs to another officer.",
+                  kind: "messenger_account_owner_mismatch",
+                }),
+              )
             if (account?.credentialID !== undefined) yield* credentials.remove(account.credentialID as Credential.ID)
             if (account !== undefined) yield* store.removeAccount(account.id)
             yield* gateway.reload()
@@ -193,6 +221,32 @@ export const MessengerHandler = handlerLayer(
           Effect.fn(function* (ctx) {
             const store = yield* MessengerStore.Service
             const events = yield* EventV2.Service
+            const account = yield* store.getAccount(ctx.payload.accountID)
+            const { db } = yield* Database.Service
+            const belongs = account !== undefined && (yield* MessengerOwnership.belongsTo(
+              account.agentID,
+              ctx.payload.sessionID,
+              (id) =>
+                db
+                  .select({ agent: SessionTable.agent, parentID: SessionTable.parent_id })
+                  .from(SessionTable)
+                  .where(eq(SessionTable.id, SessionSchema.ID.make(id)))
+                  .get()
+                  .pipe(
+                    Effect.orDie,
+                    Effect.map((row) => row === undefined ? undefined : {
+                      agent: row.agent,
+                      parentID: row.parentID ?? undefined,
+                    }),
+                  ),
+            ))
+            if (!belongs)
+              return yield* Effect.fail(
+                new InvalidRequestError({
+                  message: "Choose a messenger account belonging to this officer.",
+                  kind: "messenger_account_owner_mismatch",
+                }),
+              )
             const create = store.createBinding({
               accountID: ctx.payload.accountID,
               chatID: ctx.payload.chatID,

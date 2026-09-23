@@ -126,6 +126,7 @@ describe("OAuthLoopback (real 127.0.0.1 server)", () => {
 // ── the Gmail driver against fake seams ──────────────────────────────────────────────────────────
 
 const gmailAccount = new Messenger.AccountInfo({
+  agentID: "nova",
   id: Messenger.AccountID.make("msa_gmail_oauth"),
   driverID: "email-gmail",
   label: "My Gmail",
@@ -259,6 +260,7 @@ describe("EmailGmailDriver login (Google auth-code + loopback)", () => {
       const mail = makeFakeMail()
       const driver = EmailGmailDriver.make(mail.factory, google.factory, loop.factory, loop.openBrowser)
       const noClient = new Messenger.AccountInfo({
+        agentID: "nova",
         id: Messenger.AccountID.make("msa_gmail_noclient"),
         driverID: "email-gmail",
         label: "Gmail",

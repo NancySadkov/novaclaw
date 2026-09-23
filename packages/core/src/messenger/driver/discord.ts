@@ -276,7 +276,7 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
     Effect.gen(function* () {
       const token = ctx.secret
       if (token === undefined || token.length === 0)
-        return yield* Effect.fail(new ConnectError({ reason: "No bot token — add one in Settings → Messengers." }))
+        return yield* Effect.fail(new ConnectError({ reason: "No bot token — add one in Officer Settings → Messengers." }))
 
       const rest = (route: string, init?: RequestInit) =>
         Effect.tryPromise({
@@ -296,7 +296,7 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
       const meResponse = yield* rest("/users/@me")
       if (meResponse.status === 401 || meResponse.status === 403)
         return yield* Effect.fail(
-          new ConnectError({ reason: "Discord rejected this bot token — check it in Settings → Messengers." }),
+          new ConnectError({ reason: "Discord rejected this bot token — check it in Officer Settings → Messengers." }),
         )
       const me = decodeMe(meResponse.body)
       const selfID = me._tag === "Some" ? me.value.id : undefined

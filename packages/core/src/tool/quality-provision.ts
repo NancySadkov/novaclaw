@@ -12,9 +12,9 @@
  * EXECUTES — the shell does not stop being the shell because the tool has a config
  * name, and a gate that only knows `provision` is a gate no `bash` rule can see.
  *
- * Resolved commands are written into the instance settings
- * store (`quality.commands` — the same record the Settings → Quality tab edits),
- * active for future location boots. ⚠️ The pre-config-sqlite version wrote a PROJECT
+ * Resolved commands are written into the officer settings
+ * store (`qualityConfig.commands` — the same record Officer Settings → Quality edits),
+ * active on the next turn. ⚠️ The pre-config-sqlite version wrote a PROJECT
  * novaclaw.jsonc instead — a silent no-op since step 9 (nothing reads project jsonc
  * at runtime; the same dead-write class as the 4E promote bug). Per-PROJECT quality
  * overrides need a per-location config store first (filed in todo.md).
@@ -28,12 +28,12 @@ import { Duration, Effect, Layer, Schema } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { makeLocationNode } from "../effect/app-node"
 import { Location } from "../location"
-import { MergePatch } from "../merge-patch"
+import { AgentConfigStore } from "../agent-config-store"
+import { ConfigAgent } from "../config/agent"
 import { PermissionV2 } from "../permission"
 import { AppProcess } from "../process"
 import type { Commands } from "../session/runner/quality"
 import { QualityProvision } from "../session/runner/quality-provision"
-import { SettingsConfigStore } from "../settings-config-store"
 import { Shell } from "../shell"
 import { Quality as QualitySchema } from "@novaclaw/schema/quality"
 import { QualityDetect } from "../session/runner/quality-detect"
@@ -61,8 +61,8 @@ export const description =
   "package.json, Cargo.toml, go.mod, pyproject.toml, requirements.txt, setup.py, Makefile, " +
   "CMakeLists.txt, build.gradle, pom.xml, *.sln, *.csproj, Gemfile — for typecheck/test/lint " +
   "commands, verify each candidate actually runs (a red check still verifies — only a missing " +
-  "toolchain drops it), and save the result to the instance quality settings (the record " +
-  "Settings → Quality edits). Pass explicit `commands` to override or fill gaps; a per-file " +
+  "toolchain drops it), and save the result to this officer's Quality settings. " +
+  "Pass explicit `commands` to override or fill gaps; a per-file " +
   "`check` or `syntax` command may use `{file}` for the path of the file that was just written. " +
   "Newly saved commands activate for future sessions."
 
@@ -90,7 +90,7 @@ export const Input = Schema.Struct({
       "Run each candidate once to verify the toolchain exists (default true). Failing checks still count as verified — only 'command not found' drops a candidate.",
   }),
   write: Schema.Boolean.pipe(Schema.optional).annotate({
-    description: "Save the resolved commands to this instance's quality settings (default true).",
+    description: "Save the resolved commands to this officer's Quality settings (default true).",
   }),
 })
 
@@ -112,7 +112,7 @@ export const toModelOutput = (output: Output) => {
       : "No quality commands could be resolved.",
     output.dropped.length ? `Dropped (toolchain missing or hung): ${output.dropped.join("; ")}` : "",
     output.written
-      ? "Saved to the instance quality settings (Settings → Quality) — active for FUTURE sessions; this session's gates keep the boot snapshot."
+      ? "Saved to this officer's Quality settings — active on the next turn."
       : "Not saved (write: false or nothing resolved).",
     "Missing toolchains are installed via bash under its own approval — never automatically.",
   ]
@@ -128,7 +128,7 @@ export const layer = Layer.effectDiscard(
     const permission = yield* PermissionV2.Service
     const location = yield* Location.Service
     const appProcess = yield* AppProcess.Service
-    const settings = yield* SettingsConfigStore.Service
+    const agents = yield* AgentConfigStore.Service
 
     yield* tools
       .register({
@@ -138,7 +138,7 @@ export const layer = Layer.effectDiscard(
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
             execute: (input, context) =>
               Effect.gen(function* () {
-                // Rung 0, shared with Settings → Quality's "Detect from this project" button. It was
+                // Rung 0, shared with Officer Settings → Quality's "Detect from this project" button. It was
                 // inline here until 2026-09-03; two copies of a manifest loader drift the moment
                 // either side gains an ecosystem, which is the drift this file's own header spends
                 // three bullets warning about.
@@ -168,7 +168,7 @@ export const layer = Layer.effectDiscard(
                   callID: context.toolCallID,
                 }
                 // The CONFIG half: this call is about to persist `quality.commands` into the
-                // instance settings store, a durable host mutation under its own action name.
+                // officer config store, a durable host mutation under its own action name.
                 // It does NOT cover the execution below — see the `bash` assert in the loop.
                 //
                 // ⚠️ `save` names the exact `slot: command` strings, never `"*"` (2026-09-03). `quality`
@@ -248,11 +248,14 @@ export const layer = Layer.effectDiscard(
                 const remaining = Object.entries(merged).filter(([, value]) => Boolean(value))
                 let written = false
                 if (input.write !== false && remaining.length > 0) {
-                  // The instance settings store — the SAME record Settings → Quality edits, and the
-                  // only quality config the runtime reads (config-sqlite step 9: project jsonc is
-                  // never read at runtime; writing it here was a silent no-op).
-                  const current = (yield* settings.all()).quality
-                  yield* settings.set("quality", MergePatch.mergePatch(current, { commands: merged }))
+                  const officerID = String(context.agent)
+                  const layers = (yield* agents.agents())[officerID] ?? []
+                  const last = layers.at(-1)
+                  const next = {
+                    ...last,
+                    qualityConfig: { ...(last?.qualityConfig ?? {}), commands: merged },
+                  } as ConfigAgent.Info
+                  yield* agents.setLayers(officerID, [...layers.slice(0, -1), next])
                   written = true
                 }
                 return { commands: merged, dropped, evidence: proposal.evidence, written }
@@ -276,5 +279,5 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/quality-provision",
   layer,
-  deps: [ToolRegistry.node, PermissionV2.node, Location.node, AppProcess.node, SettingsConfigStore.node],
+  deps: [ToolRegistry.node, PermissionV2.node, Location.node, AppProcess.node, AgentConfigStore.node],
 })

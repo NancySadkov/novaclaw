@@ -7,7 +7,7 @@ import { LanguageContext } from "@/context/language"
 import { PlatformProvider } from "@/context/platform"
 import { ServerSyncContext } from "@/context/server-sync"
 import { SettingsProvider } from "@/context/settings"
-import { SettingsTunesV2 } from "@/components/settings-v2/tunes"
+import { OfficerContext } from "@/components/settings-v2/tunes"
 import { SettingsNumberFieldV2 } from "@/components/settings-v2/parts/number-field"
 import { dict as en } from "@/i18n/en"
 import { languageStub } from "./language-stub"
@@ -43,7 +43,7 @@ afterEach(() => {
   document.body.innerHTML = ""
 })
 
-function mount(panel: () => JSX.Element, initial: Record<string, unknown>) {
+function mount(panel: (officer: () => Record<string, unknown>) => JSX.Element, initial: Record<string, unknown>) {
   const counts = { patch: 0, remove: 0 }
   const [store, setStore] = createStore<{ config: Record<string, unknown>; path: unknown }>({
     config: initial,
@@ -96,7 +96,7 @@ function mount(panel: () => JSX.Element, initial: Record<string, unknown>) {
       <PlatformProvider value={{ platform: "web" } as never}>
         <SettingsProvider>
           <LanguageContext.Provider value={languageStub as never}>
-            <ServerSyncContext.Provider value={sync as never}>{panel()}</ServerSyncContext.Provider>
+            <ServerSyncContext.Provider value={sync as never}>{panel(() => ((store.config.agents as Record<string, Record<string, unknown>>)?.nova ?? {}))}</ServerSyncContext.Provider>
           </LanguageContext.Provider>
         </SettingsProvider>
       </PlatformProvider>
@@ -137,7 +137,7 @@ const BUDGET = en["settings.tunes.todo.budget.title"]
 
 describe("Tunes — a value below the field's minimum can be typed", () => {
   test("typing 512 into a min-64 box writes nothing until it is committed, then writes 512 once", async () => {
-    const { counts, config } = mount(() => <SettingsTunesV2 />, { context: {} })
+    const { counts, config } = mount((officer) => <OfficerContext agentID="nova" config={officer} />, { agents: { nova: { context: {} } } })
     await settle()
 
     // The exact sequence that used to persist 64 on its first character and leave `641` behind.
@@ -150,13 +150,13 @@ describe("Tunes — a value below the field's minimum can be typed", () => {
     await settle()
 
     expect(counts.patch).toBe(1)
-    expect((config().context as { todo_reminder?: { max_tokens?: number } }).todo_reminder?.max_tokens).toBe(512)
+    expect(((config().agents as { nova: { context: Record<string, unknown> } }).nova.context as { todo_reminder?: { max_tokens?: number } }).todo_reminder?.max_tokens).toBe(512)
     expect(box(BUDGET).value).toBe("512")
     expect(refusals()).toHaveLength(0)
   })
 
   test("the control: an ordinary in-range edit still persists, and three edits are three writes", async () => {
-    const { counts, config } = mount(() => <SettingsTunesV2 />, { context: {} })
+    const { counts, config } = mount((officer) => <OfficerContext agentID="nova" config={officer} />, { agents: { nova: { context: {} } } })
     await settle()
 
     commit(box(CADENCE), "12")
@@ -170,18 +170,18 @@ describe("Tunes — a value below the field's minimum can be typed", () => {
 
     // A field that swallowed everything would pass the test above and fail this one.
     expect(counts.patch).toBe(3)
-    expect((config().context as { todo_reminder?: { cadence?: number } }).todo_reminder?.cadence).toBe(3)
+    expect(((config().agents as { nova: { context: Record<string, unknown> } }).nova.context as { todo_reminder?: { cadence?: number } }).todo_reminder?.cadence).toBe(3)
   })
 
   test("an out-of-range value is refused BY NAME and never stored", async () => {
-    const { counts, config } = mount(() => <SettingsTunesV2 />, { context: {} })
+    const { counts, config } = mount((officer) => <OfficerContext agentID="nova" config={officer} />, { agents: { nova: { context: {} } } })
     await settle()
 
     commit(box(BUDGET), "5000")
     await settle()
 
     expect(counts.patch).toBe(0)
-    expect(config().context).toEqual({})
+    expect((config().agents as { nova: { context: Record<string, unknown> } }).nova.context).toEqual({})
     const said = refusals()
     expect(said).toHaveLength(1)
     // Not merely "invalid": the message names the range, so the user is not asked to guess it.
@@ -191,7 +191,7 @@ describe("Tunes — a value below the field's minimum can be typed", () => {
   })
 
   test("returning to the field clears the refusal, and the correction then persists", async () => {
-    const { counts, config } = mount(() => <SettingsTunesV2 />, { context: {} })
+    const { counts, config } = mount((officer) => <OfficerContext agentID="nova" config={officer} />, { agents: { nova: { context: {} } } })
     await settle()
 
     commit(box(BUDGET), "5000")
@@ -207,7 +207,7 @@ describe("Tunes — a value below the field's minimum can be typed", () => {
     commit(box(BUDGET), "512")
     await settle()
     expect(counts.patch).toBe(1)
-    expect((config().context as { todo_reminder?: { max_tokens?: number } }).todo_reminder?.max_tokens).toBe(512)
+    expect(((config().agents as { nova: { context: Record<string, unknown> } }).nova.context as { todo_reminder?: { max_tokens?: number } }).todo_reminder?.max_tokens).toBe(512)
   })
 })
 
@@ -257,12 +257,11 @@ describe("a human-unit duration may explicitly accept fractions", () => {
  */
 describe("Context tab — the guard card and its splits", () => {
   test("shows the new copy, four five-part bars, and the shipped threshold", async () => {
-    mount(() => <SettingsTunesV2 />, { context: {} })
+    mount((officer) => <OfficerContext agentID="nova" config={officer} />, { agents: { nova: { context: {} } } })
     await settle()
 
-    expect(document.querySelector(".settings-v2-tab-title")?.textContent).toBe(en["settings.tunes.title"])
     expect(document.querySelector('[data-section="context-guard"]')?.textContent).toContain(
-      en["settings.tunes.context.enabled.description"],
+      en["settings.tunes.context.enabled.title"],
     )
 
     const profiles = [...document.querySelectorAll<HTMLElement>("[data-context-profile]")]
@@ -282,7 +281,7 @@ describe("Context tab — the guard card and its splits", () => {
   })
 
   test("an arrow key transfers one point between neighbours and commits once", async () => {
-    const { counts, config } = mount(() => <SettingsTunesV2 />, { context: {} })
+    const { counts, config } = mount((officer) => <OfficerContext agentID="nova" config={officer} />, { agents: { nova: { context: {} } } })
     await settle()
 
     const handle = document.querySelector<HTMLButtonElement>(
@@ -293,19 +292,19 @@ describe("Context tab — the guard card and its splits", () => {
     await settle()
 
     expect(counts.patch).toBe(1)
-    expect(config().context).toMatchObject({
+    expect((config().agents as { nova: { context: Record<string, unknown> } }).nova.context).toMatchObject({
       profiles: { interactive: { system: 26, messages: 39, retrieval: 10, memory: 5, tool_output: 20 } },
     })
   })
 
   test("the compaction threshold commits through the shared number field", async () => {
-    const { counts, config } = mount(() => <SettingsTunesV2 />, { context: {} })
+    const { counts, config } = mount((officer) => <OfficerContext agentID="nova" config={officer} />, { agents: { nova: { context: {} } } })
     await settle()
 
     commit(box(en["settings.tunes.compaction.threshold.title"]), "70")
     await settle()
 
     expect(counts.patch).toBe(1)
-    expect(config().compaction).toMatchObject({ threshold: 70 })
+    expect((config().agents as { nova: { compaction: Record<string, unknown> } }).nova.compaction).toMatchObject({ threshold: 70 })
   })
 })

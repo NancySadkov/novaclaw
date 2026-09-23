@@ -227,7 +227,9 @@ function pageFileForRoute(route: string): string | undefined {
 
 /** Levels declared by `<RequiresLevel … min="x">` in a page. */
 function declaredLevels(source: string): string[] {
-  return [...source.matchAll(/<RequiresLevel[^>]*?min="(\w+)"/g)].map((match) => match[1]!)
+  return [...source.matchAll(/<RequiresLevel[^>]*?min=(?:"(\w+)"|\{([^}]+)\})/g)].flatMap((match) =>
+    match[1] ? [match[1]] : [...match[2]!.matchAll(/"(normal|advanced|developer)"/g)].map((value) => value[1]!),
+  )
 }
 
 describe("a level-gated ROUTE explains itself instead of bouncing", () => {

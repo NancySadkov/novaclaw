@@ -86,7 +86,7 @@ describe("MessengerPace serialization", () => {
   )
 })
 
-describe("MessengerPace per-account typing speed (Settings → Messengers)", () => {
+describe("MessengerPace per-account typing speed (Officer Settings → Messengers)", () => {
   it.effect("paceFromSettings reads the speed, clamps to the safe range, defaults on empty/invalid", () =>
     Effect.sync(() => {
       expect(MessengerPace.paceFromSettings({ [MessengerPace.PACE_SETTING_KEY]: "40" })).toEqual({ charsPerSecond: 40 })

@@ -357,7 +357,7 @@ const GENERATE_TIMEOUT_MS = 60_000
  * additions. Before that, the `novaclaw.json` retirement removed `GET`/`POST /api/project`, 479
  * deletions and zero additions.
  */
-const SCHEMA_NAME_FINGERPRINT = "43c0907b3f6e3c3317668d65bd9536fc8fba330794a7fbb2f280de7c179bf6d6"
+const SCHEMA_NAME_FINGERPRINT = "453bf089b96055a14823067cdad7fcaaf2db1f146000bf0cfe5c279e545dd3bc"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {
@@ -387,7 +387,9 @@ function describeDrift(committed: Document, fresh: Document): string {
 describe("the SDK's generated artifacts", () => {
   test("the public schema naming table changes only deliberately", async () => {
     const document = (await Bun.file(specPath).json()) as Document
-    const mapping = [...schemaTypeNames(document as any)].map(([source, emitted]) => `${source} -> ${emitted}`)
+    const mapping = [...schemaTypeNames(document as any)]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([source, emitted]) => `${source} -> ${emitted}`)
     const fingerprint = createHash("sha256").update(mapping.join("\n")).digest("hex")
     expect(
       fingerprint,

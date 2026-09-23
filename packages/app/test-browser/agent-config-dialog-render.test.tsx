@@ -282,7 +282,7 @@ describe("AgentConfigDialog renders", () => {
     expect(buttons.filter((button) => button.tabIndex === 0).length).toBe(1)
     buttons[0]!.focus()
     buttons[0]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }))
-    expect(panel.dataset.activeTab).toBe("mind")
+    expect(panel.dataset.activeTab).toBe("capabilities")
     expect(document.activeElement).toBe(buttons[1])
     expect(panel.getAttribute("aria-labelledby")).toBe(buttons[1]!.id)
     expect(buttons[1]!.getAttribute("aria-selected")).toBe("true")
@@ -290,11 +290,11 @@ describe("AgentConfigDialog renders", () => {
     desktop = true
     media!.dispatchEvent(Object.assign(new Event("change"), { matches: true }))
     expect(navigation.getAttribute("aria-orientation")).toBe("vertical")
-    expect(panel.dataset.activeTab).toBe("mind")
+    expect(panel.dataset.activeTab).toBe("capabilities")
     buttons[1]!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }))
-    expect(panel.dataset.activeTab).toBe("work")
-    buttons[2]!.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true }))
     expect(panel.dataset.activeTab).toBe("profile")
+    buttons[2]!.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true }))
+    expect(panel.dataset.activeTab).toBe("work")
   })
 
   test("VR-001 · the governing colleague is edited like any other, minus the three fixed things", async () => {
@@ -380,7 +380,7 @@ describe("AgentConfigDialog renders", () => {
     const navigation = document.querySelector('nav[aria-label="Officer settings"]')
     expect(navigation?.classList.contains("overflow-x-auto")).toBe(true)
     expect(navigation?.classList.contains("md:flex-col")).toBe(true)
-    expect([...navigation!.querySelectorAll("button")].every((button) => button.classList.contains("min-h-11"))).toBe(
+    expect([...navigation!.querySelectorAll("button")].every((button) => button.classList.contains("min-h-10"))).toBe(
       true,
     )
 
@@ -404,31 +404,33 @@ describe("AgentConfigDialog renders", () => {
     // live here. Strict and the stuck detector moved OUT to their own tabs (per-agent tuning,
     // 2026-09-18): they fine-tune the harness, not the work.
     expect(work?.textContent).toContain("agentConfig.unattended")
-    expect(work?.textContent).toContain("agentConfig.unattended.off")
+    expect(work?.textContent).not.toContain("agentConfig.unattended.off")
     // The control is a real switch, not a radio pair. Asserted as a BOOLEAN — never hand `expect()` an
     // element; see the note at `charterControls` above.
     expect((work?.querySelector('[data-component="switch"]') ?? null) !== null).toBe(true)
     expect((work?.querySelector('input[type="radio"]') ?? null) === null).toBe(true)
-    expect(work?.textContent).toContain("Goal")
-    expect(work?.textContent).toContain("agentConfig.maxToolTimeout")
-    expect(work?.textContent).toContain("Context guard")
-    expect(work?.textContent).toContain("Edits instead of overwriting")
+    expect(work?.textContent).not.toContain("Goal")
+    const capabilities = document.querySelector('[data-section="workers"][data-settings-tab="capabilities"]')
+    expect(capabilities?.textContent).toContain("agentConfig.maxToolTimeout")
+    expect(capabilities?.textContent).toContain("Edits instead of overwriting")
+    expect(capabilities?.textContent).toContain("Maximum active workers")
+    expect(document.querySelector('[data-section="context"][data-settings-tab="context"]')).not.toBeNull()
+    expect(document.querySelector('[data-section="quality"][data-settings-tab="quality"]')).not.toBeNull()
     expect(work?.textContent).not.toContain("Stuck detector")
-    expect(work?.textContent).toContain("Quality gates")
 
     // 🔴 The harness tabs exist beside Work, each owning its detail: Strict (levers + budgets),
     // Affective (mood sampling + temperature) and Introspection (judge + cadence + texts).
-    for (const tab of ["strict", "affective", "introspection"]) {
-      expect(document.querySelector(`[data-section="${tab}"][data-settings-tab="${tab}"]`)).not.toBeNull()
-    }
+    expect(document.querySelector('[data-section="strict"][data-settings-tab="quality"]')).not.toBeNull()
+    for (const tab of ["affective", "introspection"])
+      expect(document.querySelector(`[data-section="${tab}"][data-settings-tab="mind"]`)).not.toBeNull()
     expect(document.querySelector('[data-section="strict"]')?.textContent).toContain("agentConfig.strict")
     expect(document.querySelector('[data-section="affective"]')?.textContent).toContain("Mood sampling")
     expect(document.querySelector('[data-section="introspection"]')?.textContent).toContain("Stuck detector")
 
     expect(document.querySelector('[data-section="nudges"][data-settings-tab="nudges"]')).not.toBeNull()
-    const io = document.querySelector('[data-section="input-output"][data-settings-tab="io"]')
-    expect(io?.textContent).toContain("Input / Output")
-    expect(io?.querySelector('[data-section="remote-chat"]')).not.toBeNull()
+    const messengers = document.querySelector('[data-section="messengers"][data-settings-tab="messengers"]')
+    expect([...document.querySelectorAll("nav button")].some((button) => button.textContent?.trim() === "Messengers")).toBe(true)
+    expect(messengers?.querySelector('[data-section="remote-chat"]')).not.toBeNull()
 
     const profile = document.querySelector('[data-section="profile"][data-settings-tab="profile"]')
     expect(profile?.textContent).toContain("Import profile")
@@ -447,10 +449,11 @@ describe("AgentConfigDialog renders", () => {
     // that is already off proves nothing about being wired, so the assertion below reads "unattended"
     // rather than "interactive".
     document.querySelector<HTMLInputElement>('[data-section="work"] [data-component="switch"] input')!.click()
+    expect(work?.textContent).toContain("Goal")
     const goal = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Goal"]')!
     goal.value = "Publish the reviewed manuscript."
     goal.dispatchEvent(new Event("input", { bubbles: true }))
-    for (const title of ["Context guard", "Edits instead of overwriting", "Quality gates"]) {
+    for (const title of ["Edits instead of overwriting"]) {
       const label = [...document.querySelectorAll("label")].find((row) => row.textContent?.includes(title))
       label?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.click()
     }
@@ -463,15 +466,13 @@ describe("AgentConfigDialog renders", () => {
           // mode. This is the half that proves the control is WIRED rather than merely rendered.
           operationMode: "unattended",
           goal: "Publish the reviewed manuscript.",
-          contextBudget: false,
           surgicalEdits: true,
-          quality: true,
         },
       },
     })
   })
 
-  test("the Strict tab saves attempts without wiping the stored levers", async () => {
+  test("the Quality tab saves Strict attempts without wiping the stored levers", async () => {
     // 🔴 The merge this tab exists for: editing ONE subfield must not drop the rest of the
     // struct. A `{ attempts }`-only write depends on the store patch-merging structs, which this
     // dialog refuses to assume — so it sends the merged struct and this test reads it back whole.
@@ -484,16 +485,16 @@ describe("AgentConfigDialog renders", () => {
 
     // The tab strip is literal labels, not i18n keys — find it the way a person does.
     const strictTab = [...document.querySelectorAll<HTMLButtonElement>("nav button")].find(
-      (button) => button.textContent?.trim() === "Strict",
+      (button) => button.textContent?.trim() === "Quality",
     )
-    expect(strictTab, "the Strict tab should be offered").toBeDefined()
+    expect(strictTab, "the Quality tab should be offered").toBeDefined()
     strictTab!.click()
     await settle()
-    expect(document.querySelector("[data-active-tab]")?.getAttribute("data-active-tab")).toBe("strict")
+    expect(document.querySelector("[data-active-tab]")?.getAttribute("data-active-tab")).toBe("quality")
 
     // The stored values show: the lever reads OFF, the race reads 3.
     const strict = document.querySelector('[data-section="strict"]')!
-    expect(strict.textContent).toContain("In force: on")
+    expect(strict.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(true)
     const attempts = strict.querySelector<HTMLInputElement>('input[aria-label="Parallel attempts"]')!
     expect(attempts.value).toBe("3")
     attempts.value = "5"
@@ -507,7 +508,7 @@ describe("AgentConfigDialog renders", () => {
     })
   })
 
-  test("the Affective tab upgrades a bare-boolean row to a struct without losing the stance", async () => {
+  test("Mind upgrades a bare-boolean Affective row to a struct without losing the stance", async () => {
     // Old rows store `affective: true`. Touching temperature must keep the opt-in AND carry it
     // as a struct — a bare `true` has nowhere to put a temperature.
     const writes: unknown[] = []
@@ -518,15 +519,15 @@ describe("AgentConfigDialog renders", () => {
     await settle()
 
     const affectiveTab = [...document.querySelectorAll<HTMLButtonElement>("nav button")].find(
-      (button) => button.textContent?.trim() === "Affective",
+      (button) => button.textContent?.trim() === "Mind",
     )
-    expect(affectiveTab, "the Affective tab should be offered").toBeDefined()
+    expect(affectiveTab, "the Mind tab should be offered").toBeDefined()
     affectiveTab!.click()
     await settle()
-    expect(document.querySelector("[data-active-tab]")?.getAttribute("data-active-tab")).toBe("affective")
+    expect(document.querySelector("[data-active-tab]")?.getAttribute("data-active-tab")).toBe("mind")
 
     const affective = document.querySelector('[data-section="affective"]')!
-    expect(affective.textContent).toContain("In force: on")
+    expect(affective.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(true)
     const temperature = affective.querySelector<HTMLInputElement>('input[aria-label="Calm-baseline temperature"]')!
     temperature.value = "0.4"
     temperature.dispatchEvent(new Event("input", { bubbles: true }))
@@ -539,7 +540,7 @@ describe("AgentConfigDialog renders", () => {
     })
   })
 
-  test("the Introspection tab shows the stored judge detail and resets to inherit", async () => {
+  test("Mind shows the stored Introspection detail and resets to inherit", async () => {
     const removed: string[][][] = []
     mount({
       agents: [{ ...AGENT, config: { introspection: { enabled: true, cadence: 5 } } }],
@@ -549,15 +550,15 @@ describe("AgentConfigDialog renders", () => {
     await settle()
 
     const introspectionTab = [...document.querySelectorAll<HTMLButtonElement>("nav button")].find(
-      (button) => button.textContent?.trim() === "Introspection",
+      (button) => button.textContent?.trim() === "Mind",
     )
-    expect(introspectionTab, "the Introspection tab should be offered").toBeDefined()
+    expect(introspectionTab, "the Mind tab should be offered").toBeDefined()
     introspectionTab!.click()
     await settle()
-    expect(document.querySelector("[data-active-tab]")?.getAttribute("data-active-tab")).toBe("introspection")
+    expect(document.querySelector("[data-active-tab]")?.getAttribute("data-active-tab")).toBe("mind")
 
     const introspection = document.querySelector('[data-section="introspection"]')!
-    expect(introspection.textContent).toContain("In force: on")
+    expect(introspection.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(true)
     expect(introspection.querySelector<HTMLInputElement>('input[aria-label="Introspection cadence"]')?.value).toBe("5")
 
     // Reset confirms (destructive) and then deletes exactly the tab's key — nothing else.
@@ -572,7 +573,7 @@ describe("AgentConfigDialog renders", () => {
     expect(removed.at(-1)).toEqual([["agents", "theron", "introspection"]])
   })
 
-  test("the Tools tab denies a tool live and adds a private recipe", async () => {
+  test("Capabilities denies a tool live and adds a private recipe", async () => {
     // 🔴 Horizon and recipes save LIVE (like Nudges), not through Save: they are
     // replace-semantics lists, and a second save path for the same struct is how one of them
     // silently wins. Each action below asserts its own write the moment it lands.
@@ -586,14 +587,14 @@ describe("AgentConfigDialog renders", () => {
     await settle()
 
     const toolsTab = [...document.querySelectorAll<HTMLButtonElement>("nav button")].find(
-      (button) => button.textContent?.trim() === "Tools",
+      (button) => button.textContent?.trim() === "Capabilities",
     )
-    expect(toolsTab, "the Tools tab should be offered").toBeDefined()
+    expect(toolsTab, "the Capabilities tab should be offered").toBeDefined()
     toolsTab!.click()
     await settle()
 
     const tools = document.querySelector('[data-section="tools"]')!
-    expect(tools.textContent).toContain("1 tool rule(s)")
+    expect(tools.textContent).toContain("bash")
     // Forgetting the only rule deletes the key rather than storing `{}` — an officer that
     // never tuned its horizon and one that tuned it back must read the same.
     const forget = tools.querySelector<HTMLButtonElement>('[data-action="agent-tool-forget"]')!
@@ -656,6 +657,7 @@ describe("AgentConfigDialog renders", () => {
     })
     await settle()
 
+    document.querySelector<HTMLDetailsElement>("details")!.open = true
     const prototype = document.querySelector<HTMLElement>('[aria-label="Prototype officer"]')
     expect(prototype, "the prototype picker should be offered").toBeDefined()
     await choose(prototype as HTMLElement, "iris")

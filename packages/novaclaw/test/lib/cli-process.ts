@@ -70,7 +70,6 @@ function isolatedEnv(home: string, configJson: string): Record<string, string> {
     NOVACLAW_CONFIG_CONTENT: configJson,
     NOVACLAW_DISABLE_PROJECT_CONFIG: "1",
     NOVACLAW_PURE: "1",
-    NOVACLAW_DISABLE_AUTOCOMPACT: "1",
     NOVACLAW_DISABLE_MODELS_FETCH: "1",
     NOVACLAW_AUTH_CONTENT: "{}",
   }

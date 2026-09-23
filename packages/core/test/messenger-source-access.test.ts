@@ -131,7 +131,13 @@ describe("MessengerStore — the declaration is the user's alone", () => {
   itStore.effect("a chat is born unlabelled: no proposal, nobody asked", () =>
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
-      const account = yield* store.createAccount({ driverID: "fake", label: "t", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "fake",
+        label: "t",
+        enabled: true,
+        settings: {},
+      })
       // A driver with nothing to say — the majority case, and the one a boolean cannot express.
       yield* store.seenChat({ accountID: account.id, chatID: "c1", kind: "channel", title: "#news", at: 10 })
       const [chat] = yield* store.listChats(account.id)
@@ -143,7 +149,13 @@ describe("MessengerStore — the declaration is the user's alone", () => {
   itStore.effect("a driver sighting refreshes the PROPOSAL and never overwrites the DECLARATION", () =>
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
-      const account = yield* store.createAccount({ driverID: "fake", label: "t", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "fake",
+        label: "t",
+        enabled: true,
+        settings: {},
+      })
       yield* store.seenChat({
         accountID: account.id,
         chatID: "c1",
@@ -183,7 +195,13 @@ describe("MessengerStore — the declaration is the user's alone", () => {
   itStore.effect("a declaration about a chat nobody has seen is refused, not invented", () =>
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
-      const account = yield* store.createAccount({ driverID: "fake", label: "t", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "fake",
+        label: "t",
+        enabled: true,
+        settings: {},
+      })
       expect(yield* store.declareChatAccess({ accountID: account.id, chatID: "ghost", access: "public" })).toBe(false)
       // …and no ghost row with a privacy verdict and nothing else was created.
       expect(yield* store.listChats(account.id)).toEqual([])
@@ -194,7 +212,13 @@ describe("MessengerStore — the declaration is the user's alone", () => {
   itStore.effect("a declaration can be cleared back to `nobody has chosen`", () =>
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
-      const account = yield* store.createAccount({ driverID: "fake", label: "t", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "fake",
+        label: "t",
+        enabled: true,
+        settings: {},
+      })
       yield* store.seenChat({ accountID: account.id, chatID: "c1", kind: "channel", title: "#news", at: 10 })
       yield* store.declareChatAccess({ accountID: account.id, chatID: "c1", access: "public" })
       yield* store.declareChatAccess({ accountID: account.id, chatID: "c1", access: undefined })
@@ -210,7 +234,13 @@ describe("MessengerStore — the declaration is the user's alone", () => {
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
       const { db } = yield* Database.Service
-      const account = yield* store.createAccount({ driverID: "fake", label: "t", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "fake",
+        label: "t",
+        enabled: true,
+        settings: {},
+      })
       yield* store.seenChat({ accountID: account.id, chatID: "c1", kind: "channel", title: "#news", at: 10 })
       expect(yield* store.getChat(account.id, "c1")).toBeDefined()
 
@@ -306,7 +336,13 @@ const online = (chats: MessengerDriver.ChatSnapshot[]) =>
     const gateway = yield* MessengerGateway.Service
     fake.state.chats = chats
     fake.state.historyCalls = 0
-    const account = yield* store.createAccount({ driverID: "fake", label: "t", enabled: true, settings: {} })
+    const account = yield* store.createAccount({
+      agentID: "nova",
+      driverID: "fake",
+      label: "t",
+      enabled: true,
+      settings: {},
+    })
     yield* gateway.reload()
     // `chats()` is also what SEEDS the cache from a live list, so this call is the setup and the
     // subject at once — everything below reads the labels it just wrote.
@@ -366,7 +402,7 @@ describe("MessengerGateway — ruling 7 at the read seam", () => {
       expect(outcome.ok).toBe(false)
       if (!outcome.ok) {
         expect(outcome.reason).toContain("Nobody has said whether")
-        expect(outcome.reason).toContain("Settings → Messengers")
+        expect(outcome.reason).toContain("Officer Settings → Messengers")
       }
       // ⚠️ THE point of "at the read seam". The driver was never asked, so the private text never
       // entered the model's context — which is what ruling 7 means by ruling out post-hoc filtering

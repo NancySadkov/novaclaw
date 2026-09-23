@@ -197,7 +197,9 @@ const online = (...labels: readonly string[]) =>
     const gateway = yield* MessengerGateway.Service
     const accounts: Messenger.AccountInfo[] = []
     for (const label of labels)
-      accounts.push(yield* store.createAccount({ driverID: "fake", label, enabled: true, settings: {} }))
+      accounts.push(
+        yield* store.createAccount({ agentID: "nova", driverID: "fake", label, enabled: true, settings: {} }),
+      )
     yield* gateway.reload()
     yield* eventually(
       gateway.status(),
@@ -293,7 +295,13 @@ describe("messenger account safety — the IRC message id", () => {
       // Disabled: this account exists only to give the ledger rows an owner. The driver is exercised
       // directly against the fake socket below, and an ENABLED account would be reconciled by the
       // gateway reloads further down this file.
-      const account = yield* store.createAccount({ driverID: "irc", label: "irc-ids", enabled: false, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "irc",
+        label: "irc-ids",
+        enabled: false,
+        settings: {},
+      })
       const { factory, push } = makeFakeSocket()
       const claim = (messageID: string) => store.claimInbound({ accountID: account.id, chatID: "#support", messageID })
       const routed = (messageID: string) =>
@@ -436,7 +444,7 @@ describe("messenger account safety — commands under the traffic rules", () => 
 
       const sent = fake.state.sent.slice(sentBefore).filter((s) => s.accountID === account.id)
       expect(sent.map((s) => s.text)).toEqual([
-        "That pairing code is invalid or expired. Mint a fresh one in Settings → Messengers.",
+        "That pairing code is invalid or expired. Mint a fresh one in Officer Settings → Messengers.",
       ])
       // The stranger is still a stranger — being answered once is not being let in.
       expect(yield* store.getContact(account.id, "stranger")).toBeUndefined()

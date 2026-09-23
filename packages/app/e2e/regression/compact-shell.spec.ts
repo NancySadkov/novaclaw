@@ -183,6 +183,42 @@ test("settings switches its navigation orientation when a phone rotates", async 
   expect(errors).toEqual([])
 })
 
+test("About plays its soundtrack and releases it when the tab closes", async ({ page }, info) => {
+  const errors: string[] = []
+  page.on("pageerror", (error) => errors.push(error.stack || error.message))
+  await page.goto("/")
+  await Promise.race([
+    page.getByRole("button", { name: "Settings", exact: true }).waitFor(),
+    page.getByRole("heading", { name: "Something went wrong" }).waitFor(),
+  ])
+  if (await page.getByRole("heading", { name: "Something went wrong" }).isVisible()) {
+    await page.getByRole("button", { name: "Show technical details" }).click()
+    throw new Error(await page.getByRole("textbox", { name: "Error Details" }).inputValue())
+  }
+  if (errors.length) throw new Error(errors.join("\n"))
+  await page.getByRole("button", { name: "Settings", exact: true }).click()
+  await page.getByRole("tab", { name: "About", exact: true }).click()
+  const about = page.locator(".settings-v2-about")
+  await expect(about).toBeVisible()
+  const audio = about.locator("audio")
+  const retry = about.getByRole("button", { name: "Play soundtrack" })
+  if (await retry.isVisible()) await retry.click()
+  await expect.poll(() => audio.evaluate((element) => !(element as HTMLAudioElement).paused)).toBe(true)
+  expect(await about.locator("canvas").evaluate((canvas) => (canvas as HTMLCanvasElement).width)).toBeGreaterThan(0)
+  await page.screenshot({ path: info.outputPath("about-desktop.png") })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.screenshot({ path: info.outputPath("about-phone.png") })
+  await page.evaluate(() => {
+    ;(window as typeof window & { aboutAudio?: HTMLAudioElement }).aboutAudio = document.querySelector(".settings-v2-about audio") as HTMLAudioElement
+  })
+  await page.getByRole("tab", { name: "General", exact: true }).click()
+  await expect(about).toHaveCount(0)
+  expect(await page.evaluate(() => {
+    const element = (window as typeof window & { aboutAudio?: HTMLAudioElement }).aboutAudio
+    return { paused: element?.paused, src: element?.getAttribute("src") }
+  })).toEqual({ paused: true, src: null })
+})
+
 test.describe("touch navigation", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
 

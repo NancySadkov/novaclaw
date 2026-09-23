@@ -1281,7 +1281,8 @@ describe("quality_provision asserts the action it actually performs", () => {
 
   test("the `provision` assert STAYS — it gates the settings write, not the execution", () => {
     expect(source).toMatch(ASSERTS_PROVISION)
-    expect(source).toMatch(/settings\.set\("quality"/)
+    expect(source).toMatch(/qualityConfig:\s*\{/)
+    expect(source).toMatch(/agents\.setLayers\(officerID,/)
   })
 
   test("NEGATIVE CONTROL: the file as it shipped passes the old checks and fails the new one", () => {

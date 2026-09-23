@@ -106,7 +106,7 @@ const sessionMock = Layer.mock(SessionV2.Service, {
       return undefined as never
     }),
   list: () => Effect.succeed([] as never),
-  get: () => Effect.fail({ _tag: "Session.NotFoundError" } as never),
+  get: (id: string) => Effect.succeed({ id, agent: "nova" } as never),
 } as never)
 
 /**
@@ -194,7 +194,7 @@ const online = (label: string, settings: Record<string, string> = {}) =>
   Effect.gen(function* () {
     const store = yield* MessengerStore.Service
     const gateway = yield* MessengerGateway.Service
-    const account = yield* store.createAccount({ driverID: "fake", label, enabled: true, settings })
+    const account = yield* store.createAccount({ agentID: "nova", driverID: "fake", label, enabled: true, settings })
     yield* gateway.reload()
     yield* eventually(gateway.status(), (map) => map.get(account.id)?.state === "connected", `connected (${label})`)
     const queue = fake.state.queue

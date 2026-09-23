@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs"
 import path from "node:path"
 import { ColleagueNote } from "@novaclaw/core/session/colleague-note"
 import { SessionCompaction } from "@novaclaw/core/session/compaction"
-import type { Config } from "@novaclaw/core/config"
+import { ConfigCompaction } from "@novaclaw/core/config/compaction"
 import type { EventV2 } from "@novaclaw/core/event"
 import { SessionEvent } from "@novaclaw/core/session/event"
 import { applySteerProvenance, STEER_PROVENANCE_PREFIX } from "@novaclaw/core/session/steer-provenance"
@@ -442,12 +442,7 @@ const driveSummary = (attempts: readonly SummaryAttempt[], prefix?: LLMRequest) 
         ])
       },
     },
-    config: [
-      {
-        type: "document",
-        info: { compaction: { keep: { tokens: 8 } } },
-      } as unknown as Config.Entry,
-    ],
+    override: new ConfigCompaction.Info({ keep: new ConfigCompaction.Keep({ tokens: 8 }) }),
     prefixHash: () => Effect.succeed("0".repeat(64)),
   })
   const compacted = Effect.runSync(
@@ -654,12 +649,15 @@ describe("bounded compaction summaries", () => {
  */
 describe("the compaction threshold is a percentage of the window", () => {
   test("defaults to 80 when the config says nothing", () => {
-    expect(SessionCompaction.settings([]).threshold).toBe(80)
+    expect(SessionCompaction.settings().threshold).toBe(80)
   })
 
-  test("a document sets it, and the trigger is the earlier of the percentage and the reserve", () => {
-    const document = { type: "document", info: { compaction: { threshold: 70 } } } as unknown as Config.Document
-    expect(SessionCompaction.settings([document]).threshold).toBe(70)
+  test("the selected officer sets the threshold", () => {
+    expect(SessionCompaction.settings(new ConfigCompaction.Info({ threshold: 65 })).threshold).toBe(65)
+  })
+
+  test("the trigger is the earlier of the percentage and the reserve", () => {
+    expect(SessionCompaction.settings(new ConfigCompaction.Info({ threshold: 70 })).threshold).toBe(70)
     // 80% of 262,144 wins over a looser 90% reserve ceiling (235,929)…
     expect(SessionCompaction.triggerAt({ context: 262_144, promptCeilingTokens: 235_929, thresholdPercent: 80 })).toBe(
       209_715,

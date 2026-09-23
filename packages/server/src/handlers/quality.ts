@@ -6,7 +6,7 @@ import { handlerLayer, QualityApi } from "../handler-api"
 import { response } from "../location"
 
 /**
- * Settings → Quality's "Detect from this project", answered by the SAME scan the
+ * Officer Settings → Quality's "Detect from this project", answered by the SAME scan the
  * `quality_provision` tool runs — `QualityDetect.detect`, which both call and neither copies.
  *
  * ⚠️ It proposes and stops. The tool goes on to verify each candidate by running it once and then

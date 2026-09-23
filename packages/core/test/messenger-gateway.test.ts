@@ -34,6 +34,7 @@ import { testEffect } from "./lib/effect"
 // dispatcher — get (parent lookup + dispatch-target resolution) and create (task spawn).
 type MockInfo = {
   id: string
+  agent?: string
   title?: string
   location: { directory: string }
   metadata?: Record<string, unknown>
@@ -51,11 +52,16 @@ const makeSessionMock = () => {
   }[] = []
   const created: MockInfo[] = []
   const infos = new Map<string, MockInfo>()
-  infos.set("ses_alpha", { id: "ses_alpha", title: "Fix the login bug", location: { directory: WORKDIR } })
-  infos.set("ses_beta", { id: "ses_beta", title: "Design a logo", location: { directory: WORKDIR } })
+  infos.set("ses_alpha", {
+    id: "ses_alpha",
+    agent: "nova",
+    title: "Fix the login bug",
+    location: { directory: WORKDIR },
+  })
+  infos.set("ses_beta", { id: "ses_beta", agent: "nova", title: "Design a logo", location: { directory: WORKDIR } })
   const sessionList: { id: string; title?: string; agent?: string }[] = [
-    { id: "ses_alpha", title: "Fix the login bug", agent: "build" },
-    { id: "ses_beta", title: "Design a logo" },
+    { id: "ses_alpha", title: "Fix the login bug", agent: "nova" },
+    { id: "ses_beta", title: "Design a logo", agent: "nova" },
   ]
   // sessionID -> transcript, for the "did this task DO anything or only talk?" check.
   const histories = new Map<string, { type: string; content: { type: string; name?: string }[] }[]>()
@@ -89,6 +95,7 @@ const makeSessionMock = () => {
         return info === undefined ? Effect.fail({ _tag: "Session.NotFoundError" }) : Effect.succeed(info)
       }),
     create: (input: {
+      agent?: string
       parentID?: string
       title?: string
       location: { directory: string }
@@ -98,6 +105,7 @@ const makeSessionMock = () => {
       Effect.sync(() => {
         const info: MockInfo = {
           id: `ses_child${++childSeq}`,
+          agent: input.agent,
           title: input.title,
           location: input.location,
           metadata: input.metadata,
@@ -208,6 +216,7 @@ const makeFakeDriver = () => {
     // Typed with `Cause.Done` so a test can END the stream (Queue.end) — that is how a routine
     // provider-side reconnect looks to the gateway: the inbound stream simply finishes.
     queue: undefined as Queue.Queue<MessengerDriver.InboundEvent, Cause.Done> | undefined,
+    queues: new Map<string, Queue.Queue<MessengerDriver.InboundEvent, Cause.Done>>(),
     sent: [] as { chatID: string; text: string | undefined; fileName?: string; replyTo?: string }[],
     failNext: false,
     challengeNext: false,
@@ -243,8 +252,14 @@ const makeFakeDriver = () => {
         }
         const queue = yield* Queue.unbounded<MessengerDriver.InboundEvent, Cause.Done>()
         state.queue = queue
+        state.queues.set(ctx.account.id, queue)
         state.open += 1
-        yield* Effect.addFinalizer(() => Effect.sync(() => (state.open -= 1)))
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            state.open -= 1
+            state.queues.delete(ctx.account.id)
+          }),
+        )
         return {
           inbound: Stream.fromQueue(queue),
           send: (chatID, message) =>
@@ -515,7 +530,13 @@ describe("MessengerGateway", () => {
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
       const gateway = yield* MessengerGateway.Service
-      const account = yield* store.createAccount({ driverID: "fake", label: "mod", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "fake",
+        label: "mod",
+        enabled: true,
+        settings: {},
+      })
       yield* gateway.reload()
       yield* eventually(gateway.status(), (map) => map.get(account.id)?.state === "connected", "connected")
       const before = fake.state.moderations.length
@@ -544,7 +565,13 @@ describe("MessengerGateway", () => {
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
       const gateway = yield* MessengerGateway.Service
-      const account = yield* store.createAccount({ driverID: "fake", label: "t", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "fake",
+        label: "t",
+        enabled: true,
+        settings: {},
+      })
       yield* gateway.reload()
 
       yield* eventually(gateway.status(), (map) => map.get(account.id)?.state === "connected", "connected")
@@ -580,7 +607,13 @@ describe("MessengerGateway", () => {
       const store = yield* MessengerStore.Service
       const gateway = yield* MessengerGateway.Service
       fake.state.failNext = true
-      const account = yield* store.createAccount({ driverID: "fake", label: "b", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "fake",
+        label: "b",
+        enabled: true,
+        settings: {},
+      })
       yield* gateway.reload()
 
       const backoff = yield* eventually(gateway.status(), (map) => map.get(account.id)?.state === "backoff", "backoff")
@@ -597,7 +630,13 @@ describe("MessengerGateway", () => {
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
       const gateway = yield* MessengerGateway.Service
-      const account = yield* store.createAccount({ driverID: "ghost", label: "g", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "ghost",
+        label: "g",
+        enabled: true,
+        settings: {},
+      })
       yield* gateway.reload()
       const map = yield* gateway.status()
       const status = map.get(account.id)
@@ -616,13 +655,118 @@ describe("MessengerGateway pipeline", () => {
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
       const gateway = yield* MessengerGateway.Service
-      const account = yield* store.createAccount({ driverID: "fake", label, enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "fake",
+        label,
+        enabled: true,
+        settings: {},
+      })
       yield* gateway.reload()
       yield* eventually(gateway.status(), (map) => map.get(account.id)?.state === "connected", "connected")
       const queue = fake.state.queue
       if (queue === undefined) throw new Error("driver queue missing")
       return { store, gateway, account, queue }
     })
+
+  it.live("two officers see only their sessions, and stale or foreign bindings cannot route", () =>
+    Effect.gen(function* () {
+      const { store, gateway, account: novaAccount, queue: novaQueue } = yield* online("nova-owner")
+      session.infos.set("ses_apollo", {
+        id: "ses_apollo",
+        agent: "apollo",
+        title: "Apollo work",
+        location: { directory: WORKDIR },
+      })
+      session.sessionList.push({ id: "ses_apollo", title: "Apollo work", agent: "apollo" })
+      const apolloAccount = yield* store.createAccount({
+        agentID: "apollo",
+        driverID: "fake",
+        label: "apollo-owner",
+        enabled: true,
+        settings: {},
+      })
+      yield* gateway.reload()
+      yield* eventually(gateway.status(), (map) => map.get(apolloAccount.id)?.state === "connected", "Apollo connected")
+      const apolloQueue = fake.state.queues.get(apolloAccount.id)
+      if (apolloQueue === undefined) throw new Error("Apollo queue missing")
+
+      const sentBefore = fake.state.sent.length
+      yield* Queue.offer(novaQueue, message("nova-list", { text: "/sessions", owner: true }))
+      yield* Queue.offer(apolloQueue, message("apollo-list", { text: "/sessions", owner: true }))
+      yield* eventually(
+        Effect.sync(() => fake.state.sent.slice(sentBefore)),
+        (sent) =>
+          sent.some((entry) => entry.chatID === "nova-list") && sent.some((entry) => entry.chatID === "apollo-list"),
+        "both officers listed sessions",
+      )
+      const novaList = fake.state.sent.findLast((entry) => entry.chatID === "nova-list")?.text ?? ""
+      const apolloList = fake.state.sent.findLast((entry) => entry.chatID === "apollo-list")?.text ?? ""
+      expect(novaList).toContain("Fix the login bug")
+      expect(novaList).not.toContain("Apollo work")
+      expect(apolloList).toContain("Apollo work")
+      expect(apolloList).not.toContain("Fix the login bug")
+
+      session.infos.set("ses_apollo", {
+        id: "ses_apollo",
+        agent: "nova",
+        title: "Apollo work",
+        location: { directory: WORKDIR },
+      })
+      yield* Queue.offer(apolloQueue, message("apollo-list", { text: "/use 1", owner: true }))
+      yield* eventually(
+        Effect.sync(() => fake.state.sent),
+        (sent) =>
+          sent.some((entry) => entry.chatID === "apollo-list" && entry.text?.includes("belongs to another officer")),
+        "stale owner refused",
+      )
+      expect(yield* store.bindingForChat(apolloAccount.id, "apollo-list")).toBeUndefined()
+
+      const foreign = yield* store.createBinding({
+        accountID: apolloAccount.id,
+        chatID: "foreign-chat",
+        sessionID: "ses_alpha",
+        trust: "operator",
+      })
+      const promptsBefore = session.prompts.length
+      yield* Queue.offer(apolloQueue, message("foreign-chat", { text: "must not reach Nova", owner: true }))
+      yield* eventually(
+        Effect.sync(() => fake.state.sent),
+        (sent) => sent.some((entry) => entry.chatID === "foreign-chat" && entry.text?.includes("another officer")),
+        "foreign inbound refused",
+      )
+      expect(session.prompts.length).toBe(promptsBefore)
+      yield* store.removeBinding(foreign.id)
+
+      session.infos.set("ses_apollo", {
+        id: "ses_apollo",
+        agent: "apollo",
+        title: "Apollo work",
+        location: { directory: WORKDIR },
+      })
+      const createdBefore = session.created.length
+      yield* Queue.offer(apolloQueue, message("apollo-self", { text: "Nova, check in", owner: true, self: true }))
+      const consoleBinding = yield* eventually(
+        store.bindingForChat(apolloAccount.id, "apollo-self"),
+        (binding) => binding !== undefined,
+        "Apollo console bound",
+      )
+      expect(session.created.slice(createdBefore).find((entry) => entry.id === consoleBinding?.sessionID)?.agent).toBe(
+        "apollo",
+      )
+      yield* store.removeAccount(novaAccount.id)
+      yield* store.removeAccount(apolloAccount.id)
+      yield* gateway.reload()
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          session.infos.delete("ses_apollo")
+          const index = session.sessionList.findIndex((entry) => entry.id === "ses_apollo")
+          if (index >= 0) session.sessionList.splice(index, 1)
+        }),
+      ),
+    ),
+  )
 
   it.live("pairs an operator, lists sessions, /use binds the chat, and plain text injects a turn", () =>
     Effect.gen(function* () {
@@ -736,7 +880,13 @@ describe("MessengerGateway pipeline", () => {
       const store = yield* MessengerStore.Service
       const gateway = yield* MessengerGateway.Service
       fake.state.challengeNext = true
-      const account = yield* store.createAccount({ driverID: "fake", label: "captcha", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "fake",
+        label: "captcha",
+        enabled: true,
+        settings: {},
+      })
       yield* gateway.reload()
       const status = yield* eventually(
         gateway.status(),
@@ -766,6 +916,7 @@ describe("MessengerGateway pipeline", () => {
       fake.state.sendFails = true
       fake.state.challengeNext = true
       const parked = yield* store.createAccount({
+        agentID: "nova",
         driverID: "fake",
         label: "captcha-notify",
         enabled: true,
@@ -1477,7 +1628,13 @@ describe("MessengerGateway pipeline", () => {
       const first = yield* Effect.gen(function* () {
         const store = yield* MessengerStore.Service
         const gateway = yield* MessengerGateway.Service
-        const account = yield* store.createAccount({ driverID: "fake", label: "restart", enabled: true, settings: {} })
+        const account = yield* store.createAccount({
+          agentID: "nova",
+          driverID: "fake",
+          label: "restart",
+          enabled: true,
+          settings: {},
+        })
         yield* gateway.reload()
         yield* eventually(gateway.status(), (map) => map.get(account.id)?.state === "connected", "connected #1")
         for (let index = 0; index < cap - 1; index++) {
@@ -1887,7 +2044,13 @@ describe("MessengerGateway backoff", () => {
       Effect.gen(function* () {
         const store = yield* MessengerStore.Service
         const gateway = yield* MessengerGateway.Service
-        const account = yield* store.createAccount({ driverID: "fake", label: "flap", enabled: true, settings: {} })
+        const account = yield* store.createAccount({
+          agentID: "nova",
+          driverID: "fake",
+          label: "flap",
+          enabled: true,
+          settings: {},
+        })
         yield* gateway.reload()
 
         // One healthy connection, then the clean drop a provider does routinely (Discord's op-7
@@ -1938,7 +2101,13 @@ describe("MessengerGateway (airgapped)", () => {
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
       const gateway = yield* MessengerGateway.Service
-      const account = yield* store.createAccount({ driverID: "fake", label: "a", enabled: true, settings: {} })
+      const account = yield* store.createAccount({
+        agentID: "nova",
+        driverID: "fake",
+        label: "a",
+        enabled: true,
+        settings: {},
+      })
       yield* gateway.reload()
       const map = yield* gateway.status()
       expect(map.get(account.id)?.state).toBe("airgapped")
@@ -2085,6 +2254,7 @@ const LIVE_LEDGER: readonly string[] = [
   "the account owner is a born-paired operator — /sessions works with zero pairing (§0.1.5)",
   "the daily cold-start budget SURVIVES a restart — a second gateway resumes the same bucket",
   "the operator's self-chat binds ITSELF a console session on first use (no /sessions + /use)",
+  "two officers see only their sessions, and stale or foreign bindings cannot route",
 ]
 
 /** No single live wait may exceed this. Anything longer is a production timer being waited out, and

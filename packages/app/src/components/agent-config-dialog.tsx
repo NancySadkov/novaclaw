@@ -37,6 +37,10 @@ import { SettingsNudgesV2 } from "@/components/settings-v2/nudges"
 import { SettingsScheduleV2 } from "@/components/settings-v2/schedule"
 import { PresetFieldV2 } from "@/components/settings-v2/parts/preset-field"
 import { OfficerRecipes } from "@/components/officer-recipes"
+import { OfficerContext } from "@/components/settings-v2/tunes"
+import { OfficerQuality } from "@/components/settings-v2/quality"
+import { SettingsMessengersV2 } from "@/components/settings-v2/messengers"
+import { CORE_TOOLS, PERMISSION_MODE_CHOICES, officerCapabilities, withComputerUse, withToolOverride } from "@/apps/officer-capabilities"
 import type { Recipe as AdhocRecipe } from "@/components/settings-v2/tools-draft"
 import { planSettingsCopy } from "@/apps/agent-settings-copy"
 import { AgentRemoteChat } from "@/components/agent-remote-chat"
@@ -55,7 +59,6 @@ import {
 // The three roster kinds (owner, 2026-09-17): a full officer, a pure Chat, and the instance's
 // owning user. Human is a first-class entity, not an absence.
 const POSTURE_CHOICES: ("agent" | "chat" | "human")[] = ["agent", "chat", "human"]
-const PERMISSION_MODE_CHOICES: ("plan" | "bypass" | "yolo")[] = ["plan", "bypass", "yolo"]
 
 /**
  * Merge touched struct-subfield drafts over the stored struct, for the per-officer
@@ -95,7 +98,6 @@ const textTouched = (raw: string | undefined): string | undefined => {
  * free-text add stays beside the suggestions and SAYS it is the fallback (principle 12b) —
  * the day a catalog endpoint exists, this list becomes discovery.
  */
-const CORE_TOOLS = ["read", "grep", "glob", "write", "edit", "apply_patch", "bash", "task", "webfetch"] as const
 
 // ONE addressable officer-settings screen, opened from two places (AGENTS.md → *the structural metaphor*;
 // `notes/named-agents.md`).
@@ -159,6 +161,7 @@ export function AgentConfigScreen(props: {
   // ErrorBoundary, at its root, and replaced the whole UI.
   const agents = () => ctx()?.agents.list()
   const agent = createMemo<AgentLike | undefined>(() => (agents() ?? []).find((row) => row.id === props.agentID))
+  const capabilities = createMemo(() => officerCapabilities(agent()?.config as Record<string, unknown> | undefined))
 
   const governing = createMemo(() => props.agentID === GOVERNING_ID)
 
@@ -193,10 +196,8 @@ export function AgentConfigScreen(props: {
   const [strict, setStrict] = createSignal<boolean | undefined>()
   const [operationMode, setOperationMode] = createSignal<"interactive" | "unattended" | undefined>()
   const [goal, setGoal] = createSignal<string | undefined>()
-  const [contextBudget, setContextBudget] = createSignal<boolean | undefined>()
   const [surgicalEdits, setSurgicalEdits] = createSignal<boolean | undefined>()
   const [introspection, setIntrospection] = createSignal<boolean | undefined>()
-  const [quality, setQuality] = createSignal<boolean | undefined>()
   const [affective, setAffective] = createSignal<boolean | undefined>()
   /**
    * Strict/Affective/Introspection DETAIL drafts, one signal per subfield.
@@ -246,34 +247,30 @@ export function AgentConfigScreen(props: {
   const models = useModels()
   const [saving, setSaving] = createSignal(false)
   type SettingsTab =
+    | "work"
+    | "capabilities"
     | "profile"
     | "mind"
-    | "work"
-    | "strict"
-    | "affective"
-    | "introspection"
-    | "tools"
+    | "context"
+    | "quality"
     | "nudges"
     | "schedule"
     | "memory"
-    | "workers"
-    | "io"
+    | "messengers"
     | "chat"
-  const [activeTab, setActiveTab] = createSignal<SettingsTab>("profile")
+  const [activeTab, setActiveTab] = createSignal<SettingsTab>("work")
   const desktopSettings = createMediaQuery("(min-width: 768px)")
   const settingsTabs = () => [
+    { id: "work" as const, label: "Work", icon: "task" as const },
+    { id: "capabilities" as const, label: "Capabilities", icon: "shield" as const },
     { id: "profile" as const, label: "Profile", icon: "user" as const },
     { id: "mind" as const, label: "Mind", icon: "brain" as const },
-    { id: "work" as const, label: "Work", icon: "task" as const },
-    { id: "strict" as const, label: "Strict", icon: "shield" as const },
-    { id: "affective" as const, label: "Affective", icon: "status" as const },
-    { id: "introspection" as const, label: "Introspection", icon: "eye" as const },
-    { id: "tools" as const, label: "Tools", icon: "code" as const },
+    { id: "context" as const, label: "Context", icon: "archive" as const },
+    { id: "quality" as const, label: "Quality", icon: "checklist" as const },
+    { id: "memory" as const, label: "Memory", icon: "archive" as const },
+    { id: "messengers" as const, label: "Messengers", icon: "chats" as const },
     { id: "nudges" as const, label: "Nudges", icon: "prompt" as const },
     ...(postureValue() === "agent" ? [{ id: "schedule" as const, label: "Schedule", icon: "calendar" as const }] : []),
-    { id: "memory" as const, label: "Memory", icon: "archive" as const },
-    { id: "workers" as const, label: "Workers", icon: "branch" as const },
-    { id: "io" as const, label: "Input / Output", icon: "chats" as const },
     ...(props.tuning ? [{ id: "chat" as const, label: "This chat", icon: "chats" as const }] : []),
   ]
   /**
@@ -314,8 +311,7 @@ export function AgentConfigScreen(props: {
     if (stored === "agent" || stored === "chat" || stored === "human") return stored
     return agent()?.config?.["shortChat"] === true ? "chat" : "agent"
   }
-  const permissionModeValue = () =>
-    permissionMode() ?? (agent()?.config?.["permissionMode"] as string | undefined) ?? "bypass"
+  const permissionModeValue = () => permissionMode() ?? capabilities().permissionMode
   // ⚠️ DEFAULT INTERACTIVE (owner ruling 2026-09-15). This read `=== "interactive" ? "interactive" :
   // "unattended"`, i.e. anything not explicitly interactive — including "never set" — displayed as
   // Unattended. So a colleague nobody had configured showed a switch in the ON position for a mode
@@ -336,9 +332,7 @@ export function AgentConfigScreen(props: {
   }
   const standingValue = (draft: boolean | undefined, key: string, fallback: boolean) =>
     draft ?? (agent()?.config?.[key] as boolean | undefined) ?? fallback
-  const contextBudgetValue = () => standingValue(contextBudget(), "contextBudget", instanceEnabled("context", true))
   const surgicalEditsValue = () => standingValue(surgicalEdits(), "surgicalEdits", false)
-  const qualityValue = () => standingValue(quality(), "quality", instanceEnabled("quality", false))
   // Stored harness detail, normalized: the schema carries bool-or-struct for these two (old
   // rows are bare booleans, new writes are structs) and a struct for Strict. Absent = inherit.
   type LooseStruct = Record<string, string | number | boolean | undefined>
@@ -413,7 +407,7 @@ export function AgentConfigScreen(props: {
   // ── Tools tab: horizon (live writes, like Nudges) ─────────────────────────────────
   // Recipes live in `<OfficerRecipes>`, extracted so the failed-write pin survives the
   // Settings tab's deletion (`components/officer-recipes.tsx` header).
-  const officerTools = () => (agent()?.config?.["tools"] ?? {}) as Record<string, boolean>
+  const officerTools = () => capabilities().tools
   /** This officer's private recipes, read from the SAME record the horizon reads — the caller
    *  owns the source and `<OfficerRecipes>` stays presentational about it. */
   const officerRecipes = () => (agent()?.config?.["adhocTools"] ?? []) as AdhocRecipe[]
@@ -439,9 +433,7 @@ export function AgentConfigScreen(props: {
   const setHorizonTool = (name: string, enabled: boolean | undefined) => {
     const target = props.agentID
     if (target === undefined) return
-    const next = { ...officerTools() }
-    if (enabled === undefined) delete next[name]
-    else next[name] = enabled
+    const next = withToolOverride(officerTools(), name, enabled)
     // An emptied map is deleted rather than stored as `{}`: an officer that never tuned its
     // horizon and one that tuned it back to nothing must read the same, or "reset" is a lie.
     if (Object.keys(next).length === 0 && (agent()?.config?.["tools"] as unknown) !== undefined) {
@@ -460,15 +452,7 @@ export function AgentConfigScreen(props: {
   // The switch reads a PERMISSION RULE, not a field of its own, on purpose. A `computerUse: boolean`
   // on the agent would be a second answer to "may this officer touch the desktop", stored beside the
   // rule that actually decides it, and the two would drift. The rule is the truth; this is its face.
-  type StoredRule = { readonly action: string; readonly resource: string; readonly effect: string }
-  const storedRules = (): readonly StoredRule[] => {
-    const raw = agent()?.config?.["permissions"]
-    return Array.isArray(raw) ? (raw as StoredRule[]) : []
-  }
-  /** Opted out means a `deny` on `*` specifically. Anything narrower is the user's own rule. */
-  const computerOptedOut = () =>
-    storedRules().some((rule) => rule.action === "computer" && rule.resource === "*" && rule.effect === "deny")
-  const computerUseValue = () => computerUse() ?? !computerOptedOut()
+  const computerUseValue = () => computerUse() ?? capabilities().computerUse
   /**
    * The ruleset to store, with the officer's and the user's other rules riding along untouched.
    *
@@ -480,12 +464,7 @@ export function AgentConfigScreen(props: {
    * and a stored allow would outlive the floor it was compensating for.
    */
   const computerRuleset = () => {
-    const kept = storedRules().filter(
-      (rule) => !(rule.action === "computer" && rule.resource === "*" && rule.effect === "deny"),
-    )
-    return computerUse() === false
-      ? [...kept, { action: "computer", resource: "*", effect: "deny" } satisfies StoredRule]
-      : kept
+    return withComputerUse(capabilities().rules, computerUse() !== false)
   }
   /**
    * Where this colleague's own workspace is, as the server computed it.
@@ -537,8 +516,7 @@ export function AgentConfigScreen(props: {
   const workerModelValue = () => {
     const chosen = workerModel()
     if (chosen !== undefined) return chosen
-    const stored = agent()?.config?.["workerModel"]
-    return typeof stored === "string" ? stored : ""
+    return capabilities().workerModel ?? ""
   }
   // 🔴 `enabled` is EXACTLY the predicate the kernel resolves a turn through: a switched-off model is
   // not in `catalog.model.available()`, so a turn on it is substituted. Offering it as a new pick
@@ -627,8 +605,7 @@ export function AgentConfigScreen(props: {
   const workerPrototypeValue = () => {
     const chosen = workerPrototype()
     if (chosen !== undefined) return chosen
-    const stored = agent()?.config?.["workerPrototype"]
-    return typeof stored === "string" ? stored : ""
+    return capabilities().workerPrototype ?? ""
   }
   const workerPrototypeOptions = createMemo(() => [
     { key: "default", value: "", label: "Use this officer’s recipe" },
@@ -663,8 +640,8 @@ export function AgentConfigScreen(props: {
     const stored = agent()?.config?.[key]
     return typeof stored === "number" ? String(stored) : String(fallback)
   }
-  const maxWorkersValue = () => integerValue(maxWorkers(), "maxWorkers", 100)
-  const spawnDepthValue = () => integerValue(spawnDepth(), "spawnDepth", 1)
+  const maxWorkersValue = () => maxWorkers() ?? String(capabilities().maxWorkers)
+  const spawnDepthValue = () => spawnDepth() ?? String(capabilities().spawnDepth)
   const parseNonNegative = (value: string) => {
     const parsed = Number(value)
     return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : Number.NaN
@@ -754,10 +731,8 @@ export function AgentConfigScreen(props: {
     strict() !== undefined ||
     operationMode() !== undefined ||
     goal() !== undefined ||
-    contextBudget() !== undefined ||
     surgicalEdits() !== undefined ||
     introspection() !== undefined ||
-    quality() !== undefined ||
     affective() !== undefined ||
     strictVerification() !== undefined ||
     strictRecovery() !== undefined ||
@@ -1169,9 +1144,7 @@ export function AgentConfigScreen(props: {
         maxWorkers?: number
         spawnDepth?: number
         runtimeHeartbeatMinutes?: number
-        contextBudget?: boolean
         surgicalEdits?: boolean
-        quality?: boolean
       } = {
         ...(modelValue() === "" ? {} : { model: modelValue() }),
         ...(reasoningModelValue() === "" ? {} : { reasoningModel: reasoningModelValue() }),
@@ -1189,9 +1162,7 @@ export function AgentConfigScreen(props: {
         ...(runtimeHeartbeatMinutes() === undefined
           ? {}
           : { runtimeHeartbeatMinutes: parsedRuntimeHeartbeatMinutes() }),
-        ...(contextBudget() === undefined ? {} : { contextBudget: contextBudget()! }),
         ...(surgicalEdits() === undefined ? {} : { surgicalEdits: surgicalEdits()! }),
-        ...(quality() === undefined ? {} : { quality: quality()! }),
       }
       // The three harness-detail structs, merged over what is STORED rather than sent as the
       // touched fragment alone: a `{ enabled }`-only write would wipe the levers, budgets and
@@ -1362,10 +1333,8 @@ export function AgentConfigScreen(props: {
       setStrict(undefined)
       setOperationMode(undefined)
       setGoal(undefined)
-      setContextBudget(undefined)
       setSurgicalEdits(undefined)
       setIntrospection(undefined)
-      setQuality(undefined)
       setAffective(undefined)
       setStrictVerification(undefined)
       setStrictRecovery(undefined)
@@ -1534,7 +1503,8 @@ export function AgentConfigScreen(props: {
       >
         <KobalteTabs.List
           as="nav"
-          class="flex min-w-0 shrink-0 gap-1 overflow-x-auto border-b border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-0.5 md:w-52 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:px-3 md:py-4"
+          data-slot="agent-settings-nav"
+          class="flex min-w-0 shrink-0 gap-1 overflow-x-auto border-b border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1 md:w-44 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:px-2 md:py-3"
           aria-label="Officer settings"
         >
           <For each={settingsTabs()}>
@@ -1542,7 +1512,8 @@ export function AgentConfigScreen(props: {
               <KobalteTabs.Trigger
                 type="button"
                 value={tab.id}
-                class={`flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 text-left text-sm transition-colors md:min-h-10 ${
+                data-active={activeTab() === tab.id}
+                class={`flex min-h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border border-transparent px-2.5 text-left text-xs transition-colors md:min-h-9 ${
                   activeTab() === tab.id
                     ? "bg-v2-background-bg-layer-03 font-medium text-v2-text-text-base shadow-sm"
                     : "text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 hover:text-v2-text-text-base"
@@ -1556,10 +1527,10 @@ export function AgentConfigScreen(props: {
         </KobalteTabs.List>
         <KobalteTabs.Content
           value={activeTab()}
-          class="agent-settings-panels min-h-0 min-w-0 flex-1 overflow-y-auto px-3 py-4 sm:px-5 md:px-8 md:py-7"
+          class="agent-settings-panels min-h-0 min-w-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4 md:px-5 md:py-4"
           data-active-tab={activeTab()}
         >
-          <div class="mx-auto w-full max-w-3xl">
+          <div class="mx-auto w-full max-w-4xl">
             <section class="agent-settings-card" data-section="profile" data-settings-tab="profile">
               {/* 🔴 NOVA'S PROFILE IS THE USER'S TO SHAPE, exactly like any other colleague's (owner
                   ruling 2026-09-15). The tree root is not a locked record — the whole editable form is
@@ -1631,8 +1602,7 @@ export function AgentConfigScreen(props: {
                 </button>
               </div>
               <p class="mt-2 text-[11px] leading-relaxed text-v2-text-text-faint">
-                Portable JSON contains the name, job title, and job instructions only. Models, folders, authority,
-                memories, and chat history stay with this instance.
+                Exports identity and job only.
               </p>
               {/* Why this is a profile field and not something you type into the chat. */}
               <div class="mt-3 text-xs text-v2-text-text-muted">
@@ -1809,10 +1779,7 @@ export function AgentConfigScreen(props: {
                 label={(option) => option.label}
                 onSelect={(option) => option && setReasoningModel(option.value)}
               />
-              <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
-                Nova opens a private thinking phase on this model, then gives the checked result to the ordinary model
-                for tool calls and the answer. Choose “Use the ordinary model” to keep both phases on one model.
-              </p>
+              <p class="mt-1 text-[11px] text-v2-text-text-faint">Optional model for private reasoning.</p>
               <label class="mt-3 flex items-start gap-2 text-xs">
                 <input
                   type="checkbox"
@@ -1822,9 +1789,9 @@ export function AgentConfigScreen(props: {
                 />
                 <span>{language.t("agentConfig.toolLabels")}</span>
               </label>
-              <p class="text-[11px] text-v2-text-text-faint">
-                {language.t(toolLabelsValue() ? "agentConfig.toolLabels.on" : "agentConfig.toolLabels.off")}
-              </p>
+              <Show when={toolLabelsValue()}>
+                <p class="text-[11px] text-v2-text-text-faint">Adds one model call per command.</p>
+              </Show>
               <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-reasoning-budget">
                 {language.t("agentConfig.reasoningBudget")}
               </label>
@@ -1873,686 +1840,6 @@ export function AgentConfigScreen(props: {
                 <p class="mt-1 text-[11px] text-v2-state-fg-warning">{language.t("agentConfig.needsTaxonomyBelow")}</p>
               </Show>
             </section>
-
-            <section class="agent-settings-card" data-section="work" data-settings-tab="work">
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
-                {language.t("agentConfig.work")}
-              </h3>
-              <div class="mt-2">
-                <button
-                  type="button"
-                  class="rounded-md bg-v2-background-bg-layer-03 px-2.5 py-1.5 text-xs text-v2-text-text-base disabled:opacity-40"
-                  disabled={officerSessionID() === undefined || sdk() === undefined}
-                  onClick={() => void exportOfficerPrompt()}
-                >
-                  {language.t("context.export.prompt")}
-                </button>
-                <p class="mt-1 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.exportPrompt.hint")}</p>
-              </div>
-              {/* 🔴 The three standing WORK choices, moved off the composer 2026-08-21 (owner: the
-                Chat/Agent drop-down, Strict and permissions "should be part of the agent too"). They
-                describe the ROLE: a bookkeeper that needs Analyze mode needs it every time you talk to
-                it, and re-choosing per chat is a question asked again for a decision that never
-                changes. A chat can still differ — these are a LAYER, and the chat's own row wins. */}
-              <div class="mt-2 flex flex-col gap-2">
-                <div class="flex items-center justify-between gap-2 text-xs">
-                  <span>{language.t("agentConfig.posture")}</span>
-                  <SelectV2
-                    appearance="inline"
-                    aria-label={language.t("agentConfig.posture")}
-                    options={POSTURE_CHOICES}
-                    current={postureValue()}
-                    label={(value) =>
-                      language.t(
-                        value === "chat"
-                          ? "prompt.posture.chat.title"
-                          : value === "human"
-                            ? "prompt.posture.human.title"
-                            : "prompt.posture.agent.title",
-                      )
-                    }
-                    onSelect={(value) => {
-                      if (!value) return
-                      setPosture(value)
-                      if (value !== "agent") setDirectory("")
-                    }}
-                  />
-                </div>
-                <p class="text-[11px] text-v2-text-text-faint">
-                  {language.t(`prompt.posture.${postureValue()}.description`)}
-                </p>
-
-                <div class="flex items-center justify-between gap-2 text-xs">
-                  <span>{language.t("prompt.permissionMode.title")}</span>
-                  <SelectV2
-                    appearance="inline"
-                    aria-label={language.t("prompt.permissionMode.title")}
-                    options={PERMISSION_MODE_CHOICES}
-                    current={
-                      PERMISSION_MODE_CHOICES.find((mode) => mode === permissionModeValue()) ??
-                      PERMISSION_MODE_CHOICES[1]
-                    }
-                    label={(mode) => language.t(`prompt.permissionMode.${mode}`)}
-                    onSelect={(mode) => mode && setPermissionMode(mode)}
-                  />
-                </div>
-
-                {/* 🔴 MAXIMUM TOOL WAIT BELONGS HERE (owner, 2026-09-16), immediately under Strict,
-                    because the two answer the same question from its two ends: Strict says a step that
-                    fails is retried and verified, and this says how long ONE step may hold the floor
-                    before it is cut off and control comes back. In Mind it sat under the model
-                    pickers, where it read as a property of the weights rather than a rule about this
-                    officer's work. */}
-                <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-tool-timeout">
-                  {language.t("agentConfig.maxToolTimeout")}
-                </label>
-                <input
-                  id="agent-tool-timeout"
-                  aria-label={language.t("agentConfig.maxToolTimeout")}
-                  class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={maxToolTimeoutMinutesValue()}
-                  placeholder={language.t("agentConfig.maxToolTimeoutDefault")}
-                  onInput={(event) => setMaxToolTimeoutMinutes(event.currentTarget.value)}
-                />
-                <p class="mt-1 text-[11px] text-v2-text-text-faint">
-                  {maxToolTimeoutMinutesValue().trim() === ""
-                    ? language.t("agentConfig.maxToolTimeoutHelpDefault")
-                    : language.t("agentConfig.maxToolTimeoutHelpCustom", {
-                        minutes: maxToolTimeoutMinutesValue(),
-                      })}
-                </p>
-
-                {/* 🔴 ONE SWITCH, NOT TWO CARDS (owner ruling 2026-09-15: *"switching from
-                    Interactive<->Unattended is a toggle switch (default Interactive), instead of being
-                    two buttons"*), and it lives in the WORK tab (owner, 2026-09-15).
-
-                    It is a standing choice about how this officer OPERATES — the same family as
-                    posture, permission mode and Strict above — while Mind is about how it thinks. The
-                    pair read as two features to shop for when they are one decision seen from two
-                    sides, so the switch names the mode that is NOT the default and the line beneath
-                    says WHICH ONE IS IN FORCE right now, in both positions, because a switch with one
-                    labelled end tells you nothing when it is off. */}
-                <div class="mt-3 rounded-xl border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3">
-                  <div class="flex items-start justify-between gap-3">
-                    <span class="block text-sm font-medium">{language.t("agentConfig.unattended")}</span>
-                    <SwitchToggle
-                      aria-label={language.t("agentConfig.unattended")}
-                      checked={operationModeValue() === "unattended"}
-                      onChange={(checked) => setOperationMode(checked ? "unattended" : "interactive")}
-                    />
-                  </div>
-                  <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
-                    {language.t(
-                      operationModeValue() === "unattended"
-                        ? "agentConfig.unattended.on"
-                        : "agentConfig.unattended.off",
-                    )}
-                  </p>
-                </div>
-                <label class="mt-4 block text-xs text-v2-text-text-muted">
-                  Goal
-                  <textarea
-                    aria-label="Goal"
-                    class="mt-1 min-h-24 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-2 text-sm"
-                    value={goalValue()}
-                    onInput={(event) => setGoal(event.currentTarget.value)}
-                    placeholder="What should this officer keep working toward?"
-                  />
-                </label>
-                {/* ⚠️ The paragraph that used to sit in Mind repeated the Unattended sentence verbatim —
-                    "keeps prompting toward this durable goal… sleeps for 10 minutes" — one control above
-                    the switch that now says it. What is left is the part the switch cannot say: the goal
-                    is DURABLE, and it survives compaction, which is why it is worth typing. */}
-                <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
-                  The goal survives compaction, so this officer keeps it even after a long chat is trimmed.
-                </p>
-
-                <label class="block text-xs text-v2-text-text-muted">
-                  Live work heartbeat
-                  <span class="mt-1 flex items-center gap-2">
-                    <input
-                      aria-label="Live work heartbeat in minutes"
-                      class="w-24 rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-2 text-sm text-v2-text-text-base"
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={runtimeHeartbeatMinutesValue()}
-                      onInput={(event) => setRuntimeHeartbeatMinutes(event.currentTarget.value)}
-                    />
-                    <span>minutes</span>
-                  </span>
-                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
-                    While this officer owns live workers or background shells, remind it what is still running. Changes
-                    are reported immediately. Default 60 minutes.
-                  </span>
-                </label>
-
-                <div class="my-2 border-t border-v2-border-border-muted" />
-                <label class="flex items-start gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    class="mt-0.5"
-                    checked={contextBudgetValue()}
-                    onChange={(event) => setContextBudget(event.currentTarget.checked)}
-                  />
-                  <span>
-                    <span class="block">Context guard</span>
-                    <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
-                      Keep conversation, recalled memory, knowledge retrieval, and tool output from crowding one another
-                      out.
-                    </span>
-                  </span>
-                </label>
-                <label class="flex items-start gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    class="mt-0.5"
-                    checked={surgicalEditsValue()}
-                    onChange={(event) => setSurgicalEdits(event.currentTarget.checked)}
-                  />
-                  <span>
-                    <span class="block">Edits instead of overwriting</span>
-                    <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
-                      Reject overwriting files and nudge the agent toward small, targeted edits.
-                    </span>
-                  </span>
-                </label>
-                <label class="flex items-start gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    class="mt-0.5"
-                    checked={qualityValue()}
-                    onChange={(event) => setQuality(event.currentTarget.checked)}
-                  />
-                  <span>
-                    <span class="block">Quality gates</span>
-                    <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
-                      Compile and test after code edits, then steer the agent to fix failures before finishing.
-                    </span>
-                  </span>
-                </label>
-
-                {/* Officers are granted Computer Use by the floor, so the switch is an OPT-OUT and this
-                  row only exists where that grant actually reaches. A subagent has no grant to opt out
-                  of, and showing it a switch reading "on" would be a control that lies. */}
-                <Show when={agent() !== undefined && isColleague(agent()!)}>
-                  <label class="flex items-start gap-2 text-xs">
-                    <input
-                      type="checkbox"
-                      class="mt-0.5"
-                      checked={computerUseValue()}
-                      onChange={(event) => setComputerUse(event.currentTarget.checked)}
-                    />
-                    <span>{language.t("agentConfig.computerUse")}</span>
-                  </label>
-                  <p class="text-[11px] text-v2-text-text-faint">
-                    {language.t(computerUseValue() ? "agentConfig.computerUse.on" : "agentConfig.computerUse.off")}
-                  </p>
-                </Show>
-
-                {/* 🔴 Adopt another officer's TUNING (per-agent tuning): model, harness detail, tool
-                    horizon, recipes, worker policy — everything EXCEPT identity and work. The target
-                    keeps its name, job instructions, goal, folder, face and cabinet. Private lists
-                    replace only behind a confirm. Blocked while scalar drafts are dirty: a live copy
-                    underneath unsaved edits would silently lose to them on Save. */}
-                <div class="mt-2 border-t border-v2-border-border-muted pt-3">
-                  <span class="block text-xs font-medium">Copy tuning from another officer</span>
-                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
-                    Model, Strict, mood, judge, tools and worker policy — never the name, job, goal, folder or memory.
-                    Writes immediately.
-                  </span>
-                  <div class="mt-2 flex items-center gap-2">
-                    <SelectV2
-                      aria-label="Prototype officer"
-                      class="min-w-0 flex-1"
-                      options={[
-                        { key: "none", value: "", label: "Choose an officer…" },
-                        ...copyCandidates().map((candidate) => ({
-                          key: candidate.id,
-                          value: candidate.id,
-                          label: `${candidate.name?.trim() || displayName(candidate.id)} · ${candidate.title ?? language.t("agentConfig.noTitle")}`,
-                        })),
-                      ]}
-                      current={
-                        [
-                          { key: "none", value: "", label: "Choose an officer…" },
-                          ...copyCandidates().map((candidate) => ({
-                            key: candidate.id,
-                            value: candidate.id,
-                            label: `${candidate.name?.trim() || displayName(candidate.id)} · ${candidate.title ?? language.t("agentConfig.noTitle")}`,
-                          })),
-                        ].find((option) => (option.value || undefined) === copySource()) ?? {
-                          key: "none",
-                          value: "",
-                          label: "Choose an officer…",
-                        }
-                      }
-                      value={(option) => option.key}
-                      label={(option) => option.label}
-                      onSelect={(option) => setCopySource(option && option.value !== "" ? option.value : undefined)}
-                    />
-                    <button
-                      type="button"
-                      data-action="agent-copy-tuning"
-                      class="shrink-0 rounded-md bg-v2-background-bg-layer-03 px-2.5 py-1.5 text-xs font-medium disabled:opacity-40"
-                      disabled={copySource() === undefined || dirty() || busy() !== undefined}
-                      onClick={() => void copyTuning()}
-                    >
-                      {busy() === "copy" ? "Copying…" : "Copy"}
-                    </button>
-                  </div>
-                  <Show when={dirty() && copySource() !== undefined}>
-                    <p class="mt-1 text-[11px] text-v2-state-fg-warning">
-                      Save or cancel your edits first — a copy written now would lose to them.
-                    </p>
-                  </Show>
-                </div>
-              </div>
-            </section>
-
-            {/* 🔴 The officer's Strict harness detail lives HERE, not in Work (owner direction: these
-                settings fine-tune individual agents). The Work tab keeps posture, permission mode and
-                the work rules; this tab owns how strictly the harness drives: decomposition,
-                verification, recovery, budgets. Absent = the shipped defaults (off; levers on;
-                1 attempt; 45 minutes; standard budgets) — the line below always says what runs. */}
-            <section class="agent-settings-card" data-section="strict" data-settings-tab="strict">
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Strict harness</h3>
-              <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
-                In force: {strictValue() ? "on" : "off"}
-                {strictValue()
-                  ? ` · race ${strictAttemptsValue() || "1"} · ${strictWallMinutesValue() || "45"} min`
-                  : ""}
-                . Unset follows the shipped defaults.
-              </p>
-              <label class="mt-3 flex items-start gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  class="mt-0.5"
-                  checked={strictValue()}
-                  onChange={(event) => setStrict(event.currentTarget.checked)}
-                />
-                <span>
-                  <span class="block">{language.t("agentConfig.strict")}</span>
-                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
-                    The harness owns decomposition and verifies each step — for small models that lose the horizon, not
-                    the knowledge.
-                  </span>
-                </span>
-              </label>
-              <div class="mt-3 flex flex-col gap-2 border-t border-v2-border-border-muted pt-3">
-                <label class="flex items-start gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    class="mt-0.5"
-                    checked={strictVerificationValue()}
-                    onChange={(event) => setStrictVerification(event.currentTarget.checked)}
-                  />
-                  <span>Verification gates</span>
-                </label>
-                <label class="flex items-start gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    class="mt-0.5"
-                    checked={strictRecoveryValue()}
-                    onChange={(event) => setStrictRecovery(event.currentTarget.checked)}
-                  />
-                  <span>Recovery and keep-best</span>
-                </label>
-                <label class="flex items-start gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    class="mt-0.5"
-                    checked={strictEditingAidsValue()}
-                    onChange={(event) => setStrictEditingAids(event.currentTarget.checked)}
-                  />
-                  <span>Editing aids</span>
-                </label>
-                <label class="flex items-start gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    class="mt-0.5"
-                    checked={strictBudgetSteeringValue()}
-                    onChange={(event) => setStrictBudgetSteering(event.currentTarget.checked)}
-                  />
-                  <span>Time-budget steering</span>
-                </label>
-                <p class="text-[11px] text-v2-text-text-faint">Each lever defaults on until switched off.</p>
-              </div>
-              <div class="mt-3 grid gap-3 border-t border-v2-border-border-muted pt-3 sm:grid-cols-2">
-                <label class="block text-xs text-v2-text-text-muted">
-                  Parallel attempts (race)
-                  <input
-                    aria-label="Parallel attempts"
-                    class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
-                    type="number"
-                    min="1"
-                    max="8"
-                    step="1"
-                    value={strictAttemptsValue()}
-                    placeholder="1"
-                    onInput={(event) => setStrictAttempts(event.currentTarget.value)}
-                  />
-                  <span class="mt-1 block text-[11px] text-v2-text-text-faint">1–8. Empty = 1 (off).</span>
-                </label>
-                <label class="block text-xs text-v2-text-text-muted">
-                  Time budget (minutes)
-                  <input
-                    aria-label="Strict time budget in minutes"
-                    class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
-                    type="number"
-                    min="1"
-                    max="480"
-                    step="1"
-                    value={strictWallMinutesValue()}
-                    placeholder="45"
-                    onInput={(event) => setStrictWallMinutes(event.currentTarget.value)}
-                  />
-                  <span class="mt-1 block text-[11px] text-v2-text-text-faint">Empty = 45.</span>
-                </label>
-                <label class="block text-xs text-v2-text-text-muted">
-                  Execution budget (tokens)
-                  <input
-                    aria-label="Strict execution budget in tokens"
-                    class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
-                    type="number"
-                    min="0"
-                    step="1024"
-                    value={strictExecutionTokensValue()}
-                    placeholder="24576"
-                    onInput={(event) => setStrictExecutionTokens(event.currentTarget.value)}
-                  />
-                  <span class="mt-1 block text-[11px] text-v2-text-text-faint">Empty = 24576.</span>
-                </label>
-                <label class="block text-xs text-v2-text-text-muted">
-                  Reasoning budget (tokens)
-                  <input
-                    aria-label="Strict reasoning budget in tokens"
-                    class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
-                    type="number"
-                    min="0"
-                    step="1024"
-                    value={strictReasoningTokensValue()}
-                    placeholder="0"
-                    onInput={(event) => setStrictReasoningTokens(event.currentTarget.value)}
-                  />
-                  <span class="mt-1 block text-[11px] text-v2-text-text-faint">Empty or 0 = off.</span>
-                </label>
-              </div>
-              <div class="mt-3 border-t border-v2-border-border-muted pt-3">
-                <button
-                  type="button"
-                  data-action="agent-reset-strict"
-                  class="rounded-md px-2 py-1.5 text-xs text-v2-text-text-faint hover:bg-v2-background-bg-layer-03"
-                  onClick={() => void resetStrict()}
-                >
-                  {language.t("agentConfig.resetTab.action")}
-                </button>
-              </div>
-            </section>
-
-            <section class="agent-settings-card" data-section="affective" data-settings-tab="affective">
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Affective</h3>
-              <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
-                In force: {affectiveValue() ? "on" : "off"}. Unset follows the shipped defaults.
-              </p>
-              <label class="mt-3 flex items-start gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  class="mt-0.5"
-                  checked={affectiveValue()}
-                  onChange={(event) => setAffective(event.currentTarget.checked)}
-                />
-                <span>
-                  <span class="block">Mood sampling</span>
-                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
-                    Adapts the model’s sampling to its appraised mood — steadier when frustrated, freer when exploring.
-                  </span>
-                </span>
-              </label>
-              <div class="mt-3 flex items-center justify-between gap-2 border-t border-v2-border-border-muted pt-3 text-xs">
-                <span>Calm-baseline temperature</span>
-                <PresetFieldV2
-                  field="temperature"
-                  value={affTemperatureValue}
-                  onValue={(next) => setAffTemperature(next)}
-                  ariaLabel="Calm-baseline temperature"
-                />
-              </div>
-              <p class="mt-1 text-[11px] text-v2-text-text-faint">
-                {affTemperatureValue().trim() === "" ? "Empty = 0.7." : `Set to ${affTemperatureValue()}.`}
-              </p>
-              <label class="mt-3 flex items-start gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  class="mt-0.5"
-                  checked={affExtendedValue()}
-                  onChange={(event) => setAffExtended(event.currentTarget.checked)}
-                />
-                <span>
-                  <span class="block">Extended parameters</span>
-                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
-                    Also modulate extended sampling parameters, for engines that accept them.
-                  </span>
-                </span>
-              </label>
-              <div class="mt-3 border-t border-v2-border-border-muted pt-3">
-                <button
-                  type="button"
-                  data-action="agent-reset-affective"
-                  class="rounded-md px-2 py-1.5 text-xs text-v2-text-text-faint hover:bg-v2-background-bg-layer-03"
-                  onClick={() => void resetAffective()}
-                >
-                  {language.t("agentConfig.resetTab.action")}
-                </button>
-              </div>
-            </section>
-
-            <section class="agent-settings-card" data-section="introspection" data-settings-tab="introspection">
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Introspection</h3>
-              <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
-                In force: {introspectionValue() ? "on" : "off"}. Unset follows the shipped defaults.
-              </p>
-              <label class="mt-3 flex items-start gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  class="mt-0.5"
-                  checked={introspectionValue()}
-                  onChange={(event) => setIntrospection(event.currentTarget.checked)}
-                />
-                <span>
-                  <span class="block">Stuck detector</span>
-                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
-                    A judge model periodically checks whether the agent is stuck and nudges it to change approach.
-                  </span>
-                </span>
-              </label>
-              <label class="mt-3 block text-xs text-v2-text-text-muted">
-                Judge every N continuation steps
-                <input
-                  aria-label="Introspection cadence"
-                  class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={intrCadenceValue()}
-                  placeholder="3"
-                  onInput={(event) => setIntrCadence(event.currentTarget.value)}
-                />
-                <span class="mt-1 block text-[11px] text-v2-text-text-faint">Empty = 3.</span>
-              </label>
-              <label class="mt-3 block text-xs text-v2-text-text-muted">Judge model</label>
-              <SelectV2
-                aria-label="Judge model"
-                class="mt-1 w-full"
-                options={intrModelOptions()}
-                current={
-                  intrModelOptions().find((option) => option.value === intrModelValue()) ?? intrModelOptions()[0]
-                }
-                value={(option) => option.key}
-                label={(option) => option.label}
-                onSelect={(option) => option && setIntrModel(option.value)}
-              />
-              <p class="mt-1 text-[11px] text-v2-text-text-faint">Empty choice runs the judge on the active model.</p>
-              <label class="mt-3 flex items-start gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  class="mt-0.5"
-                  checked={intrGenerateValue()}
-                  onChange={(event) => setIntrGenerate(event.currentTarget.checked)}
-                />
-                <span>
-                  <span class="block">Judge writes the interjection</span>
-                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
-                    Otherwise the fixed text below is steered in.
-                  </span>
-                </span>
-              </label>
-              <label class="mt-3 block text-xs text-v2-text-text-muted">
-                The question the judge is asked
-                <textarea
-                  aria-label="Introspection prompt"
-                  class="mt-1 min-h-20 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
-                  value={intrPromptValue()}
-                  onInput={(event) => setIntrPrompt(event.currentTarget.value)}
-                  placeholder="Judge ONLY whether the agent is stuck…"
-                />
-              </label>
-              <label class="mt-3 block text-xs text-v2-text-text-muted">
-                Interjection on “stuck”
-                <textarea
-                  aria-label="Introspection interjection"
-                  class="mt-1 min-h-16 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
-                  value={intrInterjectionValue()}
-                  onInput={(event) => setIntrInterjection(event.currentTarget.value)}
-                  placeholder="Stop repeating the same approach…"
-                />
-              </label>
-              <div class="mt-3 border-t border-v2-border-border-muted pt-3">
-                <button
-                  type="button"
-                  data-action="agent-reset-introspection"
-                  class="rounded-md px-2 py-1.5 text-xs text-v2-text-text-faint hover:bg-v2-background-bg-layer-03"
-                  onClick={() => void resetIntrospection()}
-                >
-                  {language.t("agentConfig.resetTab.action")}
-                </button>
-              </div>
-            </section>
-
-            {/* 🔴 The officer's tool horizon and private recipes live HERE (per-agent tuning):
-                which tools this colleague may use, and the recipes only it is told about. The
-                horizon narrows only — `false` denies a tool for this officer, `true` restores one
-                the routing table withdrew (never one permissions withdrew); absent means the
-                routing table decides alone. Saves immediately, like Nudges. */}
-            <section class="agent-settings-card" data-section="tools" data-settings-tab="tools">
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Tools</h3>
-              <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
-                In force:{" "}
-                {Object.keys(officerTools()).length === 0
-                  ? "no overrides"
-                  : `${Object.keys(officerTools()).length} tool rule(s)`}
-                . Unset follows the instance.
-              </p>
-              <h4 class="mt-4 text-xs font-medium">Tool horizon</h4>
-              <div class="mt-2 flex flex-col gap-1.5">
-                <For each={Object.entries(officerTools())}>
-                  {([tool, enabled]) => (
-                    <div class="flex items-center justify-between gap-2 text-xs">
-                      <span class="min-w-0 truncate font-mono">{tool}</span>
-                      <span class="flex shrink-0 items-center gap-1">
-                        <button
-                          type="button"
-                          data-action={enabled ? "agent-tool-restore" : "agent-tool-deny"}
-                          class={`rounded-md px-2 py-1 text-[11px] ${enabled ? "bg-v2-background-bg-layer-03" : "text-v2-text-text-faint hover:bg-v2-background-bg-layer-02"}`}
-                          aria-label={enabled ? `Deny ${tool} for this officer` : `Restore ${tool} for this officer`}
-                          onClick={() => setHorizonTool(tool, !enabled)}
-                        >
-                          {enabled ? "Restored" : "Denied"}
-                        </button>
-                        <button
-                          type="button"
-                          data-action="agent-tool-forget"
-                          class="rounded-md px-2 py-1 text-[11px] text-v2-text-text-faint hover:bg-v2-background-bg-layer-02"
-                          aria-label={`Return ${tool} to the routing table's decision`}
-                          onClick={() => setHorizonTool(tool, undefined)}
-                        >
-                          Forget
-                        </button>
-                      </span>
-                    </div>
-                  )}
-                </For>
-                <Show when={Object.keys(officerTools()).length === 0}>
-                  <p class="text-[11px] text-v2-text-text-faint">No overrides — the routing table decides alone.</p>
-                </Show>
-              </div>
-              <Show when={horizonSuggestions().length > 0}>
-                <div class="mt-2 flex flex-wrap gap-1">
-                  <For each={horizonSuggestions()}>
-                    {(tool) => (
-                      <button
-                        type="button"
-                        class="rounded-md bg-v2-background-bg-layer-03 px-2 py-1 text-[11px] hover:bg-v2-background-bg-layer-02"
-                        aria-label={`Deny ${tool} for this officer`}
-                        onClick={() => setHorizonTool(tool, false)}
-                      >
-                        − {tool}
-                      </button>
-                    )}
-                  </For>
-                </div>
-              </Show>
-              <div class="mt-2 flex items-center gap-2">
-                <TextInputV2
-                  class="min-w-0 flex-1"
-                  value={horizonAdd()}
-                  placeholder="Another tool name…"
-                  spellcheck={false}
-                  autocorrect="off"
-                  autocomplete="off"
-                  autocapitalize="off"
-                  onInput={(event) => setHorizonAdd(event.currentTarget.value)}
-                  aria-label="Deny another tool by name"
-                />
-                <button
-                  type="button"
-                  data-action="agent-tool-add"
-                  class="shrink-0 rounded-md bg-v2-background-bg-layer-03 px-2.5 py-1.5 text-xs disabled:opacity-40"
-                  disabled={horizonAdd().trim() === ""}
-                  onClick={() => {
-                    const name = horizonAdd().trim()
-                    if (name) setHorizonTool(name, false)
-                    setHorizonAdd("")
-                  }}
-                >
-                  Deny
-                </button>
-              </div>
-              <p class="mt-1 text-[11px] text-v2-text-text-faint">
-                Denying is the common case; restoring un-denies a tool the routing table withdrew. Typed names are the
-                fallback — prefer a suggestion above when one fits.
-              </p>
-              <OfficerRecipes agentID={props.agentID} recipes={officerRecipes} />
-            </section>
-
-            <Show when={props.agentID}>
-              {(id) => (
-                <section class="agent-settings-card" data-settings-tab="nudges" data-section="nudges">
-                  <SettingsNudgesV2 fixedAgentID={id()} />
-                </section>
-              )}
-            </Show>
-
-            <Show when={activeTab() === "schedule" && postureValue() === "agent" ? props.agentID : undefined}>
-              {(id) => (
-                <section class="agent-settings-card" data-settings-tab="schedule" data-section="schedule">
-                  <SettingsScheduleV2 agentID={id()} />
-                </section>
-              )}
-            </Show>
 
             <Show when={postureValue() === "agent"}>
               <section class="agent-settings-card" data-settings-tab="work">
@@ -2640,6 +1927,627 @@ export function AgentConfigScreen(props: {
               </section>
             </Show>
 
+            <section class="agent-settings-card" data-section="work" data-settings-tab="work">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
+                {language.t("agentConfig.work")}
+              </h3>
+              <div class="mt-2 flex flex-col gap-2">
+                <div class="flex items-center justify-between gap-2 text-xs">
+                  <span>{language.t("agentConfig.posture")}</span>
+                  <SelectV2
+                    appearance="inline"
+                    aria-label={language.t("agentConfig.posture")}
+                    options={POSTURE_CHOICES}
+                    current={postureValue()}
+                    label={(value) =>
+                      language.t(
+                        value === "chat"
+                          ? "prompt.posture.chat.title"
+                          : value === "human"
+                            ? "prompt.posture.human.title"
+                            : "prompt.posture.agent.title",
+                      )
+                    }
+                    onSelect={(value) => {
+                      if (!value) return
+                      setPosture(value)
+                      if (value !== "agent") setDirectory("")
+                    }}
+                  />
+                </div>
+                <Show when={postureValue() !== "agent"}>
+                  <p class="text-[11px] text-v2-text-text-faint">
+                    {language.t(`prompt.posture.${postureValue()}.description`)}
+                  </p>
+                </Show>
+
+
+
+                <div class="mt-3 rounded-xl border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3">
+                  <div class="flex items-start justify-between gap-3">
+                    <span class="block text-sm font-medium">{language.t("agentConfig.unattended")}</span>
+                    <SwitchToggle
+                      aria-label={language.t("agentConfig.unattended")}
+                      checked={operationModeValue() === "unattended"}
+                      onChange={(checked) => setOperationMode(checked ? "unattended" : "interactive")}
+                    />
+                  </div>
+                  <Show when={operationModeValue() === "unattended"}>
+                    <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
+                      {language.t("agentConfig.unattended.on")}
+                    </p>
+                  </Show>
+                </div>
+                <Show when={operationModeValue() === "unattended"}>
+                  <label class="mt-4 block text-xs text-v2-text-text-muted">
+                    Goal
+                    <textarea
+                      aria-label="Goal"
+                      class="mt-1 min-h-24 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-2 text-sm"
+                      value={goalValue()}
+                      onInput={(event) => setGoal(event.currentTarget.value)}
+                      placeholder="What should this officer keep working toward?"
+                    />
+                  </label>
+
+                  <label class="block text-xs text-v2-text-text-muted">
+                    Live work heartbeat
+                    <span class="mt-1 flex items-center gap-2">
+                      <input
+                        aria-label="Live work heartbeat in minutes"
+                        class="w-24 rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-2 text-sm text-v2-text-text-base"
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={runtimeHeartbeatMinutesValue()}
+                        onInput={(event) => setRuntimeHeartbeatMinutes(event.currentTarget.value)}
+                      />
+                      <span>minutes</span>
+                    </span>
+                  </label>
+                </Show>
+
+                <details class="mt-2 border-t border-v2-border-border-muted pt-3">
+                  <summary class="cursor-pointer text-xs font-medium">Copy tuning</summary>
+                  <div class="mt-2 flex items-center gap-2">
+                    <SelectV2
+                      aria-label="Prototype officer"
+                      class="min-w-0 flex-1"
+                      options={[
+                        { key: "none", value: "", label: "Choose an officer…" },
+                        ...copyCandidates().map((candidate) => ({
+                          key: candidate.id,
+                          value: candidate.id,
+                          label: `${candidate.name?.trim() || displayName(candidate.id)} · ${candidate.title ?? language.t("agentConfig.noTitle")}`,
+                        })),
+                      ]}
+                      current={
+                        [
+                          { key: "none", value: "", label: "Choose an officer…" },
+                          ...copyCandidates().map((candidate) => ({
+                            key: candidate.id,
+                            value: candidate.id,
+                            label: `${candidate.name?.trim() || displayName(candidate.id)} · ${candidate.title ?? language.t("agentConfig.noTitle")}`,
+                          })),
+                        ].find((option) => (option.value || undefined) === copySource()) ?? {
+                          key: "none",
+                          value: "",
+                          label: "Choose an officer…",
+                        }
+                      }
+                      value={(option) => option.key}
+                      label={(option) => option.label}
+                      onSelect={(option) => setCopySource(option && option.value !== "" ? option.value : undefined)}
+                    />
+                    <button
+                      type="button"
+                      data-action="agent-copy-tuning"
+                      class="shrink-0 rounded-md bg-v2-background-bg-layer-03 px-2.5 py-1.5 text-xs font-medium disabled:opacity-40"
+                      disabled={copySource() === undefined || dirty() || busy() !== undefined}
+                      onClick={() => void copyTuning()}
+                    >
+                      {busy() === "copy" ? "Copying…" : "Copy"}
+                    </button>
+                  </div>
+                  <Show when={dirty() && copySource() !== undefined}>
+                    <p class="mt-1 text-[11px] text-v2-state-fg-warning">
+                      Save or cancel your edits first — a copy written now would lose to them.
+                    </p>
+                  </Show>
+                </details>
+                <button
+                  type="button"
+                  class="self-start rounded-md px-1 py-1 text-xs text-v2-text-text-faint hover:text-v2-text-text-base disabled:opacity-40"
+                  disabled={officerSessionID() === undefined || sdk() === undefined}
+                  onClick={() => void exportOfficerPrompt()}
+                >
+                  {language.t("context.export.prompt")}
+                </button>
+              </div>
+            </section>
+
+            <section class="agent-settings-card" data-section="context" data-settings-tab="context">
+              <Show when={activeTab() === "context" ? props.agentID : undefined} keyed>
+                {(id) => <OfficerContext agentID={id} config={() => agent()?.config as Record<string, unknown> | undefined} onChanged={props.onChanged} />}
+              </Show>
+            </section>
+
+            <section class="agent-settings-card" data-section="quality" data-settings-tab="quality">
+              <Show when={activeTab() === "quality" ? props.agentID : undefined} keyed>
+                {(id) => <OfficerQuality agentID={id} config={() => agent()?.config as Record<string, unknown> | undefined} directory={directoryValue} onChanged={props.onChanged} />}
+              </Show>
+            </section>
+
+            <section class="agent-settings-card" data-section="strict" data-settings-tab="quality">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Strict harness</h3>
+              <label class="mt-3 flex items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  class="mt-0.5"
+                  checked={strictValue()}
+                  onChange={(event) => setStrict(event.currentTarget.checked)}
+                />
+                <span>
+                  <span class="block">{language.t("agentConfig.strict")}</span>
+                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                    The harness owns decomposition and verifies each step — for small models that lose the horizon, not
+                    the knowledge.
+                  </span>
+                </span>
+              </label>
+              <div class="mt-3 flex flex-col gap-2 border-t border-v2-border-border-muted pt-3">
+                <label class="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={strictVerificationValue()}
+                    onChange={(event) => setStrictVerification(event.currentTarget.checked)}
+                  />
+                  <span>Verification gates</span>
+                </label>
+                <label class="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={strictRecoveryValue()}
+                    onChange={(event) => setStrictRecovery(event.currentTarget.checked)}
+                  />
+                  <span>Recovery and keep-best</span>
+                </label>
+                <label class="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={strictEditingAidsValue()}
+                    onChange={(event) => setStrictEditingAids(event.currentTarget.checked)}
+                  />
+                  <span>Editing aids</span>
+                </label>
+                <label class="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={strictBudgetSteeringValue()}
+                    onChange={(event) => setStrictBudgetSteering(event.currentTarget.checked)}
+                  />
+                  <span>Time-budget steering</span>
+                </label>
+              </div>
+              <div class="mt-3 grid gap-3 border-t border-v2-border-border-muted pt-3 sm:grid-cols-2">
+                <label class="block text-xs text-v2-text-text-muted">
+                  Parallel attempts (race)
+                  <input
+                    aria-label="Parallel attempts"
+                    class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                    type="number"
+                    min="1"
+                    max="8"
+                    step="1"
+                    value={strictAttemptsValue()}
+                    placeholder="1"
+                    onInput={(event) => setStrictAttempts(event.currentTarget.value)}
+                  />
+                </label>
+                <label class="block text-xs text-v2-text-text-muted">
+                  Time budget (minutes)
+                  <input
+                    aria-label="Strict time budget in minutes"
+                    class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                    type="number"
+                    min="1"
+                    max="480"
+                    step="1"
+                    value={strictWallMinutesValue()}
+                    placeholder="45"
+                    onInput={(event) => setStrictWallMinutes(event.currentTarget.value)}
+                  />
+                </label>
+                <label class="block text-xs text-v2-text-text-muted">
+                  Execution budget (tokens)
+                  <input
+                    aria-label="Strict execution budget in tokens"
+                    class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                    type="number"
+                    min="0"
+                    step="1024"
+                    value={strictExecutionTokensValue()}
+                    placeholder="24576"
+                    onInput={(event) => setStrictExecutionTokens(event.currentTarget.value)}
+                  />
+                </label>
+                <label class="block text-xs text-v2-text-text-muted">
+                  Reasoning budget (tokens)
+                  <input
+                    aria-label="Strict reasoning budget in tokens"
+                    class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                    type="number"
+                    min="0"
+                    step="1024"
+                    value={strictReasoningTokensValue()}
+                    placeholder="0"
+                    onInput={(event) => setStrictReasoningTokens(event.currentTarget.value)}
+                  />
+                </label>
+              </div>
+              <div class="mt-3 border-t border-v2-border-border-muted pt-3">
+                <button
+                  type="button"
+                  data-action="agent-reset-strict"
+                  class="rounded-md px-2 py-1.5 text-xs text-v2-text-text-faint hover:bg-v2-background-bg-layer-03"
+                  onClick={() => void resetStrict()}
+                >
+                  {language.t("agentConfig.resetTab.action")}
+                </button>
+              </div>
+            </section>
+
+            <section class="agent-settings-card" data-section="affective" data-settings-tab="mind">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Affective</h3>
+              <label class="mt-3 flex items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  class="mt-0.5"
+                  checked={affectiveValue()}
+                  onChange={(event) => setAffective(event.currentTarget.checked)}
+                />
+                <span>
+                  <span class="block">Mood sampling</span>
+                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                    Adapts the model’s sampling to its appraised mood — steadier when frustrated, freer when exploring.
+                  </span>
+                </span>
+              </label>
+              <div class="mt-3 flex items-center justify-between gap-2 border-t border-v2-border-border-muted pt-3 text-xs">
+                <span>Calm-baseline temperature</span>
+                <PresetFieldV2
+                  field="temperature"
+                  value={affTemperatureValue}
+                  onValue={(next) => setAffTemperature(next)}
+                  ariaLabel="Calm-baseline temperature"
+                />
+              </div>
+              <label class="mt-3 flex items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  class="mt-0.5"
+                  checked={affExtendedValue()}
+                  onChange={(event) => setAffExtended(event.currentTarget.checked)}
+                />
+                <span>
+                  <span class="block">Extended parameters</span>
+                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                    Also modulate extended sampling parameters, for engines that accept them.
+                  </span>
+                </span>
+              </label>
+              <div class="mt-3 border-t border-v2-border-border-muted pt-3">
+                <button
+                  type="button"
+                  data-action="agent-reset-affective"
+                  class="rounded-md px-2 py-1.5 text-xs text-v2-text-text-faint hover:bg-v2-background-bg-layer-03"
+                  onClick={() => void resetAffective()}
+                >
+                  {language.t("agentConfig.resetTab.action")}
+                </button>
+              </div>
+            </section>
+
+            <section class="agent-settings-card" data-section="introspection" data-settings-tab="mind">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Introspection</h3>
+              <label class="mt-3 flex items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  class="mt-0.5"
+                  checked={introspectionValue()}
+                  onChange={(event) => setIntrospection(event.currentTarget.checked)}
+                />
+                <span>
+                  <span class="block">Stuck detector</span>
+                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                    A judge model periodically checks whether the agent is stuck and nudges it to change approach.
+                  </span>
+                </span>
+              </label>
+              <label class="mt-3 block text-xs text-v2-text-text-muted">
+                Judge every N continuation steps
+                <input
+                  aria-label="Introspection cadence"
+                  class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={intrCadenceValue()}
+                  placeholder="3"
+                  onInput={(event) => setIntrCadence(event.currentTarget.value)}
+                />
+              </label>
+              <label class="mt-3 block text-xs text-v2-text-text-muted">Judge model</label>
+              <SelectV2
+                aria-label="Judge model"
+                class="mt-1 w-full"
+                options={intrModelOptions()}
+                current={
+                  intrModelOptions().find((option) => option.value === intrModelValue()) ?? intrModelOptions()[0]
+                }
+                value={(option) => option.key}
+                label={(option) => option.label}
+                onSelect={(option) => option && setIntrModel(option.value)}
+              />
+              <label class="mt-3 flex items-start gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  class="mt-0.5"
+                  checked={intrGenerateValue()}
+                  onChange={(event) => setIntrGenerate(event.currentTarget.checked)}
+                />
+                <span>
+                  <span class="block">Judge writes the interjection</span>
+                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                    Otherwise the fixed text below is steered in.
+                  </span>
+                </span>
+              </label>
+              <label class="mt-3 block text-xs text-v2-text-text-muted">
+                The question the judge is asked
+                <textarea
+                  aria-label="Introspection prompt"
+                  class="mt-1 min-h-20 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                  value={intrPromptValue()}
+                  onInput={(event) => setIntrPrompt(event.currentTarget.value)}
+                  placeholder="Judge ONLY whether the agent is stuck…"
+                />
+              </label>
+              <label class="mt-3 block text-xs text-v2-text-text-muted">
+                Interjection on “stuck”
+                <textarea
+                  aria-label="Introspection interjection"
+                  class="mt-1 min-h-16 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                  value={intrInterjectionValue()}
+                  onInput={(event) => setIntrInterjection(event.currentTarget.value)}
+                  placeholder="Stop repeating the same approach…"
+                />
+              </label>
+              <div class="mt-3 border-t border-v2-border-border-muted pt-3">
+                <button
+                  type="button"
+                  data-action="agent-reset-introspection"
+                  class="rounded-md px-2 py-1.5 text-xs text-v2-text-text-faint hover:bg-v2-background-bg-layer-03"
+                  onClick={() => void resetIntrospection()}
+                >
+                  {language.t("agentConfig.resetTab.action")}
+                </button>
+              </div>
+            </section>
+
+            <section class="agent-settings-card" data-settings-tab="capabilities" data-section="workers">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Capabilities</h3>
+                <div class="flex items-center justify-between gap-2 text-xs">
+                  <span>{language.t("prompt.permissionMode.title")}</span>
+                  <SelectV2
+                    appearance="inline"
+                    aria-label={language.t("prompt.permissionMode.title")}
+                    options={PERMISSION_MODE_CHOICES}
+                    current={
+                      PERMISSION_MODE_CHOICES.find((mode) => mode === permissionModeValue()) ??
+                      PERMISSION_MODE_CHOICES[2]
+                    }
+                    label={(mode) => language.t(`prompt.permissionMode.${mode}`)}
+                    onSelect={(mode) => mode && setPermissionMode(mode)}
+                  />
+                </div>
+              <div class="mt-5 grid gap-4 sm:grid-cols-2">
+                <label class="block text-xs text-v2-text-text-muted">
+                  Maximum active workers
+                  <input
+                    aria-label="Maximum active workers"
+                    class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-2 text-sm"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={maxWorkersValue()}
+                    onInput={(event) => setMaxWorkers(event.currentTarget.value)}
+                  />
+                </label>
+                <label class="block text-xs text-v2-text-text-muted">
+                  Spawn depth
+                  <input
+                    aria-label="Spawn depth"
+                    class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-2 text-sm"
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={spawnDepthValue()}
+                    onInput={(event) => setSpawnDepth(event.currentTarget.value)}
+                  />
+                  <span class="mt-1 block text-[11px] text-v2-text-text-faint">0 disables spawning.</span>
+                </label>
+              </div>
+                <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-tool-timeout">
+                  {language.t("agentConfig.maxToolTimeout")}
+                </label>
+                <input
+                  id="agent-tool-timeout"
+                  aria-label={language.t("agentConfig.maxToolTimeout")}
+                  class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={maxToolTimeoutMinutesValue()}
+                  placeholder={language.t("agentConfig.maxToolTimeoutDefault")}
+                  onInput={(event) => setMaxToolTimeoutMinutes(event.currentTarget.value)}
+                />
+                <p class="mt-1 text-[11px] text-v2-text-text-faint">Workers inherit this limit.</p>
+                <label class="flex items-start gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    class="mt-0.5"
+                    checked={surgicalEditsValue()}
+                    onChange={(event) => setSurgicalEdits(event.currentTarget.checked)}
+                  />
+                  <span>
+                    <span class="block">Edits instead of overwriting</span>
+                    <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                      Reject overwriting files and nudge the agent toward small, targeted edits.
+                    </span>
+                  </span>
+                </label>
+                {/* Officers are granted Computer Use by the floor, so the switch is an OPT-OUT and this
+                  row only exists where that grant actually reaches. A subagent has no grant to opt out
+                  of, and showing it a switch reading "on" would be a control that lies. */}
+                <Show when={agent() !== undefined && isColleague(agent()!)}>
+                  <label class="flex items-start gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      class="mt-0.5"
+                      checked={computerUseValue()}
+                      onChange={(event) => setComputerUse(event.currentTarget.checked)}
+                    />
+                    <span>{language.t("agentConfig.computerUse")}</span>
+                  </label>
+                </Show>
+
+              <label class="mt-3 block text-xs text-v2-text-text-muted">Worker prototype</label>
+              <SelectV2
+                aria-label="Worker prototype"
+                class="mt-1 w-full"
+                options={workerPrototypeOptions()}
+                current={
+                  workerPrototypeOptions().find((option) => option.value === workerPrototypeValue()) ??
+                  workerPrototypeOptions()[0]
+                }
+                value={(option) => option.key}
+                label={(option) => option.label}
+                onSelect={(option) => option && setWorkerPrototype(option.value)}
+              />
+              <label class="mt-3 block text-xs text-v2-text-text-muted">Worker model</label>
+              <SelectV2
+                aria-label="Worker model"
+                class="mt-1 w-full"
+                options={workerModelOptions()}
+                current={
+                  workerModelOptions().find((option) => option.value === workerModelValue()) ?? workerModelOptions()[0]
+                }
+                value={(option) => option.key}
+                label={(option) => option.label}
+                onSelect={(option) => option && setWorkerModel(option.value)}
+              />
+            </section>
+
+            <section class="agent-settings-card" data-section="tools" data-settings-tab="capabilities">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Tools</h3>
+              <div class="mt-2 flex flex-col gap-1.5">
+                <For each={Object.entries(officerTools())}>
+                  {([tool, enabled]) => (
+                    <div class="flex items-center justify-between gap-2 text-xs">
+                      <span class="min-w-0 truncate font-mono">{tool}</span>
+                      <span class="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          data-action={enabled ? "agent-tool-restore" : "agent-tool-deny"}
+                          class={`rounded-md px-2 py-1 text-[11px] ${enabled ? "bg-v2-background-bg-layer-03" : "text-v2-text-text-faint hover:bg-v2-background-bg-layer-02"}`}
+                          aria-label={enabled ? `Deny ${tool} for this officer` : `Restore ${tool} for this officer`}
+                          onClick={() => setHorizonTool(tool, !enabled)}
+                        >
+                          {enabled ? "Allowed" : "Denied"}
+                        </button>
+                        <button
+                          type="button"
+                          data-action="agent-tool-forget"
+                          class="rounded-md px-2 py-1 text-[11px] text-v2-text-text-faint hover:bg-v2-background-bg-layer-02"
+                          aria-label={`Use default routing for ${tool}`}
+                          onClick={() => setHorizonTool(tool, undefined)}
+                        >
+                          Default
+                        </button>
+                      </span>
+                    </div>
+                  )}
+                </For>
+                <Show when={Object.keys(officerTools()).length === 0}>
+                  <p class="text-[11px] text-v2-text-text-faint">No tool overrides.</p>
+                </Show>
+              </div>
+              <Show when={horizonSuggestions().length > 0}>
+                <div class="mt-2 flex flex-wrap gap-1">
+                  <For each={horizonSuggestions()}>
+                    {(tool) => (
+                      <button
+                        type="button"
+                        class="rounded-md bg-v2-background-bg-layer-03 px-2 py-1 text-[11px] hover:bg-v2-background-bg-layer-02"
+                        aria-label={`Deny ${tool} for this officer`}
+                        onClick={() => setHorizonTool(tool, false)}
+                      >
+                        − {tool}
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </Show>
+              <div class="mt-2 flex items-center gap-2">
+                <TextInputV2
+                  class="min-w-0 flex-1"
+                  value={horizonAdd()}
+                  placeholder="Another tool name…"
+                  spellcheck={false}
+                  autocorrect="off"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  onInput={(event) => setHorizonAdd(event.currentTarget.value)}
+                  aria-label="Deny another tool by name"
+                />
+                <button
+                  type="button"
+                  data-action="agent-tool-add"
+                  class="shrink-0 rounded-md bg-v2-background-bg-layer-03 px-2.5 py-1.5 text-xs disabled:opacity-40"
+                  disabled={horizonAdd().trim() === ""}
+                  onClick={() => {
+                    const name = horizonAdd().trim()
+                    if (name) setHorizonTool(name, false)
+                    setHorizonAdd("")
+                  }}
+                >
+                  Deny
+                </button>
+              </div>
+              <OfficerRecipes agentID={props.agentID} recipes={officerRecipes} />
+            </section>
+
+            <Show when={props.agentID} keyed>
+              {(id) => (
+                <section class="agent-settings-card" data-settings-tab="nudges" data-section="nudges">
+                  <SettingsNudgesV2 fixedAgentID={id} />
+                </section>
+              )}
+            </Show>
+
+            <Show when={activeTab() === "schedule" && postureValue() === "agent" ? props.agentID : undefined} keyed>
+              {(id) => (
+                <section class="agent-settings-card" data-settings-tab="schedule" data-section="schedule">
+                  <SettingsScheduleV2 agentID={id} />
+                </section>
+              )}
+            </Show>
+
             <section class="agent-settings-card" data-settings-tab="memory">
               <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
                 {language.t("agentConfig.archive")}
@@ -2665,89 +2573,14 @@ export function AgentConfigScreen(props: {
               </div>
             </section>
 
-            <section class="agent-settings-card" data-settings-tab="workers" data-section="workers">
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Worker fleet</h3>
-              <p class="mt-2 text-xs leading-relaxed text-v2-text-text-faint">
-                These limits cover every unfinished worker below this officer, including workers spawned by workers.
-              </p>
-              <label class="mt-4 block text-xs text-v2-text-text-muted">Worker prototype</label>
-              <SelectV2
-                aria-label="Worker prototype"
-                class="mt-1 w-full"
-                options={workerPrototypeOptions()}
-                current={
-                  workerPrototypeOptions().find((option) => option.value === workerPrototypeValue()) ??
-                  workerPrototypeOptions()[0]
-                }
-                value={(option) => option.key}
-                label={(option) => option.label}
-                onSelect={(option) => option && setWorkerPrototype(option.value)}
-              />
-              <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
-                A worker copies this officer’s role and model settings, but remains an anonymous temporary session. If
-                no prototype is selected, it inherits this officer’s recipe. Either way it shares this officer’s memory
-                and authority, and reports to the session that spawned it—not to the prototype’s superior.
-              </p>
-              <label class="mt-4 block text-xs text-v2-text-text-muted">Worker model</label>
-              <SelectV2
-                aria-label="Worker model"
-                class="mt-1 w-full"
-                options={workerModelOptions()}
-                current={
-                  workerModelOptions().find((option) => option.value === workerModelValue()) ?? workerModelOptions()[0]
-                }
-                value={(option) => option.key}
-                label={(option) => option.label}
-                onSelect={(option) => option && setWorkerModel(option.value)}
-              />
-              <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
-                Used for workers when no prototype is selected. Inherit uses this officer’s ordinary model.
-              </p>
-              <div class="mt-5 grid gap-4 sm:grid-cols-2">
-                <label class="block text-xs text-v2-text-text-muted">
-                  Maximum active workers
-                  <input
-                    aria-label="Maximum active workers"
-                    class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-2 text-sm"
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={maxWorkersValue()}
-                    onInput={(event) => setMaxWorkers(event.currentTarget.value)}
-                  />
-                  <span class="mt-1 block text-[11px] text-v2-text-text-faint">
-                    Across the entire worker tree. Default 100.
-                  </span>
-                </label>
-                <label class="block text-xs text-v2-text-text-muted">
-                  Spawn depth
-                  <input
-                    aria-label="Spawn depth"
-                    class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-2 text-sm"
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={spawnDepthValue()}
-                    onInput={(event) => setSpawnDepth(event.currentTarget.value)}
-                  />
-                  <span class="mt-1 block text-[11px] text-v2-text-text-faint">
-                    0 disables workers; 1 allows only this officer to spawn. Default 1.
-                  </span>
-                </label>
-              </div>
-              <div class="mt-5 rounded-xl border border-v2-border-border-muted bg-v2-background-bg-layer-02 p-3 text-xs text-v2-text-text-muted">
-                Worker command captions are always off, keeping presentation-only model calls out of batch work.
-              </div>
-            </section>
-
-            <section class="agent-settings-card" data-settings-tab="io" data-section="input-output">
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Input / Output</h3>
-              <p class="mt-2 text-xs leading-relaxed text-v2-text-text-faint">
-                Let a messenger conversation feed this officer’s prompt and carry its replies. The selected account
-                determines the messenger tool and identity; trust controls what remote participants may ask it to do.
-              </p>
+            <section class="agent-settings-card" data-settings-tab="messengers" data-section="messengers">
+              <Show when={activeTab() === "messengers" ? props.agentID : undefined} keyed>
+                {(id) => <SettingsMessengersV2 agentID={id} />}
+              </Show>
               <div class="mt-4 rounded-xl border border-v2-border-border-muted bg-v2-background-bg-layer-02 p-3 sm:p-4">
-                <AgentRemoteChat sessionID={officerSessionID} ensureSession={ensureOfficerSession} />
+                <Show when={props.agentID} keyed>
+                  {(id) => <AgentRemoteChat agentID={id} sessionID={officerSessionID} ensureSession={ensureOfficerSession} />}
+                </Show>
               </div>
             </section>
 

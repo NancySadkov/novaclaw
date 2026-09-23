@@ -288,6 +288,7 @@ describe("EmailImapSmtp pure helpers", () => {
 const CLIENT_ID = "11111111-2222-3333-4444-555555555555"
 
 const account = new Messenger.AccountInfo({
+  agentID: "nova",
   id: Messenger.AccountID.make("msa_email"),
   driverID: "email",
   label: "My mailbox",
@@ -568,6 +569,7 @@ describe("EmailDriver connect (IMAP poll → thread mapping → SMTP reply)", ()
       const mail = makeFakeMail()
       // A Gmail-style account: no clientId, the secret is the app password itself (not OAuth JSON).
       const gmail = new Messenger.AccountInfo({
+        agentID: "nova",
         id: Messenger.AccountID.make("msa_gmail"),
         driverID: "email",
         label: "Gmail",

@@ -61,7 +61,6 @@ import {
   type RecipeAsset,
   type RecipeDeployment,
 } from "@/utils/recipe-api"
-import "./recipes.css"
 
 // The Recipes app (AGENTS.md → *Recipes are source code for the AI era*). A recipe is a folder of prompt +
 // assets; this page is where a normal person reads, runs, copies, edits, shares and CHECKS one.

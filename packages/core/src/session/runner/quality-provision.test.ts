@@ -351,7 +351,7 @@ describe("QE-A migration: repair, not drop", () => {
     expect(commands).toEqual({ typecheck: "cargo build --quiet" })
     expect(repairs[0]).toMatchObject({ slot: "check", action: "dropped", to: "typecheck" })
     expect(repairs[0].note).toContain('"cargo build --quiet"')
-    expect(repairs[0].note).toContain("Settings → Quality")
+    expect(repairs[0].note).toContain("Officer Settings → Quality")
   })
 
   test("an exact duplicate is removed as a duplicate, not reported as a loss", () => {

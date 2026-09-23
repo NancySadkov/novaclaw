@@ -2,10 +2,10 @@ export * as SettingsConfigMigrate from "./settings-config-migrate"
 
 import { Effect } from "effect"
 import { Log } from "@novaclaw/schema/log"
-import { isRecord } from "@novaclaw/schema/record"
 import type { Commands } from "./session/runner/quality"
 import { QualityProvision } from "./session/runner/quality-provision"
-import { SettingsConfigStore } from "./settings-config-store"
+import { AgentConfigStore } from "./agent-config-store"
+import { ConfigAgent } from "./config/agent"
 
 /**
  * **Data repairs to rows that are already in the settings store.**
@@ -47,15 +47,22 @@ import { SettingsConfigStore } from "./settings-config-store"
  * untouched.
  */
 export const migrateQualityCommands = Effect.fn("SettingsConfigMigrate.migrateQualityCommands")(function* () {
-  const store = yield* SettingsConfigStore.Service
-  const quality = (yield* store.all()).quality
-  if (!isRecord(quality) || !isRecord(quality.commands)) return [] as string[]
-
-  const { commands, repairs } = QualityProvision.migrateCommands(quality.commands as Commands)
-  if (repairs.length === 0) return [] as string[]
-
-  yield* store.set("quality", { ...quality, commands })
-  const notes = repairs.map((repair) => repair.note)
+  const store = yield* AgentConfigStore.Service
+  const notes: string[] = []
+  for (const [officerID, layers] of Object.entries(yield* store.agents())) {
+    let changed = false
+    const repaired = layers.map((layer) => {
+      const quality = layer.qualityConfig
+      if (quality?.commands === undefined) return layer
+      const result = QualityProvision.migrateCommands(quality.commands as Commands)
+      if (result.repairs.length === 0) return layer
+      changed = true
+      notes.push(...result.repairs.map((repair) => `${officerID}: ${repair.note}`))
+      return { ...layer, qualityConfig: { ...quality, commands: result.commands } } as ConfigAgent.Info
+    })
+    if (changed) yield* store.setLayers(officerID, repaired)
+  }
+  if (notes.length === 0) return notes
   yield* Log.event("config.settings.migrated", { "config.notice": notes.join("\n") })
   return notes
 })

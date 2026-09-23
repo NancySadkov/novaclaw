@@ -11,6 +11,7 @@ import { useLanguage } from "@/context/language"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
+import { createSettledResource } from "@/utils/settled-resource"
 import {
   MessengerApiError,
   messengerAccounts,
@@ -32,15 +33,6 @@ import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { parseSettingsNumber } from "./parts/number-field"
 
-// Settings → Messengers — "which messenger apps can NovaClaw use?"
-// A headline lay feature (Normal level): connect NovaClaw to Telegram & friends so the agent can
-// cover chats while you're away, and pair your phone for remote control. Accounts are
-// instance-global (they live on the server, not this window); status streams live over SSE
-// (messenger.account.status → refetch — the list is small, a refetch is simpler and always
-// truthful). The Add flow branches on the driver's auth kind (§0.2): `login` = sign into YOUR OWN
-// account (phone → code → optional 2FA, the lay default), `key` = paste a bot/app token (opt-in
-// power path), `none` = just settings. Secrets go up the wire once and never come back.
-
 const STATUS_DOT: Record<AccountStatus["state"], string> = {
   connected: "bg-v2-state-fg-success",
   connecting: "bg-v2-state-fg-warning",
@@ -54,7 +46,7 @@ const STATUS_DOT: Record<AccountStatus["state"], string> = {
 const statusMessage = (status: AccountStatus): string | undefined =>
   status.state === "backoff" || status.state === "challenge" || status.state === "error" ? status.message : undefined
 
-export const SettingsMessengersV2: Component = () => {
+export const SettingsMessengersV2: Component<{ agentID: string }> = (props) => {
   const dialog = useDialog()
   const language = useLanguage()
   const sdk = useServerSDK()
@@ -67,14 +59,12 @@ export const SettingsMessengersV2: Component = () => {
   // parked it. Same form as general.tsx's OFF-C indicator.
   const airgapped = () => (serverSync().data.config as { offline?: boolean }).offline === true
 
-  const [drivers] = createResource(() => server(), messengerDrivers, { initialValue: [] })
-  const [accounts, { refetch }] = createResource(() => server(), messengerAccounts, { initialValue: [] })
-
-  // What the operator must prefix a self-chat message with for the console to hear it. Per-account
-  // (`address`), defaulting to the kernel's "Nova" — read from an account that overrides it so the
-  // hint quotes what the user must actually type, not what we ship.
-  const consoleAddress = () =>
-    accounts.latest.map((row) => row.account.settings["address"]?.trim()).find((address) => address) ?? "Nova"
+  const [drivers] = createSettledResource(() => server(), messengerDrivers)
+  const [accounts, { refetch }] = createSettledResource(
+    () => [server(), props.agentID] as const,
+    ([http, agentID]) => messengerAccounts(http, agentID),
+  )
+  const ownedAccounts = () => (accounts() ?? []).filter((row) => row.account.agentID === props.agentID)
 
   // Live status: any messenger.* bus event → refetch the small list (always truthful, no client fold).
   onMount(() => {
@@ -91,11 +81,11 @@ export const SettingsMessengersV2: Component = () => {
       description: error instanceof Error ? error.message : String(error),
     })
 
-  const driverFor = (driverID: string): DriverMeta | undefined => drivers.latest.find((d) => d.id === driverID)
+  const driverFor = (driverID: string): DriverMeta | undefined => (drivers() ?? []).find((d) => d.id === driverID)
   const driverName = (driverID: string): string => driverFor(driverID)?.name ?? driverID
 
   const setEnabled = (row: AccountWithStatus, enabled: boolean) =>
-    messengerUpdateAccount(server(), row.account.id, { enabled }).then(refetch).catch(fail)
+    messengerUpdateAccount(server(), row.account.id, props.agentID, { enabled }).then(refetch).catch(fail)
 
   const remove = async (row: AccountWithStatus) => {
     const ok = await confirm({
@@ -105,13 +95,14 @@ export const SettingsMessengersV2: Component = () => {
       destructive: true,
     })
     if (!ok) return
-    await messengerRemoveAccount(server(), row.account.id).then(refetch).catch(fail)
+    await messengerRemoveAccount(server(), row.account.id, props.agentID).then(refetch).catch(fail)
   }
 
   const openAdd = () =>
     dialog.push(() => (
       <DialogAddMessengerAccount
-        drivers={drivers.latest}
+        agentID={props.agentID}
+        drivers={drivers() ?? []}
         onCreated={(account, driver) => {
           void refetch()
           if (driver.auth === "login")
@@ -139,11 +130,10 @@ export const SettingsMessengersV2: Component = () => {
       <div class="settings-v2-tab-header settings-v2-tab-header--stacked">
         <div class="settings-v2-tab-header-row">
           <h2 class="settings-v2-tab-title">{language.t("settings.messengers.title")}</h2>
-          <ButtonV2 variant="contrast" onClick={openAdd} disabled={drivers.latest.length === 0}>
+          <ButtonV2 variant="contrast" onClick={openAdd} disabled={!drivers()?.length}>
             {language.t("settings.messengers.add")}
           </ButtonV2>
         </div>
-        <p class="settings-v2-tab-description">{language.t("settings.messengers.description")}</p>
       </div>
 
       <div class="settings-v2-tab-body">
@@ -151,24 +141,20 @@ export const SettingsMessengersV2: Component = () => {
           <p class="settings-v2-field-description">{language.t("settings.messengers.airgapped")}</p>
         </Show>
 
-        {/* Connecting an account is only half of knowing how to use one: the §0.1.5 console ignores
-            anything not addressed to it, which from the outside is indistinguishable from a broken
-            account. Shown once there is an account to use it with. */}
-        <Show when={accounts.latest.length > 0}>
-          <div class="flex w-full min-w-0 flex-col gap-1">
-            <p class="settings-v2-field-description">
-              {language.t("settings.messengers.consoleHint", { address: consoleAddress() })}
-            </p>
-            <p class="settings-v2-field-description">{language.t("settings.messengers.consoleHintWhy")}</p>
-          </div>
-        </Show>
-
         <Show
-          when={accounts.latest.length > 0}
-          fallback={<p class="settings-v2-field-description">{language.t("settings.messengers.empty")}</p>}
+          when={!accounts.failed && ownedAccounts().length > 0}
+          fallback={
+            <p class="settings-v2-field-description">
+              {accounts.failed
+                ? language.t("settings.messengers.toast.failed")
+                : accounts.loading || accounts.idle
+                  ? language.t("common.loading")
+                  : language.t("settings.messengers.empty")}
+            </p>
+          }
         >
           <SettingsListV2>
-            <For each={accounts.latest}>
+            <For each={ownedAccounts()}>
               {(row) => (
                 <SettingsRowV2
                   title={row.account.label}
@@ -179,7 +165,7 @@ export const SettingsMessengersV2: Component = () => {
                     (statusMessage(row.status) ? ` — ${statusMessage(row.status)}` : "")
                   }
                 >
-                  <div class="flex items-center gap-3">
+                  <div class="flex flex-wrap items-center justify-end gap-2">
                     <span
                       class={`shrink-0 size-1.5 rounded-full ${STATUS_DOT[row.status.state]}`}
                       aria-label={language.t(`settings.messengers.status.${row.status.state}`)}
@@ -219,9 +205,17 @@ export const SettingsMessengersV2: Component = () => {
 // ── Add account: pick a messenger, fill its fields ────────────────────────────────────────────────
 
 const DialogAddMessengerAccount: Component<{
+  agentID: string
   drivers: readonly DriverMeta[]
   onCreated: (
-    account: { id: string; driverID: string; label: string; enabled: boolean; settings: Record<string, string> },
+    account: {
+      id: string
+      agentID: string
+      driverID: string
+      label: string
+      enabled: boolean
+      settings: Record<string, string>
+    },
     driver: DriverMeta,
   ) => void
 }> = (props) => {
@@ -244,6 +238,7 @@ const DialogAddMessengerAccount: Component<{
     setError(undefined)
     try {
       const account = await messengerCreateAccount(sdk().server.http, {
+        agentID: props.agentID,
         driverID: chosen.id,
         label: label().trim() || chosen.name,
         // login accounts start disabled — there is no session credential to connect with yet;
@@ -375,7 +370,7 @@ const DialogAddMessengerAccount: Component<{
 // ── Login wizard: phone (+ optional 2FA password) → the code the provider sent ────────────────────
 
 const DialogMessengerLogin: Component<{
-  account: { id: string; label: string }
+  account: { id: string; agentID: string; label: string }
   driver: DriverMeta
   onDone: () => void
 }> = (props) => {
@@ -427,7 +422,9 @@ const DialogMessengerLogin: Component<{
     try {
       await messengerLoginComplete(sdk().server.http, pending.attemptID, code())
       // The server stored the session credential and reconnected the account.
-      await messengerUpdateAccount(sdk().server.http, props.account.id, { enabled: true }).catch(() => undefined)
+      await messengerUpdateAccount(sdk().server.http, props.account.id, props.account.agentID, { enabled: true }).catch(
+        () => undefined,
+      )
       showToast({ variant: "success", title: language.t("settings.messengers.login.done") })
       dialog.close()
       props.onDone()
@@ -675,7 +672,7 @@ const PACE_MAX = 80
 const PACE_RISKY = 30
 
 const DialogMessengerSpeed: Component<{
-  account: { id: string; label: string; settings: Record<string, string> }
+  account: { id: string; agentID: string; label: string; settings: Record<string, string> }
   onDone: () => void
 }> = (props) => {
   const dialog = useDialog()
@@ -699,7 +696,7 @@ const DialogMessengerSpeed: Component<{
     setBusy(true)
     setError(undefined)
     try {
-      await messengerUpdateAccount(sdk().server.http, props.account.id, {
+      await messengerUpdateAccount(sdk().server.http, props.account.id, props.account.agentID, {
         settings: { ...props.account.settings, [PACE_KEY]: String(next) },
       })
       props.onDone()

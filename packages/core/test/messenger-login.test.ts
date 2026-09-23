@@ -82,7 +82,13 @@ const it = testEffect(AppNodeBuilder.build(graph, [driverReplacement]))
 
 const createAccount = Effect.gen(function* () {
   const store = yield* MessengerStore.Service
-  return yield* store.createAccount({ driverID: "fake-login", label: "mine", enabled: false, settings: {} })
+  return yield* store.createAccount({
+    agentID: "nova",
+    driverID: "fake-login",
+    label: "mine",
+    enabled: false,
+    settings: {},
+  })
 })
 
 describe("MessengerLogin capability", () => {

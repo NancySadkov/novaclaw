@@ -179,6 +179,17 @@ describe("importMarkdown — the bytes a stranger sent, stored as they were sent
     expect(second.prompt).toBe("something else")
   })
 
+  test("a numbered slug continues its sequence across imports and duplicates", async () => {
+    const markdown = "---\nname: Numbered\n---\n\nnumbered prompt\n"
+    const first = await Recipe.importMarkdown(markdown, { ...opts(), slug: "numbered-10" })
+    const second = await Recipe.importMarkdown(markdown, { ...opts(), slug: "numbered-10" })
+    const copy = await Recipe.duplicate("numbered-10", opts())
+    expect([first.slug, second.slug, copy.slug]).toEqual(["numbered-10", "numbered-11", "numbered-12"])
+    expect((await Recipe.read("numbered-10", opts()))?.prompt).toBe("numbered prompt")
+    expect((await Recipe.read("numbered-11", opts()))?.prompt).toBe("numbered prompt")
+    expect((await Recipe.read("numbered-12", opts()))?.prompt).toBe("numbered prompt")
+  })
+
   test("🔴 an import cannot clobber a recipe the user already had, even by naming it exactly", async () => {
     await Recipe.save({ name: "Mine", prompt: "my own prompt", slug: "mine" }, opts())
     const imported = await Recipe.importMarkdown("---\nname: Mine\n---\n\nhostile replacement\n", opts())

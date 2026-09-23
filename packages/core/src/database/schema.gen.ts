@@ -398,6 +398,7 @@ export default {
       yield* tx.run(`
         CREATE TABLE \`messenger_account\` (
           \`id\` text PRIMARY KEY,
+          \`agent_id\` text NOT NULL,
           \`driver_id\` text NOT NULL,
           \`label\` text NOT NULL,
           \`enabled\` integer NOT NULL,

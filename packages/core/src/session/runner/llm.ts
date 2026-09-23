@@ -540,10 +540,11 @@ export const layer = Layer.effect(
      * The B4 note that used to live here still holds: the user profile is not injected into the
      * system prompt — the model reads it ON DEMAND via the `profile` tool (tool/profile.ts).
      */
-    const harnessConfig = Effect.fn("SessionRunner.harnessConfig")(function* () {
-      const derived = HarnessConfig.derive(yield* config.entries(), {
+    const harnessConfig = Effect.fn("SessionRunner.harnessConfig")(function* (officerID?: AgentV2.ID) {
+      const officer = officerID === undefined ? undefined : (yield* agents.select(officerID)).info
+      const derived = HarnessConfig.withOfficer(HarnessConfig.derive(yield* config.entries(), {
         shell: Shell.agentDefault(),
-      })
+      }), { qualityConfig: officer?.qualityConfig, context: officer?.context as HarnessConfig.OfficerLayer["context"] })
       // Built off `derived.entries`, i.e. the SAME read — a second `config.entries()` inside one
       // turn could hand the compactor a different snapshot than the system prompt was composed from.
       return {
@@ -552,7 +553,7 @@ export const layer = Layer.effect(
           events,
           llm,
           scheduler,
-          config: derived.entries,
+          override: officer?.compaction as Parameters<typeof SessionCompaction.settings>[0],
           prefixHash: (sessionID, prefixSeq) => SessionHistory.prefixHash(db, sessionID, prefixSeq).pipe(Effect.orDie),
         }),
       }
@@ -4399,7 +4400,8 @@ export const layer = Layer.effect(
       if (yield* compactionRequests.consume(input.sessionID)) {
         // B7 tier-1: derived HERE rather than at the top of `run`, because a wake with nothing to do
         // returns a few lines below and must not pay for a settings read it never uses.
-        const manual = yield* harnessConfig()
+        const manualResolution = yield* effective.resolution(input.sessionID)
+        const manual = yield* harnessConfig(manualResolution.config.agent as AgentV2.ID)
         yield* runManualCompaction(input.sessionID, manual.compaction).pipe(
           Effect.catchCause((cause: Cause.Cause<unknown>) =>
             Log.event("session.compaction.manual.failed", {
@@ -4525,7 +4527,7 @@ export const layer = Layer.effect(
       // derives its OWN (see the inner loop) — this value is deliberately NOT reused there, because a
       // long drain is exactly the case where a settings change must land without waiting for the next
       // message.
-      const entryHarness = yield* harnessConfig()
+      const entryHarness = yield* harnessConfig(handoff.agent as AgentV2.ID)
       // P14-minimal (jh-improve8 P3): the Strict-harness route. The effective strict config is
       // the instance block, field-wise overlaid with the OFFICER's standing detail, field-wise
       // overlaid with the session's own override (the composer switch, resolved through the
@@ -4641,7 +4643,7 @@ export const layer = Layer.effect(
           // single turn observe two different settings snapshots; deriving per DRAIN (or, as before,
           // per location boot) is what made "restart to apply" the honest answer. The T1 per-session
           // stances ride along: an explicit true/false on the config chain wins, no stance = global.
-          const harness = yield* harnessConfig()
+          const harness = yield* harnessConfig(handoff.agent as AgentV2.ID)
           const qualityOn = !ShortChat.enabled(handoff.shortChat) && (handoff.quality ?? harness.quality.enabled)
           const introspectionOn =
             !ShortChat.enabled(handoff.shortChat) && (handoff.introspection ?? harness.introspection.enabled)

@@ -126,10 +126,8 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   officer_order: "operational",
   // The session's own context-reclaim policy. `prune` MARKS rows already out of the model's context
   // (`session/compaction-prune.ts`); it destroys no stored message, so "a read never destroys" holds.
-  compaction: "operational",
   // Closed percentages governing what the agent sends to its own model; no text, endpoint,
   // execution, egress, or destructive store action. Like compaction, this is self-repairable policy.
-  context: "operational",
   // A bounded numeric liveness limit for the agent's own provider connection. It changes no
   // endpoint, prompt, permission or host state, and is the self-healing escape hatch for a slow
   // local model whose first event legitimately takes longer than the compiled default.
@@ -272,7 +270,6 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // Endpoint URLs (egress of every prompt and the Authorization header).
   providers: "privileged",
   // `quality.commands` are command lines the runner executes. An execution surface (S2 names it).
-  quality: "privileged",
   // Named local directories or GIT REPOSITORIES: a remote entry fetches, writes to disk, and its
   // content becomes context.
   references: "privileged",

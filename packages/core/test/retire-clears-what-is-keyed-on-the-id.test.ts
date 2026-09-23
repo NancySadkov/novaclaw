@@ -40,6 +40,7 @@ describe("the declared cleaner list", () => {
       "workspace",
       "status",
       "avatar",
+      "messengers",
     ])
   })
 

@@ -212,7 +212,7 @@ export const HELP_TEXT = [
   "/sessions — list your chats",
   "/use <n> — drive session n from here",
   "/status — this chat's link",
-  "/pair <code> — pair this chat (code from Settings → Messengers)",
+  "/pair <code> — pair this chat (code from Officer Settings → Messengers)",
   "/help — this message",
 ].join("\n")
 

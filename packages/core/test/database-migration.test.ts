@@ -21,6 +21,7 @@ import simplifySessionInputMigration from "@novaclaw/core/database/migration/202
 import dropLegacyMessagePartMigration from "@novaclaw/core/database/migration/20260708000000_drop_legacy_message_part"
 import jhPlanTimeUpdatedIndexMigration from "@novaclaw/core/database/migration/20260728181001_add_jh_plan_time_updated_index"
 import sessionDeviceMigration from "@novaclaw/core/database/migration/20260807173556_add_session_device"
+import messengerOwnerMigration from "@novaclaw/core/database/migration/20260923220841_messenger_agent_owner"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
@@ -499,6 +500,40 @@ describe("DatabaseMigration", () => {
   // months, so the upgrade path runs `ALTER TABLE … ADD` against populated rows — and Wave 0's whole
   // subject was that a drifted baseline makes the NEXT new table (or column) kill boot on every
   // existing user database. This is that check, taken against a row that already has data in it.
+  test("assigns existing messenger accounts to Nova and matches fresh schema", async () => {
+    const upgraded = await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        yield* db.run(sql`CREATE TABLE messenger_account (
+          id text PRIMARY KEY, driver_id text NOT NULL, label text NOT NULL, enabled integer NOT NULL,
+          credential_id text, settings text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL
+        )`)
+        yield* db.run(sql`INSERT INTO messenger_account
+          (id, driver_id, label, enabled, credential_id, settings, time_created, time_updated)
+          VALUES ('old', 'telegram', 'Existing', 1, NULL, '{}', 1, 2)`)
+        yield* DatabaseMigration.applyOnly(db, [messengerOwnerMigration])
+        expect(
+          yield* db.all(sql`SELECT id, agent_id, driver_id, label, enabled, settings FROM messenger_account`),
+        ).toEqual([
+          { id: "old", agent_id: "nova", driver_id: "telegram", label: "Existing", enabled: 1, settings: "{}" },
+        ])
+        return (yield* db.all<{ name: string; type: string; notnull: number; dflt_value: string | null }>(
+          sql`PRAGMA table_info(messenger_account)`,
+        )).map(({ name, type, notnull, dflt_value }) => ({ name, type, notnull, dflt_value }))
+      }),
+    )
+    const created = await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        yield* DatabaseMigration.apply(db)
+        return (yield* db.all<{ name: string; type: string; notnull: number; dflt_value: string | null }>(
+          sql`PRAGMA table_info(messenger_account)`,
+        )).map(({ name, type, notnull, dflt_value }) => ({ name, type, notnull, dflt_value }))
+      }),
+    )
+    expect(upgraded).toEqual(created)
+  })
+
   test("adds the session device column to an existing populated database", async () => {
     await run(
       Effect.gen(function* () {

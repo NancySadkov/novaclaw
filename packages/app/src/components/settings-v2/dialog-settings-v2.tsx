@@ -19,11 +19,8 @@ import { SettingsKeybinds } from "../settings-keybinds"
 import { SettingsTrashV2 } from "./trash"
 import { SettingsServersV2 } from "./servers"
 import { SettingsComputerV2 } from "./computer"
-import { SettingsQualityV2 } from "./quality"
 import { SettingsRecoveryV2 } from "./recovery"
-import { SettingsMessengersV2 } from "./messengers"
 import { SettingsWebSearchV2 } from "./web-search"
-import { SettingsTunesV2 } from "./tunes"
 
 // Tabs above Normal are hidden until unlocked (uix.md §6.4). Bootstrap/manage/reset stay universal:
 // General, Memory, Appearance, Shortcuts, Instances, Models, Storage and Recovery carry no entry (= Normal).
@@ -33,13 +30,12 @@ import { SettingsTunesV2 } from "./tunes"
 // colleague each. An instance-wide switch for one colleague's horizon was the defect the
 // folder chip had — a question answered once for a decision that differs per role.
 const TAB_LEVELS: Record<string, ExpertiseLevel> = {
-  tunes: "advanced",
   computer: "advanced",
   // Web search "just works" for a normal user via the built-in; the override (own SearXNG) +
   // per-engine toggles are a power-user surface → Advanced (and therefore Developer too).
   "web-search": "advanced",
-  quality: "developer",
 }
+const SETTINGS_TABS = new Set(["general", "appearance", "shortcuts", "servers", "computer", "web-search", "usage", "storage", "trash", "recovery", "about"])
 
 export const DialogSettings: Component<{
   sessionID?: string
@@ -50,6 +46,7 @@ export const DialogSettings: Component<{
   const desktop = createMediaQuery("(min-width: 768px)")
   const { atLeast } = useExpertise()
   const tabVisible = (tab: string) => {
+    if (!SETTINGS_TABS.has(tab)) return false
     const level = TAB_LEVELS[tab]
     return !level || atLeast(level)
   }
@@ -130,18 +127,6 @@ export const DialogSettings: Component<{
                   <Icon name="share" size="large" />
                   {language.t("settings.tab.instances")}
                 </TabsV2.Trigger>
-                {/* Messengers — a headline lay feature (messenger-plan §6.1): connect Telegram
-                        & friends so the agent covers chats while you're away. Normal level. */}
-                <TabsV2.Trigger value="messengers">
-                  <Icon name="speech-bubble" size="large" />
-                  {language.t("settings.messengers.title")}
-                </TabsV2.Trigger>
-                <Show when={tabVisible("tunes")}>
-                  <TabsV2.Trigger value="tunes">
-                    <Icon name="sliders" size="large" />
-                    {language.t("settings.tunes.title")}
-                  </TabsV2.Trigger>
-                </Show>
                 <Show when={tabVisible("computer")}>
                   <TabsV2.Trigger value="computer">
                     <Icon name="window-cursor" size="large" />
@@ -152,12 +137,6 @@ export const DialogSettings: Component<{
                   <TabsV2.Trigger value="web-search">
                     <Icon name="magnifying-glass" size="large" />
                     {language.t("settings.webSearch.title")}
-                  </TabsV2.Trigger>
-                </Show>
-                <Show when={tabVisible("quality")}>
-                  <TabsV2.Trigger value="quality">
-                    <Icon name="checklist" size="large" />
-                    {language.t("settings.quality.title")}
                   </TabsV2.Trigger>
                 </Show>
                 <TabsV2.SectionTitle>{language.t("settings.section.safety")}</TabsV2.SectionTitle>
@@ -199,14 +178,6 @@ export const DialogSettings: Component<{
               <TabsV2.Content value="servers" class="settings-v2-panel">
                 <SettingsServersV2 />
               </TabsV2.Content>
-              <TabsV2.Content value="messengers" class="settings-v2-panel">
-                <SettingsMessengersV2 />
-              </TabsV2.Content>
-              <Show when={tabVisible("tunes")}>
-                <TabsV2.Content value="tunes" class="settings-v2-panel">
-                  <SettingsTunesV2 />
-                </TabsV2.Content>
-              </Show>
               {/* ⚠️ This panel used to sit INSIDE `TabsV2.List`, between the "computer" and "tools"
                   triggers — so the whole Computer Use tab rendered squeezed into the left tab rail
                   instead of the content area, while every sibling panel lived out here. Kobalte
@@ -222,11 +193,6 @@ export const DialogSettings: Component<{
                   <SettingsWebSearchV2 />
                 </TabsV2.Content>
               </Show>
-              <Show when={tabVisible("quality")}>
-                <TabsV2.Content value="quality" class="settings-v2-panel">
-                  <SettingsQualityV2 />
-                </TabsV2.Content>
-              </Show>
               <TabsV2.Content value="usage" class="settings-v2-panel">
                 <SettingsUsageV2 />
               </TabsV2.Content>
@@ -240,7 +206,9 @@ export const DialogSettings: Component<{
                 <SettingsRecoveryV2 />
               </TabsV2.Content>
               <TabsV2.Content value="about" class="settings-v2-panel">
-                <SettingsAboutV2 />
+                <Show when={tab() === "about"}>
+                  <SettingsAboutV2 />
+                </Show>
               </TabsV2.Content>
             </TabsV2>
           </ServerSyncProvider>

@@ -1345,6 +1345,14 @@ export type GlobalEvent = {
     | SyncEventSessionNextRevertCommitted
 }
 
+export type QualityCommands = {
+  syntax?: string
+  check?: string
+  typecheck?: string
+  test?: string
+  lint?: string
+}
+
 export type ResourcePressure = {
   warning?: {
     memory_used_fraction?: number
@@ -1817,14 +1825,6 @@ export type VcsFileDiff = {
   additions: number
   deletions: number
   status?: "added" | "deleted" | "modified"
-}
-
-export type QualityCommands = {
-  syntax?: string
-  check?: string
-  typecheck?: string
-  test?: string
-  lint?: string
 }
 
 export type QualityDetection = {
@@ -3708,6 +3708,47 @@ export type ConfigV2ProviderRequest = {
   }
 }
 
+export type ConfigV2ContextProfile = {
+  system?: number
+  messages?: number
+  retrieval?: number
+  memory?: number
+  tool_output?: number
+}
+
+export type ConfigV2ContextProfiles = {
+  interactive?: ConfigV2ContextProfile
+  "sub-agent"?: ConfigV2ContextProfile
+  "auto-prompting"?: ConfigV2ContextProfile
+  "goal-oriented"?: ConfigV2ContextProfile
+}
+
+export type ConfigV2ContextTodoReminder = {
+  enabled?: boolean
+  cadence?: number
+  max_tokens?: number
+}
+
+export type ConfigV2Context = {
+  enabled?: boolean
+  profiles?: ConfigV2ContextProfiles
+  todo_reminder?: ConfigV2ContextTodoReminder
+}
+
+export type ConfigV2CompactionKeep = {
+  tokens?: number
+}
+
+export type ConfigV2Compaction = {
+  auto?: boolean
+  prune?: boolean
+  summarize?: boolean
+  summarizeInput?: number
+  keep?: ConfigV2CompactionKeep
+  buffer?: number
+  threshold?: number
+}
+
 export type ConfigV2Nudge = {
   id: string
   name: string
@@ -3809,6 +3850,14 @@ export type ConfigV2Agent = {
         generateInterjection?: boolean
       }
   quality?: boolean
+  qualityConfig?: {
+    enabled?: boolean
+    cadence?: number
+    testTimeout?: number
+    commands?: QualityCommands
+  }
+  context?: ConfigV2Context
+  compaction?: ConfigV2Compaction
   affective?:
     | boolean
     | {
@@ -3974,47 +4023,6 @@ export type ConfigV2Mcp = {
   servers?: {
     [key: string]: ConfigV2McpLocal | ConfigV2McpRemote
   }
-}
-
-export type ConfigV2CompactionKeep = {
-  tokens?: number
-}
-
-export type ConfigV2Compaction = {
-  auto?: boolean
-  prune?: boolean
-  summarize?: boolean
-  summarizeInput?: number
-  keep?: ConfigV2CompactionKeep
-  buffer?: number
-  threshold?: number
-}
-
-export type ConfigV2ContextProfile = {
-  system?: number
-  messages?: number
-  retrieval?: number
-  memory?: number
-  tool_output?: number
-}
-
-export type ConfigV2ContextProfiles = {
-  interactive?: ConfigV2ContextProfile
-  "sub-agent"?: ConfigV2ContextProfile
-  "auto-prompting"?: ConfigV2ContextProfile
-  "goal-oriented"?: ConfigV2ContextProfile
-}
-
-export type ConfigV2ContextTodoReminder = {
-  enabled?: boolean
-  cadence?: number
-  max_tokens?: number
-}
-
-export type ConfigV2Context = {
-  enabled?: boolean
-  profiles?: ConfigV2ContextProfiles
-  todo_reminder?: ConfigV2ContextTodoReminder
 }
 
 export type ConfigV2ProviderConnection = {
@@ -4339,8 +4347,6 @@ export type ConfigInfo = {
   tool_routing?: ConfigV2ToolRouting
   resource_pressure?: ResourcePressure
   mcp?: ConfigV2Mcp
-  compaction?: ConfigV2Compaction
-  context?: ConfigV2Context
   provider_connection?: ConfigV2ProviderConnection
   user_profile?: {
     enabled?: boolean
@@ -4393,18 +4399,6 @@ export type ConfigInfo = {
     embedding?: {
       url?: string
       model?: string
-    }
-  }
-  quality?: {
-    enabled?: boolean
-    cadence?: number
-    testTimeout?: number
-    commands?: {
-      syntax?: string
-      check?: string
-      typecheck?: string
-      test?: string
-      lint?: string
     }
   }
   web_search?: {
@@ -4662,6 +4656,36 @@ export type AgentV2Info = {
         generateInterjection?: boolean
       }
   quality?: boolean
+  qualityConfig?: {
+    enabled?: boolean
+    cadence?: number
+    testTimeout?: number
+    commands?: QualityCommands
+  }
+  context?: {
+    enabled?: boolean
+    profiles?: {
+      [key: string]: {
+        [key: string]: number
+      }
+    }
+    todo_reminder?: {
+      enabled?: boolean
+      cadence?: number
+      max_tokens?: number
+    }
+  }
+  compaction?: {
+    auto?: boolean
+    prune?: boolean
+    summarize?: boolean
+    summarizeInput?: number
+    keep?: {
+      tokens?: number
+    }
+    buffer?: number
+    threshold?: number
+  }
   affective?:
     | boolean
     | {
@@ -6013,6 +6037,7 @@ export type MessengerDriverMeta = {
 
 export type MessengerAccountInfo = {
   id: string
+  agentID: string
   driverID: string
   label: string
   enabled: boolean
@@ -16202,7 +16227,9 @@ export type V2MessengerDriverListResponse = V2MessengerDriverListResponses[keyof
 export type V2MessengerAccountListData = {
   body?: never
   path?: never
-  query?: never
+  query?: {
+    agentID?: string
+  }
   url: "/api/messenger/account"
 }
 
@@ -16230,6 +16257,7 @@ export type V2MessengerAccountListResponse = V2MessengerAccountListResponses[key
 
 export type V2MessengerAccountCreateData = {
   body: {
+    agentID: string
     driverID: string
     label: string
     enabled: boolean
@@ -16278,7 +16306,9 @@ export type V2MessengerAccountUpdateData = {
   path: {
     accountID: string
   }
-  query?: never
+  query: {
+    agentID: string
+  }
   url: "/api/messenger/account/{accountID}"
 }
 
@@ -16310,7 +16340,9 @@ export type V2MessengerAccountRemoveData = {
   path: {
     accountID: string
   }
-  query?: never
+  query: {
+    agentID: string
+  }
   url: "/api/messenger/account/{accountID}"
 }
 
@@ -16828,6 +16860,425 @@ export type V2ScheduleConfirmResponses = {
 
 export type V2ScheduleConfirmResponse = V2ScheduleConfirmResponses[keyof V2ScheduleConfirmResponses]
 
+export type V2RecipeArchivePreviewData = {
+  body: Blob | File
+  path?: never
+  query?: never
+  url: "/api/recipe/archive/preview"
+}
+
+export type V2RecipeArchivePreviewErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeArchivePreviewError = V2RecipeArchivePreviewErrors[keyof V2RecipeArchivePreviewErrors]
+
+export type V2RecipeArchivePreviewResponses = {
+  /**
+   * Success
+   */
+  200: {
+    name: string
+    description?: string
+    prompt: string
+    assets: Array<string>
+  }
+}
+
+export type V2RecipeArchivePreviewResponse = V2RecipeArchivePreviewResponses[keyof V2RecipeArchivePreviewResponses]
+
+export type V2RecipeDeployedListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/recipe/deployed"
+}
+
+export type V2RecipeDeployedListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeDeployedListError = V2RecipeDeployedListErrors[keyof V2RecipeDeployedListErrors]
+
+export type V2RecipeDeployedListResponses = {
+  /**
+   * Success
+   */
+  200: Array<{
+    slug: string
+    name: string
+    description?: string
+    state: "deploying" | "ready"
+    sessionID?: string
+    launch?: {
+      kind: "html" | "executable"
+      path: string
+    }
+  }>
+}
+
+export type V2RecipeDeployedListResponse = V2RecipeDeployedListResponses[keyof V2RecipeDeployedListResponses]
+
+export type V2RecipeUndeployData = {
+  body?: never
+  path: {
+    slug: string
+  }
+  query?: never
+  url: "/api/recipe/deployed/{slug}"
+}
+
+export type V2RecipeUndeployErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeUndeployError = V2RecipeUndeployErrors[keyof V2RecipeUndeployErrors]
+
+export type V2RecipeUndeployResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2RecipeUndeployResponse = V2RecipeUndeployResponses[keyof V2RecipeUndeployResponses]
+
+export type V2RecipeDeployedLaunchData = {
+  body?: never
+  path: {
+    slug: string
+  }
+  query?: never
+  url: "/api/recipe/deployed/{slug}/launch"
+}
+
+export type V2RecipeDeployedLaunchErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeDeployedLaunchError = V2RecipeDeployedLaunchErrors[keyof V2RecipeDeployedLaunchErrors]
+
+export type V2RecipeDeployedLaunchResponses = {
+  /**
+   * Success
+   */
+  200: {
+    kind: "chat" | "html" | "console"
+    sessionID?: string
+    url?: string
+    ptyID?: string
+  }
+}
+
+export type V2RecipeDeployedLaunchResponse = V2RecipeDeployedLaunchResponses[keyof V2RecipeDeployedLaunchResponses]
+
+export type V2RecipeDeployedFileData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/recipe-preview/*"
+}
+
+export type V2RecipeDeployedFileErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeDeployedFileError = V2RecipeDeployedFileErrors[keyof V2RecipeDeployedFileErrors]
+
+export type V2RecipeDeployedFileResponses = {
+  /**
+   * Success
+   */
+  200: Blob | File
+}
+
+export type V2RecipeDeployedFileResponse = V2RecipeDeployedFileResponses[keyof V2RecipeDeployedFileResponses]
+
+export type V2RecipeDeployData = {
+  body: {
+    [key: string]: unknown
+  }
+  path: {
+    slug: string
+  }
+  query?: never
+  url: "/api/recipe/{slug}/deploy"
+}
+
+export type V2RecipeDeployErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeDeployError = V2RecipeDeployErrors[keyof V2RecipeDeployErrors]
+
+export type V2RecipeDeployResponses = {
+  /**
+   * Success
+   */
+  200: {
+    slug: string
+    name: string
+    description?: string
+    state: "deploying" | "ready"
+    sessionID?: string
+    launch?: {
+      kind: "html" | "executable"
+      path: string
+    }
+  }
+}
+
+export type V2RecipeDeployResponse = V2RecipeDeployResponses[keyof V2RecipeDeployResponses]
+
+export type V2RecipeReplaceSourceData = {
+  body: {
+    markdown: string
+  }
+  path: {
+    slug: string
+  }
+  query?: never
+  url: "/api/recipe/{slug}/source"
+}
+
+export type V2RecipeReplaceSourceErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeReplaceSourceError = V2RecipeReplaceSourceErrors[keyof V2RecipeReplaceSourceErrors]
+
+export type V2RecipeReplaceSourceResponses = {
+  /**
+   * Recipe.Info
+   */
+  200: RecipeInfo
+}
+
+export type V2RecipeReplaceSourceResponse = V2RecipeReplaceSourceResponses[keyof V2RecipeReplaceSourceResponses]
+
+export type V2RecipeSourceData = {
+  body?: never
+  path: {
+    slug: string
+  }
+  query?: never
+  url: "/api/recipe/{slug}/source"
+}
+
+export type V2RecipeSourceErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeSourceError = V2RecipeSourceErrors[keyof V2RecipeSourceErrors]
+
+export type V2RecipeSourceResponses = {
+  /**
+   * Recipe.Source
+   */
+  200: RecipeSource
+}
+
+export type V2RecipeSourceResponse = V2RecipeSourceResponses[keyof V2RecipeSourceResponses]
+
+export type V2RecipeAssetsData = {
+  body?: never
+  path: {
+    slug: string
+  }
+  query?: never
+  url: "/api/recipe/{slug}/assets"
+}
+
+export type V2RecipeAssetsErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeAssetsError = V2RecipeAssetsErrors[keyof V2RecipeAssetsErrors]
+
+export type V2RecipeAssetsResponses = {
+  /**
+   * Success
+   */
+  200: Array<{
+    path: string
+    bytes: number
+  }>
+}
+
+export type V2RecipeAssetsResponse = V2RecipeAssetsResponses[keyof V2RecipeAssetsResponses]
+
+export type V2RecipeAssetReadData = {
+  body?: never
+  path: {
+    slug: string
+  }
+  query: {
+    path: string
+  }
+  url: "/api/recipe/{slug}/asset"
+}
+
+export type V2RecipeAssetReadErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeAssetReadError = V2RecipeAssetReadErrors[keyof V2RecipeAssetReadErrors]
+
+export type V2RecipeAssetReadResponses = {
+  /**
+   * Success
+   */
+  200: {
+    path: string
+    content: string
+    encoding: "utf8" | "base64"
+  }
+}
+
+export type V2RecipeAssetReadResponse = V2RecipeAssetReadResponses[keyof V2RecipeAssetReadResponses]
+
+export type V2RecipeAssetWriteData = {
+  body: {
+    path: string
+    content: string
+    encoding: "utf8" | "base64"
+  }
+  path: {
+    slug: string
+  }
+  query?: never
+  url: "/api/recipe/{slug}/asset"
+}
+
+export type V2RecipeAssetWriteErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeAssetWriteError = V2RecipeAssetWriteErrors[keyof V2RecipeAssetWriteErrors]
+
+export type V2RecipeAssetWriteResponses = {
+  /**
+   * Success
+   */
+  200: {
+    path: string
+    content: string
+    encoding: "utf8" | "base64"
+  }
+}
+
+export type V2RecipeAssetWriteResponse = V2RecipeAssetWriteResponses[keyof V2RecipeAssetWriteResponses]
+
+export type V2RecipeAssetRemoveData = {
+  body?: never
+  path: {
+    slug: string
+  }
+  query: {
+    path: string
+  }
+  url: "/api/recipe/{slug}/asset"
+}
+
+export type V2RecipeAssetRemoveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeAssetRemoveError = V2RecipeAssetRemoveErrors[keyof V2RecipeAssetRemoveErrors]
+
+export type V2RecipeAssetRemoveResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2RecipeAssetRemoveResponse = V2RecipeAssetRemoveResponses[keyof V2RecipeAssetRemoveResponses]
+
 export type V2RecipeListData = {
   body?: never
   path?: never
@@ -16978,37 +17429,6 @@ export type V2RecipeRemoveResponses = {
 }
 
 export type V2RecipeRemoveResponse = V2RecipeRemoveResponses[keyof V2RecipeRemoveResponses]
-
-export type V2RecipeSourceData = {
-  body?: never
-  path: {
-    slug: string
-  }
-  query?: never
-  url: "/api/recipe/{slug}/source"
-}
-
-export type V2RecipeSourceErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * UnauthorizedError
-   */
-  401: UnauthorizedError
-}
-
-export type V2RecipeSourceError = V2RecipeSourceErrors[keyof V2RecipeSourceErrors]
-
-export type V2RecipeSourceResponses = {
-  /**
-   * Recipe.Source
-   */
-  200: RecipeSource
-}
-
-export type V2RecipeSourceResponse = V2RecipeSourceResponses[keyof V2RecipeSourceResponses]
 
 export type V2RecipeImportData = {
   body: RecipeImportInput
