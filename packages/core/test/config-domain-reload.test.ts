@@ -1,6 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Cause, ConfigProvider, Effect, Exit, Layer, Schema } from "effect"
 import { AgentV2 } from "@novaclaw/core/agent"
+import { AgentWorkerCapacity } from "@novaclaw/core/agent/worker-capacity"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandV2 } from "@novaclaw/core/command"
@@ -78,6 +79,24 @@ const withLocation = <A, E, R>(body: (location: Location.Ref, directory: string)
   ).pipe(Effect.flatMap((dir) => body(Location.Ref.make({ directory: AbsolutePath.make(dir.path) }), dir.path)))
 
 describe("a config write re-materialises the domain it edited", () => {
+  it.live("worker capacity changes reach the live officer capability before Save returns", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const changes: AgentWorkerCapacity.Change[] = []
+        yield* AgentWorkerCapacity.register((change) => Effect.sync(() => void changes.push(change)))
+        yield* ConfigStoreWrite.apply(decodeInfo({ agents: { [PROBE]: { maxWorkers: 3 } } }))
+        expect(changes).toEqual([{ agentID: PROBE, limit: 3 }])
+        yield* ConfigStoreWrite.apply(decodeInfo({ agents: { [PROBE]: { maxWorkers: 2 } } }))
+        expect(changes).toEqual([
+          { agentID: PROBE, limit: 3 },
+          { agentID: PROBE, limit: 2 },
+        ])
+        yield* ConfigStoreWrite.apply(decodeInfo({ agents: { [PROBE]: { maxWorkers: 4 } } }))
+        expect(changes).toHaveLength(2)
+      }),
+    ),
+  )
+
   it.live("an edited AGENT is live on the same AgentV2 instance — no layer rebuild", () =>
     Effect.scoped(
       withLocation((location) =>

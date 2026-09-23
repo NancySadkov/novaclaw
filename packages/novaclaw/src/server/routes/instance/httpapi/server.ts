@@ -88,6 +88,7 @@ import { Ripgrep } from "@novaclaw/core/ripgrep"
 import { AgentRemoval } from "@novaclaw/core/agent/removal"
 import { AgentReassignment } from "@novaclaw/core/agent/reassignment"
 import { AgentLifecycle } from "@novaclaw/core/agent/lifecycle"
+import { AgentWorkerCapacity } from "@novaclaw/core/agent/worker-capacity"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionComponentRegistry } from "@novaclaw/core/session/component-registry"
@@ -335,6 +336,7 @@ const app = LayerNode.group([
   // Pausing is an officer-tree operation: the config door announces once and this global listener
   // stops or resumes the named root plus every anonymous descendant.
   AgentLifecycle.node,
+  AgentWorkerCapacity.node,
   // The other half of the config door: a colleague removed through `POST /api/config/remove` must
   // have its cabinet set aside like one retired through `DELETE /api/agent/:id`. Registered HERE for
   // the reason `AgentReassignment` is — a node the server never builds is a feature that ships dead,

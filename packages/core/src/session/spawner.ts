@@ -4,7 +4,8 @@ import { and, count, eq, gt } from "drizzle-orm"
 import { Context, DateTime, Effect, Layer, Schema } from "effect"
 import { copySessionRecipes, storeRootIn } from "../adhoc-tools"
 import { makeLocationNode } from "../effect/app-node"
-import { KeyedMutex } from "../effect/keyed-mutex"
+import { AgentWorkerCapacity } from "../agent/worker-capacity"
+import { AgentConfigStore } from "../agent-config-store"
 import { Database } from "../database/database"
 import { EventV2 } from "../event"
 import { Global } from "../global"
@@ -46,7 +47,7 @@ import { WorkerPurpose } from "./worker-purpose"
 export const DEFAULT_SPAWN_DEPTH = 1
 
 /** Shipped officer policy: maximum unfinished workers across the whole worker tree. */
-export const DEFAULT_MAX_WORKERS = 100
+export const DEFAULT_MAX_WORKERS = AgentWorkerCapacity.DEFAULT_MAX_WORKERS
 /** Compatibility name for callers/tests that display the shipped worker limit. */
 export const MAX_SPAWN_CHILDREN = DEFAULT_MAX_WORKERS
 
@@ -136,6 +137,7 @@ export const layer = Layer.effect(
     const store = yield* SessionStore.Service
     const location = yield* Location.Service
     const agents = yield* AgentV2.Service
+    const agentConfigs = yield* AgentConfigStore.Service
     const wake = yield* SessionRunCoordinator.Wake
     // The ad-hoc store's root through the SERVICE, composed with `storeRootIn` — the same
     // resolution `adhoc-tools/guidance.ts`, `tool/tool-manual.ts` and `tool/define-tool.ts` use, so
@@ -145,7 +147,6 @@ export const layer = Layer.effect(
     // The session rows ARE the durable quota ledger. A per-parent mutex makes the count+create
     // decision atomic within the one instance process; a restart loses no history, and unrelated
     // parents still spawn concurrently.
-    const spawnLocks = KeyedMutex.makeUnsafe<string>()
     return Service.of({
       spawn: Effect.fn("SessionSpawner.spawn")(function* (input) {
         const parentID = input.parentID
@@ -167,7 +168,9 @@ export const layer = Layer.effect(
         const root = lineage.at(-1)
         // Rootless launches serialise on one shared key rather than per-parent: they take no quota
         // decision, so the lock is only keeping `createSessionRecord` orderly.
-        const child = yield* spawnLocks.withLock(root?.id ?? "@rootless")(
+        const child = yield* AgentWorkerCapacity.withOfficerLock(
+          db,
+          root?.id ?? "@rootless",
           Effect.gen(function* () {
             // The instance-wide host verdict comes first, including for rootless launches.
             // A rootless launch has no parent quota to inspect, but it still creates a worker on this host.
@@ -222,33 +225,18 @@ export const layer = Layer.effect(
                 parentID: SessionTable.parent_id,
                 result: SessionTable.result,
                 archived: SessionTable.time_archived,
+                created: SessionTable.time_created,
+                title: SessionTable.title,
+                metadata: SessionTable.metadata,
               })
               .from(SessionTable)
               .all()
               .pipe(Effect.orDie)
-            const children = new Map<string, typeof rows>()
-            for (const row of rows) {
-              if (row.parentID === null) continue
-              const bucket = children.get(row.parentID) ?? []
-              bucket.push(row)
-              children.set(row.parentID, bucket)
-            }
-            let activeWorkers = 0
-            const pending = root ? [root.id as string] : []
-            const visited = new Set<string>()
-            while (pending.length > 0) {
-              const current = pending.pop()!
-              if (visited.has(current)) continue
-              visited.add(current)
-              for (const row of children.get(current) ?? []) {
-                // Kill archives without inventing a successful result. History is not live quota;
-                // still walk through it so an unarchived descendant cannot evade the tree cap.
-                if (row.result === null && row.archived === null) activeWorkers++
-                pending.push(row.id)
-              }
-            }
+            const activeWorkers = root ? AgentWorkerCapacity.activeDescendants(root.id, rows).length : 0
             const maxWorkers =
-              typeof ownerConfig?.["maxWorkers"] === "number" ? ownerConfig["maxWorkers"] : DEFAULT_MAX_WORKERS
+              ownerID === undefined
+                ? DEFAULT_MAX_WORKERS
+                : yield* AgentWorkerCapacity.currentLimit(agentConfigs, String(ownerID))
             if (activeWorkers >= maxWorkers)
               return yield* Effect.fail(
                 new SpawnLimitError({ reason: "children", depth: activeWorkers, limit: maxWorkers }),
@@ -357,6 +345,7 @@ export const node = makeLocationNode({
     Location.node,
     SessionRunCoordinator.wakeNode,
     AgentV2.node,
+    AgentConfigStore.node,
     // Global only — a dependency-free hoisted global (`Global.node` declares `deps: []`), so it adds
     // no edge to the cycle-free set the header above is protecting.
     Global.node,

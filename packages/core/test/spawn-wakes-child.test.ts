@@ -4,6 +4,9 @@ import { eq } from "drizzle-orm"
 import { DateTime, Deferred, Duration, Effect, Fiber, Layer } from "effect"
 import * as TestClock from "effect/testing/TestClock"
 import { AgentV2 } from "@novaclaw/core/agent"
+import { AgentWorkerCapacity } from "@novaclaw/core/agent/worker-capacity"
+import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import { ConfigAgent } from "@novaclaw/core/config/agent"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { CapabilityRegistry } from "@novaclaw/core/effect/capability-registry"
@@ -114,12 +117,14 @@ const instanceGraph = (replacements: LayerNode.Replacements) =>
   AppNodeBuilder.build(
     LayerNode.group([
       Database.node,
+      AgentConfigStore.node,
       EventV2.node,
       SessionProjector.node,
       SessionStore.node,
       SessionScheduler.node,
       LocationServiceMap.node,
       SessionV2.node,
+      AgentWorkerCapacity.node,
     ]),
     [
       [ProjectV2.node, projects],
@@ -303,6 +308,30 @@ describe("wait — a durable, owned join", () => {
 })
 
 describe("SessionSpawner quotas use durable session facts", () => {
+  it.live("reducing worker capacity archives excess sessions and tells the officer their identities", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const store = yield* SessionStore.Service
+      const configs = yield* AgentConfigStore.Service
+      const parent = yield* session.create({ location, agent: rootAgent })
+      const oldWorker = yield* session.create({ location, parentID: parent.id, title: "First task" })
+      const middleWorker = yield* session.create({ location, parentID: parent.id, title: "Second task" })
+      const newWorker = yield* session.create({ location, parentID: parent.id, title: "Third task" })
+
+      yield* configs.setLayers(String(rootAgent), [ConfigAgent.Info.make({ maxWorkers: 1 })])
+      yield* AgentWorkerCapacity.announce({ agentID: rootAgent, limit: 1 })
+
+      expect((yield* session.get(oldWorker.id)).time.archived).toBeUndefined()
+      expect((yield* session.get(middleWorker.id)).time.archived).toBeDefined()
+      expect((yield* session.get(newWorker.id)).time.archived).toBeDefined()
+      const transcript = JSON.stringify(yield* store.context(parent.id))
+      expect(transcript).toContain(String(middleWorker.id))
+      expect(transcript).toContain(String(newWorker.id))
+      expect(transcript).not.toContain(String(oldWorker.id))
+    }),
+  )
+
   it.live("the default depth lets the officer spawn, but not its worker", () =>
     Effect.gen(function* () {
       const location = yield* workspace
@@ -323,17 +352,18 @@ describe("SessionSpawner quotas use durable session facts", () => {
       const location = yield* workspace
       const session = yield* SessionV2.Service
       const locations = yield* LocationServiceMap.Service
+      const configs = yield* AgentConfigStore.Service
       const parent = yield* session.create({ location, agent: rootAgent })
       const child = yield* session.create({ location, parentID: parent.id })
       yield* session.create({ location, parentID: child.id })
       yield* AgentV2.Service.use((agents) =>
         agents.transform((editor) =>
           editor.update(rootAgent, (agent) => {
-            agent.maxWorkers = 2
             agent.spawnDepth = 3
           }),
         ),
       ).pipe(Effect.provide(locations.get(location)), Effect.orDie)
+      yield* configs.setLayers(String(rootAgent), [ConfigAgent.Info.make({ maxWorkers: 2 })])
 
       const error = yield* spawnChildEffect(parent.id, location).pipe(Effect.flip)
       expect(error._tag).toBe("SessionSpawner.LimitError")
@@ -379,19 +409,13 @@ describe("SessionSpawner quotas use durable session facts", () => {
     Effect.gen(function* () {
       const location = yield* workspace
       const session = yield* SessionV2.Service
-      const locations = yield* LocationServiceMap.Service
+      const configs = yield* AgentConfigStore.Service
       const { db } = yield* Database.Service
       const events = yield* EventV2.Service
       const store = yield* SessionStore.Service
       const parent = yield* session.create({ location, agent: rootAgent })
       const child = yield* session.create({ location, parentID: parent.id })
-      yield* AgentV2.Service.use((agents) =>
-        agents.transform((editor) =>
-          editor.update(rootAgent, (agent) => {
-            agent.maxWorkers = 1
-          }),
-        ),
-      ).pipe(Effect.provide(locations.get(location)), Effect.orDie)
+      yield* configs.setLayers(String(rootAgent), [ConfigAgent.Info.make({ maxWorkers: 1 })])
       const before = yield* spawnChildEffect(parent.id, location).pipe(Effect.result)
       expect(before._tag).toBe("Failure")
       let lateChild: SessionV2.ID | undefined
@@ -420,18 +444,12 @@ describe("SessionSpawner quotas use durable session facts", () => {
     Effect.gen(function* () {
       const location = yield* workspace
       const session = yield* SessionV2.Service
-      const locations = yield* LocationServiceMap.Service
+      const configs = yield* AgentConfigStore.Service
       const parent = yield* session.create({ location, agent: rootAgent })
       const child = yield* session.create({ location, parentID: parent.id })
       yield* session.create({ location, parentID: child.id })
       yield* session.setArchived({ sessionID: child.id, time: Date.now() })
-      yield* AgentV2.Service.use((agents) =>
-        agents.transform((editor) =>
-          editor.update(rootAgent, (agent) => {
-            agent.maxWorkers = 1
-          }),
-        ),
-      ).pipe(Effect.provide(locations.get(location)), Effect.orDie)
+      yield* configs.setLayers(String(rootAgent), [ConfigAgent.Info.make({ maxWorkers: 1 })])
       const error = yield* spawnChildEffect(parent.id, location).pipe(Effect.flip)
       expect(error).toMatchObject({ reason: "children", depth: 1, limit: 1 })
     }),

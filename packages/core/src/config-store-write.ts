@@ -7,6 +7,7 @@ import { AgentConfigStore } from "./agent-config-store"
 import { AgentRemoval } from "./agent/removal"
 import { AgentReassignment } from "./agent/reassignment"
 import { AgentLifecycle } from "./agent/lifecycle"
+import { AgentWorkerCapacity } from "./agent/worker-capacity"
 import { AgentWorkspace } from "./agent/workspace"
 import { CatalogSeed } from "./catalog-seed"
 import { CatalogStore } from "./catalog-store"
@@ -924,6 +925,17 @@ const agentPauseStates = (
     return states
   })
 
+const agentWorkerLimits = (
+  names: readonly string[],
+): Effect.Effect<Map<string, number>, never, AgentConfigStore.Service> =>
+  Effect.gen(function* () {
+    const limits = new Map<string, number>()
+    if (names.length === 0) return limits
+    const stored = yield* (yield* AgentConfigStore.Service).agents()
+    for (const name of names) limits.set(name, AgentWorkerCapacity.limitOf(AgentConfigStore.fold(stored[name] ?? [])))
+    return limits
+  })
+
 export const apply = (patch: Config.Info, options: { readonly writer?: AgentV2.ConfigWriter } = {}) =>
   Effect.gen(function* () {
     const { db } = yield* Database.Service
@@ -938,6 +950,7 @@ export const apply = (patch: Config.Info, options: { readonly writer?: AgentV2.C
     // holds no sessions); it announces, and whatever graph owns sessions has registered to deliver.
     const foldersBefore = yield* agentFolders(Object.keys(patch.agents ?? {}))
     const pausedBefore = yield* agentPauseStates(Object.keys(patch.agents ?? {}))
+    const workerLimitsBefore = yield* agentWorkerLimits(Object.keys(patch.agents ?? {}))
     // Same shape as `remove`: succeed WITH the refusal so `orDie` cannot reach it, then re-fail.
     // A caller's refused write is a 400, not a 500 — blaming us for a rule we chose is the
     // `rejectUnknownConfigKeys`-versus-`unroutedKeys` distinction again.
@@ -993,15 +1006,20 @@ export const apply = (patch: Config.Info, options: { readonly writer?: AgentV2.C
         "config.reasons": stuck.map((key) => RESTART_REQUIRED_KEYS.get(key) ?? key),
       })
     const otherRefresh = yield* refreshDomains(staleDomains(consumed).filter((domain) => domain !== "devices")).pipe(Effect.exit)
-    if (Exit.isFailure(deviceRefresh)) return yield* Effect.failCause(deviceRefresh.cause)
-    if (Exit.isFailure(otherRefresh)) return yield* Effect.failCause(otherRefresh.cause)
     if (consumed.has("agents")) {
       const pausedAfter = yield* agentPauseStates([...pausedBefore.keys()])
       for (const [agentID, paused] of pausedBefore) {
         const next = pausedAfter.get(agentID) ?? false
         if (next !== paused) yield* AgentLifecycle.announce({ agentID, paused: next })
       }
+      const workerLimitsAfter = yield* agentWorkerLimits([...workerLimitsBefore.keys()])
+      for (const [agentID, previous] of workerLimitsBefore) {
+        const limit = workerLimitsAfter.get(agentID)
+        if (limit !== undefined && limit < previous) yield* AgentWorkerCapacity.announce({ agentID, limit })
+      }
     }
+    if (Exit.isFailure(deviceRefresh)) return yield* Effect.failCause(deviceRefresh.cause)
+    if (Exit.isFailure(otherRefresh)) return yield* Effect.failCause(otherRefresh.cause)
     return consumed
   })
 
