@@ -3,6 +3,7 @@
   gap: 4px;
 }
 [data-titlebar-tab-slot] {
+  app-region: no-drag;
   position: relative;
   height: 28px;
   max-width: 172px;

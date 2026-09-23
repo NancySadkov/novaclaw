@@ -44,6 +44,7 @@ function SessionTabSlot(props: {
   forceTruncate: boolean
   serverCtx: () => ServerCtx | undefined
   onNavigate: (element: HTMLDivElement) => void
+  onOpenSettings: (agentID: string) => void
 }) {
   const tabs = useTabs()
   const sortable = useTabSortable(() => props.id, props.index)
@@ -130,6 +131,7 @@ function SessionTabSlot(props: {
           if (value && ctx) ctx.sync.session.remember({ ...value, title })
         }}
         onNavigate={() => props.onNavigate(ref)}
+        onOpenSettings={props.onOpenSettings}
         active={props.active()}
         activeServer={props.tab.server === props.activeServerKey}
         forceTruncate={props.forceTruncate}
@@ -173,6 +175,7 @@ export function TitlebarTabStrip(props: {
   forceTruncate: boolean
   onNavigate: (tab: Tab, el?: HTMLDivElement) => void
   onReorder: (keys: string[]) => void
+  onOpenSettings: (tab: SessionTab, agentID: string) => void
   onOverflowChange: (overflowing: boolean) => void
 }) {
   const global = useGlobal()
@@ -217,7 +220,7 @@ export function TitlebarTabStrip(props: {
     <div data-slot="titlebar-tabs" class="relative min-w-0 flex-1 overflow-hidden">
       <div
         data-slot="titlebar-tabs-scroll"
-        class="flex min-w-0 flex-row items-center gap-1.5 overflow-x-auto no-scrollbar [app-region:no-drag]"
+        class="flex min-w-0 flex-row items-center gap-1.5 overflow-x-auto no-scrollbar"
         ref={scrollRef}
       >
         <DragDropProvider
@@ -281,6 +284,9 @@ export function TitlebarTabStrip(props: {
                       onNavigate={(element) => {
                         ref = element
                         props.onNavigate(tab, element)
+                      }}
+                      onOpenSettings={(agentID) => {
+                        if (!tab.worker) props.onOpenSettings(tab, agentID)
                       }}
                     />
                   )

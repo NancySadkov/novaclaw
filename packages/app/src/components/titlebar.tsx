@@ -1,8 +1,6 @@
-import { createEffect, createMemo, createResource, createSignal, Show, untrack } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLocation, useNavigate } from "@solidjs/router"
-import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
-import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 
@@ -114,12 +112,9 @@ export function Titlebar() {
 
   // ⚠️ `data-tauri-drag-region` below KEEPS its name despite the `tauri` prefix — it is NOT Tauri
   // residue. It is the selector `@novaclaw/ui/src/styles/base.css` (~line 85) uses to set
-  // `app-region: drag`, plus `app-region: no-drag` on interactive descendants — which is the whole
-  // mechanism that makes the frameless Electron titlebar draggable and double-click-maximizable.
-  // Chromium handles both natively off that CSS, so there is deliberately NO JS drag/maximize
-  // handler here; the ones that used to sit at this spot called a Tauri window object that no
-  // build we ship has ever injected, and were therefore unreachable no-ops. Renaming the attribute
-  // means editing that stylesheet in the same commit.
+  // `app-region: drag`, plus `app-region: no-drag` on interactive descendants.
+  // Chromium handles the unoccupied titlebar area natively; the Home button handles its own
+  // pointer drag so its click remains interactive.
 
   return (
     <header
@@ -334,7 +329,7 @@ export function Titlebar() {
 
         return (
           <div class="titlebar-content">
-            <BrandBadge onOpenHome={goHome} />
+            <BrandBadge onOpenHome={goHome} onOpenOfficers={() => navigate("/tasks")} />
             {/* Home lives on the brand badge now (Start-button style) — no separate Home button. */}
             <TitlebarTabStrip
               tabs={tabsStore}
@@ -347,21 +342,11 @@ export function Titlebar() {
                 revealTabInStrip(el)
               }}
               onReorder={(keys) => tabsStoreActions.reorder(keys)}
+              onOpenSettings={(tab, agentID) => {
+                server.setActive(tab.server)
+                navigate(`/officers/${encodeURIComponent(agentID)}/settings`)
+              }}
             />
-
-            {/* Contacts owns the complete roster; the titlebar never grows a second task manager. */}
-            <TooltipV2 placement="bottom" value={language.t("nav.tasks.all")} class="shrink-0">
-              <IconButtonV2
-                type="button"
-                variant="ghost-muted"
-                size="large"
-                class="!w-9 shrink-0"
-                data-component="titlebar-task-list"
-                icon={<IconV2 name="bullet-list" />}
-                onClick={() => navigate("/tasks")}
-                aria-label={language.t("nav.tasks.all")}
-              />
-            </TooltipV2>
           </div>
         )
       })()}
@@ -372,11 +357,14 @@ export function Titlebar() {
 // The top-left brand badge doubles as the Home button — click the NovaClaw logo + version to return
 // to the home launcher from anywhere (Windows Start / macOS Apple-menu metaphor). This replaces the
 // separate Home nav button; the first-run tour calls it out (help.tour.step.home).
-function BrandBadge(props: { onOpenHome: () => void }) {
+function BrandBadge(props: { onOpenHome: () => void; onOpenOfficers: () => void }) {
   const location = useLocation()
   const language = useLanguage()
   const command = useCommand()
+  const platform = usePlatform()
   const isHome = () => location.pathname === "/"
+  let pointerStart: { x: number; y: number } | undefined
+  let dragged = false
   return (
     <TooltipV2
       placement="bottom"
@@ -391,10 +379,44 @@ function BrandBadge(props: { onOpenHome: () => void }) {
       <button
         type="button"
         data-component="brand-home-button"
-        onClick={() => props.onOpenHome()}
+        onPointerDown={(event) => {
+          if (platform.platform !== "desktop" || event.pointerType === "touch" || event.button !== 0 || !window.api?.beginWindowDrag) return
+          pointerStart = { x: event.screenX, y: event.screenY }
+          dragged = false
+          event.currentTarget.setPointerCapture(event.pointerId)
+          window.api.beginWindowDrag(event.screenX, event.screenY, event.clientX, event.clientY)
+        }}
+        onPointerMove={(event) => {
+          if (!pointerStart) return
+          if (!dragged && Math.hypot(event.screenX - pointerStart.x, event.screenY - pointerStart.y) < 4) return
+          dragged = true
+          window.api?.moveWindowDrag?.(event.screenX, event.screenY)
+        }}
+        onPointerUp={() => {
+          if (!pointerStart) return
+          pointerStart = undefined
+          window.api?.endWindowDrag?.()
+        }}
+        onPointerCancel={() => {
+          pointerStart = undefined
+          dragged = false
+          window.api?.endWindowDrag?.()
+        }}
+        onClick={(event) => {
+          if (dragged) {
+            dragged = false
+            event.preventDefault()
+            return
+          }
+          props.onOpenHome()
+        }}
+        onContextMenu={(event) => {
+          event.preventDefault()
+          props.onOpenOfficers()
+        }}
         aria-label={language.t("home.title")}
         aria-pressed={isHome()}
-        class="flex shrink-0 items-center rounded-md py-0.5 pl-1 pr-1.5 transition-colors hover:bg-v2-background-bg-layer-02 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--v2-border-border-focus)]"
+        class="flex shrink-0 select-none items-center rounded-md py-0.5 pl-1 pr-1.5 transition-colors hover:bg-v2-background-bg-layer-02 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--v2-border-border-focus)]"
         classList={{ "bg-v2-background-bg-layer-01": isHome() }}
       >
         <NovaClawWordmark showVersion class="text-[13px] leading-none" />

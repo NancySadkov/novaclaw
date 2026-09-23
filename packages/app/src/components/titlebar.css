@@ -28,9 +28,6 @@
     min-height: 40px;
     justify-content: center;
   }
-  [data-component="titlebar-task-list"] {
-    height: 40px;
-  }
 }
 [data-slot="titlebar-tab-item"] {
   user-select: none;

@@ -40,6 +40,15 @@ const openStore = (name: unknown) => {
 const pickedFiles = createPickedFileAuthorizations()
 const pickedSaves = createSaveFileAuthorizations()
 const saveCleanupSenders = new WeakSet<object>()
+const windowDrags = new WeakMap<BrowserWindow, {
+  screenX: number
+  screenY: number
+  clientX: number
+  clientY: number
+  x: number
+  y: number
+  maximized: boolean
+}>()
 
 type Deps = {
   killSidecar: () => Promise<void> | void
@@ -279,6 +288,30 @@ export function registerIpcHandlers(deps: Deps) {
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return
     setTitlebar(win, theme)
+  })
+  ipcMain.on("begin-window-drag", (event: IpcMainEvent, screenX: number, screenY: number, clientX: number, clientY: number) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || win.isFullScreen() || ![screenX, screenY, clientX, clientY].every(Number.isFinite)) return
+    const [x, y] = win.getPosition()
+    windowDrags.set(win, { screenX, screenY, clientX, clientY, x, y, maximized: win.isMaximized() })
+  })
+  ipcMain.on("move-window-drag", (event: IpcMainEvent, screenX: number, screenY: number) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win || !Number.isFinite(screenX) || !Number.isFinite(screenY)) return
+    const drag = windowDrags.get(win)
+    if (!drag) return
+    if (drag.maximized) {
+      win.unmaximize()
+      const [width, height] = win.getSize()
+      drag.x = drag.screenX - Math.min(drag.clientX, width - 40)
+      drag.y = drag.screenY - Math.min(drag.clientY, height - 40)
+      drag.maximized = false
+    }
+    win.setPosition(Math.round(drag.x + screenX - drag.screenX), Math.round(drag.y + screenY - drag.screenY))
+  })
+  ipcMain.on("end-window-drag", (event: IpcMainEvent) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (win) windowDrags.delete(win)
   })
 }
 

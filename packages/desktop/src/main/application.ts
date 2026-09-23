@@ -1,4 +1,4 @@
-import { app, dialog } from "electron"
+import { app, BrowserWindow, dialog } from "electron"
 import contextMenu from "electron-context-menu"
 import { Cause } from "effect"
 import { checkAppExists, resolveAppPath } from "./apps"
@@ -8,6 +8,7 @@ import { createDesktopDiagnostics } from "./diagnostics"
 import { prepareInstanceHome } from "./instance-home"
 import { registerIpcHandlers } from "./ipc"
 import { createDesktopLifecycle } from "./lifecycle"
+import { isTitlebarContextMenu } from "./titlebar-context-menu"
 import { createLocalInstance } from "./local-instance"
 import { exportDebugLogs, startNetLog, write as writeLog } from "./logging"
 import { prepareLocalEnvironment, prepareProcessEnvironment } from "./process-environment"
@@ -26,7 +27,17 @@ export async function runDesktop(options: DesktopLaunchOptions) {
   const home = prepareInstanceHome("client", options.mode === "both")
   const diagnostics = createDesktopDiagnostics()
   const { logger, mark } = diagnostics
-  contextMenu({ showSaveImageAs: true, showLookUpSelection: false, showSearchWithGoogle: false })
+  contextMenu({
+    showSaveImageAs: true,
+    showLookUpSelection: false,
+    showSearchWithGoogle: false,
+    shouldShowMenu: (_event, properties) => {
+      const win = BrowserWindow.getFocusedWindow()
+      if (!win) return true
+      const bounds = win.getContentBounds()
+      return !isTitlebarContextMenu(properties.y, bounds.width, bounds.height, win.webContents.getZoomFactor())
+    },
+  })
   prepareProcessEnvironment(logger)
   logger.log("app starting", {
     version: app.getVersion(),

@@ -5,8 +5,9 @@ const strip = await Bun.file(new URL("./titlebar-tab-strip.tsx", import.meta.url
 const sidePanel = await Bun.file(new URL("../pages/session/session-side-panel.tsx", import.meta.url)).text()
 
 describe("narrow-window navigation remains reachable", () => {
-  test("All Officers is unconditional and takes width before the shrinking tab strip", () => {
-    expect(titlebar).toContain('data-component="titlebar-task-list"')
+  test("the home badge keeps All Officers available without taking tab width", () => {
+    expect(titlebar).toContain('onOpenOfficers={() => navigate("/tasks")}')
+    expect(titlebar).not.toContain('data-component="titlebar-task-list"')
     expect(titlebar).not.toContain('<Show when={location.pathname !== "/"}>')
     expect(strip).toContain('data-slot="titlebar-tabs" class="relative min-w-0 flex-1 overflow-hidden"')
   })

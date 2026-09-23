@@ -21,6 +21,7 @@ export function TabNavItem(props: {
   onTitleChange?: (title: string) => void
   onTitleChangeFailed?: (title: string) => void
   onNavigate: () => void
+  onOpenSettings: (agentID: string) => void
   active?: boolean
   activeServer: boolean
   forceTruncate?: boolean
@@ -205,6 +206,12 @@ export function TabNavItem(props: {
       data-active={props.active}
       data-dragging={props.dragging}
       data-pressed={props.pressed}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        if (editing()) return
+        const agentID = props.session()?.agent
+        if (agentID) props.onOpenSettings(agentID)
+      }}
     >
       <Show when={props.session()}>
         {(session) => {

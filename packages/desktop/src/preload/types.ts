@@ -102,6 +102,9 @@ export type ElectronAPI = {
   onPinchZoomEnabledChanged: (cb: (enabled: boolean) => void) => () => void
   onZoomFactorChanged: (cb: (factor: number) => void) => () => void
   setTitlebar: (theme: TitlebarTheme) => Promise<void>
+  beginWindowDrag: (screenX: number, screenY: number, clientX: number, clientY: number) => void
+  moveWindowDrag: (screenX: number, screenY: number) => void
+  endWindowDrag: () => void
   setBackgroundColor: (color: string) => Promise<void>
   exportDebugLogs: (serverDiagnostics?: string) => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>
