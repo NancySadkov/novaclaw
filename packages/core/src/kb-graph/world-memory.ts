@@ -52,6 +52,9 @@ export const runtimeStatus = (): RuntimeStatus => describeRuntimeStatus(currentR
 
 const DEFAULT_STAGED_CAP = 2_000
 const DEFAULT_RETAIN_EVERY_MS = 5 * 60_000
+const RETAIN_BATCH_SIZE = 16
+const RETAIN_BATCH_PAUSE_MS = 100
+const RETAIN_BACKLOG_RETRY_MS = 5_000
 
 /** Bound one ECS-owned cabinet using the recall ledger, never another agent's activity. */
 export const forgetOverCap = (
@@ -64,7 +67,7 @@ export const forgetOverCap = (
   Effect.gen(function* () {
     const count = yield* Effect.tryPromise(() => live.stagedCount(scope)).pipe(Effect.orElseSucceed(() => 0))
     const excess = count - Math.max(0, Math.floor(cap))
-    if (excess <= 0) return
+    if (excess <= 0) return false
     const candidates = yield* Effect.tryPromise(() =>
       live.candidates({
         scopes: [scope],
@@ -75,13 +78,26 @@ export const forgetOverCap = (
     ).pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<MemoryClient.CandidateRow>))
     const usage = yield* MemoryAccessLedger.usageFor(
       db,
-      candidates.map((row) => row.id),
+      candidates.map((row) => row.id).filter((id) => id.length > 0),
     )
-    const choice = MemoryPrunePolicy.choose({ candidates, usage, excess, now: Date.now() })
+    const choice = MemoryPrunePolicy.choose({
+      candidates: candidates.filter((row) => row.id.length > 0),
+      usage,
+      excess: Math.min(excess, RETAIN_BATCH_SIZE),
+      now: Date.now(),
+    })
+    let forgotten = 0
     for (const id of choice.victims) {
-      yield* Effect.tryPromise(() => live.invalidate(id, undefined, { scopes: [scope] })).pipe(Effect.ignore)
+      const invalidated = yield* Effect.tryPromise(() => live.invalidate(id, undefined, { scopes: [scope] })).pipe(
+        Effect.as(true),
+        Effect.orElseSucceed(() => false),
+      )
+      if (!invalidated) continue
+      forgotten++
       yield* events.publish(MemoryEvent.Forgotten, { id, mode: "invalidate" }).pipe(Effect.ignore)
+      if (forgotten % (RETAIN_BATCH_SIZE / 2) === 0) yield* Effect.sleep(RETAIN_BATCH_PAUSE_MS)
     }
+    return forgotten > 0 && excess > forgotten
   })
 
 export const forgetEverywhere = (
@@ -97,8 +113,10 @@ export const forgetEverywhere = (
       ...(yield* Effect.tryPromise(() => live.stagedScopes("agent:")).pipe(Effect.orElseSucceed(() => []))),
       "global",
     ]
-    for (const scope of new Set(scopes)) yield* forgetOverCap(live, db, events, scope, cap)
+    let backlog = false
+    for (const scope of new Set(scopes)) backlog = (yield* forgetOverCap(live, db, events, scope, cap)) || backlog
     yield* MemoryAccessLedger.trim(db, rawAccessKeep).pipe(Effect.ignore)
+    return backlog
   })
 
 export const configFromFlags = (): Config => ({
@@ -202,13 +220,18 @@ export const layerFromConfig = (
       yield* Effect.forkScoped(
         Effect.gen(function* () {
           const cap = cfg.stagedCap ?? DEFAULT_STAGED_CAP
+          let nextDelay = cfg.retainEveryMs ?? DEFAULT_RETAIN_EVERY_MS
           for (;;) {
-            yield* Effect.sleep(cfg.retainEveryMs ?? DEFAULT_RETAIN_EVERY_MS)
+            yield* Effect.sleep(nextDelay)
             const live = engine
             // The user privacy switch gates retention too. A separate graph must not become a
             // loophole where automatic world memories keep being rewritten after memory is off.
-            if (!live || !MemorySetting.memoryEnabled()) continue
-            yield* forgetEverywhere(live, ledger, events, cap)
+            if (!live || !MemorySetting.memoryEnabled()) {
+              nextDelay = cfg.retainEveryMs ?? DEFAULT_RETAIN_EVERY_MS
+              continue
+            }
+            const backlog = yield* forgetEverywhere(live, ledger, events, cap)
+            nextDelay = backlog ? RETAIN_BACKLOG_RETRY_MS : (cfg.retainEveryMs ?? DEFAULT_RETAIN_EVERY_MS)
           }
         }),
       )

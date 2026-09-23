@@ -185,4 +185,37 @@ describe("the forgetting pass", () => {
       expect((yield* Effect.promise(() => stagedIn(engine, "agent:nova"))).length).toBe(2)
     }),
   )
+
+  it.live("a large pass has a fixed budget and never announces a failed erase", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const engine = yield* Effect.promise(() => open())
+      const ids = Array.from({ length: 20 }, (_, index) => `bulk${index.toString().padStart(2, "0")}`)
+      yield* Effect.promise(() => fill(engine, "agent:bulk", ids))
+      const originalCandidates = engine.candidates.bind(engine)
+      engine.candidates = async (options) => {
+        const candidates = await originalCandidates(options)
+        return [{ ...candidates[0]!, id: "" }, ...candidates]
+      }
+      const originalInvalidate = engine.invalidate.bind(engine)
+      engine.invalidate = (id, at, opts) =>
+        id === ids[0] ? Promise.reject(new Error("erase refused")) : originalInvalidate(id, at, opts)
+      const published: string[] = []
+      const bus = {
+        publish: (_definition: unknown, data: { id: string }) => {
+          published.push(data.id)
+          return Effect.succeed(undefined as never)
+        },
+      } as unknown as EventV2.Interface
+
+      const backlog = yield* WorldMemory.forgetOverCap(engine, db, bus, "agent:bulk", 2)
+
+      expect(backlog).toBe(true)
+      expect(published).toHaveLength(15)
+      expect(published).not.toContain(ids[0])
+      expect(published).not.toContain("")
+      expect((yield* Effect.promise(() => stagedIn(engine, "agent:bulk"))).length).toBe(5)
+    }),
+    60_000,
+  )
 })
