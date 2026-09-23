@@ -38,9 +38,17 @@ describe("MemoryAccessLedger", () => {
       const { db } = yield* Database.Service
       yield* db.run("DROP TABLE memory_usage")
       expect((yield* Effect.exit(MemoryAccessLedger.protectionFor(db, ["unknown"])))._tag).toBe("Failure")
+      expect((yield* Effect.exit(MemoryAccessLedger.usageFor(db, ["unknown"])))._tag).toBe("Failure")
+      expect((yield* Effect.exit(MemoryAccessLedger.everAccessed(db, ["unknown"])))._tag).toBe("Failure")
+      expect((yield* Effect.exit(MemoryAccessLedger.usefulMemories(db)))._tag).toBe("Failure")
+      expect((yield* Effect.exit(MemoryAccessLedger.correctionProne(db)))._tag).toBe("Failure")
+      expect((yield* Effect.exit(MemoryAccessLedger.usageForConflictKeys(db, ["unknown"])))._tag).toBe("Failure")
       expect((yield* Effect.exit(MemoryAccessLedger.feedback(db, { id: "unknown", useful: true, at: 100 })))._tag).toBe(
         "Failure",
       )
+      yield* db.run("DROP TABLE memory_access")
+      expect((yield* Effect.exit(MemoryAccessLedger.accessesFor(db, "unknown")))._tag).toBe("Failure")
+      expect((yield* Effect.exit(MemoryAccessLedger.trim(db)))._tag).toBe("Failure")
     }),
   )
   it.effect("a recall writes one row per returned memory, and the rollup counts the recall", () =>

@@ -34,6 +34,10 @@ if (args[0] === "__session-worker") {
   await import("./session-worker-node")
   process.exit(0)
 }
+if (args[0] === "__memory-worker") {
+  await import("./memory-worker-node")
+  process.exit(0)
+}
 
 function show(out: string) {
   const text = out.trimStart()

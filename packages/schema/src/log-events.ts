@@ -1313,6 +1313,14 @@ export const EVENTS = {
     file: "packages/core/src/kb-graph/world-memory.ts",
   },
 
+  "kb.memory.retention.failed": {
+    level: "warn",
+    message: "kb-memory retention paused after a failed safety check:",
+    attributes: { "kb.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/kb-graph/world-memory.ts",
+  },
+
   // ── location ──────────────────────────────────────────────────────────────────────────────────
   /** A location's service graph is being built. 1508 lines. */
   "location.services.boot": {

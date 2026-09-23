@@ -115,6 +115,18 @@ for (const path of paths) {
   }
 }
 
+try {
+  const response = await fetch(`http://127.0.0.1:${port}/api/world-memory/list`, {
+    method: "POST",
+    headers: { authorization: auth, "content-type": "application/json" },
+    body: "{}",
+  })
+  if (!response.ok) throw new Error(`memory list answered ${response.status}: ${(await response.text()).slice(0, 400)}`)
+} catch (error) {
+  failures += 1
+  console.error(`node-sidecar-smoke: memory worker integration failed — ${error?.stack ?? error}`)
+}
+
 // File-loader assets are emitted beside the split chunks. The roster must name the authenticated
 // route AND that route must return the real shipped bytes; checking only the JSON allowed a missing
 // `.webp` to degrade silently to a placeholder in packaged builds.
@@ -173,5 +185,5 @@ if (failures > 0) {
   console.error(`node-sidecar-smoke: ${failures} endpoint(s) failed — the sidecar bundle is broken`)
   process.exit(1)
 }
-console.log(`node-sidecar-smoke: ${paths.length} endpoints OK`)
+console.log(`node-sidecar-smoke: ${paths.length + 1} endpoints OK`)
 process.exit(0)

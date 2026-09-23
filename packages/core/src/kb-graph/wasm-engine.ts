@@ -19,12 +19,11 @@ import { KbClaim } from "./claim"
 import { selectSlice, type SliceMeta } from "./graph-slice"
 import { EngineFault } from "./engine-fault"
 import { GraphSnapshot } from "./snapshot"
+import type { CandidateInput as ClientCandidateInput } from "./memory-client"
 
-// The in-process Ladybug graph-memory engine (WASM) — the single engine that runs EVERYWHERE
-// (the 2026-07-19 pivot). The native addon can't run in a phone app and
-// segfaults under Bun; the WASM build runs in-process under Bun/Node (and, later, the browser) with
-// vector + FTS BUILT-IN — no sidecar, no native binary, no extension vendoring. This module owns the
-// graph in-process and IS the single-writer (§4.1).
+// The Ladybug graph-memory engine runs in the memory worker on server, with one writer per graph.
+// The native addon can't run in a phone app and segfaults under Bun; this WASM build supplies
+// vector and FTS without a native binary or extension vendoring.
 //
 // Persistence = MEMFS + snapshot (measured: real-disk NODEFS is fragile on Windows — a drive-letter
 // path hits an emscripten getcwd bug; an explicit NODEFS mount + on-disk index creation hangs; MEMFS
@@ -152,16 +151,7 @@ const isoTime = (value: unknown): string | undefined => {
 }
 
 /** What `candidates` selects. Short columns only — see the method for why `text` is not among them. */
-export interface CandidateInput {
-  readonly scopes?: readonly string[]
-  readonly kinds?: readonly MemoryKind[]
-  readonly statuses?: readonly KbClaim.ClaimStatus[]
-  readonly relation?: Relation
-  readonly includeInvalid?: boolean
-  /** `oldest` (the default) is what "never used, oldest first" and the prune policy both want. */
-  readonly order?: "oldest" | "newest"
-  readonly limit?: number
-}
+export type CandidateInput = ClientCandidateInput
 
 /** A memory described by everything EXCEPT its body. */
 export interface CandidateRow {
@@ -2041,12 +2031,14 @@ export class WasmMemory {
       // A higher ceiling than `list`/`graph` because these rows are SHORT: no body, so a wide window
       // costs a scan and a few numbers per row rather than a page of text.
       const limit = Math.max(1, Math.min(opts.limit ?? 500, 20000))
+      const requestedOffset = opts.offset ?? 0
+      const offset = Number.isSafeInteger(requestedOffset) ? Math.max(0, requestedOffset) : 0
       const rows = await this.rows(
         `MATCH (m:Memory) WHERE true ${validity} ${scopeFilter} ${relationFilter} ${kindFilter} ${statusFilter}
          RETURN m.id AS id, m.scope AS scope, m.kind AS kind, m.name AS name, m.source AS source,
                 m.confidence AS confidence, m.relation AS relation, m.status AS status,
                 m.conflict_key AS conflict_key, m.t_created AS created_at
-         ORDER BY m.t_created ${direction} LIMIT ${limit}`,
+         ORDER BY m.t_created ${direction}, m.id ${direction} SKIP ${offset} LIMIT ${limit}`,
         {
           ...(opts.scopes ? { scopes: opts.scopes } : {}),
           ...(opts.relation ? { relation: opts.relation } : {}),

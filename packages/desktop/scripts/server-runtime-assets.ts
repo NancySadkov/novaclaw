@@ -19,6 +19,8 @@ export async function copyServerRuntime(source: string, destination: string): Pr
         ? "novaclaw-server.js"
         : entry.name === "session-worker-node.js"
           ? "novaclaw-session-worker.js"
+          : entry.name === "memory-worker-node.js"
+            ? "novaclaw-memory-worker.js"
           : entry.name
     await copyFile(path.join(source, entry.name), path.join(destination, packagedName))
   }

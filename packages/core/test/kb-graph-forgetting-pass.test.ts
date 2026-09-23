@@ -86,12 +86,12 @@ describe("the forgetting pass", () => {
       yield* db
         .insert(MemoryAccessTable)
         .values(
-          Array.from({ length: 1_001 }, (_, index) => ({
+          Array.from({ length: 1_513 }, (_, index) => ({
             id: `acc_${index.toString().padStart(4, "0")}`,
             recall_id: `rcl_${index}`,
             fingerprint: "qf_maintenance",
             surface: "auto-recall",
-            memory_id: index === 0 ? "oldest" : index === 1_000 ? "newest" : `middle_${index}`,
+            memory_id: index === 0 ? "oldest" : index === 1_512 ? "newest" : `middle_${index}`,
             scope: "global",
             rank: 1,
             score: 1,
@@ -104,6 +104,9 @@ describe("the forgetting pass", () => {
       // Drive the same helper as the background loop with its minimum supported test horizon.
       yield* WorldMemory.forgetEverywhere(engine, db, silentBus, 50, 1_000)
 
+      expect((yield* db.select().from(MemoryAccessTable).all()).length).toBe(1_001)
+      yield* MemoryAccessLedger.trim(db, 1_000)
+      expect((yield* db.select().from(MemoryAccessTable).all()).length).toBe(1_000)
       expect(yield* MemoryAccessLedger.accessesFor(db, "oldest")).toEqual([])
       expect(yield* MemoryAccessLedger.accessesFor(db, "newest")).toHaveLength(1)
       expect((yield* MemoryAccessLedger.usageFor(db, ["oldest"])).get("oldest")?.useful).toBe(1)
@@ -176,6 +179,19 @@ describe("the forgetting pass", () => {
     }),
   )
 
+  it.effect("never prunes when the protection ledger cannot be read", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const engine = yield* Effect.promise(() => open())
+      yield* Effect.promise(() => fill(engine, "agent:nova", ["vouched", "b", "c"]))
+      yield* MemoryAccessLedger.feedback(db, { id: "vouched", useful: true, at: Date.now(), scope: "agent:nova" })
+      yield* db.run("DROP TABLE memory_usage")
+
+      expect((yield* Effect.exit(WorldMemory.forgetOverCap(engine, db, silentBus, "agent:nova", 1)))._tag).toBe("Failure")
+      expect((yield* Effect.promise(() => stagedIn(engine, "agent:nova"))).sort()).toEqual(["b", "c", "vouched"])
+    }),
+  )
+
   it.effect("a cabinet inside its cap is not touched at all", () =>
     Effect.gen(function* () {
       const { db } = yield* Database.Service
@@ -194,11 +210,6 @@ describe("the forgetting pass", () => {
         const engine = yield* Effect.promise(() => open())
         const ids = Array.from({ length: 20 }, (_, index) => `bulk${index.toString().padStart(2, "0")}`)
         yield* Effect.promise(() => fill(engine, "agent:bulk", ids))
-        const originalCandidates = engine.candidates.bind(engine)
-        engine.candidates = async (options) => {
-          const candidates = await originalCandidates(options)
-          return [{ ...candidates[0]!, id: "" }, ...candidates]
-        }
         const originalInvalidate = engine.invalidate.bind(engine)
         engine.invalidate = (id, at, opts) =>
           id === ids[0] ? Promise.reject(new Error("erase refused")) : originalInvalidate(id, at, opts)
@@ -212,12 +223,58 @@ describe("the forgetting pass", () => {
 
         const backlog = yield* WorldMemory.forgetOverCap(engine, db, bus, "agent:bulk", 2)
 
-        expect(backlog).toEqual({ attempted: 16, forgotten: 15, backlog: true })
+        expect(backlog).toMatchObject({ attempted: 16, forgotten: 15, failed: 1, backlog: true })
+        expect(backlog.failure).toContain("agent:bulk/bulk00")
         expect(published).toHaveLength(15)
         expect(published).not.toContain(ids[0])
-        expect(published).not.toContain("")
         expect((yield* Effect.promise(() => stagedIn(engine, "agent:bulk"))).length).toBe(5)
       }),
+    60_000,
+  )
+
+  it.live(
+    "rejects a candidate scan with blank ids before changing any memory",
+    () =>
+      Effect.gen(function* () {
+        const { db } = yield* Database.Service
+        const engine = yield* Effect.promise(() => open())
+        yield* Effect.promise(() => fill(engine, "agent:bulk", ["a", "b", "c"]))
+        const originalCandidates = engine.candidates.bind(engine)
+        engine.candidates = async (options) => {
+          const candidates = await originalCandidates(options)
+          return [{ ...candidates[0]!, id: "" }, ...candidates]
+        }
+
+        expect((yield* Effect.exit(WorldMemory.forgetOverCap(engine, db, silentBus, "agent:bulk", 1)))._tag).toBe("Failure")
+        expect((yield* Effect.promise(() => stagedIn(engine, "agent:bulk"))).sort()).toEqual(["a", "b", "c"])
+      }),
+    60_000,
+  )
+
+  it.live("paginates past a protected candidate window without widening the query", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const engine = yield* Effect.promise(() => open())
+      yield* Effect.promise(() => fill(engine, "agent:bulk", ["a", "b", "c"]))
+      const originalCount = engine.stagedCount.bind(engine)
+      const originalCandidates = engine.candidates.bind(engine)
+      const sample = (yield* Effect.promise(() => originalCandidates({ scopes: ["agent:bulk"], limit: 1 })))[0]!
+      const limits: number[] = []
+      engine.stagedCount = (scope) => scope === "agent:bulk" ? Promise.resolve(260) : originalCount(scope)
+      engine.candidates = async (options) => {
+        limits.push(options?.limit ?? 0)
+        if ((options?.offset ?? 0) === 0)
+          return Array.from({ length: 256 }, (_, index) => ({ ...sample, id: `protected-${index}`, relation: "core" as const }))
+        return originalCandidates({ ...options, offset: 0 })
+      }
+
+      const first = yield* WorldMemory.forgetOverCap(engine, db, silentBus, "agent:bulk", 2)
+      expect(first).toMatchObject({ attempted: 0, forgotten: 0, backlog: true, nextCandidateOffset: 256 })
+      expect(yield* Effect.promise(() => stagedIn(engine, "agent:bulk"))).toHaveLength(3)
+      const second = yield* WorldMemory.forgetOverCap(engine, db, silentBus, "agent:bulk", 2, 16, first.nextCandidateOffset)
+      expect(second.forgotten).toBe(3)
+      expect(limits).toEqual([256, 256])
+    }),
     60_000,
   )
 
@@ -274,6 +331,8 @@ describe("the forgetting pass", () => {
         const pass = yield* WorldMemory.forgetEverywhere(engine, db, silentBus, 2)
 
         expect(pass.backlog).toBe(false)
+        expect(pass.failed).toBe(16)
+        expect(pass.failure).toContain("agent:first")
         expect(pass.nextOffset).toBe(1)
         expect((yield* Effect.promise(() => stagedIn(engine, "agent:first"))).length).toBe(20)
         expect((yield* Effect.promise(() => stagedIn(engine, "agent:second"))).length).toBe(20)

@@ -19,7 +19,8 @@ import { MemorySetting } from "./memory-setting"
 import { MemoryEvent } from "@novaclaw/schema/memory-event"
 import { MemoryPrunePolicy } from "./prune-policy"
 import { GraphSnapshot } from "./snapshot"
-import { WasmMemory } from "./wasm-engine"
+import * as IsolatedMemory from "./isolated-engine"
+import type { GraphEngine } from "./isolated-engine"
 
 export interface Config {
   readonly enabled: boolean
@@ -42,13 +43,19 @@ export class Service extends Context.Service<Service, MemoryClient.Interface>()(
 
 let currentRuntimeStatus: RuntimeStatus = { stage: "not-loaded" }
 let publishBlockedRead: () => string | undefined = () => undefined
+let workerFaultRead: () => string | undefined = () => undefined
 
 export const describeRuntimeStatus = (status: RuntimeStatus, publishBlocked: string | undefined): RuntimeStatus => {
   if (status.stage !== "ready" || publishBlocked === undefined) return status
   const blocked = `durable writes blocked: ${publishBlocked}`
   return { stage: "ready", detail: status.detail === undefined ? blocked : `${status.detail}; ${blocked}` }
 }
-export const runtimeStatus = (): RuntimeStatus => describeRuntimeStatus(currentRuntimeStatus, publishBlockedRead())
+export const runtimeStatus = (): RuntimeStatus => {
+  const fault = workerFaultRead()
+  return fault && currentRuntimeStatus.stage === "ready"
+    ? { stage: "error", detail: fault }
+    : describeRuntimeStatus(currentRuntimeStatus, publishBlockedRead())
+}
 
 const DEFAULT_STAGED_CAP = 2_000
 const DEFAULT_RETAIN_EVERY_MS = 5 * 60_000
@@ -59,88 +66,117 @@ const RETAIN_BACKLOG_RETRY_MS = 5_000
 
 /** Bound one ECS-owned cabinet using the recall ledger, never another agent's activity. */
 export const forgetOverCap = (
-  live: WasmMemory,
+  live: GraphEngine,
   db: Database.Interface["db"],
   events: EventV2.Interface,
   scope: string,
   cap: number,
   budget = RETAIN_BATCH_SIZE,
+  candidateOffset = 0,
 ) =>
   Effect.gen(function* () {
-    const count = yield* Effect.tryPromise(() => live.stagedCount(scope)).pipe(Effect.orElseSucceed(() => 0))
+    const count = yield* Effect.tryPromise(() => live.stagedCount(scope))
     const excess = count - Math.max(0, Math.floor(cap))
-    if (excess <= 0 || budget <= 0) return { attempted: 0, forgotten: 0, backlog: excess > 0 }
+    if (excess <= 0 || budget <= 0)
+      return { attempted: 0, forgotten: 0, failed: 0, failure: undefined, backlog: excess > 0, nextCandidateOffset: 0 }
+    const offset = candidateOffset >= count ? 0 : candidateOffset
+    const limit = Math.min(Math.max(excess * 4, 64), 256)
     const candidates = yield* Effect.tryPromise(() =>
       live.candidates({
         scopes: [scope],
         relation: "staged",
         order: "oldest",
-        limit: Math.min(Math.max(excess * 4, 500), 20_000),
+        limit,
+        offset,
       }),
-    ).pipe(Effect.orElseSucceed(() => [] as ReadonlyArray<MemoryClient.CandidateRow>))
+    )
+    if (candidates.length === 0 && offset > 0)
+      return { attempted: 0, forgotten: 0, failed: 0, failure: undefined, backlog: true, nextCandidateOffset: 0 }
+    if (candidates.length === 0)
+      return yield* Effect.fail(new Error(`memory graph reported ${count} staged rows but returned no candidates in ${scope}`))
+    if (candidates.some((row) => row.id.length === 0))
+      return yield* Effect.fail(new Error(`memory graph returned blank ids in ${scope}`))
     const usage = yield* MemoryAccessLedger.usageFor(
       db,
-      candidates.map((row) => row.id).filter((id) => id.length > 0),
+      candidates.map((row) => row.id),
     )
     const choice = MemoryPrunePolicy.choose({
-      candidates: candidates.filter((row) => row.id.length > 0),
+      candidates,
       usage,
       excess: Math.min(excess, budget),
       now: Date.now(),
     })
     let attempted = 0
     let forgotten = 0
+    let failed = 0
+    let failure: string | undefined
     for (const id of choice.victims) {
       attempted++
-      const invalidated = yield* Effect.tryPromise(() => live.invalidate(id, undefined, { scopes: [scope] })).pipe(
-        Effect.as(true),
-        Effect.orElseSucceed(() => false),
+      const invalidation = yield* Effect.tryPromise(() => live.invalidate(id, undefined, { scopes: [scope] })).pipe(
+        Effect.match({ onFailure: (error) => ({ error }), onSuccess: () => ({ success: true }) }),
       )
-      if (invalidated) {
+      if ("success" in invalidation) {
         forgotten++
         yield* events.publish(MemoryEvent.Forgotten, { id, mode: "invalidate" }).pipe(Effect.ignore)
+      } else {
+        failed++
+        failure ??= `${scope}/${id}: ${String(invalidation.error).slice(0, 200)}`
       }
       if (attempted % (RETAIN_BATCH_SIZE / 2) === 0) yield* Effect.sleep(RETAIN_BATCH_PAUSE_MS)
     }
-    return { attempted, forgotten, backlog: forgotten > 0 && excess > forgotten }
+    const nextCandidateOffset = forgotten > 0 || offset + candidates.length >= count ? 0 : offset + candidates.length
+    return {
+      attempted, forgotten, failed, failure, nextCandidateOffset,
+      backlog: (forgotten > 0 && excess > forgotten) || nextCandidateOffset > 0,
+    }
   })
 
 export const forgetEverywhere = (
-  live: WasmMemory,
+  live: GraphEngine,
   db: Database.Interface["db"],
   events: EventV2.Interface,
   cap: number,
   rawAccessKeep = MemoryAccessLedger.RAW_ROW_HORIZON,
   offset = 0,
+  candidateOffsets = new Map<string, number>(),
 ) =>
   Effect.gen(function* () {
     const scopes = [
       ...new Set([
-        ...(yield* Effect.tryPromise(() => live.stagedScopes("session:")).pipe(Effect.orElseSucceed(() => []))),
-        ...(yield* Effect.tryPromise(() => live.stagedScopes("agent:")).pipe(Effect.orElseSucceed(() => []))),
+        ...(yield* Effect.tryPromise(() => live.stagedScopes("session:"))),
+        ...(yield* Effect.tryPromise(() => live.stagedScopes("agent:"))),
         "global",
       ]),
     ]
+    for (const scope of candidateOffsets.keys()) if (!scopes.includes(scope)) candidateOffsets.delete(scope)
     const start = ((offset % scopes.length) + scopes.length) % scopes.length
     const ordered = [...scopes.slice(start), ...scopes.slice(0, start)]
     let backlog = false
     let attempted = 0
     let forgotten = 0
+    let failed = 0
+    let failure: string | undefined
     let processed = 0
     for (const scope of ordered) {
       if (attempted >= RETAIN_BATCH_SIZE || processed >= RETAIN_SCOPE_BATCH_SIZE) {
         backlog = true
         break
       }
-      const result = yield* forgetOverCap(live, db, events, scope, cap, RETAIN_BATCH_SIZE - attempted)
+      const result = yield* forgetOverCap(
+        live, db, events, scope, cap, RETAIN_BATCH_SIZE - attempted, candidateOffsets.get(scope) ?? 0,
+      )
+      if (result.nextCandidateOffset > 0) candidateOffsets.set(scope, result.nextCandidateOffset)
+      else candidateOffsets.delete(scope)
       attempted += result.attempted
       forgotten += result.forgotten
+      failed += result.failed
+      failure ??= result.failure
       backlog = result.backlog || backlog
       processed++
       if (processed < scopes.length) yield* Effect.sleep(RETAIN_BATCH_PAUSE_MS)
     }
-    yield* MemoryAccessLedger.trim(db, rawAccessKeep).pipe(Effect.ignore)
-    return { backlog: backlog && (forgotten > 0 || attempted === 0), nextOffset: (start + processed) % scopes.length }
+    yield* MemoryAccessLedger.trim(db, rawAccessKeep)
+    return { backlog: backlog && (forgotten > 0 || attempted === 0), failed, failure, nextOffset: (start + processed) % scopes.length }
   })
 
 export const configFromFlags = (): Config => ({
@@ -165,16 +201,18 @@ export const layerFromConfig = (
       const dbDir = cfg.dbDir ?? join(Global.Path.data, "memory", "world")
       currentRuntimeStatus = { stage: "not-loaded" }
       publishBlockedRead = () => undefined
-      let engine: WasmMemory | undefined
+      workerFaultRead = () => undefined
+      let engine: GraphEngine | undefined
       let opening: Promise<MemoryClient.Interface> | undefined
       const open = () => {
         if (engine) return Promise.resolve(MemoryClient.fromEngine(engine))
         if (opening) return opening
         currentRuntimeStatus = { stage: "loading" }
-        opening = WasmMemory.open(dbDir, cfg.dim === undefined ? {} : { dim: cfg.dim })
+        opening = IsolatedMemory.open(dbDir, cfg.dim === undefined ? {} : { dim: cfg.dim })
           .then((opened) => {
             engine = opened
             publishBlockedRead = () => opened.publishBlocked
+            workerFaultRead = () => opened.fault
             currentRuntimeStatus =
               opened.recovery.skipped.length === 0
                 ? { stage: "ready" }
@@ -246,6 +284,7 @@ export const layerFromConfig = (
           const cap = cfg.stagedCap ?? DEFAULT_STAGED_CAP
           let nextDelay = cfg.retainEveryMs ?? DEFAULT_RETAIN_EVERY_MS
           let nextOffset = 0
+          const candidateOffsets = new Map<string, number>()
           for (;;) {
             yield* Effect.sleep(nextDelay)
             const live = engine
@@ -262,9 +301,27 @@ export const layerFromConfig = (
               cap,
               MemoryAccessLedger.RAW_ROW_HORIZON,
               nextOffset,
-            )
-            nextOffset = retention.nextOffset
-            nextDelay = retention.backlog ? RETAIN_BACKLOG_RETRY_MS : (cfg.retainEveryMs ?? DEFAULT_RETAIN_EVERY_MS)
+              candidateOffsets,
+            ).pipe(Effect.match({ onFailure: (error) => ({ error }), onSuccess: (result) => ({ result }) }))
+            if ("error" in retention) {
+              currentRuntimeStatus = { stage: "error", detail: `retention failed: ${String(retention.error).slice(0, 300)}` }
+              yield* Log.event("kb.memory.retention.failed", { "kb.cause": Log.fault(retention.error) })
+              nextDelay = cfg.retainEveryMs ?? DEFAULT_RETAIN_EVERY_MS
+              continue
+            }
+            if (retention.result.failed > 0) {
+              const detail = `${retention.result.failed} memory erases failed: ${retention.result.failure}`
+              currentRuntimeStatus = { stage: "error", detail }
+              yield* Log.event("kb.memory.retention.failed", {
+                "kb.cause": Log.fault(new Error(detail)),
+              })
+            }
+            if (retention.result.failed === 0 && currentRuntimeStatus.stage === "error" &&
+                (currentRuntimeStatus.detail?.startsWith("retention failed:") ||
+                  currentRuntimeStatus.detail?.includes("memory erases failed:")))
+              currentRuntimeStatus = { stage: "ready" }
+            nextOffset = retention.result.nextOffset
+            nextDelay = retention.result.backlog ? RETAIN_BACKLOG_RETRY_MS : (cfg.retainEveryMs ?? DEFAULT_RETAIN_EVERY_MS)
           }
         }),
       )

@@ -25,6 +25,9 @@ const asBadRequest = <A, R>(effect: Effect.Effect<A, MemoryClient.MemoryError, R
     ),
   )
 
+const asLedgerRead = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  effect.pipe(Effect.mapError(() => new InvalidRequestError({ message: "Could not read memory usage" })))
+
 /**
  * Erase every memory in every scope, for every agent — Nova included.
  *
@@ -387,7 +390,7 @@ export const MemoryHandler = handlerLayer(
               const seen = yield* MemoryAccessLedger.everAccessed(
                 db,
                 candidates.map((row) => row.id),
-              )
+              ).pipe(asLedgerRead)
               const unused = candidates.filter((row) => !seen.has(row.id)).slice(0, limit)
               const rows = yield* asBadRequest(memory.byIds(unused.map((row) => row.id)))
               // `partial` is the honest half: a short answer is not proof there are no more.
@@ -398,7 +401,7 @@ export const MemoryHandler = handlerLayer(
             "memory.usage.useful",
             Effect.fn(function* (ctx) {
               const memory = WorldMemory.client(yield* WorldMemory.node.service)
-              const usage = yield* MemoryAccessLedger.usefulMemories(db, bounded(ctx.payload.limit, 50, 500))
+              const usage = yield* MemoryAccessLedger.usefulMemories(db, bounded(ctx.payload.limit, 50, 500)).pipe(asLedgerRead)
               return { items: yield* withUsage(memory, usage) }
             }),
           )
@@ -409,11 +412,11 @@ export const MemoryHandler = handlerLayer(
               const groups = yield* MemoryAccessLedger.correctionProne(db, {
                 ...(ctx.payload.minCorrected === undefined ? {} : { minCorrected: ctx.payload.minCorrected }),
                 ...(ctx.payload.limit === undefined ? {} : { limit: ctx.payload.limit }),
-              })
+              }).pipe(asLedgerRead)
               const usage = yield* MemoryAccessLedger.usageForConflictKeys(
                 db,
                 groups.map((group) => group.conflictKey),
-              )
+              ).pipe(asLedgerRead)
               const items = yield* withUsage(memory, usage)
               const keyOf = new Map(usage.map((row) => [row.memoryID, row.conflictKey] as const))
               return {
@@ -427,8 +430,8 @@ export const MemoryHandler = handlerLayer(
           .handle(
             "memory.usage.detail",
             Effect.fn(function* (ctx) {
-              const usage = yield* MemoryAccessLedger.usageFor(db, [ctx.payload.id])
-              const accesses = yield* MemoryAccessLedger.accessesFor(db, ctx.payload.id)
+              const usage = yield* MemoryAccessLedger.usageFor(db, [ctx.payload.id]).pipe(asLedgerRead)
+              const accesses = yield* MemoryAccessLedger.accessesFor(db, ctx.payload.id).pipe(asLedgerRead)
               const row = usage.get(ctx.payload.id)
               return { usage: row === undefined ? null : counts(row), accesses }
             }),

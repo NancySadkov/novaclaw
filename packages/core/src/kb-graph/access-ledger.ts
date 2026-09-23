@@ -14,13 +14,8 @@ export const RAW_ROW_HORIZON = 50_000
 /**
  * THE RETRIEVAL ACCESS LEDGER — what recall delivered, and what became of it.
  *
- * Background observations DEGRADE rather than fail. The ledger is a
- * measurement surface hanging off the store boundary; a locked database or a missing table must cost
- * an observation, never a turn. So the writes end in `Effect.ignore` and the reads in
- * `orElseSucceed`, exactly as `memory-observed.ts` treats the event bus — and for the same reason:
- * memory degrades, it does not take the turn down with it.
- * Explicit protection reads and feedback writes are different: the UI must learn whether they
- * succeeded. `protectionFor` and `feedback` preserve failures instead of inventing an empty state.
+ * Background observation writes may degrade without failing a turn. Reads used for pruning or
+ * displayed as authoritative results preserve database errors rather than inventing empty data.
  *
  * ⚠️ **`Effect.orDie` is what the sibling stores use and it is the wrong stance HERE.** A defect
  * from `AgentUsage.record` surfaces on a path the user is already watching; a defect from a recall
@@ -330,7 +325,7 @@ export const protectionFor = (db: Db, ids: ReadonlyArray<string>) =>
   })
 
 /** The rollup for a specific set of memories — what the pruning policy reads. */
-export const usageFor = (db: Db, ids: ReadonlyArray<string>): Effect.Effect<Map<string, Usage>> =>
+export const usageFor = (db: Db, ids: ReadonlyArray<string>) =>
   Effect.suspend(() => {
     if (ids.length === 0) return Effect.succeed(new Map<string, Usage>())
     return db
@@ -340,12 +335,11 @@ export const usageFor = (db: Db, ids: ReadonlyArray<string>): Effect.Effect<Map<
       .all()
       .pipe(
         Effect.map((rows) => new Map(rows.map((row) => [row.memory_id, toUsage(row)] as const))),
-        Effect.orElseSucceed(() => new Map<string, Usage>()),
       )
   })
 
 /** Memories a person vouched for. These are PROTECTED from pruning. */
-export const usefulMemories = (db: Db, limit = 200): Effect.Effect<ReadonlyArray<Usage>> =>
+export const usefulMemories = (db: Db, limit = 200) =>
   db
     .select()
     .from(MemoryUsageTable)
@@ -353,13 +347,10 @@ export const usefulMemories = (db: Db, limit = 200): Effect.Effect<ReadonlyArray
     .orderBy(desc(MemoryUsageTable.last_accessed_at))
     .limit(bounded(limit))
     .all()
-    .pipe(
-      Effect.map((rows) => rows.map(toUsage)),
-      Effect.orElseSucceed(() => [] as ReadonlyArray<Usage>),
-    )
+    .pipe(Effect.map((rows) => rows.map(toUsage)))
 
 /** Every memory the ledger has ever seen, by id. The anti-set for "never used". */
-export const everAccessed = (db: Db, ids: ReadonlyArray<string>): Effect.Effect<ReadonlySet<string>> =>
+export const everAccessed = (db: Db, ids: ReadonlyArray<string>) =>
   Effect.suspend(() => {
     if (ids.length === 0) return Effect.succeed(new Set<string>())
     return (
@@ -371,10 +362,7 @@ export const everAccessed = (db: Db, ids: ReadonlyArray<string>): Effect.Effect<
         // list — turning a person's judgement into a fabricated retrieval.
         .where(and(inArray(MemoryUsageTable.memory_id, ids), sql`${MemoryUsageTable.accesses} > 0`))
         .all()
-        .pipe(
-          Effect.map((rows) => new Set(rows.map((row) => row.id))),
-          Effect.orElseSucceed(() => new Set<string>()),
-        )
+        .pipe(Effect.map((rows) => new Set(rows.map((row) => row.id))))
     )
   })
 
@@ -398,7 +386,7 @@ export interface CorrectionGroup {
 export const correctionProne = (
   db: Db,
   input: { readonly minCorrected?: number; readonly limit?: number } = {},
-): Effect.Effect<ReadonlyArray<CorrectionGroup>> =>
+) =>
   db
     .select({
       conflictKey: MemoryUsageTable.conflict_key,
@@ -429,11 +417,10 @@ export const correctionProne = (
           .sort((a, b) => b.corrected - a.corrected || b.lastAccessedAt - a.lastAccessedAt)
           .slice(0, bounded(input.limit ?? 50)),
       ),
-      Effect.orElseSucceed(() => [] as ReadonlyArray<CorrectionGroup>),
     )
 
 /** The rollups filed under a set of identities — what the review list shows once a group is opened. */
-export const usageForConflictKeys = (db: Db, keys: ReadonlyArray<string>): Effect.Effect<ReadonlyArray<Usage>> =>
+export const usageForConflictKeys = (db: Db, keys: ReadonlyArray<string>) =>
   Effect.suspend(() => {
     if (keys.length === 0) return Effect.succeed([] as ReadonlyArray<Usage>)
     return db
@@ -441,10 +428,7 @@ export const usageForConflictKeys = (db: Db, keys: ReadonlyArray<string>): Effec
       .from(MemoryUsageTable)
       .where(inArray(MemoryUsageTable.conflict_key, keys))
       .all()
-      .pipe(
-        Effect.map((rows) => rows.map(toUsage)),
-        Effect.orElseSucceed(() => [] as ReadonlyArray<Usage>),
-      )
+      .pipe(Effect.map((rows) => rows.map(toUsage)))
   })
 
 export interface Access {
@@ -461,7 +445,7 @@ export interface Access {
 }
 
 /** The raw per-hit rows for one memory, newest first — the "why is this here" detail view. */
-export const accessesFor = (db: Db, id: string, limit = 50): Effect.Effect<ReadonlyArray<Access>> =>
+export const accessesFor = (db: Db, id: string, limit = 50) =>
   db
     .select()
     .from(MemoryAccessTable)
@@ -484,7 +468,6 @@ export const accessesFor = (db: Db, id: string, limit = 50): Effect.Effect<Reado
           correctedAt: row.corrected_at,
         })),
       ),
-      Effect.orElseSucceed(() => [] as ReadonlyArray<Access>),
     )
 
 /**
@@ -497,12 +480,11 @@ export const accessesFor = (db: Db, id: string, limit = 50): Effect.Effect<Reado
 export const trim = (db: Db, keep = RAW_ROW_HORIZON) =>
   db
     .run(
-      sql`DELETE FROM ${MemoryAccessTable} WHERE ${MemoryAccessTable.id} NOT IN (
+      sql`DELETE FROM ${MemoryAccessTable} WHERE ${MemoryAccessTable.id} IN (
         SELECT ${MemoryAccessTable.id} FROM ${MemoryAccessTable}
-        ORDER BY ${MemoryAccessTable.accessed_at} DESC LIMIT ${Math.max(1000, Math.trunc(keep))}
+        ORDER BY ${MemoryAccessTable.accessed_at} DESC LIMIT 512 OFFSET ${Math.max(1000, Math.trunc(keep))}
       )`,
     )
-    .pipe(degradeWrite)
 
 /** Drop everything the ledger holds about specific memories — what a PURGE owes the measurement. */
 export const forget = (db: Db, ids: ReadonlyArray<string>) =>

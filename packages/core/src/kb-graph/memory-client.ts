@@ -7,7 +7,7 @@ import { compatible, narrowest, type MemoryAccess } from "./memory-access"
 
 // The memory tier's Effect-facing surface: the `Interface` the kb tool +
 // auto-recall/extract hooks depend on, its types + tagged error, and the ways to construct it —
-// `fromEngine` (adapt the in-process WASM engine, ./wasm-engine.ts), `stub` (in-memory, for tests),
+// `fromEngine` (adapt the local or isolated WASM engine), `stub` (in-memory, for tests),
 // `disabled` (degraded — memory unavailable but the instance still boots), and `proxy` (hand over a
 // live client immediately, swap the real engine in once it opens). Errors collapse to a single tagged
 // MemoryError so callers DEGRADE gracefully (memory down ≠ turn fails). The engine is injected (no
@@ -142,6 +142,7 @@ export interface CandidateInput {
   /** `oldest` (the default) is what "never used, oldest first" and the prune policy both want. */
   readonly order?: "oldest" | "newest"
   readonly limit?: number
+  readonly offset?: number
 }
 
 export interface CandidateRow {
@@ -324,7 +325,7 @@ export interface Interface {
 // a client via `stub`/`disabled` through `layerWith`.
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/MemoryClient") {}
 
-/** The in-process engine surface the client adapts (WasmMemory satisfies this structurally). Keeps
+/** The engine surface the client adapts (WasmMemory and its process proxy satisfy it). Keeps
  *  memory-client free of any engine import — the engine is injected. */
 /** What `addEdge` did: `scope` is the DERIVED scope of the stored edge, absent when it was refused. */
 export interface EdgeResult {
@@ -360,9 +361,8 @@ export interface Engine {
   graph(input?: GraphInput): Promise<MemoryGraph>
 }
 
-/** Adapt an in-process engine (the WASM store) to the `MemoryClient` Interface: each op becomes an
- *  Effect, faults collapse to a tagged MemoryError so callers degrade. This is the in-process
- *  counterpart to `make` (which spoke HTTP to the retired Node sidecar). */
+/** Adapt the WASM engine or its process proxy to the `MemoryClient` Interface: each op becomes an
+ *  Effect, faults collapse to a tagged MemoryError so callers degrade. */
 export const fromEngine = (engine: Engine): Interface => {
   const wrap = <A>(run: () => Promise<A>): Effect.Effect<A, MemoryError> =>
     Effect.tryPromise({ try: run, catch: (cause) => new MemoryError({ reason: String(cause).slice(0, 300) }) })
@@ -799,7 +799,7 @@ export const stub = (): Interface => {
         // order reversed. Honoured rather than ignored, so a caller cannot pass against this double
         // on an ordering it never actually asked the real engine for.
         const ordered = input?.order === "newest" ? rows.toReversed() : rows
-        return ordered.slice(0, input?.limit ?? 500)
+        return ordered.slice(input?.offset ?? 0, (input?.offset ?? 0) + (input?.limit ?? 500))
       }),
     byIds: (ids) => ok(ids.map((id) => mems.get(id)).flatMap((m) => (m ? [stripValid(m)] : []))),
     graph: (input) => {

@@ -37,7 +37,7 @@ const result = await Bun.build({
   // here — because `node-sidecar-smoke.mjs` below boots this bundle and makes real requests on every
   // build. Do NOT copy this flag to the binary build without carrying an equivalent check with it.
   splitting: true,
-  entrypoints: ["./src/node.ts", "./src/session-worker-node.ts"],
+  entrypoints: ["./src/node.ts", "./src/session-worker-node.ts", "./src/memory-worker-node.ts"],
   outdir: "./dist/node",
   format: "esm",
   // Production ships scrubbed crash diagnostics and does not consume this 40 MB map. Generating it
@@ -69,13 +69,14 @@ if (Script.channel === "prod")
   await Promise.all([
     rm("./dist/node/node.js.map", { force: true }),
     rm("./dist/node/session-worker-node.js.map", { force: true }),
+    rm("./dist/node/memory-worker-node.js.map", { force: true }),
   ])
 
 // The two comments above say WHY `conditions` and `external` are set the way they are. This turns
 // that knowledge into a CHECK: if either regresses, a `bun:` import reaches the bundle and the
 // Electron sidecar dies at load with ERR_UNSUPPORTED_ESM_URL_SCHEME — a packaged-only failure a
 // green suite cannot see, which is the exact class that shipped v0.0.1 and v0.1.0 broken.
-for (const name of ["node.js", "session-worker-node.js"]) {
+for (const name of ["node.js", "session-worker-node.js", "memory-worker-node.js"]) {
   const bundled = await Bun.file(`./dist/node/${name}`).text()
   if (/\b(?:from|import\(|require\()\s*["']bun:/.test(bundled))
     throw new Error(`${name} contains a \`bun:\` runtime import — check \`conditions: ['node']\` and the external list`)
@@ -140,6 +141,7 @@ if (!nodeExe) {
       XDG_CONFIG_HOME: path.join(home, "config"),
       XDG_CACHE_HOME: path.join(home, "cache"),
       XDG_STATE_HOME: path.join(home, "state"),
+      NODE_PATH: path.resolve(dir, "../desktop/node_modules"),
     }
     delete env.NOVACLAW_SERVER_PASSWORD
     delete env.NOVACLAW_SERVER_USERNAME
@@ -165,6 +167,11 @@ if (!nodeExe) {
         "Run `node script/node-sidecar-smoke.mjs ./dist/node/node.js` directly to see where it stops.",
     )
   if (code !== 0) throw new Error("Node sidecar smoke failed — the built bundle does not serve")
+  const memoryWorker = Bun.spawnSync(
+    [nodeExe, "./script/memory-worker-smoke.mjs", "./dist/node/memory-worker-node.js"],
+    { stdout: "inherit", stderr: "inherit", env: { ...process.env, NODE_PATH: path.resolve(dir, "../desktop/node_modules") } },
+  )
+  if (memoryWorker.exitCode !== 0) throw new Error("Node memory worker smoke failed")
 }
 
 console.log("Build complete")
