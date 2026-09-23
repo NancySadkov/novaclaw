@@ -17,6 +17,7 @@
 
 import { ConfigAgent } from "@novaclaw/core/config/agent"
 import { retargetScratchGrants } from "@novaclaw/core/agent/scratch-grants"
+import { unwrap } from "solid-js/store"
 
 /**
  * Fields a settings copy deliberately does NOT carry, each for its own reason.
@@ -105,7 +106,7 @@ export const planSettingsCopy = (input: {
       fragment[key] = retargetScratchGrants(input.prototypeID, input.targetID, value as never)
       continue
     }
-    fragment[key] = structuredClone(value)
+    fragment[key] = structuredClone(unwrap(value))
   }
   const replacesLists = LIST_FIELDS.filter((field) => fragment[field] !== undefined)
   return { prototypeID: input.prototypeID, fragment, replacesLists }

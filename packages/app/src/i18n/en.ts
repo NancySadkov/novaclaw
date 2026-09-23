@@ -1040,7 +1040,7 @@ export const dict = {
   "settings.tunes.title": "Context",
   "settings.nudges.title": "Nudges",
   "settings.nudges.description":
-    "Give agents a short instruction only when it is useful. Choose a built-in event or match text with a regular expression; nothing is added to every prompt.",
+    "Store guidance the officer recalls when a matching event occurs. Choose a built-in event or match text with a regular expression. It stays out of the prompt until needed.",
   "settings.nudges.add": "Add nudge",
   "settings.nudges.edit": "Edit nudge",
   "settings.nudges.toast.failed": "Couldn't save nudges",

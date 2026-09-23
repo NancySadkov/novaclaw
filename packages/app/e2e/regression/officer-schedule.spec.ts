@@ -77,6 +77,20 @@ test("an officer sees overlapping work windows and can edit their cadence on des
                 hook: { type: "resource-pressure", level: "either" },
                 text: "Check resource status before starting heavy work.",
               },
+              {
+                id: "after-compaction",
+                name: "Recheck important context",
+                enabled: true,
+                hook: { type: "after-compaction" },
+                text: "Review the current task after compaction.",
+              },
+              {
+                id: "new-day",
+                name: "Plan the day",
+                enabled: true,
+                hook: { type: "new-day" },
+                text: "Check today's priorities.",
+              },
             ],
           },
         },
@@ -173,6 +187,13 @@ test("an officer sees overlapping work windows and can edit their cadence on des
     await page.setViewportSize({ width, height: 900 })
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.screenshot({ path: info.outputPath(`nudges-${width}.png`) })
+    await nudges.getByRole("article").last().getByRole("button", { name: "Edit" }).click()
+    const editor = nudges.locator('[data-component="settings-nudges-editor"]')
+    await expect(editor).toBeInViewport()
+    await expect(nudges.getByRole("article")).toHaveCount(0)
+    await expect(editor.getByPlaceholder("Name")).toHaveValue("Plan the day")
+    await page.screenshot({ path: info.outputPath(`nudge-editor-${width}.png`) })
+    await editor.getByRole("button", { name: "Cancel" }).click()
   }
   expect(errors).toEqual([])
 })

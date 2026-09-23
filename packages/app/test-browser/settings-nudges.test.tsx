@@ -108,5 +108,21 @@ describe("Officer Nudges", () => {
     expect(saved[0]?.name).toBe("Review writes")
     expect(document.body.textContent).toContain("Review writes")
     expect(document.querySelector('[data-component="settings-nudges-editor"]')).toBeNull()
+
+    click(t("common.edit"))
+    await settle()
+    expect(document.querySelector(".nudge-card")).toBeNull()
+    expect(document.querySelector('[data-component="settings-nudges-editor"]')).not.toBeNull()
+    expect(
+      (document.querySelector(`input[placeholder="${t("settings.nudges.field.name")}"]`) as HTMLInputElement).value,
+    ).toBe("Review writes")
+    typeInto(`textarea[placeholder="${t("settings.nudges.field.text")}"]`, "Check the destination path.")
+    click(t("common.save"))
+    await settle()
+    expect((config().agents as { writer: { nudges: Array<{ text: string }> } }).writer.nudges).toEqual([
+      expect.objectContaining({ name: "Review writes", text: "Check the destination path." }),
+    ])
+    expect(document.querySelector(".nudge-card")).not.toBeNull()
+    expect(document.querySelector('[data-component="settings-nudges-editor"]')).toBeNull()
   })
 })

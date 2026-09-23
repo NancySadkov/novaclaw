@@ -5,6 +5,7 @@ import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { TextareaV2 } from "@novaclaw/ui/v2/textarea-v2"
 import type { ConfigNudge } from "@novaclaw/core/config/nudge"
 import { For, Show, createMemo, createSignal, type Component } from "solid-js"
+import { unwrap } from "solid-js/store"
 import { useLanguage, type TranslationKey } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { useGlobal } from "@/context/global"
@@ -113,6 +114,7 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
   const [editingID, setEditingID] = createSignal<string | undefined>()
   const [draft, setDraft] = createSignal<ConfigNudge.Info>(blank())
   const [error, setError] = createSignal<string>()
+  let editor: HTMLDivElement | undefined
 
   const hookOptions = createMemo(() =>
     (
@@ -139,10 +141,11 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
     )
 
   const open = (item?: ConfigNudge.Info) => {
-    const value = item ? structuredClone(item) : blank()
+    const value = item ? structuredClone(unwrap(item)) : blank()
     setDraft(value)
     setEditingID(item?.id ?? "")
     setError(undefined)
+    queueMicrotask(() => editor?.scrollIntoView?.({ block: "start" }))
   }
 
   const save = async () => {
@@ -172,7 +175,7 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
     <div class="nudge-surface">
       <div class="nudge-heading">
         <div>
-          <span class="nudge-eyebrow">OFFICER INSTINCTS</span>
+          <span class="nudge-eyebrow">LONG-TERM MEMORY</span>
           <h2>{language.t("settings.nudges.title")}</h2>
           <p>{language.t("settings.nudges.description")}</p>
         </div>
@@ -183,53 +186,55 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
         </Show>
       </div>
       <div class="settings-v2-tab-body">
-        <div class="settings-v2-section">
-          <Show when={nudges().length === 0}>
-            <p class="schedule-empty">This officer has no nudges yet. Add one to guide it at a useful moment.</p>
-          </Show>
-          <div class="nudge-cards">
-            <For each={nudges()}>
-              {(item) => (
-                <article class="nudge-card" data-disabled={item.enabled === false}>
-                  <div class="nudge-card-top">
-                    <span class="nudge-status-dot" data-state={item.enabled === false ? "off" : "on"} />
-                    <div class="nudge-card-title">
-                      <h4>{item.name}</h4>
-                      <p>{language.t(HOOK_KEY[item.hook.type])}</p>
+        <Show when={editingID() === undefined}>
+          <div class="settings-v2-section">
+            <Show when={nudges().length === 0}>
+              <p class="schedule-empty">This officer has no nudges yet. Add one to guide it at a useful moment.</p>
+            </Show>
+            <div class="nudge-cards">
+              <For each={nudges()}>
+                {(item) => (
+                  <article class="nudge-card" data-disabled={item.enabled === false}>
+                    <div class="nudge-card-top">
+                      <span class="nudge-status-dot" data-state={item.enabled === false ? "off" : "on"} />
+                      <div class="nudge-card-title">
+                        <h4>{item.name}</h4>
+                        <p>{language.t(HOOK_KEY[item.hook.type])}</p>
+                      </div>
+                      <Switch
+                        checked={item.enabled !== false}
+                        onChange={(enabled) =>
+                          void persist(nudges().map((entry) => (entry.id === item.id ? { ...entry, enabled } : entry)))
+                        }
+                        hideLabel
+                      >
+                        {item.name}
+                      </Switch>
                     </div>
-                    <Switch
-                      checked={item.enabled !== false}
-                      onChange={(enabled) =>
-                        void persist(nudges().map((entry) => (entry.id === item.id ? { ...entry, enabled } : entry)))
-                      }
-                      hideLabel
-                    >
-                      {item.name}
-                    </Switch>
-                  </div>
-                  <p class="nudge-card-prompt">{item.text}</p>
-                  <div class="nudge-card-foot">
-                    <span>
-                      {item.spammable ? "Repeats whenever triggered" : "Quiet delivery"}
-                      {item.script ? " · Dynamic text" : ""}
-                    </span>
-                    <div class="nudge-actions">
-                      <button type="button" onClick={() => open(item)}>
-                        {language.t("common.edit")}
-                      </button>
-                      <button type="button" onClick={() => void remove(item)}>
-                        {language.t("common.delete")}
-                      </button>
+                    <p class="nudge-card-prompt">{item.text}</p>
+                    <div class="nudge-card-foot">
+                      <span>
+                        {item.spammable ? "Repeats whenever triggered" : "Quiet delivery"}
+                        {item.script ? " · Dynamic text" : ""}
+                      </span>
+                      <div class="nudge-actions">
+                        <button type="button" onClick={() => open(item)}>
+                          {language.t("common.edit")}
+                        </button>
+                        <button type="button" onClick={() => void remove(item)}>
+                          {language.t("common.delete")}
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                </article>
-              )}
-            </For>
+                  </article>
+                )}
+              </For>
+            </div>
           </div>
-        </div>
+        </Show>
 
         <Show when={editingID() !== undefined}>
-          <div class="settings-v2-section nudge-editor" data-component="settings-nudges-editor">
+          <div ref={editor} class="settings-v2-section nudge-editor" data-component="settings-nudges-editor">
             <h3 class="settings-v2-section-title">
               {editingID() ? language.t("settings.nudges.edit") : language.t("settings.nudges.add")}
             </h3>

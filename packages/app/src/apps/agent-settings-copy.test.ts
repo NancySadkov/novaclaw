@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { ConfigAgent } from "@novaclaw/core/config/agent"
+import { createStore } from "solid-js/store"
 import { copiedFields, NOT_COPIED, planSettingsCopy } from "./agent-settings-copy"
 
 const prototype = {
@@ -96,9 +97,11 @@ describe("what a settings copy carries", () => {
   })
 
   test("the fragment is a copy, not an alias — mutating it spares the source", () => {
-    const copy = planSettingsCopy({ prototypeID: "scout", targetID: "theron", source: prototype })
+    const [store] = createStore({ agents: { scout: prototype } })
+    const copy = planSettingsCopy({ prototypeID: "scout", targetID: "theron", source: store.agents.scout })
     ;(copy.fragment["strict"] as { attempts: number }).attempts = 99
     expect((prototype.strict as { attempts: number }).attempts).toBe(3)
+    expect(copy.fragment["nudges"]).toEqual(prototype.nudges)
   })
 })
 
