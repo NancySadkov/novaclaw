@@ -110,7 +110,7 @@ describe("the forgetting pass", () => {
     }),
   )
 
-  it.effect("caps a loud cabinet and leaves a quiet one whole", () =>
+  it.live("caps a loud cabinet and leaves a quiet one whole", () =>
     Effect.gen(function* () {
       const { db } = yield* Database.Service
       const engine = yield* Effect.promise(() => open())
@@ -186,36 +186,98 @@ describe("the forgetting pass", () => {
     }),
   )
 
-  it.live("a large pass has a fixed budget and never announces a failed erase", () =>
-    Effect.gen(function* () {
-      const { db } = yield* Database.Service
-      const engine = yield* Effect.promise(() => open())
-      const ids = Array.from({ length: 20 }, (_, index) => `bulk${index.toString().padStart(2, "0")}`)
-      yield* Effect.promise(() => fill(engine, "agent:bulk", ids))
-      const originalCandidates = engine.candidates.bind(engine)
-      engine.candidates = async (options) => {
-        const candidates = await originalCandidates(options)
-        return [{ ...candidates[0]!, id: "" }, ...candidates]
-      }
-      const originalInvalidate = engine.invalidate.bind(engine)
-      engine.invalidate = (id, at, opts) =>
-        id === ids[0] ? Promise.reject(new Error("erase refused")) : originalInvalidate(id, at, opts)
-      const published: string[] = []
-      const bus = {
-        publish: (_definition: unknown, data: { id: string }) => {
-          published.push(data.id)
-          return Effect.succeed(undefined as never)
-        },
-      } as unknown as EventV2.Interface
+  it.live(
+    "a large pass has a fixed budget and never announces a failed erase",
+    () =>
+      Effect.gen(function* () {
+        const { db } = yield* Database.Service
+        const engine = yield* Effect.promise(() => open())
+        const ids = Array.from({ length: 20 }, (_, index) => `bulk${index.toString().padStart(2, "0")}`)
+        yield* Effect.promise(() => fill(engine, "agent:bulk", ids))
+        const originalCandidates = engine.candidates.bind(engine)
+        engine.candidates = async (options) => {
+          const candidates = await originalCandidates(options)
+          return [{ ...candidates[0]!, id: "" }, ...candidates]
+        }
+        const originalInvalidate = engine.invalidate.bind(engine)
+        engine.invalidate = (id, at, opts) =>
+          id === ids[0] ? Promise.reject(new Error("erase refused")) : originalInvalidate(id, at, opts)
+        const published: string[] = []
+        const bus = {
+          publish: (_definition: unknown, data: { id: string }) => {
+            published.push(data.id)
+            return Effect.succeed(undefined as never)
+          },
+        } as unknown as EventV2.Interface
 
-      const backlog = yield* WorldMemory.forgetOverCap(engine, db, bus, "agent:bulk", 2)
+        const backlog = yield* WorldMemory.forgetOverCap(engine, db, bus, "agent:bulk", 2)
 
-      expect(backlog).toBe(true)
-      expect(published).toHaveLength(15)
-      expect(published).not.toContain(ids[0])
-      expect(published).not.toContain("")
-      expect((yield* Effect.promise(() => stagedIn(engine, "agent:bulk"))).length).toBe(5)
-    }),
+        expect(backlog).toEqual({ attempted: 16, forgotten: 15, backlog: true })
+        expect(published).toHaveLength(15)
+        expect(published).not.toContain(ids[0])
+        expect(published).not.toContain("")
+        expect((yield* Effect.promise(() => stagedIn(engine, "agent:bulk"))).length).toBe(5)
+      }),
+    60_000,
+  )
+
+  it.live(
+    "one pass shares its erase budget across cabinets",
+    () =>
+      Effect.gen(function* () {
+        const { db } = yield* Database.Service
+        const engine = yield* Effect.promise(() => open())
+        const ids = Array.from({ length: 12 }, (_, index) => `item${index.toString().padStart(2, "0")}`)
+        yield* Effect.promise(() =>
+          fill(
+            engine,
+            "agent:first",
+            ids.map((id) => `first-${id}`),
+          ),
+        )
+        yield* Effect.promise(() =>
+          fill(
+            engine,
+            "agent:second",
+            ids.map((id) => `second-${id}`),
+          ),
+        )
+
+        const pass = yield* WorldMemory.forgetEverywhere(engine, db, silentBus, 2)
+
+        expect(pass.backlog).toBe(true)
+        const first = yield* Effect.promise(() => stagedIn(engine, "agent:first"))
+        const second = yield* Effect.promise(() => stagedIn(engine, "agent:second"))
+        expect(first.length + second.length).toBe(8)
+        expect(first.length).toBeGreaterThanOrEqual(2)
+        expect(second.length).toBeGreaterThanOrEqual(2)
+      }),
+    60_000,
+  )
+
+  it.live(
+    "failed erases consume the shared budget before another cabinet is touched",
+    () =>
+      Effect.gen(function* () {
+        const { db } = yield* Database.Service
+        const engine = yield* Effect.promise(() => open())
+        const ids = Array.from({ length: 20 }, (_, index) => `item${index.toString().padStart(2, "0")}`)
+        yield* Effect.promise(() => fill(engine, "agent:first", ids.map((id) => `first-${id}`)))
+        yield* Effect.promise(() => fill(engine, "agent:second", ids.map((id) => `second-${id}`)))
+        const originalScopes = engine.stagedScopes.bind(engine)
+        engine.stagedScopes = (prefix) =>
+          prefix === "agent:" ? Promise.resolve(["agent:first", "agent:second"]) : originalScopes(prefix)
+        const originalInvalidate = engine.invalidate.bind(engine)
+        engine.invalidate = (id, at, opts) =>
+          id.startsWith("first-") ? Promise.reject(new Error("erase refused")) : originalInvalidate(id, at, opts)
+
+        const pass = yield* WorldMemory.forgetEverywhere(engine, db, silentBus, 2)
+
+        expect(pass.backlog).toBe(false)
+        expect(pass.nextOffset).toBe(1)
+        expect((yield* Effect.promise(() => stagedIn(engine, "agent:first"))).length).toBe(20)
+        expect((yield* Effect.promise(() => stagedIn(engine, "agent:second"))).length).toBe(20)
+      }),
     60_000,
   )
 })

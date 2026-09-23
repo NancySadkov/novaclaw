@@ -53,6 +53,7 @@ export const runtimeStatus = (): RuntimeStatus => describeRuntimeStatus(currentR
 const DEFAULT_STAGED_CAP = 2_000
 const DEFAULT_RETAIN_EVERY_MS = 5 * 60_000
 const RETAIN_BATCH_SIZE = 16
+const RETAIN_SCOPE_BATCH_SIZE = 8
 const RETAIN_BATCH_PAUSE_MS = 100
 const RETAIN_BACKLOG_RETRY_MS = 5_000
 
@@ -63,11 +64,12 @@ export const forgetOverCap = (
   events: EventV2.Interface,
   scope: string,
   cap: number,
+  budget = RETAIN_BATCH_SIZE,
 ) =>
   Effect.gen(function* () {
     const count = yield* Effect.tryPromise(() => live.stagedCount(scope)).pipe(Effect.orElseSucceed(() => 0))
     const excess = count - Math.max(0, Math.floor(cap))
-    if (excess <= 0) return false
+    if (excess <= 0 || budget <= 0) return { attempted: 0, forgotten: 0, backlog: excess > 0 }
     const candidates = yield* Effect.tryPromise(() =>
       live.candidates({
         scopes: [scope],
@@ -83,21 +85,24 @@ export const forgetOverCap = (
     const choice = MemoryPrunePolicy.choose({
       candidates: candidates.filter((row) => row.id.length > 0),
       usage,
-      excess: Math.min(excess, RETAIN_BATCH_SIZE),
+      excess: Math.min(excess, budget),
       now: Date.now(),
     })
+    let attempted = 0
     let forgotten = 0
     for (const id of choice.victims) {
+      attempted++
       const invalidated = yield* Effect.tryPromise(() => live.invalidate(id, undefined, { scopes: [scope] })).pipe(
         Effect.as(true),
         Effect.orElseSucceed(() => false),
       )
-      if (!invalidated) continue
-      forgotten++
-      yield* events.publish(MemoryEvent.Forgotten, { id, mode: "invalidate" }).pipe(Effect.ignore)
-      if (forgotten % (RETAIN_BATCH_SIZE / 2) === 0) yield* Effect.sleep(RETAIN_BATCH_PAUSE_MS)
+      if (invalidated) {
+        forgotten++
+        yield* events.publish(MemoryEvent.Forgotten, { id, mode: "invalidate" }).pipe(Effect.ignore)
+      }
+      if (attempted % (RETAIN_BATCH_SIZE / 2) === 0) yield* Effect.sleep(RETAIN_BATCH_PAUSE_MS)
     }
-    return forgotten > 0 && excess > forgotten
+    return { attempted, forgotten, backlog: forgotten > 0 && excess > forgotten }
   })
 
 export const forgetEverywhere = (
@@ -106,17 +111,36 @@ export const forgetEverywhere = (
   events: EventV2.Interface,
   cap: number,
   rawAccessKeep = MemoryAccessLedger.RAW_ROW_HORIZON,
+  offset = 0,
 ) =>
   Effect.gen(function* () {
     const scopes = [
-      ...(yield* Effect.tryPromise(() => live.stagedScopes("session:")).pipe(Effect.orElseSucceed(() => []))),
-      ...(yield* Effect.tryPromise(() => live.stagedScopes("agent:")).pipe(Effect.orElseSucceed(() => []))),
-      "global",
+      ...new Set([
+        ...(yield* Effect.tryPromise(() => live.stagedScopes("session:")).pipe(Effect.orElseSucceed(() => []))),
+        ...(yield* Effect.tryPromise(() => live.stagedScopes("agent:")).pipe(Effect.orElseSucceed(() => []))),
+        "global",
+      ]),
     ]
+    const start = ((offset % scopes.length) + scopes.length) % scopes.length
+    const ordered = [...scopes.slice(start), ...scopes.slice(0, start)]
     let backlog = false
-    for (const scope of new Set(scopes)) backlog = (yield* forgetOverCap(live, db, events, scope, cap)) || backlog
+    let attempted = 0
+    let forgotten = 0
+    let processed = 0
+    for (const scope of ordered) {
+      if (attempted >= RETAIN_BATCH_SIZE || processed >= RETAIN_SCOPE_BATCH_SIZE) {
+        backlog = true
+        break
+      }
+      const result = yield* forgetOverCap(live, db, events, scope, cap, RETAIN_BATCH_SIZE - attempted)
+      attempted += result.attempted
+      forgotten += result.forgotten
+      backlog = result.backlog || backlog
+      processed++
+      if (processed < scopes.length) yield* Effect.sleep(RETAIN_BATCH_PAUSE_MS)
+    }
     yield* MemoryAccessLedger.trim(db, rawAccessKeep).pipe(Effect.ignore)
-    return backlog
+    return { backlog: backlog && (forgotten > 0 || attempted === 0), nextOffset: (start + processed) % scopes.length }
   })
 
 export const configFromFlags = (): Config => ({
@@ -221,6 +245,7 @@ export const layerFromConfig = (
         Effect.gen(function* () {
           const cap = cfg.stagedCap ?? DEFAULT_STAGED_CAP
           let nextDelay = cfg.retainEveryMs ?? DEFAULT_RETAIN_EVERY_MS
+          let nextOffset = 0
           for (;;) {
             yield* Effect.sleep(nextDelay)
             const live = engine
@@ -230,8 +255,16 @@ export const layerFromConfig = (
               nextDelay = cfg.retainEveryMs ?? DEFAULT_RETAIN_EVERY_MS
               continue
             }
-            const backlog = yield* forgetEverywhere(live, ledger, events, cap)
-            nextDelay = backlog ? RETAIN_BACKLOG_RETRY_MS : (cfg.retainEveryMs ?? DEFAULT_RETAIN_EVERY_MS)
+            const retention = yield* forgetEverywhere(
+              live,
+              ledger,
+              events,
+              cap,
+              MemoryAccessLedger.RAW_ROW_HORIZON,
+              nextOffset,
+            )
+            nextOffset = retention.nextOffset
+            nextDelay = retention.backlog ? RETAIN_BACKLOG_RETRY_MS : (cfg.retainEveryMs ?? DEFAULT_RETAIN_EVERY_MS)
           }
         }),
       )
