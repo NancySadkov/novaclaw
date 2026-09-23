@@ -521,11 +521,12 @@ const applyToStores = (patch: Config.Info, writer: AgentV2.ConfigWriter) =>
  *
  * ⚠️ **ORDER IS PART OF THE CONTRACT here too, and `refreshDomains` honours this array's order.**
  * `instance_config` re-derives the novaclaw-side merged instance document, which `formatter` and
- * `mcp` then read to decide what changed — so it MUST come first, and putting it anywhere else in
- * this array would make both of them reconcile against the document they were already holding. The
+ * `mcp` then read to decide what changed — so it MUST precede both readers. Device capacity is
+ * applied first, before any other post-commit work can delay cancellation. The
  * five middle domains are mutually independent and their relative order carries no meaning.
  */
 export const RELOAD_DOMAINS = [
+  "devices",
   "instance_config",
   "agents",
   "commands",
@@ -649,6 +650,7 @@ const RELOAD_TRIGGERS: Record<ReloadDomain, readonly (keyof Config.Info)[]> = {
   catalog: ["providers", "models", "model"],
   formatter: ["formatter"],
   mcp: ["mcp"],
+  devices: ["devices"],
 }
 
 interface ReloadRegistration {
@@ -663,6 +665,7 @@ const registered: Record<ReloadDomain, Set<ReloadRegistration>> = {
   catalog: new Set(),
   formatter: new Set(),
   mcp: new Set(),
+  devices: new Set(),
 }
 
 const dispatched: Record<ReloadDomain, number> = {
@@ -673,6 +676,7 @@ const dispatched: Record<ReloadDomain, number> = {
   catalog: 0,
   formatter: 0,
   mcp: 0,
+  devices: 0,
 }
 
 /**
@@ -945,6 +949,9 @@ export const apply = (patch: Config.Info, options: { readonly writer?: AgentV2.C
       )
     if (outcome instanceof ConfigWriteRefused) return yield* Effect.fail(outcome)
     const consumed = outcome
+    const deviceRefresh = consumed.has("devices")
+      ? yield* refreshDomain("devices").pipe(Effect.exit)
+      : Exit.succeed(undefined)
     // Logging's hot path is synchronous, so its Config read-through is a tiny in-memory projection.
     // Refresh only AFTER commit: doing it in SettingsConfigStore.set would let a later router fault
     // roll SQLite back while the live logger kept the rejected value.
@@ -985,7 +992,9 @@ export const apply = (patch: Config.Info, options: { readonly writer?: AgentV2.C
         "config.keys": stuck,
         "config.reasons": stuck.map((key) => RESTART_REQUIRED_KEYS.get(key) ?? key),
       })
-    yield* refreshDomains(staleDomains(consumed))
+    const otherRefresh = yield* refreshDomains(staleDomains(consumed).filter((domain) => domain !== "devices")).pipe(Effect.exit)
+    if (Exit.isFailure(deviceRefresh)) return yield* Effect.failCause(deviceRefresh.cause)
+    if (Exit.isFailure(otherRefresh)) return yield* Effect.failCause(otherRefresh.cause)
     if (consumed.has("agents")) {
       const pausedAfter = yield* agentPauseStates([...pausedBefore.keys()])
       for (const [agentID, paused] of pausedBefore) {
@@ -1365,6 +1374,9 @@ export const remove = (
     if (outcome instanceof ConfigRemoveRefused) return yield* Effect.fail(outcome)
 
     const { consumed, cleared } = outcome
+    const deviceRefresh = consumed.has("devices")
+      ? yield* refreshDomain("devices").pipe(Effect.exit)
+      : Exit.succeed(undefined)
     if (consumed.has("log")) yield* (yield* SettingsConfigStore.Service).all()
     if (consumed.has("offline") || consumed.has("providers") || consumed.has("models")) {
       const before = Offline.currentPolicy()
@@ -1390,7 +1402,9 @@ export const remove = (
       "config.paths": paths.map(MergePatch.showPath),
       "config.cleared": cleared,
     })
-    yield* refreshDomains(staleDomains(consumed))
+    const otherRefresh = yield* refreshDomains(staleDomains(consumed).filter((domain) => domain !== "devices")).pipe(Effect.exit)
+    if (Exit.isFailure(deviceRefresh)) return yield* Effect.failCause(deviceRefresh.cause)
+    if (Exit.isFailure(otherRefresh)) return yield* Effect.failCause(otherRefresh.cause)
     return { removed: paths, cleared }
   })
 

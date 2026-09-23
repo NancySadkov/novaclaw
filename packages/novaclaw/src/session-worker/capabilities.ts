@@ -16,6 +16,9 @@ export interface Capabilities {
   ) => Promise<Extract<Reply, { readonly type: "event-published" }>>
   readonly admitDevice: (input: Omit<SessionScheduler.AdmitInput, "sessionID">) => Promise<void>
   readonly releaseDevice: (input: Omit<SessionScheduler.ReleaseInput, "sessionID">) => Promise<void>
+  readonly transferReleaseDevice: (input: Omit<SessionScheduler.ReleaseInput, "sessionID">) => Promise<void>
+  readonly awaitDeviceRevocation: (input: Omit<SessionScheduler.ReleaseInput, "sessionID">) => Promise<boolean>
+  readonly refreshDevices: () => Promise<void>
   readonly reportDevice: (input: Omit<SessionScheduler.ReportInput, "sessionID">) => Promise<void>
   readonly admitMaintenance: (
     input: Omit<SessionScheduler.MaintenanceInput, "ownerID">,
@@ -138,6 +141,40 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
         }),
       )
       if (reply.type !== "device-released") throw new Error(`unexpected ${reply.type} reply to device release`)
+    },
+    transferReleaseDevice: async (request) => {
+      const reply = rejected(
+        await input.client.request({
+          ...identity,
+          type: "device-transfer-release",
+          requestID: requestID(),
+          deviceKey: request.deviceKey,
+        }),
+      )
+      if (reply.type !== "device-released") throw new Error(`unexpected ${reply.type} reply to device transfer`)
+    },
+    awaitDeviceRevocation: async (request) => {
+      const reply = rejected(
+        await input.client.request({
+          ...identity,
+          type: "device-await-revocation",
+          requestID: requestID(),
+          deviceKey: request.deviceKey,
+        }),
+      )
+      if (reply.type !== "device-revoked") throw new Error(`unexpected ${reply.type} reply to device revocation wait`)
+      return reply.revoked
+    },
+    refreshDevices: async () => {
+      const reply = rejected(
+        await input.client.request({
+          ...identity,
+          type: "device-refresh",
+          requestID: requestID(),
+          deviceKey: "devices",
+        }),
+      )
+      if (reply.type !== "device-refreshed") throw new Error(`unexpected ${reply.type} reply to device refresh`)
     },
     reportDevice: async (request) => {
       const reply = rejected(

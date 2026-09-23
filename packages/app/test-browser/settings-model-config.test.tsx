@@ -289,8 +289,8 @@ test("device concurrency round-trips through the endpoint's Device entry", async
   const saved = mount()
   click(button("Configure test"))
   await settle()
-  expect(field("Device concurrency").value).toBe("4")
-  fill("Device concurrency", "6")
+  expect(field("Concurrency").value).toBe("4")
+  fill("Concurrency", "6")
   click(button("Save"))
   await settle()
   expect(saved.config().devices.local).toEqual({

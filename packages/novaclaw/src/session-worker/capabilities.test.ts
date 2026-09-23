@@ -59,6 +59,24 @@ test("turns host rejection into a worker-visible error", async () => {
   ).rejects.toThrow("device offline")
 })
 
+test("device refresh crosses to the host without worker-supplied capacity", async () => {
+  let sent: SessionWorkerClient.Request | undefined
+  const client = SessionWorkerClient.make({
+    lease,
+    send: (message) => {
+      sent = message
+      queueMicrotask(() => client.accept({
+        ...identity,
+        type: "device-refreshed",
+        requestID: message.requestID,
+      }))
+    },
+  })
+  await SessionWorkerCapabilities.make({ lease, client }).refreshDevices()
+  expect(sent).toMatchObject({ type: "device-refresh", sessionID: lease.sessionID })
+  expect(sent).not.toHaveProperty("concurrency")
+})
+
 test("a scheduler object cannot overwrite the fenced session identity", async () => {
   let sent: SessionWorkerClient.Request | undefined
   const client = SessionWorkerClient.make({

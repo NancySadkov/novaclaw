@@ -72,6 +72,15 @@ export const DeviceReleased = Schema.Struct({
   ...DeviceReplyBase,
   type: Schema.Literal("device-released"),
 }).annotate({ identifier: "SessionWorker.DeviceReleased" })
+export const DeviceRevoked = Schema.Struct({
+  ...DeviceReplyBase,
+  type: Schema.Literal("device-revoked"),
+  revoked: Schema.Boolean,
+}).annotate({ identifier: "SessionWorker.DeviceRevoked" })
+export const DeviceRefreshed = Schema.Struct({
+  ...DeviceReplyBase,
+  type: Schema.Literal("device-refreshed"),
+}).annotate({ identifier: "SessionWorker.DeviceRefreshed" })
 export const DeviceReported = Schema.Struct({
   ...DeviceReplyBase,
   type: Schema.Literal("device-reported"),
@@ -279,6 +288,8 @@ export const HostMessage = Schema.Union([
   EventRejected,
   DeviceAdmitted,
   DeviceReleased,
+  DeviceRevoked,
+  DeviceRefreshed,
   DeviceReported,
   DeviceMaintenanceAdmitted,
   DeviceMaintenanceReleased,
@@ -356,6 +367,18 @@ export const DeviceRelease = Schema.Struct({
   ...DeviceRequestBase,
   type: Schema.Literal("device-release"),
 }).annotate({ identifier: "SessionWorker.DeviceRelease" })
+export const DeviceTransferRelease = Schema.Struct({
+  ...DeviceRequestBase,
+  type: Schema.Literal("device-transfer-release"),
+}).annotate({ identifier: "SessionWorker.DeviceTransferRelease" })
+export const DeviceAwaitRevocation = Schema.Struct({
+  ...DeviceRequestBase,
+  type: Schema.Literal("device-await-revocation"),
+}).annotate({ identifier: "SessionWorker.DeviceAwaitRevocation" })
+export const DeviceRefresh = Schema.Struct({
+  ...DeviceRequestBase,
+  type: Schema.Literal("device-refresh"),
+}).annotate({ identifier: "SessionWorker.DeviceRefresh" })
 export const DeviceReport = Schema.Struct({
   ...DeviceRequestBase,
   type: Schema.Literal("device-report"),
@@ -684,6 +707,9 @@ export const WorkerMessage = Schema.Union([
   PublishEvent,
   DeviceAdmit,
   DeviceRelease,
+  DeviceTransferRelease,
+  DeviceAwaitRevocation,
+  DeviceRefresh,
   DeviceReport,
   DeviceMaintenanceAdmit,
   DeviceMaintenanceRelease,

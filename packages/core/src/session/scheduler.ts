@@ -7,8 +7,7 @@
  *   - batch-class sessions (sub-agent, auto-prompting, goal-oriented, cron) wait while
  *     the human-visible foreground turn is generating, and all generation classes together are
  *     capped at the device's concurrency limit
- *     — "background agents run on idle device cycles", enforced at the only preemption
- *     point a non-preemptible turn has: before dispatch;
+ *     — "background agents run on idle device cycles";
  *   - among waiting batch sessions the TG-EEVDF ledger picks (fair share by class
  *     weight, structural aging — no starvation) with a bounded cache-affinity bonus
  *     for the most-recently-dispatched session (hysteresis, never override);
@@ -32,6 +31,7 @@ export * as SessionScheduler from "./scheduler"
 
 import { Context, Deferred, Effect, Layer } from "effect"
 import type { ConfigDevice } from "../config/device"
+import { SettingsConfigStore } from "../settings-config-store"
 import { makeGlobalNode } from "../effect/app-node"
 import { KernelEevdf } from "../kernel/eevdf"
 
@@ -142,6 +142,10 @@ export interface Interface {
   readonly admit: (input: AdmitInput) => Effect.Effect<void>
   /** Idempotent. Frees the slot and drains waiters. */
   readonly release: (input: ReleaseInput) => Effect.Effect<void>
+  readonly transferRelease: (input: ReleaseInput) => Effect.Effect<void>
+  readonly awaitRevocation: (input: ReleaseInput) => Effect.Effect<boolean>
+  readonly syncDevices: (entries: Readonly<Record<string, { readonly concurrency?: number }>>) => Effect.Effect<void>
+  readonly refreshDevices: () => Effect.Effect<void>
   /** Charge the finished turn's measured cost to the fairness ledger. */
   readonly report: (input: ReportInput) => Effect.Effect<void>
   /** Acquire one unique interactive-idle maintenance lease. */
@@ -171,6 +175,7 @@ interface DeviceState {
   readonly waiters: Map<string, Waiter>
   readonly maintenanceOwners: Map<string, string>
   readonly maintenancePreemptions: Map<string, Deferred.Deferred<void>>
+  readonly revocations: Map<string, Deferred.Deferred<boolean>>
   concurrency: number
   /** Cache-affinity window in ms; see `ConfigDevice.Info.minRunMs`. 0 disables the warm cohort. */
   minRunMs: number
@@ -199,6 +204,7 @@ export interface Options {
 
 export const make = (options?: Options): Interface => {
   const devices = new Map<string, DeviceState>()
+  const configuredConcurrency = new Map<string, number>()
   const now = options?.now ?? (() => Date.now())
   const forgivenessMs = options?.forgivenessMs
   let maintenanceSequence = 0
@@ -216,7 +222,8 @@ export const make = (options?: Options): Interface => {
           waiters: new Map(),
           maintenanceOwners: new Map(),
           maintenancePreemptions: new Map(),
-          concurrency: MAX_BATCH,
+          revocations: new Map(),
+          concurrency: configuredConcurrency.get(key) ?? MAX_BATCH,
           minRunMs: 0,
           recent: new Map(),
         }),
@@ -248,6 +255,38 @@ export const make = (options?: Options): Interface => {
 
   const inFlight = (device: DeviceState) =>
     device.inFlightInteractive.size + device.inFlightBatch.size + device.inFlightMaintenance.size
+
+  const revokeExcess = (device: DeviceState) => {
+    let excess = inFlight(device) - device.concurrency
+    if (excess <= 0) return
+    for (const id of [
+      ...[...device.inFlightMaintenance].reverse(),
+      ...[...device.inFlightBatch].reverse(),
+      ...[...device.inFlightInteractive].reverse(),
+    ]) {
+      const revocation = device.revocations.get(id)
+      if (revocation === undefined) continue
+      if (Deferred.doneUnsafe(revocation, Effect.succeed(true))) {
+        const maintenance = device.maintenancePreemptions.get(id)
+        if (maintenance) Deferred.doneUnsafe(maintenance, Effect.void)
+        excess--
+      }
+      if (excess <= 0) break
+    }
+  }
+
+  const syncDevices: Interface["syncDevices"] = (entries) =>
+    Effect.sync(() => {
+      for (const id of new Set([...configuredConcurrency.keys(), ...Object.keys(entries)])) {
+        const concurrency = entries[id]?.concurrency ?? MAX_BATCH
+        configuredConcurrency.set(id, concurrency)
+        const device = devices.get(id)
+        if (device === undefined) continue
+        device.concurrency = concurrency
+        revokeExcess(device)
+        drain(device)
+      }
+    })
 
   const interactiveWaiters = (device: DeviceState) =>
     [...device.waiters].filter(([, waiter]) => waiter.kind === "interactive").map(([id]) => id)
@@ -299,6 +338,7 @@ export const make = (options?: Options): Interface => {
       Effect.onInterrupt(() =>
         Effect.sync(() => {
           device.waiters.delete(input.sessionID)
+          device.revocations.delete(input.sessionID)
           device.maintenanceOwners.delete(input.sessionID)
           // A cancelled queued turn never reaches `release`, so stamp the block here too —
           // otherwise its entry sits unblocked forever and no sweep can ever see it.
@@ -318,8 +358,7 @@ export const make = (options?: Options): Interface => {
       const device = deviceFor(input.deviceKey)
       if (maintenanceOwner !== undefined) device.maintenanceOwners.set(input.sessionID, maintenanceOwner)
       // Config is runtime-editable: an admission that CARRIES policy refreshes it for the whole
-      // device. Lowering the cap never preempts an in-flight generation; it simply closes admission
-      // until the live count falls below the new ceiling.
+      // device. A lower cap revokes excess active generations and closes admission until they exit.
       //
       // 🔴 An admission that does NOT carry a concurrency must never WIDEN the cap. This was
       // `device.concurrency = input.concurrency ?? MAX_BATCH`, so one request whose device profile
@@ -328,7 +367,8 @@ export const make = (options?: Options): Interface => {
       // "Device concurrency is not fully respected, several agents reach the box at once" report.
       // `undefined` means "this caller has no new policy", not "the policy is the fallback"; a fresh
       // device still starts at MAX_BATCH in `deviceFor`.
-      if (input.concurrency !== undefined) device.concurrency = input.concurrency
+      device.concurrency = configuredConcurrency.get(input.deviceKey) ?? input.concurrency ?? device.concurrency
+      revokeExcess(device)
       if (input.minRunMs !== undefined) device.minRunMs = input.minRunMs
       if (input.locality !== undefined) device.locality = input.locality
       sweep(device)
@@ -350,6 +390,8 @@ export const make = (options?: Options): Interface => {
         device.inFlightBatch.has(input.sessionID) ||
         device.inFlightMaintenance.has(input.sessionID)
       if (alreadyInFlight) return Effect.void
+      if (!device.revocations.has(input.sessionID))
+        device.revocations.set(input.sessionID, Deferred.makeUnsafe<boolean>())
       if (isFocused(input.sessionClass)) {
         // Maintenance is deliberately interruptible. Continuous batching does not make a long
         // utility prefill free: on the Spark a compaction already in flight delayed a brand-new
@@ -394,7 +436,7 @@ export const make = (options?: Options): Interface => {
 
   const admit = (input: AdmitInput): Effect.Effect<void> => admitKind(input, "batch")
 
-  const release = (input: ReleaseInput): Effect.Effect<void> =>
+  const releaseSlot = (input: ReleaseInput, transferring: boolean): Effect.Effect<void> =>
     Effect.sync(() => {
       const device = devices.get(input.deviceKey)
       if (!device) return
@@ -403,6 +445,11 @@ export const make = (options?: Options): Interface => {
         device.inFlightBatch.delete(input.sessionID) ||
         device.inFlightMaintenance.delete(input.sessionID)
       if (!held) return
+      if (!transferring) {
+        const revocation = device.revocations.get(input.sessionID)
+        if (revocation) Deferred.doneUnsafe(revocation, Effect.succeed(false))
+        device.revocations.delete(input.sessionID)
+      }
       device.maintenanceOwners.delete(input.sessionID)
       // The session has stopped holding the device: start its block clock, so its debt is kept
       // for the forgiveness window and its entry is swept once that window closes. Gated on
@@ -411,6 +458,15 @@ export const make = (options?: Options): Interface => {
       device.ledger.onBlock(input.sessionID, now())
       sweep(device)
       drain(device)
+    })
+
+  const release = (input: ReleaseInput) => releaseSlot(input, false)
+  const transferRelease = (input: ReleaseInput) => releaseSlot(input, true)
+
+  const awaitRevocation: Interface["awaitRevocation"] = (input) =>
+    Effect.suspend(() => {
+      const revocation = devices.get(input.deviceKey)?.revocations.get(input.sessionID)
+      return revocation === undefined ? Effect.never : Deferred.await(revocation)
     })
 
   const report = (input: ReportInput): Effect.Effect<void> =>
@@ -469,6 +525,9 @@ export const make = (options?: Options): Interface => {
         device.recent.delete(sessionID)
         device.inFlightInteractive.delete(sessionID)
         device.inFlightBatch.delete(sessionID)
+        const revocation = device.revocations.get(sessionID)
+        if (revocation) Deferred.doneUnsafe(revocation, Effect.succeed(false))
+        device.revocations.delete(sessionID)
         const waiter = device.waiters.get(sessionID)
         if (waiter) {
           device.waiters.delete(sessionID)
@@ -488,6 +547,9 @@ export const make = (options?: Options): Interface => {
           if (preemption) Deferred.doneUnsafe(preemption, Effect.void)
           device.maintenancePreemptions.delete(taskID)
           device.inFlightMaintenance.delete(taskID)
+          const taskRevocation = device.revocations.get(taskID)
+          if (taskRevocation) Deferred.doneUnsafe(taskRevocation, Effect.succeed(false))
+          device.revocations.delete(taskID)
           device.ledger.remove(taskID)
           if (!maintenanceWaiter) continue
           device.waiters.delete(taskID)
@@ -515,7 +577,11 @@ export const make = (options?: Options): Interface => {
       })),
     )
 
-  return { admit, release, report, admitMaintenance, awaitMaintenancePreemption, releaseMaintenance, evict, snapshot }
+  return {
+    admit, release, transferRelease, awaitRevocation, syncDevices,
+    refreshDevices: () => Effect.void,
+    report, admitMaintenance, awaitMaintenancePreemption, releaseMaintenance, evict, snapshot,
+  }
 }
 
 /**
@@ -538,9 +604,21 @@ export const runMaintenance = <A, E, R>(
     (lease) => scheduler.releaseMaintenance({ ownerID: input.ownerID, lease }),
   )
 
-export const layer = Layer.effect(
+export const configuredLayer = Layer.effect(
   Service,
-  Effect.sync(() => Service.of(make())),
+  Effect.gen(function* () {
+    const service = make()
+    const settings = yield* SettingsConfigStore.Service
+    const sync = () => Effect.flatMap(settings.all(), (entries) => service.syncDevices(
+      (entries.devices ?? {}) as Readonly<Record<string, { readonly concurrency?: number }>>,
+    ))
+    yield* sync()
+    const { ConfigStoreWrite } = yield* Effect.promise(() => import("../config-store-write"))
+    yield* ConfigStoreWrite.registerReload("devices", sync)
+    return Service.of({ ...service, refreshDevices: sync })
+  }),
 )
+
+export const layer = configuredLayer.pipe(Layer.provide(SettingsConfigStore.defaultLayer))
 
 export const node = makeGlobalNode({ service: Service, layer, deps: [] })

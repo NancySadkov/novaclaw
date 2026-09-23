@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import fs from "fs"
 import path from "path"
-import { Deferred, Duration, Effect, Exit, Fiber } from "effect"
-import { focusClass, hasForegroundPriority, hasHumanViewer, MAX_BATCH, make, runMaintenance } from "./scheduler"
+import { Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
+import { ConfigStoreWrite } from "../config-store-write"
+import { SettingsConfigStore } from "../settings-config-store"
+import { focusClass, hasForegroundPriority, hasHumanViewer, MAX_BATCH, make, runMaintenance, Service, configuredLayer } from "./scheduler"
 
 const run = <A>(effect: Effect.Effect<A>) => Effect.runPromise(effect)
 
@@ -11,6 +13,24 @@ afterEach(() => {
 })
 
 describe("session scheduler admission gate", () => {
+  test("the device settings reload reaches the live scheduler without a new admission", async () => {
+    let concurrency = 3
+    const registrations = ConfigStoreWrite.registeredReloads("devices")
+    const settings = SettingsConfigStore.Service.of({
+      all: () => Effect.succeed({ devices: { d: { concurrency } } }),
+    } as never)
+    await Effect.runPromise(Effect.gen(function* () {
+      const gate = yield* Service
+      expect(ConfigStoreWrite.registeredReloads("devices")).toBeGreaterThan(0)
+      for (const sessionID of ["a", "b", "c"])
+        yield* gate.admit({ sessionID, deviceKey: "d", sessionClass: "auto-prompting", concurrency: 3 })
+      concurrency = 1
+      yield* ConfigStoreWrite.refreshDomain("devices")
+      expect((yield* gate.snapshot())[0]!.concurrency).toBe(1)
+      yield* gate.awaitRevocation({ sessionID: "c", deviceKey: "d" })
+    }).pipe(Effect.provide(configuredLayer.pipe(Layer.provide(Layer.succeed(SettingsConfigStore.Service, settings))))))
+    expect(ConfigStoreWrite.registeredReloads("devices")).toBe(registrations)
+  })
   test("only a chat with an attached human enters the immediate foreground lane", () => {
     expect(hasHumanViewer({ viewers: [{ kind: "human" }] })).toBe(true)
     expect(hasHumanViewer({ viewers: [{ kind: "agent" }, { kind: "peer" }] })).toBe(false)
@@ -221,6 +241,40 @@ describe("session scheduler admission gate", () => {
     const [device] = await run(gate.snapshot())
     expect(device!.concurrency).toBe(2)
     expect(device!.inFlightBatch).toEqual(["b1", "b2"])
+  })
+
+  test("a saved lower cap revokes excess generations immediately and stale admissions cannot widen it", async () => {
+    const gate = make()
+    for (const sessionID of ["first", "second", "third"])
+      await run(gate.admit({ sessionID, deviceKey: "d", sessionClass: "auto-prompting", concurrency: 3 }))
+    const revokedSecond = Effect.runFork(gate.awaitRevocation({ sessionID: "second", deviceKey: "d" }))
+    const revokedThird = Effect.runFork(gate.awaitRevocation({ sessionID: "third", deviceKey: "d" }))
+    await run(gate.syncDevices({ d: { concurrency: 1 } }))
+    await run(Fiber.join(revokedSecond))
+    await run(Fiber.join(revokedThird))
+    expect((await run(gate.snapshot()))[0]!.concurrency).toBe(1)
+    await run(gate.release({ sessionID: "third", deviceKey: "d" }))
+    await run(gate.release({ sessionID: "second", deviceKey: "d" }))
+    const waiting = Effect.runFork(
+      gate.admit({ sessionID: "stale", deviceKey: "d", sessionClass: "auto-prompting", concurrency: 3 }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect((await run(gate.snapshot()))[0]!.waiting).toEqual(["stale"])
+    await run(gate.release({ sessionID: "first", deviceKey: "d" }))
+    await run(Fiber.join(waiting))
+  })
+
+  test("a device lease transfer keeps the revocation watch through a private reasoning phase", async () => {
+    const gate = make()
+    await run(gate.admit({ sessionID: "turn", deviceKey: "answer", sessionClass: "auto-prompting", concurrency: 2 }))
+    const watch = Effect.runFork(gate.awaitRevocation({ sessionID: "turn", deviceKey: "answer" }))
+    await run(gate.transferRelease({ sessionID: "turn", deviceKey: "answer" }))
+    await run(gate.admit({ sessionID: "peer", deviceKey: "answer", sessionClass: "auto-prompting", concurrency: 2 }))
+    await run(gate.admit({ sessionID: "turn", deviceKey: "answer", sessionClass: "auto-prompting", concurrency: 2 }))
+    await run(gate.syncDevices({ answer: { concurrency: 1 } }))
+    expect(await run(Fiber.join(watch))).toBe(true)
+    await run(gate.release({ sessionID: "turn", deviceKey: "answer" }))
+    await run(gate.release({ sessionID: "peer", deviceKey: "answer" }))
   })
 
   test("a raised cap admits an existing waiter before the request that carried the edit", async () => {
@@ -461,11 +515,13 @@ describe("interactive-idle maintenance", () => {
   test("evicting an owner reclaims an acquired maintenance lease", async () => {
     const gate = make()
     const lease = await run(gate.admitMaintenance(maintenance("gone", "status")))
+    const revocation = Effect.runFork(gate.awaitRevocation(lease))
     expect((await run(gate.snapshot()))[0]!.inFlightMaintenance).toEqual([lease.maintenanceID])
 
     // Worker-exit reclaim calls `evict(ownerID)`. The provider fiber died with that worker, so the
     // host must release its scheduler capacity even though no release RPC can arrive afterward.
     await run(gate.evict("gone"))
+    expect(await run(Fiber.join(revocation))).toBe(false)
     const [device] = await run(gate.snapshot())
     expect(device!.inFlightMaintenance).toEqual([])
     expect(device!.ledger.some((entry) => entry.id === lease.maintenanceID)).toBe(false)

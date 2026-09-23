@@ -121,6 +121,11 @@ export const generateOnSessionLane = <E, R>(
 ) =>
   Effect.acquireUseRelease(
     input.scheduler.admit(input.slot),
-    () => complete(input),
+    () => Effect.raceFirst(
+      complete(input),
+      input.scheduler.awaitRevocation(input.slot).pipe(Effect.flatMap((revoked) =>
+        revoked ? Effect.interrupt : Effect.never,
+      )),
+    ),
     () => input.scheduler.release(input.slot),
   )

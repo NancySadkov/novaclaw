@@ -11,6 +11,9 @@ export type Request = Extract<
     readonly type:
       | "device-admit"
       | "device-release"
+      | "device-transfer-release"
+      | "device-await-revocation"
+      | "device-refresh"
       | "device-report"
       | "device-maintenance-admit"
       | "device-maintenance-release"
@@ -23,6 +26,8 @@ export type Reply = Extract<
     readonly type:
       | "device-admitted"
       | "device-released"
+      | "device-revoked"
+      | "device-refreshed"
       | "device-reported"
       | "device-maintenance-admitted"
       | "device-maintenance-released"
@@ -72,6 +77,18 @@ export const handle = Effect.fn("SessionWorkerDeviceBridge.handle")(function* (i
     case "device-release":
       yield* input.scheduler.release({ sessionID: input.lease.sessionID, deviceKey: input.message.deviceKey })
       return { ...identity(input.message), type: "device-released" as const }
+    case "device-transfer-release":
+      yield* input.scheduler.transferRelease({ sessionID: input.lease.sessionID, deviceKey: input.message.deviceKey })
+      return { ...identity(input.message), type: "device-released" as const }
+    case "device-await-revocation":
+      return {
+        ...identity(input.message),
+        type: "device-revoked" as const,
+        revoked: yield* input.scheduler.awaitRevocation({ sessionID: input.lease.sessionID, deviceKey: input.message.deviceKey }),
+      }
+    case "device-refresh":
+      yield* input.scheduler.refreshDevices()
+      return { ...identity(input.message), type: "device-refreshed" as const }
     case "device-report":
       if (input.message.costTokens < 0) return rejected(input.message, "device cost cannot be negative")
       yield* input.scheduler.report({

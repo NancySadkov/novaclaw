@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Effect, Layer, Stream } from "effect"
+import { Effect, Fiber, Layer, Stream } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import fs from "node:fs"
 import path from "node:path"
@@ -18,6 +18,7 @@ import {
 import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
 import { RequestExecutor } from "@novaclaw/llm/route"
 import { SessionSchema } from "../schema"
+import { SessionScheduler } from "../scheduler"
 import type { SessionMessage } from "@novaclaw/schema/session-message"
 import { Token } from "../../util/token"
 import { ProviderCapability } from "../../provider-capability"
@@ -711,6 +712,30 @@ describe("ProviderDispatch", () => {
     expect(terminal?.usage).toMatchObject({ inputTokens: 18, outputTokens: 7, totalTokens: 25 })
   })
 
+  test("revoking the private reasoning device ends that phase and continues on the answer device", async () => {
+    const ordinary = Model.make({ id: "answer", provider: "fake", route: OpenAIChat.route })
+    const reasoner = Model.make({ id: "reasoner", provider: "fake", route: OpenAIChat.route })
+    let released = false
+    const output = await Effect.runPromise(ProviderDispatch.stream({
+      llm: {
+        stream: (request: LLMRequest) => request.model.id === reasoner.id
+          ? Stream.fromEffect(Effect.never)
+          : Stream.make(LLMEvent.textDelta({ id: "answer", text: "Ready" })),
+      } as never,
+      request: LLM.request({ model: ordinary, messages: [Message.user("solve")] }),
+      enabled: true,
+      budget: 128,
+      reasoningModel: reasoner,
+      reasoningPhase: {
+        enter: Effect.void,
+        leave: () => Effect.sync(() => { released = true }),
+        revocation: Effect.void,
+      },
+    }).pipe(Stream.runCollect, Effect.timeout(1_000)))
+    expect(released).toBe(true)
+    expect(Array.from(output)).toEqual([LLMEvent.textDelta({ id: "answer", text: "Ready" })])
+  })
+
   test("admits once, retries before output, and always releases", async () => {
     const sessionID = "ses_dispatch" as SessionSchema.ID
     const calls: string[] = []
@@ -719,6 +744,7 @@ describe("ProviderDispatch", () => {
     const scheduler = {
       admit: () => Effect.sync(() => calls.push("admit")),
       release: () => Effect.sync(() => calls.push("release")),
+      awaitRevocation: () => Effect.never,
       report: ({ costTokens }: { costTokens: number }) => Effect.sync(() => calls.push(`report:${costTokens}`)),
     } as never
     const result = await Effect.runPromise(
@@ -756,12 +782,43 @@ describe("ProviderDispatch", () => {
     expect(timing).toEqual(["queued", "admitted", "start:1", "end:1:retry", "start:2", "end:2:completed"])
   })
 
+  test("lowering capacity cuts off the excess provider request and frees its slot", async () => {
+    const scheduler = SessionScheduler.make()
+    const first = { sessionID: "first", deviceKey: "device", sessionClass: "auto-prompting" as const, concurrency: 2 }
+    const second = { sessionID: "second", deviceKey: "device", sessionClass: "auto-prompting" as const, concurrency: 2 }
+    let completeFirst!: () => void
+    const firstDone = new Promise<void>((resolve) => { completeFirst = resolve })
+    const dispatch = (slot: typeof first) => ProviderDispatch.run({
+      events,
+      scheduler,
+      sessionID: slot.sessionID as SessionSchema.ID,
+      slot,
+      maxAttempts: 1,
+      hasOutput: () => false,
+      attempt: slot.sessionID === "first" ? Effect.promise(() => firstDone) : Effect.never,
+    })
+    const firstFiber = Effect.runFork(dispatch(first))
+    const secondFiber = Effect.runFork(dispatch(second))
+    for (let i = 0; i < 50; i++) {
+      if ((await Effect.runPromise(scheduler.snapshot()))[0]?.inFlightBatch.length === 2) break
+      await new Promise((resolve) => setTimeout(resolve, 2))
+    }
+    expect((await Effect.runPromise(scheduler.snapshot()))[0]?.inFlightBatch).toEqual(["first", "second"])
+    await Effect.runPromise(scheduler.syncDevices({ device: { concurrency: 1 } }))
+    const outcome = await Effect.runPromise(Fiber.join(secondFiber))
+    expect(outcome._tag).toBe("Failure")
+    expect((await Effect.runPromise(scheduler.snapshot()))[0]?.inFlightBatch).toEqual(["first"])
+    completeFirst()
+    await Effect.runPromise(Fiber.join(firstFiber))
+  })
+
   test("the configured runner budget is the exact HTTP wire-request budget", async () => {
     const sessionID = "ses_exact_wire_budget" as SessionSchema.ID
     let wireRequests = 0
     const scheduler = {
       admit: () => Effect.void,
       release: () => Effect.void,
+      awaitRevocation: () => Effect.never,
       report: () => Effect.void,
     } as never
     const httpLayer = Layer.succeed(
@@ -810,6 +867,7 @@ describe("ProviderDispatch", () => {
     const scheduler = {
       admit: () => Effect.void,
       release: () => Effect.void,
+      awaitRevocation: () => Effect.never,
       report: () => Effect.void,
     } as never
 
@@ -843,6 +901,7 @@ describe("ProviderDispatch", () => {
     const scheduler = {
       admit: () => Effect.sync(() => calls.push("admit")),
       release: () => Effect.sync(() => calls.push("release")),
+      awaitRevocation: () => Effect.never,
       report: () => Effect.sync(() => calls.push("report")),
     } as never
     const result = await Effect.runPromise(

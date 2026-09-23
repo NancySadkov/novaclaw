@@ -23,7 +23,7 @@ import { Schema } from "effect"
  * `concurrency` and `locality` live here, rather than on a model: several models and several endpoint
  * processes may share this one backend. Concurrency is the scheduler's hard generation cap across
  * foreground, background and maintenance work; it is carried on every admission request so a
- * runtime config edit takes effect on the next turn.
+ * runtime config edit takes effect when the write commits.
  */
 export const Locality = Schema.Literals(["local", "lan", "remote"])
 export type Locality = typeof Locality.Type

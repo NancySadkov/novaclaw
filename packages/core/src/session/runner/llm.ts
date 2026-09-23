@@ -3005,10 +3005,14 @@ export const layer = Layer.effect(
                   ? {}
                   : {
                       reasoningPhase: {
+                        revocation: scheduler.awaitRevocation({
+                          sessionID: session.id as string,
+                          deviceKey: reasoningScheduledDevice.key,
+                        }).pipe(Effect.flatMap((revoked) => revoked ? Effect.void : Effect.never)),
                         // The outer dispatch owns the ordinary device. Move that lease, rather than
                         // holding two devices or attributing one model's work to the other's queue.
                         enter: scheduler
-                          .release({ sessionID: session.id as string, deviceKey: scheduledDevice.key })
+                          .transferRelease({ sessionID: session.id as string, deviceKey: scheduledDevice.key })
                           .pipe(
                             Effect.andThen(
                               scheduler.admit({

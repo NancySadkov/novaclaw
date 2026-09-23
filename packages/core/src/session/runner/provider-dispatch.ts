@@ -151,6 +151,7 @@ interface StreamInput {
   readonly reasoningPhase?: {
     readonly enter: Effect.Effect<void>
     readonly leave: (costTokens: number | undefined) => Effect.Effect<void>
+    readonly revocation?: Effect.Effect<void>
   }
   /** Refit the answer after private reasoning has been appended. The original request was packed
    * before that text existed, so reusing it verbatim can exceed the ordinary model's context. */
@@ -263,7 +264,9 @@ export const stream = (input: StreamInput): Stream.Stream<import("@novaclaw/llm"
       input.reasoningPhase === undefined
         ? runReasoning
         : input.reasoningPhase.enter.pipe(
-            Effect.andThen(runReasoning),
+            Effect.andThen(input.reasoningPhase.revocation === undefined
+              ? runReasoning
+              : Effect.raceFirst(runReasoning, input.reasoningPhase.revocation)),
             Effect.ensuring(Effect.suspend(() => input.reasoningPhase!.leave(reasoningUsage?.totalTokens))),
           ),
     )
@@ -377,7 +380,14 @@ const dispatch = <E, R, A, E2, R2>(
           let attempt = 1
           input.timing?.attemptStarted?.(attempt)
           yield* publishTiming()
-          let result = yield* restore(input.attempt).pipe(Effect.exit)
+          const runAttempt = () =>
+            restore(Effect.raceFirst(
+              input.attempt,
+              input.scheduler.awaitRevocation(input.slot).pipe(Effect.flatMap((revoked) =>
+                revoked ? Effect.interrupt : Effect.never,
+              )),
+            ))
+          let result = yield* runAttempt().pipe(Effect.exit)
           while (result._tag === "Failure" && !Cause.hasInterrupts(result.cause)) {
             if (input.hasOutput() || attempt >= input.maxAttempts) break
             const transient = Option.getOrUndefined(Cause.findErrorOption(result.cause))
@@ -406,7 +416,7 @@ const dispatch = <E, R, A, E2, R2>(
             attempt++
             input.timing?.attemptStarted?.(attempt)
             yield* publishTiming()
-            result = yield* restore(input.attempt).pipe(Effect.exit)
+            result = yield* runAttempt().pipe(Effect.exit)
           }
           input.timing?.attemptSettled?.(
             attempt,

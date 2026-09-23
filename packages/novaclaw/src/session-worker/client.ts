@@ -10,6 +10,9 @@ export type Request = Extract<
       | "publish-event"
       | "device-admit"
       | "device-release"
+      | "device-transfer-release"
+      | "device-await-revocation"
+      | "device-refresh"
       | "device-report"
       | "device-maintenance-admit"
       | "device-maintenance-release"
@@ -41,6 +44,8 @@ export type Reply = Extract<
       | "event-rejected"
       | "device-admitted"
       | "device-released"
+      | "device-revoked"
+      | "device-refreshed"
       | "device-reported"
       | "device-maintenance-admitted"
       | "device-maintenance-released"
@@ -61,6 +66,9 @@ const replyTypes: Record<Request["type"], ReadonlySet<Reply["type"]>> = {
   "publish-event": new Set(["event-published", "event-rejected"]),
   "device-admit": new Set(["device-admitted", "device-rejected"]),
   "device-release": new Set(["device-released", "device-rejected"]),
+  "device-transfer-release": new Set(["device-released", "device-rejected"]),
+  "device-await-revocation": new Set(["device-revoked", "device-rejected"]),
+  "device-refresh": new Set(["device-refreshed", "device-rejected"]),
   "device-report": new Set(["device-reported", "device-rejected"]),
   "device-maintenance-admit": new Set(["device-maintenance-admitted", "device-rejected"]),
   "device-maintenance-release": new Set(["device-maintenance-released", "device-rejected"]),

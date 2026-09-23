@@ -12,6 +12,7 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
+import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { ConfigureTool } from "@novaclaw/core/tool/configure"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
@@ -98,6 +99,7 @@ const withTool = <A, E, R>(
     catalog: CatalogStore.Interface
   }) => Effect.Effect<A, E, R>,
   capabilityLayer: Layer.Layer<CapabilityRegistry.Service> = emptyCapabilities,
+  schedulerLayer: Layer.Layer<SessionScheduler.Service> = SessionScheduler.layer,
 ) =>
   Effect.gen(function* () {
     return yield* body({
@@ -122,6 +124,7 @@ const withTool = <A, E, R>(
           [PermissionV2.node, permission],
           [Config.node, configStub],
           [CapabilityRegistry.node, capabilityLayer],
+          [SessionScheduler.node, schedulerLayer],
         ],
       ),
     ),
@@ -399,6 +402,31 @@ describe("ruling 4: an operational write proceeds, a consequential one asks, a p
         expect((yield* settings.all()).tool_output).toEqual({ max_lines: 42 })
       }),
     )
+  })
+
+  it.live("device set and remove notify the host scheduler after the store commits", () => {
+    const scheduler = SessionScheduler.make()
+    const observations: unknown[] = []
+    const schedulerLayer = Layer.effect(SessionScheduler.Service, Effect.gen(function* () {
+      const settings = yield* SettingsConfigStore.Service
+      return SessionScheduler.Service.of({
+        ...scheduler,
+        refreshDevices: () => Effect.map(settings.all(), (all) => { observations.push(all.devices) }),
+      })
+    })).pipe(Layer.provide(SettingsConfigStore.defaultLayer))
+    return withTool(recording([]), ({ registry }) => Effect.gen(function* () {
+      const set = yield* call(registry, {
+        op: "set",
+        config: { devices: { d: { endpoints: ["http://127.0.0.1:8000"], concurrency: 1 } } },
+      })
+      expect(set.type).toBe("text")
+      const removed = yield* call(registry, { op: "remove", paths: [["devices", "d"]] })
+      expect(removed.type).toBe("text")
+      expect(observations).toEqual([
+        { d: { endpoints: ["http://127.0.0.1:8000"], concurrency: 1 } },
+        {},
+      ])
+    }), emptyCapabilities, schedulerLayer)
   })
 
   it.live("a consequential write asks on `configure`, scoped to the key, and lands", () => {
@@ -1265,4 +1293,3 @@ describe("configure remove — the agent's half of the deletion verb", () => {
     ),
   )
 })
-

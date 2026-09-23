@@ -35,8 +35,8 @@ const CONFIG_INFO_KEYS = new Set(Object.keys(Config.Info.fields))
 const domainsFor = (key: string) => ConfigStoreWrite.staleDomains(new Set([key]))
 
 describe("reload domain order", () => {
-  test("`instance_config` is FIRST — the document every other novaclaw-side domain reads", () => {
-    expect(ConfigStoreWrite.RELOAD_DOMAINS[0]).toBe("instance_config")
+  test("device capacity is first, then the document precedes its readers", () => {
+    expect(ConfigStoreWrite.RELOAD_DOMAINS.slice(0, 2)).toEqual(["devices", "instance_config"])
   })
 
   test("a write that stales both `instance_config` and a reader dispatches the document first", () => {

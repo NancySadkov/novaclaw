@@ -206,6 +206,10 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
   const scheduler: SessionScheduler.Interface = {
     admit: (request) => Effect.promise(() => capabilities.admitDevice(request)).pipe(Effect.asVoid),
     release: (request) => Effect.promise(() => capabilities.releaseDevice(request)).pipe(Effect.asVoid),
+    transferRelease: (request) => Effect.promise(() => capabilities.transferReleaseDevice(request)).pipe(Effect.asVoid),
+    awaitRevocation: (request) => Effect.promise(() => capabilities.awaitDeviceRevocation(request)),
+    syncDevices: () => Effect.die(unavailable("scheduler device configuration")),
+    refreshDevices: () => Effect.promise(() => capabilities.refreshDevices()).pipe(Effect.asVoid),
     report: (request) => Effect.promise(() => capabilities.reportDevice(request)).pipe(Effect.asVoid),
     admitMaintenance: (request) => Effect.promise(() => capabilities.admitMaintenance(request)),
     awaitMaintenancePreemption: (request) =>

@@ -1685,7 +1685,7 @@ export const dict = {
   "settings.models.config.prefixCache.ttl.desc":
     "How long a recent prompt is considered available to the model server cache.",
   "settings.models.config.prefixCache.ttl.invalid": "Prefix lifetime must be greater than zero.",
-  "settings.models.config.deviceConcurrency.name": "Device concurrency",
+  "settings.models.config.deviceConcurrency.name": "Concurrency",
   "settings.models.config.deviceConcurrency.desc":
     "Maximum model requests this device runs at once. One is the safest choice for a backend whose memory cannot hold two independent contexts.",
   "settings.models.config.minRun.name": "Minimum run time (seconds)",

@@ -14,6 +14,8 @@ const request = (
   type:
     | "device-admit"
     | "device-release"
+    | "device-await-revocation"
+    | "device-refresh"
     | "device-report"
     | "device-maintenance-admit"
     | "device-maintenance-release"
@@ -61,6 +63,38 @@ test("host scheduler receives the device's declared capacity and locality", asyn
     }),
   )
   expect((await Effect.runPromise(scheduler.snapshot()))[0]).toMatchObject({ concurrency: 5, locality: "local" })
+})
+
+test("host revokes an excess worker device request when capacity is lowered", async () => {
+  const scheduler = SessionScheduler.make()
+  await Effect.runPromise(scheduler.admit({ sessionID: "first", deviceKey: "provider/model", sessionClass: "auto-prompting", concurrency: 2 }))
+  await Effect.runPromise(SessionWorkerDeviceBridge.handle({
+    scheduler,
+    lease,
+    message: request("device-admit", { sessionClass: "auto-prompting", concurrency: 2 }),
+  }))
+  const revocation = Effect.runFork(SessionWorkerDeviceBridge.handle({
+    scheduler,
+    lease,
+    message: request("device-await-revocation"),
+  }))
+  await Effect.runPromise(scheduler.syncDevices({ "provider/model": { concurrency: 1 } }))
+  expect(await Effect.runPromise(Fiber.join(revocation))).toMatchObject({ type: "device-revoked", revoked: true })
+})
+
+test("a worker settings write asks the host scheduler to re-read its own committed store", async () => {
+  let refreshes = 0
+  const scheduler = {
+    ...SessionScheduler.make(),
+    refreshDevices: () => Effect.sync(() => { refreshes++ }),
+  }
+  const reply = await Effect.runPromise(SessionWorkerDeviceBridge.handle({
+    scheduler,
+    lease,
+    message: request("device-refresh"),
+  }))
+  expect(reply.type).toBe("device-refreshed")
+  expect(refreshes).toBe(1)
 })
 
 test("maintenance admission crosses the worker boundary as a host-owned unique lease", async () => {

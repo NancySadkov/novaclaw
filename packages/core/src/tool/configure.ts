@@ -134,6 +134,7 @@ import { CapabilityRegistry } from "../effect/capability-registry"
 import { PermissionV2 } from "../permission"
 import { ReferenceConfigStore } from "../reference-config-store"
 import { SettingsConfigStore } from "../settings-config-store"
+import { SessionScheduler } from "../session/scheduler"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -474,6 +475,8 @@ export const layer = Layer.effectDiscard(
     const tools = yield* Tools.Service
     const permission = yield* PermissionV2.Service
     const capabilities = yield* CapabilityRegistry.Service
+    const scheduler = yield* SessionScheduler.Service
+    yield* ConfigStoreWrite.registerReload("devices", scheduler.refreshDevices)
     // The stores `ConfigStoreWrite.apply`/`overlay` resolve at call time. Captured once here rather
     // than threaded per call, because `Tool.make`'s `execute` must have `R = never` — the same
     // capture `filesystem/watcher.ts` and `pty.ts` use for their callbacks. Listing the union
@@ -767,5 +770,6 @@ export const node = makeLocationNode({
     CommandConfigStore.node,
     ReferenceConfigStore.node,
     CapabilityRegistry.node,
+    SessionScheduler.node,
   ],
 })

@@ -54,6 +54,9 @@ export interface Input {
         readonly type:
           | "device-admit"
           | "device-release"
+          | "device-transfer-release"
+          | "device-await-revocation"
+          | "device-refresh"
           | "device-report"
           | "device-maintenance-admit"
           | "device-maintenance-release"
@@ -68,6 +71,8 @@ export interface Input {
         readonly type:
           | "device-admitted"
           | "device-released"
+          | "device-revoked"
+          | "device-refreshed"
           | "device-reported"
           | "device-maintenance-admitted"
           | "device-maintenance-released"
@@ -221,6 +226,9 @@ const ORDERED_RPC = {
   "await-child": false,
   "device-admit": false,
   "device-release": false,
+  "device-transfer-release": false,
+  "device-await-revocation": false,
+  "device-refresh": false,
   "device-report": false,
   "device-maintenance-admit": false,
   "device-maintenance-release": false,
@@ -423,6 +431,9 @@ export function spawn(input: Input): Handle {
       }
       case "device-admit":
       case "device-release":
+      case "device-transfer-release":
+      case "device-await-revocation":
+      case "device-refresh":
       case "device-report":
       case "device-maintenance-admit":
       case "device-maintenance-release":
