@@ -1,6 +1,7 @@
 import { Component, Index, onCleanup, Show, type ComponentProps } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import type { HomeApp } from "@/apps/registry"
+import { publicAssetUrl } from "@/utils/public-asset"
 
 type TileProps = {
   app: HomeApp
@@ -73,7 +74,7 @@ export const AppTile: Component<TileProps> = (props) => {
               when={props.app.tile}
               fallback={<Icon name={props.app.icon as ComponentProps<typeof Icon>["name"]} class="size-11" />}
             >
-              {(src) => <img src={src()} alt="" draggable={false} />}
+              {(src) => <img src={src().startsWith("/assets/") ? publicAssetUrl(src()) : src()} alt="" draggable={false} />}
             </Show>
           </span>
           <span class="home-app-label">{props.app.title}</span>
@@ -81,7 +82,7 @@ export const AppTile: Component<TileProps> = (props) => {
       }
     >
       <span class="home-nova-art">
-        <img src="/assets/skin/logo-nobg.png" alt="" draggable={false} />
+        <img src={publicAssetUrl("assets/skin/logo-nobg.png")} alt="" draggable={false} />
       </span>
       <span class="home-nova-stats">
         <Index each={props.app.stats?.() ?? []}>

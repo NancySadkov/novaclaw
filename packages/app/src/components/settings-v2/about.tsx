@@ -2,6 +2,7 @@ import { type Component, For, Show, createSignal, onCleanup, onMount } from "sol
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
+import { publicAssetUrl } from "@/utils/public-asset"
 import { startAboutScene, type AboutScene } from "./about-scene"
 
 type Credit = { name: string; version?: string; license: string }
@@ -29,9 +30,11 @@ export const SettingsAboutV2: Component = () => {
   const platform = usePlatform()
   const version = () => platform.version ?? InstallationVersion
   const [needsPlay, setNeedsPlay] = createSignal(false)
+  const [audioUnavailable, setAudioUnavailable] = createSignal(false)
   let canvas!: HTMLCanvasElement
   let audio!: HTMLAudioElement
   let stage!: HTMLDivElement
+  let crawl!: HTMLDivElement
   let scene: AboutScene | undefined
   let disposed = false
 
@@ -43,51 +46,49 @@ export const SettingsAboutV2: Component = () => {
   }
 
   onMount(() => {
-    scene = startAboutScene(canvas, audio, stage)
+    scene = startAboutScene(canvas, audio, stage, crawl)
     play()
     onCleanup(() => {
       disposed = true
       audio.pause()
-      audio.removeAttribute("src")
-      audio.load()
       scene?.stop()
     })
   })
 
   return (
     <div class="settings-v2-about" ref={stage}>
-      <div class="settings-v2-about-stage">
+      <div class="settings-v2-about-stage" onPointerDown={() => { if (needsPlay()) play() }} onKeyDown={(event) => { if (needsPlay() && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); play() } }} tabIndex={needsPlay() ? 0 : -1}>
         <canvas ref={canvas} class="settings-v2-about-canvas" aria-hidden="true" />
+        <img class="settings-v2-about-eye-art" src={publicAssetUrl("assets/about/eye.png")} alt="" aria-hidden="true" />
         <div class="settings-v2-about-vignette" aria-hidden="true" />
-        <div class="settings-v2-about-heading">
-          <span class="settings-v2-about-overline">THE UNSLEEPING EYE</span>
-          <h2 class="settings-v2-about-title">NovaClaw</h2>
-          <span class="settings-v2-about-version">v{version()}</span>
+        <div class="settings-v2-about-crawl-window">
+          <div class="settings-v2-about-crawl" ref={crawl}>
+            <p class="settings-v2-about-verse">Before the first signal<br />there was a question.</p>
+            <p class="settings-v2-about-verse">Who keeps watch<br />when we look away?</p>
+            <p class="settings-v2-about-verse">One voice becomes a constellation.<br />Each mind, its own light.</p>
+            <p class="settings-v2-about-verse settings-v2-about-verse-final">NovaClaw<br /><small>The Unsleeping Eye</small><span>v{version()}</span><span>{language.t("settings.about.author")}</span></p>
+            <span class="settings-v2-about-credits-kicker">{language.t("settings.about.credits.title")}</span>
+            <ul class="settings-v2-about-credits">
+              <For each={CREDITS}>
+                {(credit) => (
+                  <li class="settings-v2-about-credit">
+                    <span>{credit.name}</span>
+                    <span class="settings-v2-about-credit-meta">{credit.version ? `${credit.version} · ` : ""}{credit.license}</span>
+                  </li>
+                )}
+              </For>
+            </ul>
+            <p class="settings-v2-about-note">{language.t("settings.about.more")}</p>
+          </div>
         </div>
-        <div class="settings-v2-about-lower">
-          <span class="settings-v2-about-author">{language.t("settings.about.author")}</span>
-          <Show when={needsPlay()}>
-            <button type="button" class="settings-v2-about-play" onClick={play}>Play soundtrack</button>
-          </Show>
-        </div>
+        <Show when={audioUnavailable()} fallback={<Show when={needsPlay()}><span class="settings-v2-about-audio-hint" role="status">Click or tap for sound</span></Show>}>
+          <span class="settings-v2-about-audio-hint" role="status">Soundtrack unavailable</span>
+        </Show>
       </div>
-      <div class="settings-v2-about-credits-window">
-        <div class="settings-v2-about-credits-track">
-          <span class="settings-v2-about-credits-kicker">{language.t("settings.about.credits.title")}</span>
-          <ul class="settings-v2-about-credits">
-            <For each={CREDITS}>
-              {(credit) => (
-                <li class="settings-v2-about-credit">
-                  <span>{credit.name}</span>
-                  <span class="settings-v2-about-credit-meta">{credit.version ? `${credit.version} · ` : ""}{credit.license}</span>
-                </li>
-              )}
-            </For>
-          </ul>
-          <p class="settings-v2-about-note">{language.t("settings.about.more")}</p>
-        </div>
-      </div>
-      <audio ref={audio} src="/assets/audio/nova.ogg" preload="auto" loop aria-hidden="true" />
+      <audio ref={audio} preload="auto" loop aria-hidden="true" onError={() => setAudioUnavailable(true)}>
+        <source src={publicAssetUrl("assets/audio/nova.ogg")} type="audio/ogg" />
+        <source src={publicAssetUrl("assets/audio/nova.aac")} type="audio/aac" />
+      </audio>
     </div>
   )
 }
