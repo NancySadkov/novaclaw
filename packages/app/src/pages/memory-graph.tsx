@@ -378,6 +378,7 @@ export function MemoryGraphPage() {
             class="memory-space-icon-button"
             type="button"
             title="Refresh"
+            aria-label="Refresh memories"
             onClick={() => setRevision((value) => value + 1)}
           >
             <Icon name="reset" size="large" />
@@ -388,7 +389,7 @@ export function MemoryGraphPage() {
             aria-expanded={indexOpen()}
             onClick={() => setIndexOpen((open) => !open)}
           >
-            {indexOpen() ? "Close index" : "Open index"}
+            {indexOpen() ? "Close" : "Index"}
           </button>
         </div>
       </header>

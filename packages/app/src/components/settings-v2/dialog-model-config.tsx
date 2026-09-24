@@ -3,7 +3,7 @@ import type {
   ConfigV2Provider as ProviderConfig,
   ProviderApi,
 } from "@novaclaw/sdk/v2/client"
-import { Component, For, type JSX, Show, createMemo, createSignal } from "solid-js"
+import { Component, For, type JSX, Show, createEffect, createMemo, createSignal } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { Tabs as KobalteTabs } from "@kobalte/core/tabs"
 import { createStore } from "solid-js/store"
@@ -242,6 +242,22 @@ export const ModelConfigScreen: Component<{
   type ConfigTab = "identity" | "sampling" | "capabilities" | "scheduler"
   const [tab, setTab] = createSignal<ConfigTab>("identity")
   const desktopSettings = createMediaQuery("(min-width: 768px)")
+  let tabList: HTMLElement | undefined
+
+  createEffect(() => {
+    tab()
+    if (desktopSettings() || !tabList) return
+    const selected = tabList.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+    if (!selected) return
+    const listBounds = tabList.getBoundingClientRect()
+    const selectedBounds = selected.getBoundingClientRect()
+    const left = selectedBounds.left - listBounds.left + tabList.scrollLeft
+    const right = selectedBounds.right - listBounds.left + tabList.scrollLeft
+    if (left < tabList.scrollLeft) tabList.scrollTo({ left, behavior: "smooth" })
+    else if (right > tabList.scrollLeft + tabList.clientWidth) {
+      tabList.scrollTo({ left: right - tabList.clientWidth, behavior: "smooth" })
+    }
+  })
   const tabs = createMemo(() => [
     { id: "identity" as const, label: language.t("settings.models.config.tab.identity"), icon: "user" as const },
     { id: "sampling" as const, label: language.t("settings.models.config.tab.sampling"), icon: "sliders" as const },
@@ -549,11 +565,11 @@ export const ModelConfigScreen: Component<{
   return (
     <div
       data-component="model-settings"
-      class="flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden bg-v2-background-bg-base text-v2-text-text-base"
+      class="model-config-app flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden bg-v2-background-bg-base text-v2-text-text-base"
     >
       {/* The officer-settings header shape: BACK (this is a place you came from the list), the model's
           identity, then Close. */}
-      <div class="flex min-w-0 items-center gap-3 border-b border-v2-border-border-base px-3 py-3 sm:px-4">
+      <div class="model-config-header flex min-w-0 items-center gap-3 border-b border-v2-border-border-base px-3 py-3 sm:px-4">
         <button
           type="button"
           data-action="model-config-back"
@@ -564,7 +580,9 @@ export const ModelConfigScreen: Component<{
         >
           <Icon name="chevron-left" size="normal" />
         </button>
-        <Icon name="cpu" size="large" class="shrink-0 text-v2-text-text-muted" />
+        <span class="model-config-emblem">
+          <Icon name="cpu" size="large" />
+        </span>
         <span class="min-w-0 flex-1">
           <span class="block truncate text-sm font-semibold">{props.modelName}</span>
           <span class="block truncate text-xs text-v2-text-text-muted">
@@ -592,7 +610,21 @@ export const ModelConfigScreen: Component<{
               called disorganized. */}
         <KobalteTabs.List
           as="nav"
-          class="flex min-w-0 shrink-0 gap-1 overflow-x-auto border-b border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-0.5 md:w-48 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:px-3 md:py-4"
+          ref={(element: HTMLElement) => {
+            tabList = element
+          }}
+          onWheel={(event: WheelEvent & { currentTarget: HTMLElement }) => {
+            const list = event.currentTarget
+            if (
+              desktopSettings() ||
+              list.scrollWidth <= list.clientWidth ||
+              Math.abs(event.deltaY) <= Math.abs(event.deltaX)
+            )
+              return
+            list.scrollLeft += event.deltaY
+            event.preventDefault()
+          }}
+          class="model-config-nav flex min-w-0 shrink-0 gap-1 overflow-x-auto border-b border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-0.5 md:w-48 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:px-3 md:py-4"
           aria-label={language.t("settings.models.config.title", { model: props.modelName })}
         >
           <For each={tabs()}>
@@ -600,7 +632,7 @@ export const ModelConfigScreen: Component<{
               <KobalteTabs.Trigger
                 type="button"
                 value={item.id}
-                class={`flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 text-left text-[13px] transition-colors md:min-h-10 ${
+                class={`model-config-tab flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-3 text-left text-[13px] transition-colors md:min-h-10 ${
                   tab() === item.id
                     ? "bg-v2-background-bg-layer-03 font-medium text-v2-text-text-base shadow-sm"
                     : "text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 hover:text-v2-text-text-base"
@@ -868,7 +900,7 @@ export const ModelConfigScreen: Component<{
         </KobalteTabs.Content>
       </KobalteTabs>
 
-      <div class="flex items-center justify-end gap-2 border-t border-v2-border-border-base px-4 py-3">
+      <div class="model-config-actions flex items-center justify-end gap-2 border-t border-v2-border-border-base px-4 py-3">
         <ButtonV2 size="normal" variant="ghost-muted" disabled={isDefault()} onClick={() => void makeDefault()}>
           {isDefault()
             ? language.t("settings.models.config.default.isDefault")

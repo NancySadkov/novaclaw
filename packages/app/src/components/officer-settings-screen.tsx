@@ -1,5 +1,5 @@
 import type { ConfigV2Agent } from "@novaclaw/sdk/v2/client"
-import { createMemo, createSignal, For, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { Tabs as KobalteTabs } from "@kobalte/core/tabs"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
@@ -249,6 +249,13 @@ export function OfficerSettingsScreen(props: {
     new URLSearchParams(location.search).get("tab") === "messengers" ? "messengers" : "work",
   )
   const desktopSettings = createMediaQuery("(min-width: 768px)")
+  let tabList: HTMLElement | undefined
+  createEffect(() => {
+    activeTab()
+    if (desktopSettings() || !tabList) return
+    const selected = tabList.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+    selected?.scrollIntoView({ block: "nearest", inline: "nearest" })
+  })
   const settingsTabs = () => [
     { id: "work" as const, label: "Work", icon: "task" as const },
     { id: "capabilities" as const, label: "Capabilities", icon: "shield" as const },
@@ -1477,6 +1484,13 @@ export function OfficerSettingsScreen(props: {
         <KobalteTabs.List
           as="nav"
           data-slot="agent-settings-nav"
+          ref={(element: HTMLElement) => { tabList = element }}
+          onWheel={(event: WheelEvent & { currentTarget: HTMLElement }) => {
+            const list = event.currentTarget
+            if (desktopSettings() || list.scrollWidth <= list.clientWidth || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
+            list.scrollLeft += event.deltaY
+            event.preventDefault()
+          }}
           class="flex min-w-0 shrink-0 gap-1 overflow-x-auto border-b border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1 md:w-44 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:px-2 md:py-3"
           aria-label="Officer settings"
         >

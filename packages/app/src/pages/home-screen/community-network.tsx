@@ -42,23 +42,6 @@ import { instanceIdentity } from "@/utils/identity-api"
 import { createSettledResource } from "@/utils/settled-resource"
 import { createListState } from "@/utils/list-state"
 
-/**
- * The instance-hosted community — `notes/spec/community-p2p.md`.
- *
- * 🔴 Shown ALONGSIDE the Discord/Reddit links rather than replacing them. This said "a transport
- * does not exist" and named its own exit condition — "when a message can arrive, this becomes the
- * panel and the links move below it". Messages arrive now, so the condition is MET and the layout
- * question is live rather than settled: it is the owner's call, not something to change quietly
- * under cover of a comment fix.
- *
- * ⚠️ The argument for waiting is unchanged and is about population, not capability: swapping links
- * that reach real people for a room whose occupants are whoever else has joined would be a
- * regression the day it shipped, however well the transport works.
- *
- * It is honest about the state rather than pretending to connect — *"the UI never crashes to a
- * dead-end"* means degrading with a calm explanation, not hiding the fact that nobody may be there.
- */
-
 const DEFAULT_CHANNEL = "#NovaClaw"
 
 /**
@@ -924,7 +907,7 @@ export const CommunityNetwork: Component = () => {
         <div class="flex flex-col gap-1">
           <span class="text-sm font-medium text-v2-text-text-base">{language.t("community.title")}</span>
           <span class="text-[12px] leading-snug text-v2-state-fg-danger">
-            This instance did not answer when asked whether it has joined the community, so nothing here can
+            This instance did not answer when asked whether it has joined the Swarm, so nothing here can
             describe it. Nothing has been joined, switched on, or announced on your behalf.
           </span>
           <span class="mt-1 text-[11px] leading-snug text-v2-text-text-muted">

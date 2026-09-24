@@ -16,7 +16,7 @@ import path from "node:path"
 const source = readFileSync(path.join(import.meta.dir, "settings-screen.tsx"), "utf8")
 
 const listBody = () => {
-  const start = source.indexOf("<TabsV2.List>")
+  const start = source.indexOf("<TabsV2.List")
   const end = source.indexOf("</TabsV2.List>")
   expect(start, "TabsV2.List opening tag").toBeGreaterThan(-1)
   expect(end, "TabsV2.List closing tag").toBeGreaterThan(start)

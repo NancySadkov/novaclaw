@@ -32,18 +32,6 @@ type Entry = {
 
 const LEDGER: Entry[] = [
   {
-    file: "constants/links.ts",
-    url: "https://discord.gg/QShqKW56JM",
-    status: "live",
-    note: "The community invite. The single copy in the renderer; crash screen, Help button and Community panel all resolve to it.",
-  },
-  {
-    file: "pages/home-screen/social-panel.tsx",
-    url: "https://novaclaw.app",
-    status: "live",
-    note: "The product site root, opened from the Community panel.",
-  },
-  {
     file: "desktop-menu.ts",
     url: "https://novaclaw.app/docs",
     status: "dead",
@@ -78,6 +66,10 @@ const LEDGER: Entry[] = [
  */
 const RETIRED = [
   {
+    url: "https://discord.gg/QShqKW56JM",
+    note: "The third-party community invite was retired when Swarm became the instance network app.",
+  },
+  {
     url: "https://novaclaw.app/desktop-feedback",
     note: "404 since v0.1.0. Was the crash screen's 'report this error' link and the sidebar Help button; both now resolve to DISCORD_INVITE_URL (B3, 2026-07-28).",
   },
@@ -93,7 +85,6 @@ const RETIRED = [
 const LAST_RESORT = ["pages/error.tsx", "pages/home-screen/social-panel.tsx"]
 
 const SRC = path.resolve(import.meta.dir, "..")
-const LINKS_MODULE = "constants/links.ts"
 const URL_PATTERN = /https:\/\/(?:novaclaw\.app|discord\.gg)[^\s"'`)<>\\]*/g
 
 function sourceFiles(): string[] {
@@ -123,28 +114,10 @@ function found(): { file: string; url: string }[] {
   return out
 }
 
-/** `export const NAME = "url"` in constants/links.ts. */
-function exportedLinks(): Map<string, string> {
-  const out = new Map<string, string>()
-  for (const m of read(LINKS_MODULE).matchAll(/export const (\w+)\s*=\s*"([^"]+)"/g)) out.set(m[1]!, m[2]!)
-  return out
-}
-
-/** Everything `file` can open: literal URLs plus the values of link constants it imports. */
+/** Everything `file` can open. */
 function reachableFrom(file: string): string[] {
   const source = read(file)
   const urls = new Set(source.match(URL_PATTERN) ?? [])
-  const exported = exportedLinks()
-  for (const m of source.matchAll(/import\s*\{([^}]*)\}\s*from\s*["']@\/constants\/links["']/g)) {
-    for (const raw of m[1]!.split(",")) {
-      const name = raw
-        .trim()
-        .split(/\s+as\s+/)[0]
-        ?.trim()
-      const url = name ? exported.get(name) : undefined
-      if (url) urls.add(url)
-    }
-  }
   return [...urls]
 }
 
@@ -181,35 +154,12 @@ describe("outbound link ledger", () => {
   })
 })
 
-describe("the community invite has exactly one home", () => {
-  test("the invite string is written once, in constants/links.ts", () => {
-    const invite = exportedLinks().get("DISCORD_INVITE_URL")
-    expect(invite, "DISCORD_INVITE_URL must stay exported from constants/links.ts").toBeTruthy()
-    const holders = found()
-      .filter((f) => f.url === invite)
-      .map((f) => f.file)
-    expect(holders, "Import DISCORD_INVITE_URL instead of pasting the invite — copies rot apart silently.").toEqual([
-      LINKS_MODULE,
-    ])
-  })
-
-  test("the crash screen and the Community panel both use it", () => {
-    for (const file of ["pages/error.tsx", "pages/home-screen/social-panel.tsx"]) {
-      expect(read(file), `${file} should import DISCORD_INVITE_URL`).toContain("DISCORD_INVITE_URL")
-    }
-  })
-})
-
 describe("last-resort surfaces never dead-end", () => {
   // The user is here because something already broke. A link that 404s now is worse than no link: it
   // spends the last bit of trust they had. Nothing but a verified-live endpoint is allowed.
   const statusOf = new Map(LEDGER.map((e) => [e.url, e.status]))
 
   for (const file of LAST_RESORT) {
-    test(`${file} offers a way out`, () => {
-      expect(reachableFrom(file).length, `${file} must link somewhere a stuck user can get help`).toBeGreaterThan(0)
-    })
-
     test(`${file} links only to endpoints declared live`, () => {
       const bad = reachableFrom(file).map((url) => ({ url, status: statusOf.get(url) ?? "undeclared" }))
       expect(
@@ -218,4 +168,32 @@ describe("last-resort surfaces never dead-end", () => {
       ).toEqual([])
     })
   }
+
+  test("the crash screen offers local recovery and diagnostics", () => {
+    const source = read("pages/error.tsx")
+    expect(source).toContain("onClick={platform.restart}")
+    expect(source).toContain("onClick={exportDebugLogs}")
+  })
+
+  test("Swarm presents the instance network", () => {
+    expect(read("pages/home-screen/social-panel.tsx")).toContain("<CommunityNetwork />")
+  })
+})
+
+describe("Swarm replaces third-party community links", () => {
+  test("the home tile names the instance network in every translated launcher", () => {
+    for (const file of sourceFiles().filter((name) => /^i18n\/[a-z]+\.ts$/.test(name) && read(name).includes('"home.app.social.subtitle"'))) {
+      const source = read(file)
+      expect(source, file).toContain('"home.app.social.name": "Swarm"')
+      expect(source.match(/"home\.app\.social\.subtitle": "([^"]+)"/)?.[1], file).not.toMatch(/Discord|Reddit/)
+    }
+  })
+
+  test("the Swarm and crash surfaces contain no Discord navigation", () => {
+    for (const file of LAST_RESORT) {
+      const source = read(file)
+      expect(source, file).not.toContain("DISCORD_INVITE_URL")
+      expect(source, file).not.toContain("openLink(")
+    }
+  })
 })

@@ -11,6 +11,9 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
+  background:
+    radial-gradient(ellipse at 92% 0%, rgb(117 71 155 / 0.1), transparent 42%),
+    var(--v2-background-bg-base);
 }
 
 .settings-v2-close {
@@ -21,9 +24,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--v2-border-border-muted);
+  border-radius: 8px;
+  background: var(--v2-background-bg-layer-02);
   color: var(--v2-text-text-muted);
   cursor: pointer;
 }
@@ -51,13 +56,13 @@
   position: sticky;
   top: 0;
   z-index: 10;
-  padding: 28px 32px 20px;
+  padding: 24px 28px 18px;
   background: linear-gradient(to bottom, var(--v2-background-bg-base) calc(100% - 24px), transparent);
 }
 
 .settings-v2-tab-title {
-  font-size: 15px;
-  font-weight: 640;
+  font-size: 20px;
+  font-weight: 650;
   line-height: 1;
   color: var(--v2-text-text-base);
 }
@@ -65,9 +70,9 @@
 .settings-v2-tab-body {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 16px;
   width: 100%;
-  padding: 0 32px 32px;
+  padding: 0 28px 28px;
 }
 
 [data-slot="settings-v2-row-description"] a.settings-v2-link {
@@ -100,18 +105,19 @@
 }
 
 [data-component="settings-v2-list"] {
-  border-radius: 8px;
-  background-color: var(--v2-background-bg-layer-01);
-  padding-inline: 20px;
-  box-shadow: inset 0 0 0 0.5px var(--v2-border-border-muted);
+  border: 1px solid color-mix(in srgb, var(--v2-border-border-base) 70%, #a77a47);
+  border-radius: 13px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--v2-background-bg-layer-02) 90%, #4b3165), var(--v2-background-bg-layer-01));
+  padding-inline: 18px;
+  box-shadow: 0 10px 28px rgb(0 0 0 / 0.12);
 }
 
 [data-component="settings-v2-row"] {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
-  padding-block: 20px;
+  gap: 12px;
+  padding-block: 14px;
   border-bottom: 0.5px solid var(--v2-border-border-base);
 }
 
@@ -130,7 +136,7 @@
   min-width: 0;
   flex: 1;
   flex-direction: column;
-  gap: 8px;
+  gap: 5px;
 }
 
 [data-slot="settings-v2-row-title"] {
@@ -146,7 +152,7 @@
 [data-slot="settings-v2-row-description"] {
   font-size: 11px;
   font-weight: 440;
-  line-height: 1;
+  line-height: 1.4;
   color: var(--v2-text-text-muted);
 }
 
@@ -185,7 +191,39 @@
 }
 
 .settings-v2[data-component="tabs-v2"][data-variant="settings"] > [data-slot="tabs-v2-list"] {
-  background-color: var(--v2-background-bg-layer-01);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--v2-background-bg-layer-01) 90%, #4d315f), var(--v2-background-bg-layer-01));
+}
+
+.settings-v2[data-component="tabs-v2"][data-variant="settings"] [data-slot="tabs-v2-section-title"] {
+  margin-top: 12px;
+  margin-bottom: 3px;
+  color: #bc9e70;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.settings-v2[data-component="tabs-v2"][data-variant="settings"] [data-slot="tabs-v2-trigger-wrapper"] {
+  min-height: 36px;
+  border-radius: 7px;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.settings-v2[data-component="tabs-v2"][data-variant="settings"] [data-slot="tabs-v2-trigger"] {
+  font-size: 12px;
+  font-weight: 520;
+}
+
+.settings-v2[data-component="tabs-v2"][data-variant="settings"] [data-slot="tabs-v2-trigger-wrapper"]:has([data-selected]) {
+  border-color: color-mix(in srgb, #d7b36d 58%, transparent);
+  background: linear-gradient(105deg, color-mix(in srgb, #806394 24%, var(--v2-background-bg-layer-03)), var(--v2-background-bg-layer-02));
+  box-shadow: inset 2px 0 #d7b36d;
+  color: var(--v2-text-text-base);
+}
+
+.settings-v2[data-component="tabs-v2"][data-variant="settings"] [data-slot="tabs-v2-trigger-wrapper"]:has([data-selected]) [data-slot="tabs-v2-trigger-content"] > svg {
+  color: #e3bd76;
 }
 
 .settings-v2[data-component="tabs-v2"] [data-slot="tabs-v2-trigger"]:focus-visible,
@@ -205,36 +243,42 @@
   .settings-v2[data-component="tabs-v2"][data-variant="settings"] > [data-slot="tabs-v2-list"] {
     flex-direction: row;
     align-items: stretch;
-    flex: 0 0 48px;
+    flex: 0 0 52px;
     width: calc(100% - 48px);
     min-width: 0;
-    height: 48px;
-    padding: 2px 6px;
+    height: 52px;
+    padding: 2px 6px 5px;
     gap: 4px;
     overflow-x: auto;
     overflow-y: hidden;
     overscroll-behavior-x: contain;
     border-right: 0;
     border-bottom: 1px solid var(--v2-border-border-base);
-    scrollbar-width: none;
+    scrollbar-width: thin;
+    scrollbar-color: #ad8748 transparent;
   }
   .settings-v2[data-component="tabs-v2"][data-variant="settings"] > [data-slot="tabs-v2-list"]::-webkit-scrollbar {
-    display: none;
+    height: 3px;
+  }
+  .settings-v2[data-component="tabs-v2"][data-variant="settings"] > [data-slot="tabs-v2-list"]::-webkit-scrollbar-thumb {
+    border-radius: 3px;
+    background: #ad8748;
   }
   .settings-v2[data-component="tabs-v2"][data-variant="settings"] [data-slot="tabs-v2-section-title"] {
     display: none;
   }
   .settings-v2[data-component="tabs-v2"][data-variant="settings"] [data-slot="tabs-v2-trigger-wrapper"] {
     width: auto;
-    height: 44px;
+    height: 42px;
     flex: 0 0 auto;
     color: var(--v2-text-text-muted);
-    border-bottom: 2px solid transparent;
+    border: 1px solid transparent;
   }
   .settings-v2[data-component="tabs-v2"][data-variant="settings"]
     [data-slot="tabs-v2-trigger-wrapper"]:has([data-selected]) {
     color: var(--v2-text-text-base);
-    border-bottom-color: var(--v2-border-border-focus);
+    border-color: color-mix(in srgb, #d7b36d 58%, transparent);
+    box-shadow: inset 0 -2px #d7b36d;
   }
   .settings-v2[data-component="tabs-v2"][data-variant="settings"] [data-slot="tabs-v2-trigger"] {
     width: auto;
@@ -242,23 +286,23 @@
     padding: 0 10px;
   }
   .settings-v2-close {
-    top: 2px;
-    right: 2px;
-    width: 44px;
-    height: 44px;
+    top: 5px;
+    right: 5px;
+    width: 40px;
+    height: 40px;
   }
   .settings-v2-tab-header {
-    padding: 20px 16px 18px;
+    padding: 20px 16px 16px;
   }
   .settings-v2-tab-body {
-    gap: 24px;
+    gap: 16px;
     padding: 0 16px 24px;
   }
   [data-component="settings-v2-list"] {
     padding-inline: 12px;
   }
   [data-component="settings-v2-row"] {
-    padding-block: 16px;
+    padding-block: 13px;
   }
 }
 

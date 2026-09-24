@@ -15,7 +15,7 @@ import { SettingsModelsV2 } from "@/components/settings-v2/models"
 export function ModelsPage() {
   const navigate = useNavigate()
   return (
-    <AppPage class="flex flex-col overflow-hidden">
+    <AppPage class="models-app flex flex-col overflow-hidden">
       <div class="min-h-0 flex-1 overflow-y-auto">
         <SettingsModelsV2
           onConfigure={(key) => {

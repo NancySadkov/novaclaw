@@ -23,7 +23,10 @@
 @import "./pages/session/session-surface.css" layer(components);
 @import "./pages/home-screen/home-screen.css" layer(components);
 @import "./pages/contacts.css" layer(components);
+@import "./pages/debug.css" layer(components);
 @import "./pages/recipes.css" layer(components);
+@import "./pages/models.css" layer(components);
+@import "./pages/registry.css" layer(components);
 
 @font-face {
   font-family: "JetBrainsMono Nerd Font Mono";
@@ -78,8 +81,9 @@
   gap: 0.85rem;
   min-height: 4.5rem;
   padding: 0.65rem 1rem;
-  border-bottom: 1px solid rgba(168, 114, 187, 0.18);
-  background: linear-gradient(180deg, rgba(18, 9, 30, 0.94), rgba(12, 6, 19, 0.78));
+  border-bottom: 1px solid rgba(216, 171, 75, 0.26);
+  background: linear-gradient(105deg, rgba(60, 32, 70, 0.96), rgba(18, 9, 30, 0.92) 35%, rgba(12, 6, 19, 0.82));
+  box-shadow: inset 0 1px rgba(245, 219, 141, 0.13), 0 8px 30px rgba(3, 2, 8, 0.2);
   backdrop-filter: blur(22px) saturate(1.15);
 }
 
@@ -99,7 +103,7 @@
 .memory-space-kicker {
   display: block;
   margin-bottom: 0.22rem;
-  color: var(--v2-text-text-muted);
+  color: #d7b876;
   font-size: 0.62rem;
   font-weight: 650;
   letter-spacing: 0.16em;
@@ -142,12 +146,12 @@
   align-items: baseline;
   gap: 0.32rem;
   padding-left: 0.85rem;
-  border-left: 1px solid rgba(168, 114, 187, 0.24);
+  border-left: 1px solid rgba(216, 171, 75, 0.3);
   color: var(--v2-text-text-muted);
   font-size: 0.7rem;
 }
 .memory-space-readout strong {
-  color: var(--v2-text-text-base);
+  color: #f2d58e;
   font-size: 1rem;
   font-variant-numeric: tabular-nums;
 }
@@ -160,7 +164,7 @@
   min-width: 0;
   height: 2.45rem;
   align-items: center;
-  border: 1px solid rgba(168, 114, 187, 0.22);
+  border: 1px solid rgba(216, 171, 75, 0.22);
   border-radius: 0.9rem;
   background: rgba(27, 16, 39, 0.62);
   box-shadow: inset 0 1px rgba(255, 255, 255, 0.025);
@@ -169,7 +173,7 @@
   width: 0.68rem;
   height: 0.68rem;
   margin-left: 0.9rem;
-  border: 1.5px solid var(--v2-text-text-muted);
+  border: 1.5px solid #d7b876;
   border-radius: 50%;
   content: "";
   opacity: 0.7;
@@ -381,6 +385,16 @@
   color: var(--v2-text-text-base);
   background: rgba(76, 37, 95, 0.32);
 }
+.memory-space-kind-rail button[aria-pressed="true"] {
+  color: var(--v2-text-text-base);
+  background: rgba(216, 171, 75, 0.09);
+}
+.memory-space-kind-rail button:focus-visible,
+.memory-space-index-button:focus-visible,
+.memory-space-detail-actions button:focus-visible {
+  outline: 2px solid #e8c883;
+  outline-offset: 2px;
+}
 .memory-space-kind-rail i,
 .memory-space-index-list i {
   width: 0.42rem;
@@ -457,7 +471,12 @@
   text-align: left;
 }
 .memory-space-index-list > button:hover {
-  background: rgba(76, 37, 95, 0.27);
+  background: rgba(216, 171, 75, 0.11);
+}
+.memory-space-index-list > button:focus-visible {
+  outline: 2px solid #e8c883;
+  outline-offset: -2px;
+  background: rgba(216, 171, 75, 0.11);
 }
 .memory-space-index-list span {
   display: flex;
@@ -716,7 +735,7 @@
     grid-area: actions;
   }
   .memory-space-header-actions > .memory-space-icon-button {
-    display: none;
+    display: inline-flex;
   }
   .memory-space-index-button {
     min-width: 4.7rem;
@@ -1270,6 +1289,21 @@ body[data-new-layout] [data-slot="dialog-container"] {
   border-color: color-mix(in srgb, #d7b36d 58%, transparent);
   background: linear-gradient(105deg, color-mix(in srgb, #806394 24%, var(--v2-background-bg-layer-03)), var(--v2-background-bg-layer-02));
   box-shadow: inset 2px 0 #d7b36d;
+}
+
+[data-component="agent-settings"] [data-slot="agent-settings-nav"] {
+  scrollbar-width: thin;
+  scrollbar-color: #bd945b88 transparent;
+}
+
+[data-component="agent-settings"] [data-slot="agent-settings-nav"]::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+[data-component="agent-settings"] [data-slot="agent-settings-nav"]::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: #bd945b88;
 }
 
 [data-component="agent-settings"] .settings-v2-tab-body {

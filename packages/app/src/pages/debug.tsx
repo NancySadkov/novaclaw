@@ -516,19 +516,39 @@ function DebugAppPage() {
       .catch(() => showToast({ variant: "error", title: "Copy failed" }))
   }
 
-  const section = "border-b border-v2-border-border-base"
-  const heading = "flex items-center gap-2 px-4 pt-3 pb-2"
-  const title = "text-[13px] font-semibold text-v2-text-text-base"
-  const hint = "text-[11px] text-v2-text-text-faint"
+  const section = "debug-panel"
+  const heading = "debug-panel-heading"
+  const title = "debug-panel-title"
+  const hint = "debug-panel-hint"
   const btn =
-    "rounded-md px-2.5 py-1 text-xs font-medium text-v2-text-text-muted transition-colors hover:bg-v2-background-bg-layer-02 disabled:pointer-events-none disabled:opacity-40"
+    "debug-action disabled:pointer-events-none disabled:opacity-40"
 
   return (
-    <AppPage class="flex flex-col overflow-hidden">
-      <AppPageHeader dense glyph="debug" title="Debug" hint="diagnostics and recovery" />
-      <div class="min-h-0 flex-1 overflow-y-auto">
+    <AppPage class="debug-page flex flex-col overflow-hidden">
+      <AppPageHeader dense glyph="debug" title="Debug" hint="Live diagnostics and recovery" />
+      <div class="debug-scroll min-h-0 flex-1 overflow-y-auto">
+        <div class="debug-intro">
+          <div>
+            <span class="debug-eyebrow">INSTANCE INSTRUMENTS</span>
+            <h1>System overview</h1>
+            <p>Live state, recent faults, and recovery controls for this instance.</p>
+          </div>
+          <div class="debug-readouts" aria-label="Instance overview">
+            <div><strong>{servers().length}</strong><span>servers</span></div>
+            <div><strong>{sessions().length}</strong><span>sessions</span></div>
+            <div><strong>{errorLogEntries().length}</strong><span>client events</span></div>
+          </div>
+        </div>
+        <nav class="debug-jump" aria-label="Debug sections">
+          <a href="#debug-connections">Connection</a>
+          <a href="#debug-capabilities">Capabilities</a>
+          <a href="#debug-scheduler">Scheduler</a>
+          <a href="#debug-logs">Logs</a>
+          <a href="#debug-sessions">Sessions</a>
+        </nav>
+        <div class="debug-grid">
         {/* ── Connection ─────────────────────────────────────────────────────────────── */}
-        <div class={section}>
+        <div class={section} id="debug-connections">
           <div class={heading}>
             <span class={title}>{language.t("debug.page.connection")}</span>
             <span class={hint}>{language.t("debug.page.sseStreamStatusPerConfiguredServer")}</span>
@@ -556,7 +576,7 @@ function DebugAppPage() {
         </div>
 
         {/* ── Optional capabilities ─────────────────────────────────────────────────── */}
-        <div class={section} data-panel="capabilities">
+        <div class={section} id="debug-capabilities" data-panel="capabilities">
           <div class={heading}>
             <span class={title}>{language.t("debug.page.optionalCapabilities")}</span>
             <span class={hint}>live state — looking here does not start anything</span>
@@ -685,7 +705,7 @@ function DebugAppPage() {
           </div>
         </div>
 
-        <div class={section} data-panel="scheduler">
+        <div class={section} id="debug-scheduler" data-panel="scheduler">
           <div class={heading}>
             <span class={title}>{language.t("debug.page.scheduler")}</span>
             <span class={hint}>live EEVDF state per device — in-flight, waiting, and the fair-share ledger</span>
@@ -817,7 +837,7 @@ function DebugAppPage() {
         </div>
 
         {/* ── Error log ──────────────────────────────────────────────────────────────── */}
-        <div class={section} data-panel="error-log">
+        <div class={section} id="debug-logs" data-panel="error-log">
           <div class={heading}>
             <span class={title}>{language.t("debug.page.errorLog")}</span>
             <span class={hint}>
@@ -1061,7 +1081,7 @@ function DebugAppPage() {
         </div>
 
         {/* ── Sessions (ps) ───────────────────────────────────────────────────────────── */}
-        <div class={section}>
+        <div class={section} id="debug-sessions" data-panel="sessions">
           <div class={heading}>
             <span class={title}>{language.t("debug.page.sessions")}</span>
             {/* Naming the scope is the honest move, the same way the log panel says whose ring it
@@ -1223,7 +1243,7 @@ function DebugAppPage() {
         </div>
 
         {/* ── Config snapshot ────────────────────────────────────────────────────────── */}
-        <div>
+        <div class={section} data-panel="config">
           <div class={heading}>
             <span class={title}>{language.t("debug.page.configSnapshot")}</span>
             <span class={hint}>the active server's resolved config (read-only — edit in Settings)</span>
@@ -1231,6 +1251,7 @@ function DebugAppPage() {
           <pre class="overflow-x-auto px-4 pb-4 font-mono text-[11px] leading-4 text-v2-text-text-muted">
             {config()}
           </pre>
+        </div>
         </div>
       </div>
     </AppPage>

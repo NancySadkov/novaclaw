@@ -24,9 +24,9 @@ type Step = {
 }
 
 const STEPS: readonly Step[] = [
-  { icon: "speech-bubble", accent: "#e7b62f", glyphTone: "dark", key: "welcome" },
+  { icon: "speech-bubble", accent: "#d9b36a", image: publicAssetUrl("/assets/skin/logo-nobg.png"), key: "welcome" },
   { icon: "dot-grid", accent: "#8b5cf6", key: "apps" },
-  { icon: "grid-plus", accent: "#a78bfa", image: publicAssetUrl("/logo.png"), key: "home" },
+  { icon: "grid-plus", accent: "#a78bfa", key: "home" },
   { icon: "brain", accent: "#22d3ee", key: "chat" },
   { icon: "plus", accent: "#34d399", key: "build" },
   { icon: "settings-gear", accent: "#8d8fa6", key: "settings" },
@@ -45,7 +45,7 @@ export const HelpTour: Component = () => {
 
   return (
     <Dialog size="content">
-      <div class="flex flex-col items-center gap-5 px-8 py-10 min-w-[24rem] max-w-[30rem] text-center">
+      <div class="flex w-[min(92vw,30rem)] min-w-0 flex-col items-center gap-5 px-5 py-7 text-center sm:px-8 sm:py-9">
         <Show
           when={step().image}
           fallback={
@@ -64,16 +64,17 @@ export const HelpTour: Component = () => {
           }
         >
           {(image) => (
-            <div class="flex size-[4.5rem] items-center justify-center rounded-[1.375rem] bg-v2-background-bg-layer-02 shadow-[var(--v2-elevation-floating)] ring-1 ring-white/15">
-              <img src={image()} alt="" draggable={false} class="size-14 select-none" />
+            <div class="flex size-[5rem] items-center justify-center rounded-[1.375rem] bg-v2-background-bg-layer-02 shadow-[var(--v2-elevation-floating)] ring-1 ring-amber-300/20">
+              <img src={image()} alt="" draggable={false} class="size-[4.5rem] select-none object-contain" />
             </div>
           )}
         </Show>
         {/* min-h fits the tallest step so the card keeps ONE size across the tour — the Next
             button must not hop under the cursor between steps. */}
-        <div class="flex flex-col gap-2 min-h-[8rem]">
-          <span class="text-[17px] font-semibold text-v2-text-text-base">{title()}</span>
-          <span class="text-sm text-v2-text-text-muted leading-relaxed">{body()}</span>
+        <div class="flex min-h-[9rem] flex-col gap-2">
+          <span class="text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-200/70">Your workgroup · {i() + 1} / {STEPS.length}</span>
+          <span class="text-xl font-semibold tracking-tight text-amber-100">{title()}</span>
+          <span class="text-[13px] text-v2-text-text-muted leading-relaxed">{body()}</span>
         </div>
         <div class="flex items-center gap-1.5 pt-1">
           <For each={STEPS}>

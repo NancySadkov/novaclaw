@@ -15,10 +15,10 @@ describe("home-screen visual contracts", () => {
     // The tile must match the others: a transparent golden glyph that the renderer frames, like the
     // other framed tiles — not the gradient fallback it shipped with first (owner, 2026-09-16).
     const builtins = read("../../apps/builtins.tsx")
-    expect(builtins).toMatch(/id: "models",[\s\S]*?tile: "\/assets\/skin\/(?:tiles|glyphs)\/models\.svg"/)
+    expect(builtins).toMatch(/id: "models",[\s\S]*?tile: "\/assets\/skin\/glyphs\/models-generated\.png"/)
     expect(builtins).toMatch(/id: "models",[\s\S]*?tileNeedsFrame: true/)
-    const svg = read("../../../public/assets/skin/tiles/models.svg")
-    expect(svg.trimStart().startsWith("<svg")).toBe(true)
+    const png = fs.readFileSync(path.join(import.meta.dir, "../../../public/assets/skin/glyphs/models-generated.png"))
+    expect(png.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a")
   })
 
   test("every built-in tile URL resolves to a shipped asset", () => {

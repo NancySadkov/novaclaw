@@ -312,19 +312,18 @@ function RegistryAppPage() {
     "rounded-md px-2.5 py-1 text-xs font-medium text-v2-text-text-muted transition-colors hover:bg-v2-background-bg-layer-02 disabled:pointer-events-none disabled:opacity-40"
 
   return (
-    <AppPage class="flex flex-col overflow-hidden">
-      <AppPageHeader
-        dense
-        glyph="registry"
-        title="Registry"
-        hint="the instance database, editable — changes are immediate and unguarded"
-      />
-      <div class="flex min-h-0 flex-1">
+    <AppPage class="registry-app flex flex-col overflow-hidden">
+      <AppPageHeader glyph="registry" title="Registry" hint="Instance database" />
+      <div class="registry-workspace flex min-h-0 flex-1">
         {/* 🔴 The rail used to be a bare `<For each={tables() ?? []}>` with no fallback of any kind,
             so a failed read rendered an empty 224px column: not an empty state, not an error,
             nothing — while the pane beside it invited the user to pick from the list that had just
             failed to arrive. Four states, four sentences (ruling 2). */}
-        <div class="w-56 shrink-0 overflow-y-auto border-r border-v2-border-border-base p-2">
+        <nav class="registry-rail" aria-label="Database tables">
+          <div class="registry-rail-heading">
+            <span>TABLES</span>
+            <Show when={tableRows()}>{(rows) => <span>{rows().length}</span>}</Show>
+          </div>
           {/* `idle` and `loading` share the fallback's sentence. They are still separate facts, but
               a rail that has not asked yet and a rail that is asking both have nothing to list —
               what neither may do is render the empty state, or nothing at all. */}
@@ -362,11 +361,11 @@ function RegistryAppPage() {
                     <button
                       type="button"
                       data-component="registry-table"
-                      class="flex w-full items-center justify-between rounded-[6px] px-2 py-1.5 text-left text-[12px] transition-colors"
+                      class="registry-table-choice flex items-center justify-between text-left transition-colors"
                       classList={{
-                        "bg-v2-background-bg-layer-02 text-v2-text-text-base": selected() === table.name,
-                        "text-v2-text-text-muted hover:bg-v2-background-bg-layer-01": selected() !== table.name,
+                        "is-selected": selected() === table.name,
                       }}
+                      aria-current={selected() === table.name ? "true" : undefined}
                       onClick={() => openTable(table.name)}
                     >
                       <span class="truncate font-mono">{table.name}</span>
@@ -377,12 +376,12 @@ function RegistryAppPage() {
               )}
             </Match>
           </Switch>
-        </div>
-        <div class="min-w-0 flex-1 overflow-auto">
+        </nav>
+        <div class="registry-detail min-w-0 flex-1 overflow-auto">
           <Switch
             fallback={
               <div class="p-6 text-[13px] text-v2-text-text-faint">
-                {selected() ? "Loading…" : "Pick a table — hives on the left, rows here."}
+                {selected() ? "Loading…" : "Choose a table to inspect its rows."}
               </div>
             }
           >
@@ -398,50 +397,67 @@ function RegistryAppPage() {
                 instruction the screen cannot honour. */}
             <Match when={!selected() && tableList().kind === "failed"}>
               <div class="p-6 text-[13px] text-v2-text-text-faint">
-                There is no table list to pick from — see the panel on the left.
+                There is no table list to pick from — see the table navigator.
               </div>
             </Match>
             <Match when={page()}>
               {(current) => (
-                <div class="flex min-h-full flex-col">
-                  <table class="w-full border-collapse text-[12px]">
-                    <thead>
-                      <tr class="sticky top-0 bg-v2-background-bg-base text-left text-v2-text-text-faint">
-                        <th class="border-b border-v2-border-border-base px-2 py-1.5 font-medium">rowid</th>
-                        <For each={[...current().columns]}>
-                          {(column) => (
-                            <th class="border-b border-v2-border-border-base px-2 py-1.5 font-mono font-medium">
-                              {column}
-                            </th>
+                <div class="registry-detail-content flex min-h-full flex-col">
+                  <div class="registry-detail-heading">
+                    <div class="min-w-0">
+                      <span class="registry-kicker">DATABASE / TABLE</span>
+                      <h2>{selected()}</h2>
+                    </div>
+                    <span class="registry-count">{current().rowCount} rows</span>
+                  </div>
+                  <div class="registry-table-scroll">
+                    <table class="registry-data-table w-full border-collapse text-[12px]">
+                      <thead>
+                        <tr class="sticky top-0 bg-v2-background-bg-base text-left text-v2-text-text-faint">
+                          <th class="border-b border-v2-border-border-base px-2 py-1.5 font-medium">rowid</th>
+                          <For each={[...current().columns]}>
+                            {(column) => (
+                              <th class="border-b border-v2-border-border-base px-2 py-1.5 font-mono font-medium">
+                                {column}
+                              </th>
+                            )}
+                          </For>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <For each={[...current().rows]}>
+                          {(row) => (
+                            <tr
+                              data-component="registry-row"
+                              class="cursor-default transition-colors hover:bg-v2-background-bg-layer-01"
+                              classList={{ "bg-v2-background-bg-layer-02": editRowForm()?.row.rowid === row.rowid }}
+                              tabIndex={0}
+                              aria-label={`Edit row ${row.rowid}`}
+                              onClick={() => openRow(row)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault()
+                                  openRow(row)
+                                }
+                              }}
+                            >
+                              <td class="border-b border-v2-border-border-muted px-2 py-1 tabular-nums text-v2-text-text-faint">
+                                {row.rowid}
+                              </td>
+                              <For each={[...current().columns]}>
+                                {(column) => (
+                                  <td class="max-w-[280px] truncate border-b border-v2-border-border-muted px-2 py-1 font-mono text-v2-text-text-muted">
+                                    {cellText(row.values[column])}
+                                  </td>
+                                )}
+                              </For>
+                            </tr>
                           )}
                         </For>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <For each={[...current().rows]}>
-                        {(row) => (
-                          <tr
-                            data-component="registry-row"
-                            class="cursor-default transition-colors hover:bg-v2-background-bg-layer-01"
-                            classList={{ "bg-v2-background-bg-layer-02": editRowForm()?.row.rowid === row.rowid }}
-                            onClick={() => openRow(row)}
-                          >
-                            <td class="border-b border-v2-border-border-muted px-2 py-1 tabular-nums text-v2-text-text-faint">
-                              {row.rowid}
-                            </td>
-                            <For each={[...current().columns]}>
-                              {(column) => (
-                                <td class="max-w-[280px] truncate border-b border-v2-border-border-muted px-2 py-1 font-mono text-v2-text-text-muted">
-                                  {cellText(row.values[column])}
-                                </td>
-                              )}
-                            </For>
-                          </tr>
-                        )}
-                      </For>
-                    </tbody>
-                  </table>
-                  <div class="flex items-center gap-2 px-2 py-2 text-[12px] text-v2-text-text-faint">
+                      </tbody>
+                    </table>
+                  </div>
+                  <div class="registry-pagination flex items-center gap-2 px-2 py-2 text-[12px] text-v2-text-text-faint">
                     <button
                       type="button"
                       class={btn}
@@ -451,7 +467,8 @@ function RegistryAppPage() {
                       ← Prev
                     </button>
                     <span class="tabular-nums">
-                      {offset() + 1}–{Math.min(offset() + PAGE_SIZE, current().rowCount)} of {current().rowCount}
+                      {current().rowCount === 0 ? 0 : offset() + 1}–{Math.min(offset() + PAGE_SIZE, current().rowCount)}{" "}
+                      of {current().rowCount}
                     </span>
                     <button
                       type="button"
@@ -467,7 +484,10 @@ function RegistryAppPage() {
                   </div>
                   <Show when={newRowForm()}>
                     {(form) => (
-                      <div data-component="registry-new-row" class="border-t border-v2-border-border-base p-3">
+                      <div
+                        data-component="registry-new-row"
+                        class="registry-editor border-t border-v2-border-border-base p-3"
+                      >
                         <div class="mb-2 flex items-center gap-2">
                           <span class="text-[12px] font-semibold text-v2-text-text-base">
                             New row in {form().table}
@@ -485,7 +505,7 @@ function RegistryAppPage() {
                             Cancel
                           </button>
                         </div>
-                        <div class="grid gap-2" style={{ "grid-template-columns": "minmax(120px, 200px) 1fr" }}>
+                        <div class="registry-editor-fields grid gap-2">
                           <For each={[...form().columns]}>
                             {(column) => (
                               <>
@@ -510,7 +530,10 @@ function RegistryAppPage() {
                   </Show>
                   <Show when={editRowForm()}>
                     {(form) => (
-                      <div data-component="registry-editor" class="border-t border-v2-border-border-base p-3">
+                      <div
+                        data-component="registry-editor"
+                        class="registry-editor border-t border-v2-border-border-base p-3"
+                      >
                         <div class="mb-2 flex items-center gap-2">
                           <span class="text-[12px] font-semibold text-v2-text-text-base">
                             Edit rowid {form().row.rowid}
@@ -526,7 +549,7 @@ function RegistryAppPage() {
                             Close
                           </button>
                         </div>
-                        <div class="grid gap-2" style={{ "grid-template-columns": "minmax(120px, 200px) 1fr" }}>
+                        <div class="registry-editor-fields grid gap-2">
                           <For each={[...form().columns]}>
                             {(column) => (
                               <>

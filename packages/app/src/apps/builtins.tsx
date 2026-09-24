@@ -95,10 +95,8 @@ export function useBuiltinApps(): () => HomeApp[] {
       get title() {
         return name("models")
       },
-      // Frame the owner-supplied transparent glyph like the other app instruments. The launcher
-      // tones built-in glyphs cool; metallic gold belongs to Nova. `icon` is the non-art fallback.
       icon: "cpu",
-      tile: "/assets/skin/tiles/models.svg",
+      tile: "/assets/skin/glyphs/models-generated.png",
       tileNeedsFrame: true,
       accent: "#14b8a6",
       get subtitle() {
@@ -115,7 +113,7 @@ export function useBuiltinApps(): () => HomeApp[] {
         return name("recipes")
       },
       icon: "checklist",
-      tile: "/assets/skin/glyphs/recipes.png",
+      tile: "/assets/skin/glyphs/recipes-generated.png",
       tileNeedsFrame: true,
       accent: "#9b8acb",
       get subtitle() {
@@ -130,7 +128,7 @@ export function useBuiltinApps(): () => HomeApp[] {
         return name("files")
       },
       icon: "folder",
-      tile: "/assets/skin/glyphs/files.png",
+      tile: "/assets/skin/glyphs/files-generated.png",
       tileNeedsFrame: true,
       accent: "#3b82f6",
       get subtitle() {
@@ -154,7 +152,7 @@ export function useBuiltinApps(): () => HomeApp[] {
         return name("terminal")
       },
       icon: "terminal",
-      tile: "/assets/skin/glyphs/terminal.png",
+      tile: "/assets/skin/glyphs/terminal-generated.png",
       tileNeedsFrame: true,
       accent: "#64748b",
       get subtitle() {
@@ -172,7 +170,7 @@ export function useBuiltinApps(): () => HomeApp[] {
         return name("registry")
       },
       icon: "cpu",
-      tile: "/assets/skin/glyphs/registry.png",
+      tile: "/assets/skin/glyphs/registry-generated.png",
       tileNeedsFrame: true,
       accent: "#0ea5e9",
       get subtitle() {
@@ -190,7 +188,7 @@ export function useBuiltinApps(): () => HomeApp[] {
         return name("debug")
       },
       icon: "console",
-      tile: "/assets/skin/glyphs/debug.png",
+      tile: "/assets/skin/glyphs/debug-generated.png",
       tileNeedsFrame: true,
       accent: "#a78bfa",
       get subtitle() {
@@ -210,19 +208,14 @@ export function useBuiltinApps(): () => HomeApp[] {
       get title() {
         return name("social")
       },
-      // A generic people glyph, NOT the Discord mark: the tile leads to Discord, Reddit AND the website, so
-      // wearing one company's trademark both misdescribes it and borrows a mark we have no licence to use as
-      // our own iconography. The Discord ROW inside the panel keeps its logo — that one really is Discord.
       icon: "community",
-      tile: "/assets/skin/glyphs/community.png",
+      tile: "/assets/skin/glyphs/swarm-generated.png",
       tileNeedsFrame: true,
-      // Cool indigo-blue, so it doesn't compete with the gold hero (uix.md §3/P3).
-      accent: "#5865f2",
+      accent: "#7062ae",
       get subtitle() {
         return sub("social")
       },
       source: "builtin",
-      // Sits next to Help on purpose: when the tour doesn't answer it, humans do.
       open: () => void dialog.show(() => <SocialPanel />),
     },
     {
@@ -231,7 +224,7 @@ export function useBuiltinApps(): () => HomeApp[] {
         return name("help")
       },
       icon: "help",
-      tile: "/assets/skin/glyphs/help.png",
+      tile: "/assets/skin/glyphs/help-generated.png",
       tileNeedsFrame: true,
       // Cool indigo, not the old pink — keeps the single-warm-accent discipline. uix.md §3/P3.
       accent: "#6366f1",
@@ -247,7 +240,7 @@ export function useBuiltinApps(): () => HomeApp[] {
         return name("settings")
       },
       icon: "settings-gear",
-      tile: "/assets/skin/glyphs/settings.png",
+      tile: "/assets/skin/glyphs/settings-generated.png",
       tileNeedsFrame: true,
       accent: "#8d8fa6",
       get subtitle() {

@@ -1,4 +1,4 @@
-import { Component, Show, createSignal } from "solid-js"
+import { Component, Show, createEffect, createSignal } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { Icon } from "@novaclaw/ui/v2/icon"
@@ -42,6 +42,22 @@ export const SettingsScreen: Component<{
   const requested = props.defaultTab ?? "general"
   const initialTab = tabVisible(requested) ? requested : "general"
   const [tab, setTab] = createSignal(initialTab)
+  let tabList: HTMLDivElement | undefined
+
+  createEffect(() => {
+    tab()
+    if (!server.key || desktop()) return
+    const selected = tabList?.querySelector<HTMLElement>('[data-slot="tabs-v2-trigger"][data-selected]')
+    if (!selected || !tabList) return
+    const listBounds = tabList.getBoundingClientRect()
+    const selectedBounds = selected.getBoundingClientRect()
+    const left = selectedBounds.left - listBounds.left + tabList.scrollLeft
+    const right = selectedBounds.right - listBounds.left + tabList.scrollLeft
+    if (left < tabList.scrollLeft) tabList.scrollTo({ left, behavior: "smooth" })
+    else if (right > tabList.scrollLeft + tabList.clientWidth) {
+      tabList.scrollTo({ left: right - tabList.clientWidth, behavior: "smooth" })
+    }
+  })
 
   return (
     <div class="settings-v2-screen">
@@ -71,7 +87,15 @@ export const SettingsScreen: Component<{
               onChange={setTab}
               class="settings-v2"
             >
-              <TabsV2.List>
+              <TabsV2.List
+                ref={(element: HTMLDivElement) => { tabList = element }}
+                onWheel={(event: WheelEvent & { currentTarget: HTMLDivElement }) => {
+                  const list = event.currentTarget
+                  if (desktop() || list.scrollWidth <= list.clientWidth || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
+                  list.scrollLeft += event.deltaY
+                  event.preventDefault()
+                }}
+              >
                 <TabsV2.SectionTitle>{language.t("settings.section.desktop")}</TabsV2.SectionTitle>
                 <TabsV2.Trigger value="general">
                   <Icon name="sliders" size="large" />

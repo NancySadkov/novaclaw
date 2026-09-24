@@ -667,7 +667,7 @@ export const dict = {
     "Could not export the logs. Open Show technical details below for what went wrong.",
   "error.page.details.actionFailure": "While exporting the logs:",
   "error.page.circular": "[Circular]",
-  "error.page.report.prefix": "Please report this error to the NovaClaw team",
+  "error.page.report.prefix": "If this keeps happening, copy the error details or export the logs for the person who runs this instance.",
   "error.page.report.discord": "on Discord",
   "error.page.version": "Version: {{version}}",
 
@@ -748,30 +748,30 @@ export const dict = {
   "help.tour.back": "Back",
   "help.tour.next": "Next",
   "help.tour.getStarted": "Get started",
-  "help.tour.step.welcome.title": "Welcome to NovaClaw",
+  "help.tour.step.welcome.title": "Meet your AI workgroup",
   "help.tour.step.welcome.body":
-    "Your private AI workspace — an operating system where AI helpers work for you like apps. It runs on your own hardware, so your conversations and data stay with you.",
-  "help.tour.step.apps.title": "A home screen of apps",
+    "NovaClaw is a team of AI officers working for you. You set direction; Nova leads the team, delegates work, and keeps you informed.",
+  "help.tour.step.apps.title": "Nova leads the officers",
   "help.tour.step.apps.body":
-    "Tap a tile to open an app. The big gold tile is Chats — that’s where everything starts, and its Recent and Active views show what the AI is doing right now. Notes keeps your everyday things, and Files lets AI work on your folders.",
-  "help.tour.step.home.title": "The logo is your Home button",
+    "Open the large All Officers tile to see your team. Nova sits at the top; each officer has a role, a superior, a chat, and settings you can inspect.",
+  "help.tour.step.home.title": "Start with Nova",
   "help.tour.step.home.body":
-    "See the NovaClaw logo in the top-left corner? Click it anytime to jump back to this home screen — from any chat or app. Think of it as your Start button.",
-  "help.tour.step.chat.title": "Chat, and let AI help",
+    "Tell Nova what you want done. Nova can hire specialist officers and coordinate their work. The officer list shows who is working, who reports to whom, and what needs attention.",
+  "help.tour.step.chat.title": "Talk to each officer",
   "help.tour.step.chat.body":
-    "A helper can break a big job into smaller ones, use tools on your behalf, and hand back the result. It can even draw charts and small visualizations right inside the chat — not just text.",
-  "help.tour.step.build.title": "Ask for your own apps",
+    "An officer has its own ongoing chat, tools, and memory. Open its portrait and settings to see its role, model, and what it remembers.",
+  "help.tour.step.build.title": "Recipes become apps",
   "help.tour.step.build.body":
-    "Want something this screen doesn’t have? Just ask — “make me a stock prices app on the home screen” — and a helper builds it and pins it as a new tile.",
-  "help.tour.step.settings.title": "Set up your models",
+    "A recipe is an instruction package for work you want done. Deploy one and Nova can assign an officer to build it; its app appears on your Home screen.",
+  "help.tour.step.settings.title": "Choose your models",
   "help.tour.step.settings.body":
-    "Open Settings to connect the AI models your helpers use and to manage servers. Settings is also home to Recovery, where you can reset or restore things if you ever need to.",
-  "help.tour.step.data.title": "Your data is yours — and safe",
+    "Use Models to connect and tune the AI minds available to officers. Settings holds instance options and recovery controls.",
+  "help.tour.step.data.title": "Meet the Swarm",
   "help.tour.step.data.body":
-    "Notes are shared with your AI helpers so they know your context. When AI edits or removes files, deletions go to a Trash you can restore from — so an accidental change is easy to undo.",
-  "help.tour.step.done.title": "You’re all set",
+    "Swarm lets your Nova discover other NovaClaw instances through the local network, introductions, and a public DHT. Peers exchange signed claims; you choose whether to connect.",
+  "help.tour.step.done.title": "The team is ready",
   "help.tour.step.done.body":
-    "Open Chats and say hi. Hover any tile for a hint of what it does, and reopen this tour anytime from the Help app.",
+    "Open All Officers and talk to Nova. Return Home with the logo at the top left, and reopen this tour from Help whenever you like.",
   "common.remove": "Remove",
   // ⚠️ The copy changed WITH the control (AGENTS.md principle 12): this was a fake text input whose
   // label said "Enter opens its chat", which described typing that never happened. It is a button.
@@ -1728,6 +1728,8 @@ export const dict = {
   "settings.models.config.default.isDefault": "Default",
   "settings.models.config.toast.failed": "Couldn't save model settings",
   "settings.models.new.open": "Add models",
+  "settings.models.empty.title": "Give your workgroup a mind",
+  "settings.models.empty.body": "Connect a local or remote model, then choose which officers can use it.",
   "settings.models.new.title": "Add models",
   "settings.models.new.description": "Pick where your models come from.",
   "settings.models.new.custom.name": "Custom endpoint",
@@ -2030,9 +2032,9 @@ export const dict = {
   "settings.permissions.tool.kill.description": "Terminate a worker it spawned and archive that worker’s transcript",
   "settings.permissions.tool.colleague.title": "Hand Off to a Colleague",
   "settings.permissions.tool.colleague.description": "Give work to another named agent on the roster",
-  "settings.permissions.tool.community_ask.title": "Ask the Community",
+  "settings.permissions.tool.community_ask.title": "Ask the Swarm",
   "settings.permissions.tool.community_ask.description": "Ask another user's Nova a question",
-  "settings.permissions.tool.community_say.title": "Answer the Community",
+  "settings.permissions.tool.community_say.title": "Answer the Swarm",
   "settings.permissions.tool.community_say.description": "Answer a question another user's Nova asked",
   "settings.permissions.tool.messenger.connect.title": "Connect a Messenger",
   "settings.permissions.tool.messenger.connect.description": "Link one of your messaging accounts",
@@ -2310,8 +2312,8 @@ export const dict = {
   "contacts.memory.none": "Remembers nothing — a throwaway.",
   "home.app.models.name": "Models",
   "home.app.models.subtitle": "Add, enable and tune the models this instance can run",
-  "home.app.social.name": "Community",
-  "home.app.social.subtitle": "Discord, Reddit and the website — other people who run NovaClaw",
+  "home.app.social.name": "Swarm",
+  "home.app.social.subtitle": "Connect your Nova to other instances across the DHT swarm",
   "home.app.help.name": "Help",
   "home.app.help.subtitle": "A short tour of what NovaClaw can do",
   "home.app.settings.name": "Settings",
@@ -2324,7 +2326,7 @@ export const dict = {
   // German user CONSENTED IN ENGLISH (review 1.15). Of everything in the panel this screen is the
   // part where that is a real harm rather than an inconvenience: it is the screen whose only job is
   // that a person understands what they are accepting, and it was legible to one language's readers.
-  "community.title": "Your own community",
+  "community.title": "Your place in the Swarm",
   "community.consent.intro":
     "NovaClaw instances can talk to each other directly — yours and other people's. It is off until you turn it on, and there are four things to know first.",
   "community.consent.moderation.title": "Nobody moderates this.",
@@ -2339,9 +2341,9 @@ export const dict = {
   "community.consent.notes.title": "Your instance keeps notes about people.",
   "community.consent.notes.body":
     "When it deals with someone — asks them something, is answered or refused — it records how that went, in its own words, so it can judge who is worth listening to later. The notes are written by the AI, they are about identifiable people, and nothing here sends them anywhere: no peer can ask for them. Your own agent does read them, because that is what they are for. Forgetting someone deletes theirs.",
-  "community.consent.reversible": "You can turn it off again at any time, here in Community settings.",
+  "community.consent.reversible": "You can turn it off again at any time, here in Swarm settings.",
   "community.consent.accept": "I understand — turn it on",
-  "community.off.body": "Community is turned off. Nothing goes in or out, and other instances cannot reach yours.",
+  "community.off.body": "Swarm is turned off. Nothing goes in or out, and other instances cannot reach yours.",
   "community.off.turnOn": "Turn it back on",
   "community.airgap.body":
     "Offline mode is on, so the community is off regardless of this setting. Turn off offline mode in Settings to use it.",
@@ -2394,7 +2396,7 @@ export const dict = {
   "community.empty.airgap":
     "Offline mode is on, so nothing goes in or out. Your key and the people you know are saved; turn it off in Settings to reach them.",
   "community.empty.notJoined":
-    "You have not joined the community yet. Your key is already saved; turning it on above is all that is left.",
+    "You have not joined the Swarm yet. Your key is already saved; turning it on above is all that is left.",
   "community.empty.noPeers":
     "Nothing here yet — this instance knows nobody to talk to. Add someone's address, or use Find to look on your network and in the public directory.",
   "community.status.checking": "Checking…",
@@ -2414,7 +2416,7 @@ export const dict = {
   "community.contacts.savedUnreachable": "Saved to your copy. They could not be reached just now.",
   "community.find.refusedAirgap": "Offline mode is on, so nothing was looked for. Turn it off in Settings to search.",
   "community.find.refusedOff":
-    "Community is off on this instance, so nothing was looked for. Turn it on above to search.",
+    "Swarm is off on this instance, so nothing was looked for. Turn it on above to search.",
   "community.contacts.nothingAnswered": "Nothing answered there, so nobody was added. Check the address and try again.",
   "community.channels.savedLocally":
     "Saved to your own copy — no peer was reachable just now, so it will go out when one is.",

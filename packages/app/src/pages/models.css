@@ -1,0 +1,339 @@
+.models-app,
+.model-config-app {
+  background: radial-gradient(ellipse at 78% -18%, #8053b51d, transparent 58%), var(--v2-background-bg-base);
+}
+
+.models-app .settings-v2-tab-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--v2-border-border-base);
+  background: linear-gradient(105deg, #c4a06a18, #8b65c40e 44%, var(--v2-background-bg-base));
+}
+
+.models-app-toolbar {
+  max-width: 1480px;
+  margin: auto;
+}
+
+.models-app-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 11px;
+}
+
+.models-app-emblem,
+.model-config-emblem {
+  display: flex;
+  flex: 0 0 38px;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid #c2a57570;
+  border-radius: 10px;
+  background: radial-gradient(circle at 28% 20%, #d0ac6e2c, #6e42a51b 72%);
+  box-shadow:
+    inset 0 1px #fff2,
+    0 4px 12px #08031130;
+  color: var(--v2-text-text-accent);
+}
+
+.models-app .settings-v2-tab-title {
+  font-size: 17px;
+  font-weight: 690;
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+}
+
+.models-app-subtitle {
+  display: block;
+  margin-top: 3px;
+  color: var(--v2-text-text-faint);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.models-app .settings-v2-tab-body.settings-v2-models {
+  max-width: 1520px;
+  margin: auto;
+  padding: 16px 20px 32px;
+  gap: 0;
+}
+
+.models-app-empty {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 11px;
+  width: min(100%, 420px);
+  margin: clamp(28px, 9vh, 96px) auto 0;
+  padding: 30px 24px;
+  border: 1px solid #c2a57555;
+  border-radius: 18px;
+  background: radial-gradient(circle at 50% 0, #bb955d28, transparent 52%), linear-gradient(150deg, #33233f, #1e172b);
+  box-shadow: inset 0 1px #f9e4b01c, 0 12px 30px #08031138;
+  text-align: center;
+}
+
+.models-app-empty h3 {
+  color: #f4ddb0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.models-app-empty p {
+  max-width: 31ch;
+  color: var(--v2-text-text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.models-app .settings-v2-models [data-component="settings-v2-list"] {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  align-content: start;
+  gap: 12px;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.models-app .settings-v2-models [data-component="settings-v2-model-sortable"] {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--v2-text-text-base) 15%, transparent);
+  border-radius: 12px;
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--v2-background-bg-layer-02) 95%, #8b65c4),
+    var(--v2-background-bg-base)
+  );
+  box-shadow:
+    inset 0 1px #fff1,
+    0 5px 16px #09041425;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.models-app .settings-v2-models [data-component="settings-v2-model-sortable"]:hover,
+.models-app .settings-v2-models [data-component="settings-v2-model-sortable"]:focus-within {
+  border-color: #bd945b;
+  box-shadow:
+    inset 0 1px #fff2,
+    0 8px 24px #09041440,
+    0 0 0 2px #c3a16c20;
+}
+
+.models-app .settings-v2-models [data-component="settings-v2-model-sortable"][data-default="true"] {
+  border-color: #bd945b87;
+  background: linear-gradient(110deg, #bd945b1a, #8b65c414 50%, var(--v2-background-bg-layer-01));
+  box-shadow:
+    inset 3px 0 #d9b879,
+    0 5px 16px #09041425;
+}
+
+.models-app .settings-v2-models [data-component="settings-v2-row"] {
+  height: 100%;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 15px;
+}
+
+.models-app .settings-v2-models [data-slot="settings-v2-row-copy"] {
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+.models-app .settings-v2-models [data-slot="settings-v2-row-title"] {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.models-app .settings-v2-models [data-slot="settings-v2-row-description"] {
+  color: var(--v2-text-text-faint);
+  font-size: 11px;
+}
+
+.models-app .settings-v2-models [data-slot="settings-v2-row-control"] {
+  width: 100%;
+  flex: 0 0 auto;
+  justify-content: stretch;
+}
+
+.models-app .settings-v2-models-identity {
+  flex-wrap: wrap;
+}
+
+.models-card-mark {
+  display: inline-flex;
+  flex: 0 0 26px;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid #bd945b5e;
+  border-radius: 7px;
+  background: #bd945b17;
+  color: var(--v2-text-text-accent);
+}
+
+.models-app .settings-v2-models-live {
+  border: 1px solid var(--v2-border-border-base);
+}
+
+.models-app .settings-v2-models-row-actions {
+  gap: 10px;
+}
+
+.models-app .settings-v2-models-row-controls {
+  justify-content: flex-start;
+  gap: 5px;
+  padding-top: 9px;
+  border-top: 1px solid var(--v2-border-border-base);
+}
+
+.models-app .settings-v2-models-row-controls [data-component="button-v2"] {
+  min-height: 30px;
+}
+
+.models-app .settings-v2-models-probe-result {
+  text-align: left;
+}
+
+.model-config-header {
+  background: linear-gradient(100deg, #c4a06a16, #8b65c40c 52%, transparent);
+}
+
+.model-config-header > span:nth-of-type(2) > span:first-child {
+  font-size: 15px;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+}
+
+.model-config-nav {
+  scrollbar-width: thin;
+  scrollbar-color: #bd945b88 transparent;
+  background: linear-gradient(150deg, #8b65c415, transparent 55%), var(--v2-background-bg-layer-01);
+}
+
+.model-config-nav::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.model-config-nav::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background: #bd945b88;
+}
+
+.model-config-tab {
+  position: relative;
+  border: 1px solid transparent;
+}
+
+.model-config-tab[data-selected],
+.model-config-tab[aria-selected="true"] {
+  border-color: #bd945b65;
+  background: linear-gradient(95deg, #bd945b1f, #8b65c417);
+  box-shadow: inset 3px 0 #d9b879;
+  color: var(--v2-text-text-base);
+}
+
+.model-config-tab:focus-visible {
+  outline: 2px solid var(--v2-border-border-focus);
+  outline-offset: -2px;
+}
+
+.model-config-app .model-settings-panels {
+  padding: 18px clamp(10px, 3vw, 36px) 26px;
+  scrollbar-width: thin;
+}
+
+.model-config-app .model-settings-panels > div {
+  max-width: 930px;
+  margin: 0 auto;
+}
+
+.model-config-app [data-component="settings-v2-list"] {
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--v2-text-text-base) 13%, transparent);
+  border-radius: 11px;
+  background: linear-gradient(145deg, #8b65c40c, transparent 60%), var(--v2-background-bg-layer-01);
+  box-shadow:
+    inset 0 1px #fff1,
+    0 5px 16px #0904141c;
+}
+
+.model-config-app [data-component="settings-v2-row"] {
+  display: grid;
+  grid-template-columns: minmax(11rem, 1fr) minmax(0, 1.2fr);
+  align-items: center;
+  min-width: 0;
+  padding-block: 14px;
+}
+
+.model-config-app [data-slot="settings-v2-row-copy"],
+.model-config-app [data-slot="settings-v2-row-control"] {
+  min-width: 0;
+}
+
+.model-config-app [data-slot="settings-v2-row-control"] {
+  width: 100%;
+  justify-content: flex-end;
+}
+
+.model-config-actions {
+  flex-wrap: wrap;
+  background: var(--v2-background-bg-layer-01);
+  box-shadow: 0 -8px 22px #09041422;
+}
+
+@media (max-width: 640px) {
+  .models-app .settings-v2-tab-header {
+    padding: 10px 12px;
+  }
+
+  .models-app .settings-v2-tab-body.settings-v2-models {
+    padding: 12px 10px 24px;
+  }
+
+  .models-app .settings-v2-models [data-component="settings-v2-row"] {
+    padding: 13px;
+  }
+
+  .models-app .settings-v2-models-row-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .models-app .settings-v2-models-row-controls > * {
+    min-width: 0;
+  }
+
+  .model-config-tab[data-selected],
+  .model-config-tab[aria-selected="true"] {
+    box-shadow: inset 0 -3px #d9b879;
+  }
+
+  .model-config-actions {
+    gap: 5px;
+    padding: 9px;
+  }
+
+  .model-config-actions [data-component="button-v2"]:last-child {
+    flex: 1;
+  }
+
+  .model-config-app [data-component="settings-v2-row"] {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .model-config-app [data-slot="settings-v2-row-control"] {
+    justify-content: flex-start;
+  }
+}

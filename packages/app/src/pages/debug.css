@@ -1,0 +1,310 @@
+.debug-page {
+  background:
+    radial-gradient(ellipse at 88% -10%, #66407d30, transparent 44%),
+    radial-gradient(ellipse at 8% 58%, #7d5b2812, transparent 48%),
+    var(--v2-background-bg-base);
+}
+
+.debug-page [data-component="app-page-header"] {
+  flex-wrap: wrap;
+  border-bottom-color: #c9a86d30;
+  background: linear-gradient(90deg, #bd945b0e, transparent 65%);
+}
+
+.debug-page [data-component="app-page-header"] > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.debug-scroll {
+  min-width: 0;
+  scroll-behavior: smooth;
+  scrollbar-color: #c9a86d65 transparent;
+}
+
+.debug-intro {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px clamp(12px, 2.5vw, 32px) 18px;
+}
+
+.debug-eyebrow {
+  color: #d6b875;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+
+.debug-intro h1 {
+  margin: 3px 0 4px;
+  color: var(--v2-text-text-base);
+  font-size: clamp(21px, 2.4vw, 29px);
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+}
+
+.debug-intro p {
+  margin: 0;
+  color: var(--v2-text-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.debug-readouts {
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid #c9a86d2a;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #9163ad14, #c9a86d0a);
+  box-shadow: inset 0 1px #ffffff10;
+}
+
+.debug-readouts > div {
+  display: flex;
+  min-width: 94px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 13px;
+  border-left: 1px solid #c9a86d20;
+}
+
+.debug-readouts > div:first-child {
+  border-left: 0;
+}
+
+.debug-readouts strong {
+  color: #e8c883;
+  font-size: 19px;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.debug-readouts span {
+  color: var(--v2-text-text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.debug-jump {
+  position: sticky;
+  z-index: 4;
+  top: 0;
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  padding: 8px clamp(12px, 2.5vw, 32px) 10px;
+  border-bottom: 1px solid #c9a86d20;
+  background: color-mix(in srgb, var(--v2-background-bg-base) 92%, #352045);
+  scrollbar-width: none;
+  backdrop-filter: blur(16px);
+}
+
+.debug-jump::-webkit-scrollbar {
+  display: none;
+}
+
+.debug-jump a {
+  flex: none;
+  padding: 6px 11px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--v2-text-text-muted);
+  font-size: 11px;
+  font-weight: 580;
+  white-space: nowrap;
+}
+
+.debug-jump a:hover,
+.debug-jump a:focus-visible {
+  border-color: #c9a86d55;
+  color: #f0d491;
+  background: #c9a86d15;
+  outline: none;
+}
+
+.debug-grid {
+  display: grid;
+  width: 100%;
+  max-width: 1520px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
+  gap: 12px;
+  margin: 0 auto;
+  padding: 16px clamp(12px, 2.5vw, 32px) 32px;
+}
+
+.debug-panel {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #c9a86d26;
+  border-radius: 12px;
+  background: linear-gradient(150deg, color-mix(in srgb, var(--v2-background-bg-layer-02) 94%, #653a7c), var(--v2-background-bg-base));
+  box-shadow: inset 0 1px #ffffff0b, 0 6px 24px #0804101a;
+  scroll-margin-top: 66px;
+}
+
+.debug-panel::before {
+  position: absolute;
+  top: 0;
+  right: 25%;
+  left: 25%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #d9bc764a, transparent);
+  content: "";
+  pointer-events: none;
+}
+
+.debug-panel[data-panel="error-log"],
+.debug-panel[data-panel="server-log"],
+.debug-panel[data-panel="sessions"],
+.debug-panel[data-panel="config"] {
+  grid-column: 1 / -1;
+}
+
+.debug-panel-heading {
+  display: flex;
+  min-width: 0;
+  min-height: 52px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 10px 15px;
+  border-bottom: 1px solid #c9a86d1c;
+}
+
+.debug-panel-title {
+  color: var(--v2-text-text-base);
+  font-size: 13px;
+  font-weight: 660;
+  letter-spacing: 0.005em;
+}
+
+.debug-panel-heading .debug-panel-title::before {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin: 0 8px 2px 0;
+  border-radius: 50%;
+  background: #d6b875;
+  box-shadow: 0 0 8px #d6b87588;
+  content: "";
+}
+
+.debug-panel-hint {
+  min-width: 0;
+  color: var(--v2-text-text-faint);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.debug-action {
+  min-height: 30px;
+  flex: none;
+  padding: 5px 9px;
+  border: 1px solid #c9a86d33;
+  border-radius: 7px;
+  color: #dcc58c;
+  background: #c9a86d0c;
+  font-size: 11px;
+  font-weight: 600;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.debug-action:hover {
+  border-color: #c9a86d77;
+  background: #c9a86d22;
+}
+
+.debug-panel input {
+  min-height: 30px;
+  max-width: 100%;
+}
+
+.debug-panel table {
+  min-width: 1040px;
+}
+
+.debug-panel th {
+  padding-block: 8px;
+  border-bottom: 1px solid #c9a86d35;
+  color: #d4bb85;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.debug-panel tbody tr {
+  border-bottom: 1px solid #c9a86d16;
+}
+
+.debug-panel tbody tr:hover {
+  background: #c9a86d0b;
+}
+
+.debug-panel tbody td {
+  padding-block: 6px;
+}
+
+.debug-panel pre {
+  max-height: 370px;
+  overflow: auto;
+  scrollbar-color: #c9a86d65 transparent;
+}
+
+@media (max-width: 850px) {
+  .debug-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .debug-panel[data-panel] {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 620px) {
+  .debug-intro {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 13px;
+    padding-top: 15px;
+  }
+
+  .debug-readouts > div {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .debug-panel-heading {
+    padding: 10px 12px;
+  }
+
+  .debug-panel-heading .debug-panel-hint {
+    width: 100%;
+    order: 2;
+  }
+
+  .debug-panel-heading .debug-action,
+  .debug-panel-heading > button {
+    margin-left: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .debug-scroll {
+    scroll-behavior: auto;
+  }
+
+  .debug-action {
+    transition: none;
+  }
+}

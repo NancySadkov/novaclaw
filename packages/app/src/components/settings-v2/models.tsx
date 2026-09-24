@@ -33,6 +33,7 @@ import { ModelBundleIO } from "./models-io"
 import { useConfirm } from "@/components/dialog-confirm"
 import { scopedDirectory } from "@/utils/routing-directory"
 import { applyModelOrder, modelOrderRef, moveModelOrder } from "./model-list-order"
+import { GoldGlyph } from "@/components/gold-glyph"
 
 type ModelItem = ReturnType<ReturnType<typeof useModels>["list"]>[number]
 
@@ -102,6 +103,9 @@ const SortableModelRow: Component<{
       <SettingsRowV2
         title={
           <div class="settings-v2-models-identity">
+            <span class="models-card-mark" aria-hidden="true">
+              <Icon name="cpu" size="normal" />
+            </span>
             <button
               ref={dragTarget}
               type="button"
@@ -457,8 +461,16 @@ export const SettingsModelsV2: Component<{
   return (
     <>
       <div class="settings-v2-tab-header">
-        <div class="flex items-center justify-between gap-3 flex-wrap">
-          <h2 class="settings-v2-tab-title">{language.t("settings.models.title")}</h2>
+        <div class="models-app-toolbar flex items-center justify-between gap-3 flex-wrap">
+          <div class="models-app-heading">
+            <span class="models-app-emblem">
+              <GoldGlyph name="models-generated" class="size-8" />
+            </span>
+            <div class="min-w-0">
+              <h2 class="settings-v2-tab-title">{language.t("settings.models.title")}</h2>
+              <span class="models-app-subtitle">{list.flat().length} configured</span>
+            </div>
+          </div>
           <div class="flex items-center gap-2 flex-wrap justify-end">
             {/* The whole-config Export/Import moved to Settings → General (owner 2026-07-22) —
                 it is instance configuration, not a models tool. */}
@@ -483,8 +495,13 @@ export const SettingsModelsV2: Component<{
           <Show
             when={list.flat().length > 0}
             fallback={
-              <div class="settings-v2-models-status">
-                <span>{language.t("dialog.model.empty")}</span>
+              <div class="models-app-empty">
+                <GoldGlyph name="models-generated" class="size-16" />
+                <h3>{language.t("settings.models.empty.title")}</h3>
+                <p>{language.t("settings.models.empty.body")}</p>
+                <ButtonV2 size="normal" variant="gold" onClick={openNewModel}>
+                  {language.t("settings.models.new.open")}
+                </ButtonV2>
               </div>
             }
           >

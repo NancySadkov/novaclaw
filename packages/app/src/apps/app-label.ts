@@ -122,7 +122,7 @@ export const BUILTIN_APP_LABELS = {
   // ⚠️ `trash` is NOT here any more — RETIRED as a tile 2026-09-16, id still reserved. The Trash
   // surface moved into Settings → Safety, where restore and retention live together.
   models: { name: "Models", subtitle: "Add, enable and tune the models this instance can run" },
-  social: { name: "Community", subtitle: "Discord, Reddit and the website — other people who run NovaClaw" },
+  social: { name: "Swarm", subtitle: "Connect your Nova to other instances across the DHT swarm" },
   help: { name: "Help", subtitle: "A short tour of what NovaClaw can do" },
   settings: { name: "Settings", subtitle: "Providers, models, servers, recovery" },
 } as const satisfies Record<string, { readonly name: string; readonly subtitle: string }>

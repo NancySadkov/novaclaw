@@ -175,7 +175,7 @@ describe("memory atlas", () => {
     expect(document.querySelector('[data-slot="memory-renderer-fallback"]')).not.toBeNull()
     ;(
       [...document.querySelectorAll("button")].find(
-        (button) => button.textContent === "Open index",
+        (button) => button.textContent === "Index",
       ) as HTMLButtonElement
     ).click()
     await settle(2)
@@ -255,7 +255,7 @@ describe("memory atlas", () => {
     await settle()
     ;(
       [...document.querySelectorAll("button")].find(
-        (button) => button.textContent === "Open index",
+        (button) => button.textContent === "Index",
       ) as HTMLButtonElement
     ).click()
     await settle(2)
