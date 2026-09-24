@@ -6,7 +6,7 @@ import { dict as en } from "@/i18n/en"
 
 const storageSource = fs.readFileSync(new URL("./storage.tsx", import.meta.url), "utf8")
 const serversSource = fs.readFileSync(new URL("./servers.tsx", import.meta.url), "utf8")
-const dialogSource = fs.readFileSync(new URL("./dialog-settings-v2.tsx", import.meta.url), "utf8")
+const screenSource = fs.readFileSync(new URL("./settings-screen.tsx", import.meta.url), "utf8")
 
 // The Storage tab lists WHERE an instance keeps its files (owner ask 2026-07-27). Two things are easy to
 // get silently wrong and neither shows up as a crash, so they are asserted here rather than by driving
@@ -67,7 +67,7 @@ describe("Storage tab entries", () => {
   })
 
   test("Storage is a normal Safety tab and owns the live resource panel", () => {
-    expect(dialogSource).not.toContain('storage: "advanced"')
+    expect(screenSource).not.toContain('storage: "advanced"')
     expect(storageSource).toContain("<InstanceResources />")
     expect(serversSource).not.toContain("<InstanceResources />")
   })

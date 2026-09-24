@@ -167,20 +167,39 @@ test("settings switches its navigation orientation when a phone rotates", async 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto("/")
   await page.getByRole("button", { name: "Settings", exact: true }).click()
+  await expect(page).toHaveURL(/\/settings\?/)
+  const frame = page.locator('[data-component="app-page"]')
+  await expect(frame).toBeVisible()
+  const bounds = await frame.evaluate((element) => {
+    const page = element.getBoundingClientRect()
+    const area = element.closest("main")!.getBoundingClientRect()
+    return { page: [page.x, page.y, page.width, page.height], area: [area.x, area.y, area.width, area.height] }
+  })
+  expect(bounds.page).toEqual(bounds.area)
   const tabs = page.getByRole("tablist").first()
   await expect(tabs).toHaveAttribute("aria-orientation", "horizontal")
+  await expect(page.locator('[data-action="settings-profile-enabled"]')).toBeVisible()
   const general = page.getByRole("tab", { name: "General", exact: true })
   await general.focus()
   await page.keyboard.press("ArrowRight")
   await expect(general).not.toBeFocused()
   await expect(page.getByRole("tab", { name: "Appearance", exact: true })).toBeFocused()
+  await expect(page.locator('[data-action="settings-color-scheme"]')).toHaveCount(0)
   await page.mouse.move(2, 2)
   await page.screenshot({ path: info.outputPath("settings-phone.png") })
   await page.setViewportSize({ width: 1024, height: 820 })
   await expect(tabs).toHaveAttribute("aria-orientation", "vertical")
-  await page.keyboard.press("Escape")
+  await page.getByRole("button", { name: "Close" }).click()
   await expect(tabs).toBeHidden()
+  await expect(page).toHaveURL("/")
   expect(errors).toEqual([])
+})
+
+test("messenger settings deep link opens the chosen officer and returns home", async ({ page }) => {
+  await page.goto("/officers/officer-2/settings?tab=messengers&returnTo=%2F")
+  await expect(page.getByRole("tab", { name: "Messengers", exact: true })).toHaveAttribute("data-active", "true")
+  await page.locator('[data-action="agent-config-back"]').click()
+  await expect(page).toHaveURL("/")
 })
 
 test("About plays its soundtrack and releases it when the tab closes", async ({ page }, info) => {
@@ -213,6 +232,16 @@ test("About plays its soundtrack and releases it when the tab closes", async ({ 
   })
   await page.getByRole("tab", { name: "General", exact: true }).click()
   await expect(about).toHaveCount(0)
+  expect(await page.evaluate(() => {
+    const element = (window as typeof window & { aboutAudio?: HTMLAudioElement }).aboutAudio
+    return { paused: element?.paused, src: element?.getAttribute("src") }
+  })).toEqual({ paused: true, src: null })
+  await page.getByRole("tab", { name: "About", exact: true }).click()
+  await page.evaluate(() => {
+    ;(window as typeof window & { aboutAudio?: HTMLAudioElement }).aboutAudio = document.querySelector(".settings-v2-about audio") as HTMLAudioElement
+  })
+  await page.getByRole("button", { name: "Close" }).click()
+  await expect(page).toHaveURL("/")
   expect(await page.evaluate(() => {
     const element = (window as typeof window & { aboutAudio?: HTMLAudioElement }).aboutAudio
     return { paused: element?.paused, src: element?.getAttribute("src") }

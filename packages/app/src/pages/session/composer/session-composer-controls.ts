@@ -6,7 +6,7 @@ import { createSettledResource } from "@/utils/settled-resource"
 import type { PromptInputControls } from "@/components/prompt-input"
 import type { ComposerRemoteChatState } from "@/components/composer"
 import * as ConfigProvenance from "./config-provenance"
-import { useSettingsDialog } from "@/components/settings-dialog"
+import { useOfficerMessengerSettings } from "@/components/settings-navigation"
 import {
   MessengerApiError,
   messengerAccountChats,
@@ -232,7 +232,9 @@ export function createPromptInputController(input: {
   // messenger.* bus event (no client-side folding). Live sessions only (edge #15: a draft has no
   // sessionID to bind).
   const serverSDK = useServerSDK()
-  const openMessengerSettings = useSettingsDialog("messengers")
+  const openMessengerSettings = useOfficerMessengerSettings(
+    () => (sessionView.record() as { agent?: string } | undefined)?.agent ?? "nova",
+  )
   const messengerServer = () => serverSDK().server.http
   /**
    * The DIRECTORY-keyed project answer, for a chat with no id yet.

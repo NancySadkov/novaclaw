@@ -3,7 +3,7 @@ import { RemoteChatSection, type ComposerRemoteChatState } from "@/components/co
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
-import { useSettingsDialog } from "@/components/settings-dialog"
+import { useOfficerMessengerSettings } from "@/components/settings-navigation"
 import { createSettledResource } from "@/utils/settled-resource"
 import {
   MessengerApiError,
@@ -24,7 +24,7 @@ export function AgentRemoteChat(props: {
   const language = useLanguage()
   const server = useServer()
   const global = useGlobal()
-  const openSettings = useSettingsDialog("messengers")
+  const openSettings = useOfficerMessengerSettings(() => props.agentID)
   const connection = createMemo(() => server.current ?? global.servers.list()[0])
   const http = () => connection()?.http
   const [drivers] = createSettledResource(http, messengerDrivers)

@@ -12,7 +12,7 @@ import * as realSdk from "@/context/sdk"
 import * as realServerSdk from "@/context/server-sdk"
 import * as realSync from "@/context/sync"
 import * as realSessionView from "@/pages/session/use-session-view"
-import * as realSettingsDialog from "@/components/settings-dialog"
+import * as realSettingsNavigation from "@/components/settings-navigation"
 import * as realDirectoryPicker from "@/components/directory-picker"
 import * as realSolidQuery from "@tanstack/solid-query"
 import { dict as en } from "@/i18n/en"
@@ -87,7 +87,7 @@ const SNAP = {
   serverSdk: { ...realServerSdk },
   sync: { ...realSync },
   sessionView: { ...realSessionView },
-  settingsDialog: { ...realSettingsDialog },
+  settingsNavigation: { ...realSettingsNavigation },
   directoryPicker: { ...realDirectoryPicker },
   solidQuery: { ...realSolidQuery },
 }
@@ -196,9 +196,9 @@ beforeAll(async () => {
     useServerSDK: gated(() => SERVER_SDK, SNAP.serverSdk.useServerSDK),
   }))
   mock.module("@/context/sync", () => ({ ...SNAP.sync, useSync: gated(() => SYNC, SNAP.sync.useSync) }))
-  mock.module("@/components/settings-dialog", () => ({
-    ...SNAP.settingsDialog,
-    useSettingsDialog: gated(() => () => undefined, SNAP.settingsDialog.useSettingsDialog),
+  mock.module("@/components/settings-navigation", () => ({
+    ...SNAP.settingsNavigation,
+    useOfficerMessengerSettings: gated(() => () => undefined, SNAP.settingsNavigation.useOfficerMessengerSettings),
   }))
   mock.module("@/components/directory-picker", () => ({
     ...SNAP.directoryPicker,

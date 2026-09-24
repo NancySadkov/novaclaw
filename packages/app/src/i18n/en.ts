@@ -153,9 +153,6 @@ export const dict = {
   "command.category.mcp": "MCP",
   "command.category.settings": "Settings",
 
-  "theme.scheme.system": "System",
-  "theme.scheme.light": "Light",
-  "theme.scheme.dark": "Dark",
 
   "command.project.open": "Open project",
   "command.provider.connect": "Connect provider",
@@ -1326,9 +1323,6 @@ export const dict = {
   "settings.storage.resources.stop": "Stop / cancel",
   "settings.general.row.language.title": "Language",
   "settings.general.row.language.description": "Change the language NovaClaw is shown in.",
-  "settings.general.row.colorScheme.title": "Mode",
-  "settings.general.row.colorScheme.description":
-    "Dark for now. A light preset is on the way; this unlocks when it lands.",
   "settings.general.row.theme.title": "Theme",
   "settings.general.row.theme.description":
     "Choose a full visual style, including colors and fonts. Or browse more themes.",
@@ -1918,16 +1912,15 @@ export const dict = {
   // 🗑️ The "Where everything goes" layout tab went with the slot table (owner, 2026-09-17): the prompt
   // is one `PromptManager` render, not the ordered block array it described. The prompt that was sent
   // is shown and exported from a chat's Context Inspect instead.
-  "settings.profile.title": "Profile",
-  "settings.profile.description":
-    "Tell the assistant who you are. When enabled, it can look your profile up on demand through a tool — your name and background stay out of every prompt until it actually needs them.",
+  "settings.profile.title": "About you",
+  "settings.profile.description": "Details officers can look up when needed.",
   "settings.profile.toast.failed": "Saving your profile failed",
-  "settings.profile.enabled.title": "Share my profile with the assistant",
-  "settings.profile.enabled.description": "Let the assistant read the details below on demand.",
+  "settings.profile.enabled.title": "Allow profile lookup",
+  "settings.profile.enabled.description": "Officers can read this when needed.",
   "settings.profile.enabled.description.more":
     "On when you've filled in your profile: the assistant can call a tool to read them. Turn it off to keep them private.",
   "settings.profile.name.title": "Your name",
-  "settings.profile.name.description": "What the assistant should call you",
+  "settings.profile.name.description": "How officers address you",
   "settings.profile.name.placeholder": "e.g. Nancy",
   "settings.profile.about.title": "About you",
   "settings.profile.about.description":

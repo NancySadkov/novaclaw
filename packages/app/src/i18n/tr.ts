@@ -13,9 +13,6 @@ export const dict = {
   "command.category.mcp": "MCP",
   "command.category.settings": "Ayarlar",
 
-  "theme.scheme.system": "Sistem",
-  "theme.scheme.light": "Açık",
-  "theme.scheme.dark": "Koyu",
 
   "command.project.open": "Proje aç",
   "command.provider.connect": "Sağlayıcı bağla",
@@ -312,7 +309,6 @@ export const dict = {
 
   "settings.general.row.language.title": "Dil",
   "settings.general.row.language.description": "NovaClaw'un görünüm dilini değiştirin",
-  "settings.general.row.colorScheme.title": "Renk şeması",
   "settings.general.row.theme.title": "Tema",
   "settings.general.row.theme.description": "NovaClaw'un temasını özelleştirin.",
   "settings.general.row.font.title": "Kod Yazı Tipi",

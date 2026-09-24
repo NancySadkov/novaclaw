@@ -13,9 +13,6 @@ export const dict = {
   "command.category.mcp": "MCP",
   "command.category.settings": "设置",
 
-  "theme.scheme.system": "系统",
-  "theme.scheme.light": "浅色",
-  "theme.scheme.dark": "深色",
 
   "command.project.open": "打开项目",
 
@@ -309,7 +306,6 @@ export const dict = {
   "settings.general.section.sounds": "音效",
   "settings.general.row.language.title": "语言",
   "settings.general.row.language.description": "更改 NovaClaw 的显示语言",
-  "settings.general.row.colorScheme.title": "配色方案",
   "settings.general.row.theme.title": "主题",
   "settings.general.row.theme.description": "自定义 NovaClaw 的主题。",
   "settings.general.row.font.title": "代码字体",

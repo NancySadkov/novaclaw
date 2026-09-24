@@ -244,7 +244,9 @@ export function OfficerSettingsScreen(props: {
     | "schedule"
     | "memory"
     | "messengers"
-  const [activeTab, setActiveTab] = createSignal<SettingsTab>("work")
+  const [activeTab, setActiveTab] = createSignal<SettingsTab>(
+    new URLSearchParams(location.search).get("tab") === "messengers" ? "messengers" : "work",
+  )
   const desktopSettings = createMediaQuery("(min-width: 768px)")
   const settingsTabs = () => [
     { id: "work" as const, label: "Work", icon: "task" as const },

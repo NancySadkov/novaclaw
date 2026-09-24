@@ -13,9 +13,6 @@ export const dict = {
   "command.category.mcp": "MCP",
   "command.category.settings": "การตั้งค่า",
 
-  "theme.scheme.system": "ระบบ",
-  "theme.scheme.light": "สว่าง",
-  "theme.scheme.dark": "มืด",
 
   "command.project.open": "เปิดโปรเจกต์",
   "command.provider.connect": "เชื่อมต่อผู้ให้บริการ",
@@ -307,7 +304,6 @@ export const dict = {
 
   "settings.general.row.language.title": "ภาษา",
   "settings.general.row.language.description": "เปลี่ยนภาษาที่แสดงสำหรับ NovaClaw",
-  "settings.general.row.colorScheme.title": "โทนสี",
   "settings.general.row.theme.title": "ธีม",
   "settings.general.row.theme.description": "ปรับแต่งวิธีการที่ NovaClaw มีธีม",
   "settings.general.row.font.title": "ฟอนต์โค้ด",

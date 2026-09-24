@@ -16,6 +16,7 @@ import { ServerConnection, serverName } from "@/context/server"
 import { useServerManagementController } from "../dialog-select-server"
 import { ConfigExportImport } from "./config-io"
 import { SettingsPoliciesSection } from "./policies"
+import { SettingsProfileSection } from "./profile"
 // Confinement is no longer rendered here — it is part of the health report now. `ShellStatus` below
 // still types the shell-BUNDLE row's own fetch, which stays in this tab because it has a control.
 import { useSettings } from "@/context/settings"
@@ -31,13 +32,12 @@ import { scopedDirectory } from "@/utils/routing-directory"
 import { ControlScope } from "../control-scope"
 
 export const SettingsGeneralV2: Component<{
-  sessionID?: string
   /**
-   * Switch the settings dialog to another tab.
+   * Switch the settings screen to another tab.
    *
    * Only one row uses it — the health pointer at the top of this tab — and it exists so that moving
    * the health report out of General did not cost the discoverability the report's old placement
-   * bought. Optional so a caller that renders this panel outside the dialog still compiles; the
+   * bought. Optional so a caller that renders this panel outside the screen still compiles; the
    * button simply does nothing there, which is the right failure for a pure navigation affordance.
    */
   onOpenTab?: (tab: string) => void
@@ -489,6 +489,8 @@ export const SettingsGeneralV2: Component<{
         </div>
 
         <GeneralSection />
+
+        <SettingsProfileSection />
 
         {/* Confinement used to sit here, directly under the safety rows above. It is now part of the
             health report (see the block at the top of this tab) — it was a read-only reading with no

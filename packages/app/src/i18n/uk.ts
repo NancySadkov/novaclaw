@@ -13,9 +13,6 @@ export const dict = {
   "command.category.mcp": "MCP",
   "command.category.settings": "Налаштування",
 
-  "theme.scheme.system": "Системна",
-  "theme.scheme.light": "Світла",
-  "theme.scheme.dark": "Темна",
 
   "command.project.open": "Відкрити проєкт",
   "command.provider.connect": "Підключити провайдера",
@@ -395,7 +392,6 @@ export const dict = {
 
   "settings.general.row.language.title": "Мова",
   "settings.general.row.language.description": "Змінити мову інтерфейсу NovaClaw",
-  "settings.general.row.colorScheme.title": "Кольорова схема",
   "settings.general.row.theme.title": "Тема",
   "settings.general.row.theme.description": "Налаштуйте тему NovaClaw.",
   "settings.general.row.font.title": "Шрифт коду",

@@ -1,7 +1,5 @@
 import { Component, Show, createSignal } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
-import { Dialog as KobalteDialog } from "@kobalte/core/dialog"
-import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { useLanguage } from "@/context/language"
@@ -22,24 +20,15 @@ import { SettingsComputerV2 } from "./computer"
 import { SettingsRecoveryV2 } from "./recovery"
 import { SettingsWebSearchV2 } from "./web-search"
 
-// Tabs above Normal are hidden until unlocked (uix.md §6.4). Bootstrap/manage/reset stay universal:
-// General, Memory, Appearance, Shortcuts, Instances, Models, Storage and Recovery carry no entry (= Normal).
-//
-// 🔴 The per-agent tuning tabs are GONE from Settings (per-agent tuning, slice 4): Tools,
-// Nudges, Affective, Introspection and Strict live on the officer, where they fine-tune one
-// colleague each. An instance-wide switch for one colleague's horizon was the defect the
-// folder chip had — a question answered once for a decision that differs per role.
 const TAB_LEVELS: Record<string, ExpertiseLevel> = {
   computer: "advanced",
-  // Web search "just works" for a normal user via the built-in; the override (own SearXNG) +
-  // per-engine toggles are a power-user surface → Advanced (and therefore Developer too).
   "web-search": "advanced",
 }
 const SETTINGS_TABS = new Set(["general", "appearance", "shortcuts", "servers", "computer", "web-search", "usage", "storage", "trash", "recovery", "about"])
 
-export const DialogSettings: Component<{
-  sessionID?: string
+export const SettingsScreen: Component<{
   defaultTab?: string
+  onDismiss: () => void
 }> = (props) => {
   const language = useLanguage()
   const server = useServer()
@@ -50,19 +39,13 @@ export const DialogSettings: Component<{
     const level = TAB_LEVELS[tab]
     return !level || atLeast(level)
   }
-  // Never open on a tab the current level can't see (a deep-link into a now-hidden tab falls
-  // back to General rather than selecting a phantom Kobalte value).
   const requested = props.defaultTab ?? "general"
   const initialTab = tabVisible(requested) ? requested : "general"
-  // Controlled selection held OUTSIDE the keyed server boundary below, so an instance switch
-  // re-keys the panels without losing which tab the user is on.
   const [tab, setTab] = createSignal(initialTab)
 
   return (
-    <Dialog size="x-large" variant="settings" class="settings-v2-dialog">
-      {/* Every dialog needs a visible ✕ — the settings variant skips DialogHeader (the tab rail
-          owns the layout), so it mounts its own corner close button (uix: never trap a lay user). */}
-      <KobalteDialog.CloseButton class="settings-v2-close" aria-label={language.t("common.close")}>
+    <div class="settings-v2-screen">
+      <button type="button" class="settings-v2-close" aria-label={language.t("common.close")} onClick={props.onDismiss}>
         <svg
           width="16"
           height="16"
@@ -77,13 +60,7 @@ export const DialogSettings: Component<{
             stroke-linejoin="round"
           />
         </svg>
-      </KobalteDialog.CloseButton>
-      {/* R8 residue fix: dialogs mount in a MANUAL root under an owner captured at show() time —
-          when the app's keyed ServerKey boundary disposes on an instance switch, an open dialog
-          survives but keeps reading the DISPOSED (frozen) server-sync ctx, so config-backed
-          controls showed the PREVIOUS instance's values (and an airgapped instance's reboot read
-          a stale offline=false). The dialog therefore mounts its OWN keyed server providers: the
-          live useServer().key re-keys the panels to the active instance's fresh ctx. */}
+      </button>
       <Show when={server.key} keyed>
         <ServerSDKProvider>
           <ServerSyncProvider>
@@ -94,27 +71,12 @@ export const DialogSettings: Component<{
               onChange={setTab}
               class="settings-v2"
             >
-              {/* ⚠️ FLAT, deliberately (owner, 2026-09-16). This list used to be four nested
-                  `flex-col` wrappers around two section groups. That renders identically on desktop,
-                  but it cannot become a horizontal strip on a phone without unwrapping every level —
-                  and the officer's settings screen, which this must match, is a flat rail. Sections
-                  are titles between triggers; on a phone the titles are hidden and the triggers
-                  scroll sideways. */}
               <TabsV2.List>
                 <TabsV2.SectionTitle>{language.t("settings.section.desktop")}</TabsV2.SectionTitle>
                 <TabsV2.Trigger value="general">
                   <Icon name="sliders" size="large" />
                   {language.t("settings.tab.general")}
                 </TabsV2.Trigger>
-                {/* 🔴 The Memory tab is RETIRED (owner, 2026-08-20: *"we still have Memory
-                        tab in the settings, instead of everything migrated to the app"*). Everything it
-                        held — consent, the embedding and judge rows, export/import, document ingest,
-                        the memory atlas — now lives in the officer's Memory screen, rendered
-                        from the same component. Settings keeps what is instance CONFIGURATION; what
-                        Nova knows about you is a thing you go and look at, not a preference. */}
-                {/* Models is its OWN app now (owner, 2026-09-16) — a home tile at
-                              `/models`, not a Settings tab. Configuration is a place you go, and the
-                              list outgrew a panel inside a dialog. */}
                 <TabsV2.Trigger value="appearance">
                   <Icon name="palette" size="large" />
                   {language.t("settings.tab.appearance")}
@@ -148,8 +110,6 @@ export const DialogSettings: Component<{
                   <Icon name="folder" size="large" />
                   {language.t("settings.tab.storage")}
                 </TabsV2.Trigger>
-                {/* Trash was a home app; merging it here puts restore and retention on one
-                              screen instead of linking between two (owner, 2026-09-16). */}
                 <TabsV2.Trigger value="trash">
                   <Icon name="trash" size="large" />
                   {language.t("trash.title")}
@@ -167,7 +127,7 @@ export const DialogSettings: Component<{
                 {/* `setTab` is handed down so General's health pointer can open the report. The
                     health report moved to Health & recovery (see general.tsx's header block); this
                     one click is part of what keeps a worried user's path as short as it was. */}
-                <SettingsGeneralV2 sessionID={props.sessionID} onOpenTab={setTab} />
+                <SettingsGeneralV2 onOpenTab={setTab} />
               </TabsV2.Content>
               <TabsV2.Content value="appearance" class="settings-v2-panel">
                 <SettingsAppearanceV2 />
@@ -214,6 +174,6 @@ export const DialogSettings: Component<{
           </ServerSyncProvider>
         </ServerSDKProvider>
       </Show>
-    </Dialog>
+    </div>
   )
 }

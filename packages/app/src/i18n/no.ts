@@ -12,9 +12,6 @@ export const dict = {
   "command.category.mcp": "MCP",
   "command.category.settings": "Innstillinger",
 
-  "theme.scheme.system": "System",
-  "theme.scheme.light": "Lys",
-  "theme.scheme.dark": "Mørk",
 
   "command.project.open": "Åpne prosjekt",
   "command.provider.connect": "Koble til leverandør",
@@ -309,7 +306,6 @@ export const dict = {
 
   "settings.general.row.language.title": "Språk",
   "settings.general.row.language.description": "Endre visningsspråket for NovaClaw",
-  "settings.general.row.colorScheme.title": "Fargevalg",
   "settings.general.row.theme.title": "Tema",
   "settings.general.row.theme.description": "Tilpass hvordan NovaClaw er tematisert.",
   "settings.general.row.font.title": "Kodefont",

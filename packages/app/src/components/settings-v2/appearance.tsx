@@ -2,7 +2,7 @@ import { Component, createMemo, createResource, onCleanup, onMount, Show, create
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
-import { useTheme, type ColorScheme } from "@novaclaw/ui/theme/context"
+import { useTheme } from "@novaclaw/ui/theme/context"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import {
@@ -190,11 +190,6 @@ export const SettingsAppearanceV2: Component = () => {
   }
 
   const themeOptions = createMemo<ThemeOption[]>(() => theme.ids().map((id) => ({ id, name: theme.name(id) })))
-  const colorSchemeOptions = createMemo((): { value: ColorScheme; label: string }[] => [
-    { value: "system", label: language.t("theme.scheme.system") },
-    { value: "light", label: language.t("theme.scheme.light") },
-    { value: "dark", label: language.t("theme.scheme.dark") },
-  ])
   const mono = () => monoInput(settings.appearance.font())
 
   // Probed ONCE per dialog: each check renders a probe string twice per generic fallback, and
@@ -263,36 +258,6 @@ export const SettingsAppearanceV2: Component = () => {
           description={language.t("settings.appearance.theme.description")}
         >
           <ThemeSwatches />
-        </SettingsRowV2>
-
-        <SettingsRowV2
-          title={language.t("settings.general.row.colorScheme.title")}
-          description={language.t("settings.general.row.colorScheme.description")}
-        >
-          {/* Disabled with a reason, not hidden (ruling 13's adversary reversal, uix.md §7's
-              coming-soon precedent): `index.css` hard-sets `color-scheme: dark` and remaps 62 of
-              the 82 `--v2-*` tokens unlayered, so picking Light repaints twenty avatar chips and
-              nothing else. Until a light preset exists the control shows the mode that IS in
-              force (principle 12d) and the copy beside it says why. Re-enable by deleting
-              `disabled` and restoring `current` to the stored scheme, in the same change that
-              lands the preset. */}
-          <SelectV2
-            appearance="inline"
-            data-action="settings-color-scheme"
-            disabled
-            options={colorSchemeOptions()}
-            current={colorSchemeOptions().find((o) => o.value === "dark")}
-            placement="bottom-end"
-            gutter={6}
-            value={(o) => o.value}
-            label={(o) => o.label}
-            onSelect={(option) => option && theme.setColorScheme(option.value)}
-            onHighlight={(option) => {
-              if (!option) return
-              theme.previewColorScheme(option.value)
-              return () => theme.cancelPreview()
-            }}
-          />
         </SettingsRowV2>
 
         {/* Ruling 13: the 37-item inherited theme list is not a lay control — ThemeSwatches above is the

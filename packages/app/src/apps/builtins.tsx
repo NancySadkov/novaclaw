@@ -3,7 +3,7 @@ import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useChatsAttention } from "@/apps/chats-attention"
 import { systemLoadStats, useSystemLoad } from "@/apps/system-load"
-import { useSettingsDialog } from "@/components/settings-dialog"
+import { useSettingsNavigation } from "@/components/settings-navigation"
 import { HelpTour } from "@/pages/home-screen/help-tour"
 import { SocialPanel } from "@/pages/home-screen/social-panel"
 import { appName, appSubtitle, BUILTIN_APP_LABELS, type BuiltinAppId, type Translate } from "./app-label"
@@ -32,7 +32,7 @@ export function useBuiltinApps(): () => HomeApp[] {
   const navigate = useNavigate()
   const dialog = useDialog()
   const language = useLanguage()
-  const openSettings = useSettingsDialog()
+  const openSettings = useSettingsNavigation()
   const chatsAttention = useChatsAttention()
   const systemLoad = useSystemLoad()
 

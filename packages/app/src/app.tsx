@@ -77,6 +77,7 @@ const ContactsPage = lazy(() => import("@/pages/contacts").then(({ ContactsPage 
 const AgentSettingsPage = lazy(() =>
   import("@/pages/agent-settings").then(({ AgentSettingsPage }) => ({ default: AgentSettingsPage })),
 )
+const SettingsPage = lazy(() => import("@/pages/settings").then(({ SettingsPage }) => ({ default: SettingsPage })))
 const MemoryGraphPage = lazy(() =>
   import("@/pages/memory-graph").then(({ MemoryGraphPage }) => ({ default: MemoryGraphPage })),
 )
@@ -844,6 +845,7 @@ function Routes() {
           rather than half-removed. */}
       <Route path="/tasks" component={ContactsPage} />
       <Route path="/officers/:agentID/settings" component={AgentSettingsPage} />
+      <Route path="/settings" component={SettingsPage} />
       {/* The app was renamed Chats → Tasks on 2026-08-13. A dead address is a dead end, and the
           catch-all below would otherwise try to base64-decode "chats" as a directory. */}
       <Route path="/chats" component={() => <Navigate href="/tasks" />} />
