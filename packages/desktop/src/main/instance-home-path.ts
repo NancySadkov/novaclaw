@@ -20,6 +20,26 @@ export function resolveInstanceRoot(
   return !dirs?.explicitHome && environment.NOVACLAW_DEV_ISOLATED === "1" ? `${root}-dev` : root
 }
 
+export function serviceInstancePaths(
+  instanceRoot: string,
+  argv: readonly string[],
+  environment: Xdg.Env,
+  osHome: string | undefined,
+) {
+  const directories = Xdg.baseDirs(argv, environment, osHome, APP)
+  return {
+    instanceRoot,
+    dataPath: directories?.explicitHome ? directories.data : instanceRoot,
+    homeOverride: directories?.explicitHome,
+  }
+}
+
+export type ServiceInstancePaths = ReturnType<typeof serviceInstancePaths>
+
+export function serviceHomeArgs(instance: ServiceInstancePaths): string[] {
+  return instance.homeOverride ? [`--home=${instance.homeOverride}`] : []
+}
+
 export function desktopProfilePaths(instanceRoot: string, role: "client" | "server" | "launcher" = "client") {
   const desktop = join(instanceRoot, role === "server" ? "desktop-server" : role === "launcher" ? "desktop-launcher" : "desktop")
   return {

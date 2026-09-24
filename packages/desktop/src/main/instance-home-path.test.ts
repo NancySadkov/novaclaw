@@ -6,6 +6,8 @@ import {
   ensureDesktopProfile,
   isInsideInstanceRoot,
   resolveInstanceRoot,
+  serviceHomeArgs,
+  serviceInstancePaths,
 } from "./instance-home-path"
 
 describe("the desktop profile is part of the instance home", () => {
@@ -16,6 +18,9 @@ describe("the desktop profile is part of the instance home", () => {
       userData: join(root, "desktop"),
       sessionData: join(root, "desktop", "session"),
     })
+    const service = serviceInstancePaths(root, [], {}, "C:\\Users\\nova")
+    expect(service.dataPath).toBe(root)
+    expect(serviceHomeArgs(service)).toEqual([])
   })
 
   test("--home and NOVACLAW_HOME move the desktop profile with the whole instance", () => {
@@ -25,6 +30,9 @@ describe("the desktop profile is part of the instance home", () => {
     expect(resolveInstanceRoot([], { NOVACLAW_HOME: env }, undefined, "C:\\Temp\\fallback")).toBe(env)
     for (const candidate of Object.values(desktopProfilePaths(cli)))
       expect(isInsideInstanceRoot(cli, candidate)).toBe(true)
+    const service = serviceInstancePaths(cli, ["--home", cli], { NOVACLAW_HOME: env }, undefined)
+    expect(service.dataPath).toBe(join(cli, "data"))
+    expect(serviceHomeArgs(service)).toEqual([`--home=${cli}`])
   })
 
   test("a server-only process has a separate Electron lock from its client", () => {

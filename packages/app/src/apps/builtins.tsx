@@ -165,24 +165,6 @@ export function useBuiltinApps(): () => HomeApp[] {
       open: () => navigate("/terminal"),
     },
     {
-      id: "registry",
-      get title() {
-        return name("registry")
-      },
-      icon: "cpu",
-      tile: "/assets/skin/glyphs/registry-generated.png",
-      tileNeedsFrame: true,
-      accent: "#0ea5e9",
-      get subtitle() {
-        return sub("registry")
-      },
-      source: "builtin",
-      // Raw database editing is a Developer surface (uix.md §6.4; the sanctioned re-homing of
-      // the old `db` sqlite3 shell — todo.md tie-break #3).
-      minLevel: "developer",
-      open: () => navigate("/registry"),
-    },
-    {
       id: "debug",
       get title() {
         return name("debug")

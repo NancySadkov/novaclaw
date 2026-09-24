@@ -1,4 +1,5 @@
 import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js"
+import { A } from "@solidjs/router"
 import { createStore, type SetStoreFunction } from "solid-js/store"
 import { useConfirm } from "@/components/dialog-confirm"
 import { useGlobal } from "@/context/global"
@@ -115,7 +116,7 @@ export function RegistryPage() {
         <AppPage class="flex">
           <ExpertiseGate
             glyph="registry"
-            title={language.t("home.app.registry.name")}
+            title={language.t("registry.title")}
             description={language.t("registry.gate.description")}
           />
         </AppPage>
@@ -314,6 +315,7 @@ function RegistryAppPage() {
   return (
     <AppPage class="registry-app flex flex-col overflow-hidden">
       <AppPageHeader glyph="registry" title="Registry" hint="Instance database" />
+      <A href="/debug" class="border-b border-v2-border-border-base px-4 py-2 text-xs text-v2-text-text-muted hover:text-v2-text-text-base">← Debug</A>
       <div class="registry-workspace flex min-h-0 flex-1">
         {/* 🔴 The rail used to be a bare `<For each={tables() ?? []}>` with no fallback of any kind,
             so a failed read rendered an empty 224px column: not an empty state, not an error,

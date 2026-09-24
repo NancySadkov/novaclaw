@@ -5,7 +5,7 @@ import { join, resolve } from "node:path"
 import { app } from "electron"
 import { Xdg } from "@novaclaw/core/util/xdg"
 import { CHANNEL } from "./constants"
-import { ensureDesktopProfile, resolveInstanceRoot } from "./instance-home-path"
+import { ensureDesktopProfile, resolveInstanceRoot, serviceInstancePaths } from "./instance-home-path"
 
 const APP_NAMES = { dev: "NovaClaw Dev", beta: "NovaClaw Beta", prod: "NovaClaw" }
 const APP_IDS = { dev: "app.novaclaw.desktop.dev", beta: "app.novaclaw.desktop.beta", prod: "app.novaclaw.desktop" }
@@ -50,7 +50,7 @@ export function prepareInstanceHome(role: "client" | "server" | "launcher" = "cl
   const { instanceRoot, profile } = prepared
   // A dev build is a separate instance, not a production instance with only its renderer moved.
   // A failed selected home relocates both halves too; never let Electron and the sidecar disagree.
-  if ((!home && process.env.NOVACLAW_DEV_ISOLATED === "1") || prepared.relocated)
+  if ((!home && process.env.NOVACLAW_DEV_ISOLATED === "1") || prepared.relocated || selectedRoot === emergencyRoot)
     process.env.NOVACLAW_HOME = instanceRoot
   if (prepared.relocated)
     console.error(
@@ -62,5 +62,9 @@ export function prepareInstanceHome(role: "client" | "server" | "launcher" = "cl
   // instance in %APPDATA%, outside the home selected by NovaClaw.
   app.setPath("userData", profile.userData)
   app.setPath("sessionData", profile.sessionData)
-  return { onboardingTest: testRoot !== undefined, instanceRoot, userDataPath: app.getPath("userData") }
+  return {
+    onboardingTest: testRoot !== undefined,
+    ...serviceInstancePaths(instanceRoot, process.argv, process.env, homedir() || app.getPath("home")),
+    userDataPath: app.getPath("userData"),
+  }
 }

@@ -48,7 +48,7 @@ export const InstanceResources: Component = () => {
     })
   })
   const canStop = createMemo(() => {
-    const stage = usage()?.localModel.stage
+    const stage = usage()?.localModel?.stage
     return (
       stage === "checking" ||
       stage === "downloading-runtime" ||
@@ -122,14 +122,14 @@ export const InstanceResources: Component = () => {
         </For>
       </SettingsListV2>
 
-      <Show when={usage()?.localModel.supported}>
+      <Show when={usage()?.localModel?.supported}>
         <div class="flex items-center justify-between gap-3 rounded-lg bg-v2-background-bg-deep px-3 py-2">
           <div class="min-w-0">
             <div class="text-[12px] font-medium text-v2-text-text-base">
               {language.t("settings.storage.resources.localModel")}
             </div>
             <div class="select-text text-[11px] text-v2-text-text-muted">
-              {usage()?.localModel.message ?? usage()?.localModel.stage}
+              {usage()?.localModel?.message ?? usage()?.localModel?.stage}
             </div>
           </div>
           <ButtonV2 size="small" variant="neutral" disabled={!canStop()} onClick={() => void stop()}>

@@ -1,4 +1,4 @@
-import { Component, Show, createEffect, createSignal } from "solid-js"
+import { Component, Show, createEffect, createSignal, onCleanup } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { Icon } from "@novaclaw/ui/v2/icon"
@@ -7,6 +7,7 @@ import { useServer } from "@/context/server"
 import { ServerSDKProvider } from "@/context/server-sdk"
 import { ServerSyncProvider } from "@/context/server-sync"
 import { useExpertise } from "@/context/expertise"
+import { publicAssetUrl } from "@/utils/public-asset"
 import type { ExpertiseLevel } from "@/context/settings"
 import { SettingsGeneralV2 } from "./general"
 import { SettingsAboutV2 } from "./about"
@@ -43,20 +44,42 @@ export const SettingsScreen: Component<{
   const initialTab = tabVisible(requested) ? requested : "general"
   const [tab, setTab] = createSignal(initialTab)
   let tabList: HTMLDivElement | undefined
-
-  createEffect(() => {
-    tab()
-    if (!server.key || desktop()) return
-    const selected = tabList?.querySelector<HTMLElement>('[data-slot="tabs-v2-trigger"][data-selected]')
-    if (!selected || !tabList) return
+  let revealFrame = 0
+  let aboutAudio!: HTMLAudioElement
+  const selectTab = (value: string) => {
+    if (value === "about") void aboutAudio.play().catch(() => undefined)
+    else {
+      aboutAudio.pause()
+      aboutAudio.currentTime = 0
+    }
+    setTab(value)
+  }
+  const revealSelected = () => {
+    if (!tabList || desktop()) return
+    const selected = tabList.querySelector<HTMLElement>('[data-slot="tabs-v2-trigger"][data-selected]')
+    if (!selected) return
     const listBounds = tabList.getBoundingClientRect()
     const selectedBounds = selected.getBoundingClientRect()
     const left = selectedBounds.left - listBounds.left + tabList.scrollLeft
     const right = selectedBounds.right - listBounds.left + tabList.scrollLeft
-    if (left < tabList.scrollLeft) tabList.scrollTo({ left, behavior: "smooth" })
+    if (left < tabList.scrollLeft) tabList.scrollLeft = Math.max(0, left - 8)
     else if (right > tabList.scrollLeft + tabList.clientWidth) {
-      tabList.scrollTo({ left: right - tabList.clientWidth, behavior: "smooth" })
+      tabList.scrollLeft = right - tabList.clientWidth + 8
     }
+  }
+  const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(revealSelected)
+  onCleanup(() => {
+    aboutAudio?.pause()
+    cancelAnimationFrame(revealFrame)
+    observer?.disconnect()
+  })
+
+  createEffect(() => {
+    tab()
+    desktop()
+    if (!server.key) return
+    cancelAnimationFrame(revealFrame)
+    revealFrame = requestAnimationFrame(revealSelected)
   })
 
   return (
@@ -77,6 +100,10 @@ export const SettingsScreen: Component<{
           />
         </svg>
       </button>
+      <audio ref={aboutAudio} preload="auto" loop aria-hidden="true">
+        <source src={publicAssetUrl("assets/audio/nova.ogg")} type="audio/ogg" />
+        <source src={publicAssetUrl("assets/audio/nova.aac")} type="audio/aac" />
+      </audio>
       <Show when={server.key} keyed>
         <ServerSDKProvider>
           <ServerSyncProvider>
@@ -84,11 +111,11 @@ export const SettingsScreen: Component<{
               orientation={desktop() ? "vertical" : "horizontal"}
               variant="settings"
               value={tab()}
-              onChange={setTab}
+              onChange={selectTab}
               class="settings-v2"
             >
               <TabsV2.List
-                ref={(element: HTMLDivElement) => { tabList = element }}
+                ref={(element: HTMLDivElement) => { tabList = element; observer?.observe(element) }}
                 onWheel={(event: WheelEvent & { currentTarget: HTMLDivElement }) => {
                   const list = event.currentTarget
                   if (desktop() || list.scrollWidth <= list.clientWidth || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
@@ -191,7 +218,7 @@ export const SettingsScreen: Component<{
               </TabsV2.Content>
               <TabsV2.Content value="about" class="settings-v2-panel">
                 <Show when={tab() === "about"}>
-                  <SettingsAboutV2 />
+                  <SettingsAboutV2 audio={aboutAudio} />
                 </Show>
               </TabsV2.Content>
             </TabsV2>

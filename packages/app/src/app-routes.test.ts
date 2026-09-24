@@ -271,6 +271,14 @@ describe("a level-gated ROUTE explains itself instead of bouncing", () => {
     ).toEqual([])
   })
 
+  test("Registry remains developer gated inside Debug", () => {
+    const file = pageFileForRoute("/debug/registry")
+    expect(file).toBe("pages/registry.tsx")
+    const source = code(file!)
+    expect(declaredLevels(source)).toContain("developer")
+    expect(source).toContain("ExpertiseGate")
+  })
+
   test("no page falls back to a redirect", () => {
     // Broader than the tile-derived set on purpose: this one asks about EVERY page that gates,
     // including sections gated for reasons no tile records.

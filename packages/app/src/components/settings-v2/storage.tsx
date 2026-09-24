@@ -10,6 +10,7 @@ import { Icon } from "@novaclaw/ui/v2/icon"
 // about it. See that module's header.
 import { LogBounds } from "@novaclaw/core/observability/log-bounds"
 import { LogSettings } from "@novaclaw/core/observability/log-settings"
+import { DEFAULT_DATABASE_MIB, DEFAULT_PRUNE_HOURS } from "@novaclaw/core/config/storage"
 import { useLanguage } from "@/context/language"
 import { useExpertise } from "@/context/expertise"
 import { usePlatform } from "@/context/platform"
@@ -41,6 +42,10 @@ interface LogConfig {
   retention_days?: number
   subsystems?: Record<string, LogLevel | undefined>
 }
+interface DatabaseStorageConfig {
+  max_database_mib?: number
+  prune_interval_hours?: number
+}
 
 // ⚠️ Trash retention moved OUT of this tab (owner, 2026-09-16): the Trash surface is its own
 // Settings → Safety tab now, next to Storage, and a setting must not have two writers on two screens.
@@ -56,6 +61,14 @@ export const SettingsStorageV2: Component = () => {
   // uses for scratchDir); regenerating the client for a read-only display is not worth the churn.
   const paths = (): PathInfo => (sync().data.path ?? {}) as PathInfo
   const logConfig = createMemo(() => ((sync().data.config as { log?: LogConfig } | undefined)?.log ?? {}) as LogConfig)
+  const databaseConfig = createMemo(() => ((sync().data.config as { storage?: DatabaseStorageConfig } | undefined)?.storage ?? {}) as DatabaseStorageConfig)
+  const saveDatabase = async (next: DatabaseStorageConfig) => {
+    try {
+      await sync().updateConfig({ storage: next } as never)
+    } catch (error) {
+      showToast({ title: "Could not save storage settings", description: error instanceof Error ? error.message : String(error) })
+    }
+  }
   const levelOptions = createMemo(() =>
     (["debug", "info", "warn", "error"] as const).map((value) => ({
       id: value,
@@ -105,6 +118,35 @@ export const SettingsStorageV2: Component = () => {
       </div>
 
       <InstanceResources />
+
+      <div>
+        <h3 class="settings-v2-section-title">Database</h3>
+        <p class="settings-v2-tab-description">Keep agents and chats. Reclaim repeated history when storage grows.</p>
+      </div>
+      <SettingsListV2>
+        <SettingsRowV2 title="Size budget" description="Target size after cleanup. Current chats and memories stay intact.">
+          <SelectV2
+            appearance="inline"
+            data-action="settings-database-budget"
+            options={[512, 1024, 2048, 4096, 8192, 16384, 32768].map((value) => ({ id: String(value), value, label: value < 1024 ? `${value} MB` : `${value / 1024} GB` }))}
+            current={{ id: String(databaseConfig().max_database_mib ?? DEFAULT_DATABASE_MIB), value: databaseConfig().max_database_mib ?? DEFAULT_DATABASE_MIB, label: `${(databaseConfig().max_database_mib ?? DEFAULT_DATABASE_MIB) / 1024} GB` }}
+            value={(option) => option.id}
+            label={(option) => option.label}
+            onSelect={(option) => { if (option) void saveDatabase({ ...databaseConfig(), max_database_mib: option.value }) }}
+          />
+        </SettingsRowV2>
+        <SettingsRowV2 title="Cleanup interval" description="Also checks every 15 minutes when over budget.">
+          <SelectV2
+            appearance="inline"
+            data-action="settings-database-interval"
+            options={[1, 2, 3, 6, 12, 24].map((value) => ({ id: String(value), value, label: `${value} ${value === 1 ? "hour" : "hours"}` }))}
+            current={{ id: String(databaseConfig().prune_interval_hours ?? DEFAULT_PRUNE_HOURS), value: databaseConfig().prune_interval_hours ?? DEFAULT_PRUNE_HOURS, label: `${databaseConfig().prune_interval_hours ?? DEFAULT_PRUNE_HOURS} hours` }}
+            value={(option) => option.id}
+            label={(option) => option.label}
+            onSelect={(option) => { if (option) void saveDatabase({ ...databaseConfig(), prune_interval_hours: option.value }) }}
+          />
+        </SettingsRowV2>
+      </SettingsListV2>
 
       <div>
         <h3 class="settings-v2-section-title">{language.t("settings.storage.locations.title")}</h3>

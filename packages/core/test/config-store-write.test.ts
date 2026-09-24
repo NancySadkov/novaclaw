@@ -70,6 +70,12 @@ describe("ConfigStoreWrite.apply", () => {
         subsystems: { mcp: "debug" },
       })
       expect(LogSettings.level()).toBe("error")
+      const stored = yield* ConfigStoreWrite.apply(decodeInfo({ storage: { max_database_mib: 1024, prune_interval_hours: 6 } }))
+      expect([...stored]).toEqual(["storage"])
+      expect((yield* settings.all()).storage).toEqual({ max_database_mib: 1024, prune_interval_hours: 6 })
+      yield* ConfigStoreWrite.apply(decodeInfo({ storage: { prune_interval_hours: 3 } }))
+      expect((yield* settings.all()).storage).toEqual({ max_database_mib: 1024, prune_interval_hours: 3 })
+      yield* settings.remove("storage")
       yield* settings.remove("log")
     }),
   )

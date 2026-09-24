@@ -540,6 +540,7 @@ function DebugAppPage() {
           </div>
         </div>
         <nav class="debug-jump" aria-label="Debug sections">
+          <A href="/debug/registry">Registry</A>
           <a href="#debug-connections">Connection</a>
           <a href="#debug-capabilities">Capabilities</a>
           <a href="#debug-scheduler">Scheduler</a>

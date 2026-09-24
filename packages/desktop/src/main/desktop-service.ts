@@ -12,6 +12,7 @@ import type { ServerReadyData } from "../preload/types"
 import type { DesktopLaunchOptions } from "./desktop-cli"
 import type { LocalInstanceOwner } from "./lifecycle"
 import { checkHealth } from "./server"
+import { serviceHomeArgs, type ServiceInstancePaths } from "./instance-home-path"
 
 type Descriptor = {
   id: string
@@ -21,6 +22,7 @@ type Descriptor = {
   password: string
   pipe: string
   watchdogPid: number
+  databaseFile?: string
   closeRequested?: boolean
 }
 
@@ -158,11 +160,13 @@ async function freePort(): Promise<number> {
   })
 }
 
-export function createDesktopService(home: string, options: DesktopLaunchOptions["server"]): LocalInstanceOwner & {
+export function createDesktopService(instance: ServiceInstancePaths, options: DesktopLaunchOptions["server"]): LocalInstanceOwner & {
   state(): SuperviseStatus
   subscribe(listener: (state: SuperviseStatus) => void): () => void
   retain(): void
 } {
+  const home = instance.instanceRoot
+  const databaseFile = join(instance.dataPath, "novaclaw.db")
   let descriptor: Descriptor | undefined
   let retained = false
   let stopping = false
@@ -174,6 +178,8 @@ export function createDesktopService(home: string, options: DesktopLaunchOptions
     async start(signal) {
       signal.throwIfAborted()
       descriptor = readService(home)
+      if (descriptor && alive(descriptor.watchdogPid) && descriptor.databaseFile !== databaseFile)
+        throw new Error(`A previous NovaClaw server is using a different database. Close that server before opening ${databaseFile}.`)
       if (descriptor?.closeRequested && alive(descriptor.watchdogPid)) {
         const deadline = Date.now() + 10_000
         while (alive(descriptor.watchdogPid) && Date.now() < deadline) {
@@ -193,14 +199,15 @@ export function createDesktopService(home: string, options: DesktopLaunchOptions
           hostname: options.hostname,
           port: options.port && options.port > 0 ? options.port : await freePort(),
           username: options.username,
-          password: ServerToken.storedPassword(join(home, "data", "novaclaw.db")) ?? options.password ?? randomUUID(),
+          password: ServerToken.storedPassword(databaseFile) ?? options.password ?? randomUUID(),
           pipe: pipeName(id),
           watchdogPid: 0,
+          databaseFile,
         }
         writeService(home, descriptor)
         const executableArgs = app.isPackaged ? [] : [app.getAppPath()]
         const args = ["--state", watchdogStatePath(home), "--", process.execPath, ...executableArgs,
-          "--server-only", "--desktop-service", `--home=${home}`,
+          "--server-only", "--desktop-service", ...serviceHomeArgs(instance),
           ...(options.supervise ? [] : ["--no-supervise"]),
           ...(options.mdns ? ["--mdns"] : []),
           `--mdns-domain=${options.mdnsDomain}`,
@@ -224,7 +231,7 @@ export function createDesktopService(home: string, options: DesktopLaunchOptions
           const credentials: ServerReadyData = {
             url: `http://${clientHostname}:${active.port}`,
             username: active.username,
-            password: ServerToken.storedPassword(join(home, "data", "novaclaw.db")) ?? active.password,
+            password: ServerToken.storedPassword(databaseFile) ?? active.password,
           }
           return {
             credentials,

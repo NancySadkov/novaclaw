@@ -63,7 +63,7 @@ export async function runDesktop(options: DesktopLaunchOptions) {
   const local =
     options.mode === "client"
       ? createConnectedInstance(options.connect!)
-      : createDesktopService(home.instanceRoot, options.server)
+      : createDesktopService(home, options.server)
   // Menu/window callbacks are invoked only after lifecycle construction; unlike the old mutable
   // relaunch callback, they always reach this same owner and the same shutdown promise.
   const window = createWindowHost(() => {

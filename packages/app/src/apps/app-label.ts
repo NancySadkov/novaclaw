@@ -113,7 +113,6 @@ export const BUILTIN_APP_LABELS = {
   recipes: { name: "Recipes", subtitle: "Ready-made prompts your agents can cook" },
   files: { name: "Files", subtitle: "Browse folders and ask AI to work on them" },
   terminal: { name: "Terminal", subtitle: "A shell, for when you want one" },
-  registry: { name: "Registry", subtitle: "The instance database, editable — handle with care" },
   debug: { name: "Debug", subtitle: "Connection, error log, sessions — under the hood" },
   // ⚠️ `memory-graph` is NOT here any more — RETIRED as a tile 2026-08-21, id still reserved.
   // A top-level Memory app was the same shape as the Chats list the roster replaced: a global pile of

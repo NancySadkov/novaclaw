@@ -25,39 +25,43 @@ const CREDITS: Credit[] = [
   { name: "ghostty-web", license: "MIT" },
 ]
 
-export const SettingsAboutV2: Component = () => {
+export const SettingsAboutV2: Component<{ audio: HTMLAudioElement }> = (props) => {
   const language = useLanguage()
   const platform = usePlatform()
   const version = () => platform.version ?? InstallationVersion
   const [needsPlay, setNeedsPlay] = createSignal(false)
   const [audioUnavailable, setAudioUnavailable] = createSignal(false)
   let canvas!: HTMLCanvasElement
-  let audio!: HTMLAudioElement
   let stage!: HTMLDivElement
   let crawl!: HTMLDivElement
   let scene: AboutScene | undefined
   let disposed = false
 
-  const play = () => {
-    void Promise.all([audio.play(), scene?.resumeAudio()]).then(
+  const play = (gesture = false) => {
+    if (gesture) void scene?.resumeAudio().catch(() => undefined)
+    void props.audio.play().then(
       () => { if (!disposed) setNeedsPlay(false) },
       () => { if (!disposed) setNeedsPlay(true) },
     )
   }
 
   onMount(() => {
-    scene = startAboutScene(canvas, audio, stage, crawl)
-    play()
+    scene = startAboutScene(canvas, props.audio, stage, crawl)
+    props.audio.addEventListener("error", onAudioError)
+    play(true)
     onCleanup(() => {
       disposed = true
-      audio.pause()
+      props.audio.pause()
+      props.audio.currentTime = 0
+      props.audio.removeEventListener("error", onAudioError)
       scene?.stop()
     })
   })
+  const onAudioError = () => setAudioUnavailable(true)
 
   return (
     <div class="settings-v2-about" ref={stage}>
-      <div class="settings-v2-about-stage" onPointerDown={() => { if (needsPlay()) play() }} onKeyDown={(event) => { if (needsPlay() && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); play() } }} tabIndex={needsPlay() ? 0 : -1}>
+      <div class="settings-v2-about-stage" onPointerDown={() => { if (needsPlay()) play(true) }} onKeyDown={(event) => { if (needsPlay() && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); play(true) } }} tabIndex={needsPlay() ? 0 : -1}>
         <canvas ref={canvas} class="settings-v2-about-canvas" aria-hidden="true" />
         <img class="settings-v2-about-eye-art" src={publicAssetUrl("assets/about/eye.png")} alt="" aria-hidden="true" />
         <div class="settings-v2-about-vignette" aria-hidden="true" />
@@ -85,10 +89,6 @@ export const SettingsAboutV2: Component = () => {
           <span class="settings-v2-about-audio-hint" role="status">Soundtrack unavailable</span>
         </Show>
       </div>
-      <audio ref={audio} preload="auto" loop aria-hidden="true" onError={() => setAudioUnavailable(true)}>
-        <source src={publicAssetUrl("assets/audio/nova.ogg")} type="audio/ogg" />
-        <source src={publicAssetUrl("assets/audio/nova.aac")} type="audio/aac" />
-      </audio>
     </div>
   )
 }

@@ -49,13 +49,17 @@ export const patchSessionRecord = (
       .get()
       .pipe(Effect.orDie)
     if (!row) return false
-    const next = merge(fromRow(row))
+    const current = fromRow(row)
+    const next = merge(current)
     if (next) {
+      const info = next.summary && next.summary === current.summary
+        ? SessionSchema.Info.make({ ...next, summary: { ...next.summary, diffs: undefined } })
+        : next
       yield* deps.events.publish(
         SessionRecordEvent.Updated,
         {
           sessionID,
-          info: next,
+          info,
           ...(options?.clearArchived === true ? { clearArchived: true } : {}),
         },
         {

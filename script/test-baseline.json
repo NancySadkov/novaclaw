@@ -83,7 +83,7 @@
     "session-ui": 231,
     "ui": 67,
     "core": 7422,
-    "app:unit": 1792,
+    "app:unit": 1793,
     "app:browser": 255,
     "desktop": 250,
     "server": 120,
@@ -94,7 +94,7 @@
     "novaclaw:control-plane": 21,
     "novaclaw:fixture": 31,
     "novaclaw:cli-contract": 2,
-    "novaclaw test/*": 771,
+    "novaclaw test/*": 772,
     "novaclaw test/cli/lazy-command.test.ts": 3,
     "novaclaw test/cli/run/run-process.test.ts": 17,
     "novaclaw test/mcp/config-reload.test.ts": 4
@@ -103,6 +103,7 @@
   "countsTitlebarContextMenu": "2026-09-23: desktop 239→241 (+2) from titlebar-context-menu.test.ts: the desktop titlebar suppresses the generic menu at normal and zoomed sizes, and the compact titlebar supports bottom placement. Both tests were added; nothing moved down.",
   "countsOfficerSettings": "2026-09-24: core 7419→7426 (+7): this slice adds eight core tests, removes or replaces six, and adds three messenger ownership tests (+5 net). The earlier Recipes Studio commit 6d5a8f816 added two recipe-studio.test.ts cases without updating this count (+2). Three core shards ran all 7426 non-skipped tests; two ownership fixture failures were corrected and their four-case file passed separately.",
   "countsOfficerCleanup": "2026-09-24: core 7426→7427 (+1) verifies officer Quality and Context fallback metadata; app:unit 1788→1792 (+4) adds two officer provenance and two messenger wire cases; server 116→120 (+4) covers messenger source ownership, missing chats, set and clear. All added cases passed. The core package gate passed 7427 tests in two memory-constrained shards; app and server package tests passed 1792 and 120 respectively.",
+  "countsDatabaseRecovery": "2026-09-24: app:unit 1792→1793 (+1) checks that Registry stays developer gated under Debug. The browser unit remains 255. The full-only novaclaw test/* count 771→772 (+1) adds database-history.test.ts; its file passed in isolation, while the full-only unit was not run in this development slice.",
   "failing": {
     "novaclaw:server": []
   },

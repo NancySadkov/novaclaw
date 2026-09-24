@@ -178,8 +178,11 @@ function positionCrawl(stage: HTMLElement, crawl: HTMLElement, time: number, dur
 
 function startFallbackScene(audio: HTMLAudioElement, stage: HTMLElement, crawl: HTMLElement): AboutScene {
   let frame = 0
-  const draw = () => {
-    positionCrawl(stage, crawl, audio.currentTime, soundtrackDuration(audio))
+  const started = performance.now()
+  const draw = (now: number) => {
+    const duration = soundtrackDuration(audio)
+    const time = audio.paused ? ((now - started) / 1000) % duration : audio.currentTime
+    positionCrawl(stage, crawl, time, duration)
     frame = requestAnimationFrame(draw)
   }
   frame = requestAnimationFrame(draw)
@@ -236,6 +239,7 @@ export function startAboutScene(canvas: HTMLCanvasElement, audio: HTMLAudioEleme
   resize()
   let frame = 0
   let lastFrame = 0
+  const started = performance.now()
   const draw = (now: number) => {
     frame = requestAnimationFrame(draw)
     if (now - lastFrame < 32 && !reducedMotion.matches) return
@@ -249,8 +253,8 @@ export function startAboutScene(canvas: HTMLCanvasElement, audio: HTMLAudioEleme
     }
     const lowLevel = low / (20 * 255)
     const highLevel = high / (60 * 255)
-    const sceneTime = reducedMotion.matches ? 0 : audio.currentTime
     const duration = soundtrackDuration(audio)
+    const sceneTime = reducedMotion.matches ? 0 : audio.paused ? ((now - started) / 1000) % duration : audio.currentTime
     const phase = sceneTime / duration
     const eyeOpacity = phase < .18 || phase > .87 ? .68 : phase > .61 && phase < .83 ? .36 : 0
     stage.style.setProperty("--about-eye-opacity", String(eyeOpacity))

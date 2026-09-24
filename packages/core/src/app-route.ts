@@ -10,7 +10,6 @@ export const MANIFEST_ROUTE_TARGETS = {
   models: "/models",
   files: "/files",
   recipes: "/recipes",
-  registry: "/registry",
   debug: "/debug",
   terminal: "/terminal",
 } as const satisfies Record<string, `/${string}`>

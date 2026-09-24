@@ -11,7 +11,7 @@ export async function runServerOnlyLauncher(options: DesktopLaunchOptions) {
     return
   }
   await app.whenReady()
-  const service = createDesktopService(home.instanceRoot, options.server)
+  const service = createDesktopService(home, options.server)
   let ending: Promise<void> | undefined
   let monitor: ReturnType<typeof setInterval> | undefined
   const stop = (code: number) => {

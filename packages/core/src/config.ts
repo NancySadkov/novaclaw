@@ -22,6 +22,7 @@ import { ConfigHarnessDrives } from "./config/harness-drives"
 import { ConfigLocalModelCatalog } from "./config/local-model-catalog"
 import { ConfigLog } from "./config/log"
 import { ConfigTrash } from "./config/trash"
+import { ConfigStorage } from "./config/storage"
 import { ConfigMCP } from "./config/mcp"
 import { ConfigProvider } from "./config/provider"
 import { ConfigProviderPreset } from "./config/provider-preset"
@@ -104,6 +105,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   trash: ConfigTrash.Info.pipe(Schema.optional).annotate({
     description: "Runtime-editable safe-delete retention shown in Settings → Storage",
+  }),
+  storage: ConfigStorage.Info.pipe(Schema.optional).annotate({
+    description: "Database size budget and history maintenance interval",
   }),
   tool_output: ConfigToolOutput.Info.pipe(Schema.optional).annotate({
     description: "Tool output truncation thresholds",

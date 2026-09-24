@@ -851,7 +851,7 @@ function Routes() {
       <Route path="/chats" component={() => <Navigate href="/tasks" />} />
       <Route path="/files" component={FilesPage} />
       <Route path="/recipes" component={RecipesPage} />
-      <Route path="/registry" component={RegistryPage} />
+      <Route path="/debug/registry" component={RegistryPage} />
       <Route path="/debug" component={DebugPage} />
       {/* The roster answers to both names while people learn the new one. */}
       <Route path="/contacts" component={ContactsPage} />

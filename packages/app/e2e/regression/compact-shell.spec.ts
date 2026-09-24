@@ -202,6 +202,26 @@ test("messenger settings deep link opens the chosen officer and returns home", a
   await expect(page).toHaveURL("/")
 })
 
+test("Storage budget controls fit a phone width", async ({ page }, info) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto("/")
+  await page.getByRole("button", { name: "Settings", exact: true }).click()
+  await page.getByRole("tab", { name: "Storage", exact: true }).click()
+  if (await page.getByRole("heading", { name: "Something went wrong" }).isVisible()) {
+    await page.getByRole("button", { name: "Show technical details" }).click()
+    throw new Error(await page.getByRole("textbox", { name: "Error Details" }).inputValue())
+  }
+  for (const action of ["settings-database-budget", "settings-database-interval"]) {
+    const control = page.locator(`[data-action="${action}"]`)
+    await expect(control).toBeVisible()
+    const bounds = await control.boundingBox()
+    expect(bounds).not.toBeNull()
+    expect(bounds!.x).toBeGreaterThanOrEqual(0)
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390)
+  }
+  await page.screenshot({ path: info.outputPath("storage-phone.png") })
+})
+
 test("About plays its soundtrack and releases it when the tab closes", async ({ page }, info) => {
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.stack || error.message))
@@ -219,16 +239,29 @@ test("About plays its soundtrack and releases it when the tab closes", async ({ 
   await page.getByRole("tab", { name: "About", exact: true }).click()
   const about = page.locator(".settings-v2-about")
   await expect(about).toBeVisible()
-  const audio = about.locator("audio")
-  const retry = about.getByRole("button", { name: "Play soundtrack" })
-  if (await retry.isVisible()) await retry.click()
+  const audio = page.locator(".settings-v2-screen > audio")
   await expect.poll(() => audio.evaluate((element) => !(element as HTMLAudioElement).paused)).toBe(true)
   expect(await about.locator("canvas").evaluate((canvas) => (canvas as HTMLCanvasElement).width)).toBeGreaterThan(0)
+  await audio.evaluate((element) => (element as HTMLAudioElement).pause())
+  const crawl = about.locator(".settings-v2-about-crawl")
+  const position = await crawl.evaluate((element) => (element as HTMLElement).style.transform)
+  await expect.poll(() => crawl.evaluate((element) => (element as HTMLElement).style.transform)).not.toBe(position)
   await page.screenshot({ path: info.outputPath("about-desktop.png") })
   await page.setViewportSize({ width: 390, height: 844 })
+  await expect.poll(() => page.getByRole("tab", { name: "About", exact: true }).evaluate((selected) => {
+    const list = selected.closest('[data-slot="tabs-v2-list"]')!
+    const tab = selected.getBoundingClientRect()
+    const rail = list.getBoundingClientRect()
+    return tab.left >= rail.left && tab.right <= rail.right
+  })).toBe(true)
   await page.screenshot({ path: info.outputPath("about-phone.png") })
+  const rail = page.getByRole("tablist").first()
+  await rail.evaluate((element) => { element.scrollLeft = 0 })
+  await rail.hover()
+  await page.mouse.wheel(0, 280)
+  await expect.poll(() => rail.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0)
   await page.evaluate(() => {
-    ;(window as typeof window & { aboutAudio?: HTMLAudioElement }).aboutAudio = document.querySelector(".settings-v2-about audio") as HTMLAudioElement
+    ;(window as typeof window & { aboutAudio?: HTMLAudioElement }).aboutAudio = document.querySelector(".settings-v2-screen > audio") as HTMLAudioElement
   })
   await page.getByRole("tab", { name: "General", exact: true }).click()
   await expect(about).toHaveCount(0)
@@ -238,7 +271,7 @@ test("About plays its soundtrack and releases it when the tab closes", async ({ 
   })).toEqual({ paused: true, src: null })
   await page.getByRole("tab", { name: "About", exact: true }).click()
   await page.evaluate(() => {
-    ;(window as typeof window & { aboutAudio?: HTMLAudioElement }).aboutAudio = document.querySelector(".settings-v2-about audio") as HTMLAudioElement
+    ;(window as typeof window & { aboutAudio?: HTMLAudioElement }).aboutAudio = document.querySelector(".settings-v2-screen > audio") as HTMLAudioElement
   })
   await page.getByRole("button", { name: "Close" }).click()
   await expect(page).toHaveURL("/")

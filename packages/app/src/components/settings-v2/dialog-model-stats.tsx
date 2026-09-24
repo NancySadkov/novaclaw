@@ -27,7 +27,7 @@ export const DialogModelStats: Component<{
     () => props.http,
     (http) => fetchUsage(http),
   )
-  const usage = () => summary()?.modelUsage[props.modelRef]
+  const usage = () => summary()?.modelUsage?.[props.modelRef]
   const cacheShare = () => {
     const data = usage()?.prefixCache
     if (!data || data.promptBytes === 0) return undefined
@@ -54,7 +54,7 @@ export const DialogModelStats: Component<{
                 title={language.t("settings.models.stats.generated")}
                 description={language.t("settings.models.stats.generated.desc")}
               >
-                <span>{integer(usage()?.tokens.output ?? 0)}</span>
+                <span>{integer(usage()?.tokens?.output ?? 0)}</span>
               </SettingsRowV2>
               <SettingsRowV2
                 title={language.t("settings.models.stats.prompts")}
@@ -66,20 +66,20 @@ export const DialogModelStats: Component<{
                 title={language.t("settings.models.stats.outputRate")}
                 description={language.t("settings.models.stats.outputRate.desc")}
               >
-                <span>{rate(usage()?.typical.outputTokensPerSecond)}</span>
+                <span>{rate(usage()?.typical?.outputTokensPerSecond)}</span>
               </SettingsRowV2>
               <SettingsRowV2
                 title={language.t("settings.models.stats.promptRate")}
                 description={language.t("settings.models.stats.promptRate.desc")}
               >
-                <span>{rate(usage()?.typical.promptTokensPerSecond)}</span>
+                <span>{rate(usage()?.typical?.promptTokensPerSecond)}</span>
               </SettingsRowV2>
               <SettingsRowV2
                 title={language.t("settings.models.stats.ttft")}
                 description={language.t("settings.models.stats.ttft.desc")}
               >
                 <span>
-                  {usage()?.typical.timeToFirstTokenMs === undefined
+                  {usage()?.typical?.timeToFirstTokenMs === undefined
                     ? "—"
                     : `${Math.round(usage()!.typical.timeToFirstTokenMs!)} ms`}
                 </span>
@@ -88,7 +88,7 @@ export const DialogModelStats: Component<{
                 title={language.t("settings.models.stats.cacheActual")}
                 description={language.t("settings.models.stats.cacheActual.desc")}
               >
-                <span>{integer(usage()?.tokens.cache.read ?? 0)}</span>
+                <span>{integer(usage()?.tokens?.cache?.read ?? 0)}</span>
               </SettingsRowV2>
               <SettingsRowV2
                 title={language.t("settings.models.stats.cacheExpected")}
@@ -100,7 +100,7 @@ export const DialogModelStats: Component<{
                     : language.t("settings.models.stats.cacheExpected.off")
                 }
               >
-                <span>{integer(usage()?.prefixCache.expectedCachedTokens ?? 0)}</span>
+                <span>{integer(usage()?.prefixCache?.expectedCachedTokens ?? 0)}</span>
               </SettingsRowV2>
               <SettingsRowV2
                 title={language.t("settings.models.stats.prefixBytes")}

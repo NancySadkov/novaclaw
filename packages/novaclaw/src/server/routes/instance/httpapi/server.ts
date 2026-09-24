@@ -53,6 +53,7 @@ import { WorkerWatch } from "@/storage/worker-watch"
 import { MoveSession } from "@novaclaw/core/control-plane/move-session"
 import { Credential } from "@novaclaw/core/credential"
 import { Database } from "@novaclaw/core/database/database"
+import { DatabaseHistory } from "../../../../storage/database-history"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { SessionExecution } from "@novaclaw/core/session/execution"
@@ -295,6 +296,8 @@ const app = LayerNode.group([
   CommunityPost.node,
   ReferenceConfigStore.node,
   Database.node,
+  Database.maintenanceNode,
+  DatabaseHistory.node,
   // The graph-memory engine — a per-process (per-instance) singleton like the DB. Provided at the
   // server-global scope so the HTTP handlers AND the location-scoped runner/kb-tool share ONE engine
   // (a second build would clobber the same on-disk snapshot). The capability handle is cheap at boot;

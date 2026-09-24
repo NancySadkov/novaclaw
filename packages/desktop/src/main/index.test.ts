@@ -27,7 +27,7 @@ test("quit, relaunch, signals and recovery reach the same lifecycle deadline", (
   expect(read("./boot-recovery-host.ts")).not.toMatch(/app\.(?:exit|relaunch)\(/)
 })
 test("the desktop owns a reconnecting watchdog service and the headless process owns its sidecar", () => {
-  expect(application).toContain("createDesktopService(home.instanceRoot, options.server)")
+  expect(application).toContain("createDesktopService(home, options.server)")
   expect(read("./desktop-service.ts")).toContain('"--server-only", "--desktop-service"')
   expect(read("./headless-server.ts")).toContain("prepareLocalEnvironment(logger)")
   expect(read("./headless-server.ts")).toContain("superviseLocalServer(")

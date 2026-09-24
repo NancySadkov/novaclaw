@@ -1030,7 +1030,14 @@ export const removeSessionRecord = (
       yield* AgentStatus.removeFrom(db, row.agent)
       yield* events.publish(AgentStatusEvent.Removed, { agent: row.agent }, { location })
     }
-    yield* events.publish(SessionRecordEvent.Deleted, { sessionID, info: fromRow(row) }, { location })
+    const deletedInfo = fromRow(row)
+    yield* events.publish(SessionRecordEvent.Deleted, {
+      sessionID,
+      info: SessionSchema.Info.make({
+        ...deletedInfo,
+        ...(deletedInfo.summary ? { summary: { ...deletedInfo.summary, diffs: undefined } } : {}),
+      }),
+    }, { location })
     yield* events.remove(sessionID)
   })
 
@@ -1632,6 +1639,7 @@ export const layer = Layer.effect(
             sessionID: input.sessionID,
             info: SessionSchema.Info.make({
               ...info,
+              ...(info.summary ? { summary: { ...info.summary, diffs: undefined } } : {}),
               time: { ...info.time, archived: undefined },
             }),
             clearArchived: true,
