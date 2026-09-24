@@ -60,7 +60,7 @@ const runWith = async (policies: readonly ToolPolicy.Provider[], label: string, 
   return harness
 }
 
-/** The same drain, with the session declared auto-prompting so it self-drives when its queue is dry. */
+/** The same drain, with the session declared goal-oriented so it self-drives when its queue is dry. */
 const runSelfDriving = async (policies: readonly ToolPolicy.Provider[], stopAfterContinuation = false) => {
   const harness = makeRunnerHarness({
     turns: [toolCallTurn("call-1", "first"), toolCallTurn("call-2", "second"), toolCallTurn("call-3", "third")],
@@ -78,7 +78,7 @@ const runSelfDriving = async (policies: readonly ToolPolicy.Provider[], stopAfte
       })
       yield* db
         .update(SessionTable)
-        .set({ type: "auto-prompting" })
+        .set({ type: "goal-oriented" })
         .where(eq(SessionTable.id, HARNESS_SESSION))
         .run()
         .pipe(Effect.orDie)
@@ -148,9 +148,9 @@ describe("a halt stops the drain; a deny does not", () => {
     expect(harness.requests.length).toBeGreaterThan(1)
   })
 
-  test("🔴 an AUTO-PROMPTING session does not self-drive past a halt", async () => {
+  test("🔴 a goal-oriented session does not self-drive past a halt", async () => {
     /**
-     * The path the drain-level latch actually exists for. An auto-prompting session whose queue runs
+     * The path the drain-level latch actually exists for. A goal-oriented session whose queue runs
      * dry injects its own next prompt and keeps going ("run until `exit()`"), so cutting only the
      * step loop would hand the halted session straight back to the model — the halt undone by the
      * mechanism that makes autonomy work.
@@ -159,7 +159,7 @@ describe("a halt stops the drain; a deny does not", () => {
     expect(harness.requests, "self-drive must not resume a halted drain").toHaveLength(1)
   })
 
-  test("the control — an auto-prompting session DOES self-drive past a deny", async () => {
+  test("the control — a goal-oriented session DOES self-drive past a deny", async () => {
     const harness = await runSelfDriving([policy("refuser", { type: "deny", reason: "not allowed" })], true)
     expect(harness.requests.length, "without a halt the session keeps working").toBeGreaterThan(1)
   })

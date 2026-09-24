@@ -460,8 +460,9 @@ function exercisePtySocket(url: URL, timeoutMs = 15_000): Promise<{ childPID: nu
     socket.onopen = () => {
       // The marker is octal-escaped so terminal echo cannot satisfy the assertion. `sleep` remains
       // alive as a descendant, letting the remove step prove tree cleanup rather than shell-only exit.
+      const nativeChildPID = process.platform === "win32" ? `$(ps -W -p "$!" | awk 'NR==2 {print $4}')` : "$!"
       socket.send(
-        `sleep 300 & printf '\\116\\117\\126\\101\\103\\114\\101\\127\\137\\120\\124\\131\\137\\117\\113\\072%s\\n' "$!"\r`,
+        `sleep 300 & printf '\\116\\117\\126\\101\\103\\114\\101\\127\\137\\120\\124\\131\\137\\117\\113\\072%s\\n' "${nativeChildPID}"\r`,
       )
     }
     socket.onmessage = (event: MessageEvent) => {
@@ -669,6 +670,27 @@ async function run() {
       shell.status === 0 && shell.stdout === "NOVACLAW_PACKAGED_SH_OK",
       "w64devkit-shell-run",
       `ash exited ${String(shell.status)}: ${shell.stderr || shell.stdout}`,
+    )
+
+    const gitRoot = path.join(path.dirname(exe), "resources", "third-party", "portable-git")
+    const bash = path.join(gitRoot, "bin", "bash.exe")
+    const git = path.join(gitRoot, "cmd", "git.exe")
+    check(existsSync(bash), "portable-git-bash", `missing ${bash}`)
+    check(existsSync(git), "portable-git-binary", `missing ${git}`)
+    check(existsSync(path.join(gitRoot, "LICENSE.txt")), "portable-git-license", "the embedded Git licence is missing")
+    check(existsSync(path.join(gitRoot, "SOURCE-OFFER.txt")), "portable-git-source-offer", "the embedded source offer is missing")
+    const gitEnv = { ...process.env }
+    for (const key of Object.keys(gitEnv)) if (key.toLowerCase() === "path") delete gitEnv[key]
+    gitEnv.PATH = ["mingw64/bin", "usr/bin", "cmd", "bin"].map((part) => path.join(gitRoot, part)).concat(bin).join(path.delimiter)
+    const gitRun = spawnSync(bash, ["-c", "printf '%s\\n' \"$BASH_VERSION\"; git --version; gcc --version | head -n 1"], {
+      cwd: tempHome,
+      encoding: "utf8",
+      env: gitEnv,
+    })
+    check(
+      gitRun.status === 0 && /^5\.3\./.test(gitRun.stdout) && gitRun.stdout.includes("git version 2.55.0.windows.5") && gitRun.stdout.includes("gcc.exe (GCC)"),
+      "portable-git-isolated-bash-git-gcc",
+      `Bash/Git/GCC exited ${String(gitRun.status)}: ${gitRun.stderr || gitRun.stdout}`,
     )
 
     const source = path.join(tempHome, "packaged-toolchain-smoke.c")

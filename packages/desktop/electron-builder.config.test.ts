@@ -85,6 +85,17 @@ test("embeds the prepared w64devkit tree in Windows packages", async () => {
   expect(config.files).toContain("!resources/third-party/**")
 })
 
+test("embeds PortableGit beside w64devkit on Windows", async () => {
+  const module = await import(`./electron-builder.config.ts?portablegit=${Date.now()}`)
+  const config = module.default as Configuration
+  if (process.platform !== "win32")
+    return expect(config.extraResources).not.toContainEqual(expect.objectContaining({ to: "third-party/portable-git/" }))
+  expect(config.extraResources).toContainEqual({
+    from: "resources/third-party/portable-git/",
+    to: "third-party/portable-git/",
+  })
+})
+
 test("embeds the locally staged ripgrep binary in Windows packages", async () => {
   const module = await import(`./electron-builder.config.ts?ripgrep=${Date.now()}`)
   const config = module.default as Configuration

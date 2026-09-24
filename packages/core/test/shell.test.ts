@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import path from "path"
 import { Shell } from "@novaclaw/core/shell"
-import { FSUtil } from "@novaclaw/core/fs-util"
 import { which } from "@novaclaw/core/util/which"
 
 const withShell = async (shell: string | undefined, fn: () => void | Promise<void>) => {
@@ -66,34 +65,6 @@ describe("shell", () => {
   })
 
   if (process.platform === "win32") {
-    test("normalizes Git Bash shell paths from env", async () => {
-      // preferred() resolves + stats the shell, so use the REAL installed git bash (skip if
-      // none) rather than a hardcoded path: set its cygwin form as SHELL, expect it normalized.
-      const bash = Shell.gitbash()
-      if (!bash) return
-      const win = FSUtil.windowsPath(bash)
-      const cygwin = win.replace(/^([A-Za-z]):/, (_m, drive) => `/cygdrive/${drive.toLowerCase()}`)
-      await withShell(cygwin, async () => {
-        expect(Shell.preferred()).toBe(win)
-      })
-    })
-
-    test("resolves /usr/bin/bash from env to Git Bash", async () => {
-      const bash = Shell.gitbash()
-      if (!bash) return
-      await withShell("/usr/bin/bash", async () => {
-        expect(Shell.preferred()).toBe(bash)
-      })
-    })
-
-    test("resolves bare bash to Git Bash before PATH", async () => {
-      const bash = Shell.gitbash()
-      if (!bash) return
-      await withShell("bash", async () => {
-        expect(Shell.preferred()).toBe(bash)
-      })
-    })
-
     test("resolves bare PowerShell shells", async () => {
       const shell = which("pwsh") || which("powershell")
       if (!shell) return
@@ -102,21 +73,9 @@ describe("shell", () => {
       })
     })
 
-    // ⚠️ The regression this guards (measured 2026-07-26): git resolved through
-    // `<root>\mingw64\bin\git.exe`, the old fixed `<git>/../../bin/bash.exe` guess missed, and the
-    // AGENT shell silently became cmd.exe while every prompt and recipe promised bash. The detector
-    // now walks up from the resolved git binary, so any of git-for-windows' PATH entries works.
-    test("git-bash detection survives EVERY git-for-windows PATH layout", () => {
-      const git = which("git")
-      if (!git) return
-      const bash = Shell.gitbash()
-      // On a machine with git, SOME bash must be found — bundled, or the system install's.
-      expect(bash).toBeDefined()
-      expect(Shell.name(bash!)).toBe("bash")
-    })
-
-    test("the supplied agent shell never resolves to a host bash", () => {
-      expect(Shell.name(Shell.agentDefault())).not.toBe("bash")
+    test("the supplied agent shell uses embedded Bash when the distribution is present", () => {
+      const bundled = process.env.NOVACLAW_PORTABLE_GIT_PATH
+      if (bundled) expect(Shell.agentDefault()).toBe(path.join(bundled, "bin", "bash.exe"))
     })
   }
 })

@@ -246,7 +246,7 @@ export const layer = Layer.effectDiscard(
               })
 
               // Agent Jail P0b/P1: in an UNATTENDED chain (root
-              // type auto-prompting / goal-oriented) raw host execution additionally requires a
+              // type goal-oriented) raw host execution additionally requires a
               // sandbox. With a backend (Linux namespaces, P1) the command runs CONFINED —
               // worktree-only FS, deny-all egress.
               // ⚠️ WITHOUT a backend it used to be DENIED; since the owner's 2026-07-30 directive it

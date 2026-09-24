@@ -105,7 +105,7 @@ describe("HostExec.plan — the argv shape never becomes a command string", () =
       ...base,
       shape: argvShape(),
       consent: "none",
-      rootType: "auto-prompting",
+      rootType: "goal-oriented",
       backend: FULL,
     })
     expect(p.via).toBe("exec")
@@ -137,7 +137,7 @@ describe("HostExec.plan — the argv shape never becomes a command string", () =
       ...base,
       shape: argvShape("hello"),
       consent: "none",
-      rootType: "auto-prompting",
+      rootType: "goal-oriented",
       backend: FULL,
       overlay: { DISPLAY: ":99" },
     })
@@ -155,12 +155,12 @@ describe("HostExec.decide", () => {
     expect(HostExec.decide({ rootType: "goal-oriented", backend: FULL })).toBe("confined")
     // ⚠️ Read "deny" until the owner's 2026-07-30 directive; an unattended chain on a backend-less
     // host now RUNS by default and only refuses under safe mode (next test).
-    expect(HostExec.decide({ rootType: "auto-prompting", backend: NONE })).toBe("raw")
+    expect(HostExec.decide({ rootType: "goal-oriented", backend: NONE })).toBe("raw")
     expect(HostExec.decide({ rootType: "interactive", backend: FULL, hostileInput: true })).toBe("confined")
   })
 
   test("safeMode is threaded through to the policy, on the declared AND undeclared arms", () => {
-    expect(HostExec.decide({ rootType: "auto-prompting", backend: NONE, safeMode: true })).toBe("deny")
+    expect(HostExec.decide({ rootType: "goal-oriented", backend: NONE, safeMode: true })).toBe("deny")
     expect(HostExec.decide({ rootType: "goal-oriented", backend: NONE, safeMode: true })).toBe("deny")
     // Attended is untouched by the switch, and a backend still confines rather than refuses.
     expect(HostExec.decide({ rootType: "interactive", backend: NONE, safeMode: true })).toBe("raw")
@@ -356,7 +356,7 @@ describe("HostExec.plan", () => {
       ...base,
       shape: shellShape(),
       consent: "per-command",
-      rootType: "auto-prompting",
+      rootType: "goal-oriented",
       backend: NONE,
       safeMode: true,
     })
@@ -368,7 +368,7 @@ describe("HostExec.plan", () => {
       ...base,
       shape: shellShape(),
       consent: "per-command",
-      rootType: "auto-prompting",
+      rootType: "goal-oriented",
       backend: NONE,
       hostileInput: true,
     })
@@ -384,7 +384,7 @@ describe("HostExec.plan", () => {
       ...base,
       shape: shellShape(),
       consent: "per-command",
-      rootType: "auto-prompting",
+      rootType: "goal-oriented",
       backend: NONE,
     })
     expect(p.via).toBe("shell")
@@ -608,9 +608,9 @@ describe("an unanswerable trust question does not run raw", () => {
     // ⚠️ On a BACKEND-LESS host the three answers no longer agree, and that is the owner's
     // 2026-07-30 directive rather than a tri-state regression: `false` means "we established that
     // the operator drives this", which is now allowed to run; `true`/`"unknown"` are still refused.
-    expect(HostExec.decide({ rootType: "auto-prompting", backend: NONE, hostileInput: false })).toBe("raw")
+    expect(HostExec.decide({ rootType: "goal-oriented", backend: NONE, hostileInput: false })).toBe("raw")
     for (const hostileInput of [true, "unknown"] as const)
-      expect(HostExec.decide({ rootType: "auto-prompting", backend: NONE, hostileInput })).toBe("deny")
+      expect(HostExec.decide({ rootType: "goal-oriented", backend: NONE, hostileInput })).toBe("deny")
   })
 
   test("the whole PLAN changes, not just the verdict — no process is described for an unknown turn", () => {

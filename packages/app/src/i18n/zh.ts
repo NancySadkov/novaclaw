@@ -302,7 +302,8 @@ export const dict = {
   "settings.tab.general": "通用",
   "settings.tab.shortcuts": "快捷键",
 
-  "settings.general.section.notifications": "系统通知",
+  "settings.general.section.notifications": "通知",
+  "settings.general.notifications.description": "军官需要你或发生错误时提醒。",
   "settings.general.section.sounds": "音效",
   "settings.general.row.language.title": "语言",
   "settings.general.row.language.description": "更改 NovaClaw 的显示语言",
@@ -362,12 +363,6 @@ export const dict = {
   "sound.option.yup05": "是 05",
   "sound.option.yup06": "是 06",
 
-  "settings.general.notifications.agent.title": "智能体",
-  "settings.general.notifications.agent.description": "当智能体完成或需要注意时显示系统通知",
-  "settings.general.notifications.permissions.title": "权限",
-  "settings.general.notifications.permissions.description": "当需要权限时显示系统通知",
-  "settings.general.notifications.errors.title": "错误",
-  "settings.general.notifications.errors.description": "发生错误时显示系统通知",
   "settings.general.sounds.agent.title": "智能体",
   "settings.general.sounds.agent.description": "当智能体完成或需要注意时播放声音",
   "settings.general.sounds.permissions.title": "权限",

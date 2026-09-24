@@ -537,7 +537,7 @@ describe("SessionStrict.commandPlan (the host-execution gate, as Strict consumes
   // Jail P4/P5"), and the owner's judgement is that the loss makes the product useless for its main
   // job. Strict now runs there, and the refusal is what the per-session SAFE MODE switch buys back.
   test("an UNATTENDED chain on a backend-less host RUNS by default, and is DENIED under safe mode", () => {
-    for (const rootType of ["goal-oriented", "auto-prompting"] as const) {
+    for (const rootType of ["goal-oriented"] as const) {
       const allowed = plan({ rootType, backend: NONE })
       expect(allowed.denied).toBeUndefined()
       expect(allowed.shell).toBe("/bin/bash")

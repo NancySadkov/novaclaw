@@ -31,7 +31,6 @@ export type SessionClass =
   | "interactive"
   | "sub-agent"
   | "goal-oriented"
-  | "auto-prompting"
   | "cron"
 
 export interface ClassParams {
@@ -45,7 +44,6 @@ export const CLASS_PARAMS: Record<SessionClass, ClassParams> = {
   interactive: { weight: 50, sliceTokens: 4_000 },
   "sub-agent": { weight: 40, sliceTokens: 8_000 },
   "goal-oriented": { weight: 20, sliceTokens: 32_000 },
-  "auto-prompting": { weight: 10, sliceTokens: 32_000 },
   // Never 0: tiny positive weight drains on idle but cannot be starved forever.
   cron: { weight: 5, sliceTokens: 32_000 },
 }

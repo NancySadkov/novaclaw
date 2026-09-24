@@ -413,7 +413,7 @@ export function createPromptInputController(input: {
   const modeCurrent = (): SessionModeName => {
     const record = (sessionView.record() as { type?: string } | undefined)?.type
     const fromRecord =
-      record === "interactive" || record === "auto-prompting" || record === "goal-oriented" ? record : undefined
+      record === "interactive" || record === "goal-oriented" ? record : undefined
     return local.mode.current() ?? fromRecord ?? "interactive"
   }
 

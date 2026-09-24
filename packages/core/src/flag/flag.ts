@@ -32,7 +32,9 @@ function enabledByExperimental(key: string) {
 
 export const Flag = {
   NOVACLAW_AUTO_HEAP_SNAPSHOT: truthy("NOVACLAW_AUTO_HEAP_SNAPSHOT"),
-  NOVACLAW_GIT_BASH_PATH: env("NOVACLAW_GIT_BASH_PATH"),
+  get NOVACLAW_PORTABLE_GIT_PATH() {
+    return env("NOVACLAW_PORTABLE_GIT_PATH")
+  },
   get NOVACLAW_W64DEVKIT_PATH() {
     return env("NOVACLAW_W64DEVKIT_PATH")
   },

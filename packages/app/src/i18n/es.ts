@@ -305,7 +305,8 @@ export const dict = {
   "settings.tab.general": "General",
   "settings.tab.shortcuts": "Atajos",
 
-  "settings.general.section.notifications": "Notificaciones del sistema",
+  "settings.general.section.notifications": "Notificaciones",
+  "settings.general.notifications.description": "Avisos cuando un oficial te necesita o algo falla.",
   "settings.general.section.sounds": "Efectos de sonido",
 
   "settings.general.row.language.title": "Idioma",
@@ -367,14 +368,6 @@ export const dict = {
   "sound.option.yup05": "Sí 05",
   "sound.option.yup06": "Sí 06",
 
-  "settings.general.notifications.agent.title": "Agente",
-  "settings.general.notifications.agent.description":
-    "Mostrar notificación del sistema cuando el agente termine o necesite atención",
-  "settings.general.notifications.permissions.title": "Permisos",
-  "settings.general.notifications.permissions.description":
-    "Mostrar notificación del sistema cuando se requiera un permiso",
-  "settings.general.notifications.errors.title": "Errores",
-  "settings.general.notifications.errors.description": "Mostrar notificación del sistema cuando ocurra un error",
 
   "settings.general.sounds.agent.title": "Agente",
   "settings.general.sounds.agent.description": "Reproducir sonido cuando el agente termine o necesite atención",

@@ -156,7 +156,7 @@ describe("the spawn tool keeps the model surface fork-shaped", () => {
         agent: "plan",
         model: "dgx-spark/qwen3.6-35b",
         controlBinding: ":100",
-        type: "auto-prompting",
+        type: "goal-oriented",
         permissionMode: "plan",
       })
 

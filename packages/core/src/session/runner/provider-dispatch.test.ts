@@ -784,8 +784,8 @@ describe("ProviderDispatch", () => {
 
   test("lowering capacity cuts off the excess provider request and frees its slot", async () => {
     const scheduler = SessionScheduler.make()
-    const first = { sessionID: "first", deviceKey: "device", sessionClass: "auto-prompting" as const, concurrency: 2 }
-    const second = { sessionID: "second", deviceKey: "device", sessionClass: "auto-prompting" as const, concurrency: 2 }
+    const first = { sessionID: "first", deviceKey: "device", sessionClass: "goal-oriented" as const, concurrency: 2 }
+    const second = { sessionID: "second", deviceKey: "device", sessionClass: "goal-oriented" as const, concurrency: 2 }
     let completeFirst!: () => void
     const firstDone = new Promise<void>((resolve) => { completeFirst = resolve })
     const dispatch = (slot: typeof first) => ProviderDispatch.run({

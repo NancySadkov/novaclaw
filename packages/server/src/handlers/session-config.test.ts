@@ -157,8 +157,8 @@ describe("origin says WHICH ancestor supplied each field", () => {
   })
 
   test("an override moves the origin to the declaring layer, and both stay in declaredBy", () => {
-    const field = view({ type: "goal-oriented" }, { type: "auto-prompting" }).fields["type"]!
-    expect(field.value).toBe("auto-prompting")
+    const field = view({ type: "goal-oriented" }, { type: "interactive" }).fields["type"]!
+    expect(field.value).toBe("interactive")
     expect(field.origin).toBe(MIDDLE)
     expect(field.declaredBy).toEqual([ROOT, MIDDLE])
   })

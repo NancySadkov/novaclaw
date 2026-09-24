@@ -17,8 +17,8 @@
 export const ALLOCATION_CATEGORIES = ["system", "messages", "retrieval", "memory", "tool_output"] as const
 export type AllocationCategory = (typeof ALLOCATION_CATEGORIES)[number]
 
-/** The four working modes a session can be in. Mirrors `ContextBudget`'s profiles. */
-export const ALLOCATION_PROFILES = ["interactive", "sub-agent", "auto-prompting", "goal-oriented"] as const
+/** Officer and delegated worker layouts mirror `ContextBudget`'s profiles. */
+export const ALLOCATION_PROFILES = ["officer", "sub-agent"] as const
 export type AllocationProfile = (typeof ALLOCATION_PROFILES)[number]
 
 /**
@@ -30,10 +30,8 @@ export type AllocationProfile = (typeof ALLOCATION_PROFILES)[number]
  * instance actually resolves.
  */
 export const DEFAULT_ALLOCATION: Readonly<Record<AllocationProfile, Readonly<Record<AllocationCategory, number>>>> = {
-  interactive: { system: 25, messages: 40, retrieval: 10, memory: 5, tool_output: 20 },
+  officer: { system: 25, messages: 40, retrieval: 10, memory: 5, tool_output: 20 },
   "sub-agent": { system: 25, messages: 30, retrieval: 10, memory: 5, tool_output: 30 },
-  "auto-prompting": { system: 20, messages: 25, retrieval: 10, memory: 5, tool_output: 40 },
-  "goal-oriented": { system: 20, messages: 25, retrieval: 10, memory: 5, tool_output: 40 },
 }
 
 /** The stored profile, or the shipped default when the instance stored nothing. */

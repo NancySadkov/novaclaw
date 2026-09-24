@@ -15,19 +15,20 @@ export interface Profile {
 
 /** First-principles defaults: an attended chat protects conversation; unattended workers reserve
  * more room for the tool evidence they must act on without a human steering every turn. */
-export const DEFAULT_PROFILES: Readonly<Record<SessionType, Profile>> = {
-  interactive: { system: 25, messages: 40, retrieval: 10, memory: 5, tool_output: 20 },
+export type Layout = "officer" | "sub-agent"
+
+export const DEFAULT_PROFILES: Readonly<Record<Layout, Profile>> = {
+  officer: { system: 25, messages: 40, retrieval: 10, memory: 5, tool_output: 20 },
   "sub-agent": { system: 25, messages: 30, retrieval: 10, memory: 5, tool_output: 30 },
-  "auto-prompting": { system: 20, messages: 25, retrieval: 10, memory: 5, tool_output: 40 },
-  "goal-oriented": { system: 20, messages: 25, retrieval: 10, memory: 5, tool_output: 40 },
 }
 
 export const enabled = (config: ConfigContext.Info | undefined, sessionOverride: boolean | undefined): boolean =>
   sessionOverride ?? config?.enabled ?? true
 
 export const resolve = (config: ConfigContext.Info | undefined, type: SessionType): Profile => {
-  const baseline = DEFAULT_PROFILES[type]
-  const override = config?.profiles?.[type]
+  const layout: Layout = type === "sub-agent" ? "sub-agent" : "officer"
+  const baseline = DEFAULT_PROFILES[layout]
+  const override = config?.profiles?.[layout]
   return {
     system: override?.system ?? baseline.system,
     messages: override?.messages ?? baseline.messages,

@@ -251,12 +251,12 @@ describe("a human-unit duration may explicitly accept fractions", () => {
 
 /**
  * The Context tab (owner, 2026-09-19). Two structural claims the retired twenty-number-box panel
- * could not state: every session type is ONE 100% split, and the guard's switch lives with the
+ * could not state: the officer and sub-agent each have a 100% split, and the guard's switch lives with the
  * splits it governs. The arrow-key path is the deterministic edit a DOM test can drive — a pointer
  * drag needs layout, which happy-dom does not have.
  */
 describe("Context tab — the guard card and its splits", () => {
-  test("shows the new copy, four five-part bars, and the shipped threshold", async () => {
+  test("shows two five-part bars and the shipped threshold", async () => {
     mount((officer) => <OfficerContext agentID="nova" config={officer} />, { agents: { nova: { context: {} } } })
     await settle()
 
@@ -266,10 +266,8 @@ describe("Context tab — the guard card and its splits", () => {
 
     const profiles = [...document.querySelectorAll<HTMLElement>("[data-context-profile]")]
     expect(profiles.map((profile) => profile.dataset.contextProfile)).toEqual([
-      "interactive",
+      "officer",
       "sub-agent",
-      "auto-prompting",
-      "goal-oriented",
     ])
     for (const profile of profiles) {
       expect(profile.querySelectorAll(".settings-v2-allocation-seg")).toHaveLength(5)
@@ -285,7 +283,7 @@ describe("Context tab — the guard card and its splits", () => {
     await settle()
 
     const handle = document.querySelector<HTMLButtonElement>(
-      '[data-context-profile="interactive"] .settings-v2-allocation-handle',
+      '[data-context-profile="officer"] .settings-v2-allocation-handle',
     )
     expect(handle).not.toBeNull()
     handle!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }))
@@ -293,7 +291,7 @@ describe("Context tab — the guard card and its splits", () => {
 
     expect(counts.patch).toBe(1)
     expect((config().agents as { nova: { context: Record<string, unknown> } }).nova.context).toMatchObject({
-      profiles: { interactive: { system: 26, messages: 39, retrieval: 10, memory: 5, tool_output: 20 } },
+      profiles: { officer: { system: 26, messages: 39, retrieval: 10, memory: 5, tool_output: 20 } },
     })
   })
 

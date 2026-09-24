@@ -39,7 +39,7 @@ type Policy = {
    * *something* is a weaker claim than a directory holding the artifact this platform needs, and the
    * gap between the two is exactly where a wrong-platform or half-written staging tree lives.
    */
-  readonly binary?: (platform: NodeJS.Platform) => string | undefined
+  readonly binary?: (platform: NodeJS.Platform) => string | readonly string[] | undefined
 }
 
 /** The library `packages/host/build.ts` emits for a platform, and nothing on macOS — it compiles the
@@ -78,6 +78,10 @@ const POLICIES: Readonly<Record<string, Policy>> = {
   // capability that exists on disk and not in the product.
   "third-party/ripgrep/": { requirement: "required" },
   "third-party/w64devkit/": { requirement: "required" },
+  "third-party/portable-git/": {
+    requirement: "required",
+    binary: (platform) => platform === "win32" ? ["bin/bash.exe", "cmd/git.exe"] : undefined,
+  },
   "third-party/imagemagick/": { requirement: "required" },
 }
 
@@ -184,14 +188,16 @@ export function verifyStagedResources(input: {
     }
 
     if (binary) {
-      const file = path.join(directory, binary)
-      if (!existsSync(file)) {
-        if (required)
-          throw new Error(`${input.label}: "${entry.to}" is REQUIRED and ${file} is missing from ${directory}`)
-        warn(`DEVELOPMENT ONLY: packaging without "${entry.to}" (${file} is missing).`)
-        return { to: entry.to, verdict: "absent" }
+      for (const name of typeof binary === "string" ? [binary] : binary) {
+        const file = path.join(directory, name)
+        if (!existsSync(file)) {
+          if (required)
+            throw new Error(`${input.label}: "${entry.to}" is REQUIRED and ${file} is missing from ${directory}`)
+          warn(`DEVELOPMENT ONLY: packaging without "${entry.to}" (${file} is missing).`)
+          return { to: entry.to, verdict: "absent" }
+        }
+        assertNativeBinary(file, platform, input.label)
       }
-      assertNativeBinary(file, platform, input.label)
       return { to: entry.to, verdict: "verified" }
     }
 

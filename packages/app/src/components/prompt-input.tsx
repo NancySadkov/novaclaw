@@ -100,11 +100,9 @@ export type PromptInputControls = {
   // builds this object — the narrowness is load-bearing, only the duplicated key union was not.
   features: Pick<ComposerFeaturesControlState, "current" | "override" | "origin" | "set" | "inherit">
 
-  // The per-chat Mode control (kernel thread type): interactive, or the unattended pair
-  // (auto-prompting · goal-oriented — asks auto-allow, bash confined by the Agent Jail).
   mode: {
-    current: "interactive" | "auto-prompting" | "goal-oriented"
-    set: (value: "interactive" | "auto-prompting" | "goal-oriented") => void
+    current: "interactive" | "goal-oriented"
+    set: (value: "interactive" | "goal-oriented") => void
   }
   // The Remote-chat control (messenger-plan §6.2): which messenger chat this session lives in
   // remotely — accounts, this session's binding, and the connect/disconnect actions.

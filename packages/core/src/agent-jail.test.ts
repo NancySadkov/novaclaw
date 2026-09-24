@@ -61,9 +61,9 @@ describe("AgentJail", () => {
     ["sub-agent", AgentJail.NO_BACKEND, "raw"],
     // ⚠️ These four read "deny" until 2026-07-30. Changed deliberately: an unattended chain on a
     // backend-less host (every Windows host) may now run its shell. See agent-jail.ts's header.
-    ["auto-prompting", AgentJail.NO_BACKEND, "raw"],
     ["goal-oriented", AgentJail.NO_BACKEND, "raw"],
-    ["auto-prompting", FULL, "confined"],
+    ["goal-oriented", AgentJail.NO_BACKEND, "raw"],
+    ["goal-oriented", FULL, "confined"],
     ["goal-oriented", FULL, "confined"],
     // A partial backend (FS view but no egress control) is NOT containment, so it does not reach
     // the confined arm — with safe mode off it falls through to the default like any other
@@ -84,9 +84,9 @@ describe("AgentJail", () => {
     ["interactive", FULL, "raw"],
     ["sub-agent", AgentJail.NO_BACKEND, "raw"],
     // Unattended: confined where the host can confine, refused where it cannot.
-    ["auto-prompting", FULL, "confined"],
     ["goal-oriented", FULL, "confined"],
-    ["auto-prompting", AgentJail.NO_BACKEND, "deny"],
+    ["goal-oriented", FULL, "confined"],
+    ["goal-oriented", AgentJail.NO_BACKEND, "deny"],
     ["goal-oriented", AgentJail.NO_BACKEND, "deny"],
     ["goal-oriented", FS_ONLY, "deny"],
   ]
@@ -96,7 +96,7 @@ describe("AgentJail", () => {
     })
 
   test("safeMode:false and an omitted safeMode are the SAME (default) answer, everywhere", () => {
-    const roots: SessionType[] = ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+    const roots: SessionType[] = ["interactive", "sub-agent", "goal-oriented"]
     for (const rootType of roots)
       for (const backend of [AgentJail.NO_BACKEND, FULL, FS_ONLY])
         expect(AgentJail.decideBash({ rootType, backend, safeMode: false })).toBe(
@@ -109,7 +109,7 @@ describe("AgentJail", () => {
     // more permissive than the default one. This is what makes the switch composable with the
     // narrowing keystone without a clamp of its own (config-resolve.ts §SAFE MODE).
     const rank: Record<AgentJail.BashDecision, number> = { deny: 0, confined: 1, raw: 2 }
-    const roots: SessionType[] = ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+    const roots: SessionType[] = ["interactive", "sub-agent", "goal-oriented"]
     for (const rootType of roots)
       for (const backend of [AgentJail.NO_BACKEND, FULL, FS_ONLY])
         for (const hostileInput of [true, false, undefined])

@@ -7,7 +7,7 @@ import path from "path"
  * `bun run test` spawns its units as children, and a child inherits its parent's whole environment. When
  * the parent is a `bash` tool call from a live desktop instance, that environment carries the launcher's
  * own description of the install it started — `packages/desktop/src/main/server.ts` sets
- * `NOVACLAW_RIPGREP_PATH`, `NOVACLAW_W64DEVKIT_PATH`, `NOVACLAW_IMAGEMAGICK_PATH`, `NOVACLAW_CLIENT`, and
+ * `NOVACLAW_RIPGREP_PATH`, `NOVACLAW_W64DEVKIT_PATH`, `NOVACLAW_PORTABLE_GIT_PATH`, `NOVACLAW_IMAGEMAGICK_PATH`, `NOVACLAW_CLIENT`, and
  * two `NOVACLAW_EXPERIMENTAL_*` switches. Those variables are not developer intent. They are the running
  * product telling its own children where its bundled binaries live.
  *
@@ -21,8 +21,8 @@ import path from "path"
  *  · `builtins.ts` advertises `magick` in `<env>` only when `Shell.imagemagick()` resolves. Three
  *    `system-context/builtins.test.ts` golden strings therefore gained seven lines on an install that
  *    ships ImageMagick.
- *  · `shell-bundle.test.ts` asserted `w64devkit/bin` is LAST on PATH; ImageMagick is appended after it,
- *    so the assertion held only where ImageMagick is absent.
+ *  · Toolchain PATH order changes when packaged shell and image resources are inherited from the
+ *    launcher rather than staged by the test fixture.
  *  · `Flag.NOVACLAW_CLIENT` is `env(...) ?? "cli"`, and `models-dev.ts` puts it in the User-Agent. With
  *    `NOVACLAW_CLIENT=desktop` inherited, `models.test.ts` read `…/desktop` where it expects `…/cli`.
  *
@@ -38,8 +38,8 @@ import path from "path"
 export const LAUNCHER_ENV_SCRUB = [
   "NOVACLAW_RIPGREP_PATH",
   "NOVACLAW_W64DEVKIT_PATH",
+  "NOVACLAW_PORTABLE_GIT_PATH",
   "NOVACLAW_IMAGEMAGICK_PATH",
-  "NOVACLAW_GIT_BASH_PATH",
   "NOVACLAW_CLIENT",
   "NOVACLAW_EXPERIMENTAL_ICON_DISCOVERY",
   "NOVACLAW_EXPERIMENTAL_FILEWATCHER",

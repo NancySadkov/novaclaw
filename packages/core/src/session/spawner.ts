@@ -85,7 +85,7 @@ export interface SpawnInput {
   /** Explicit computer display for the child. Omit to inherit from its parent. */
   readonly controlBinding?: string
   /** Thread type for the child (defaults to "sub-agent" — a spawned session waits on its supervisor). */
-  readonly type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+  readonly type?: "interactive" | "sub-agent" | "goal-oriented"
   readonly priority?: number
   /** Child mode request — resolveConfig NARROWS it against the parent chain (never escalates). */
   readonly permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"

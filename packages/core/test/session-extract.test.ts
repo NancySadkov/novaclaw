@@ -30,7 +30,6 @@ describe("SessionExtract durable-memory origin policy", () => {
   const expected = {
     interactive: true,
     "sub-agent": false,
-    "auto-prompting": false,
     "goal-oriented": false,
   } as const satisfies Record<SessionType.Info, boolean>
 

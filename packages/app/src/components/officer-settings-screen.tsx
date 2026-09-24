@@ -58,7 +58,8 @@ import {
 
 // The three roster kinds (owner, 2026-09-17): a full officer, a pure Chat, and the instance's
 // owning user. Human is a first-class entity, not an absence.
-const POSTURE_CHOICES: ("agent" | "chat" | "human")[] = ["agent", "chat", "human"]
+const MODE_CHOICES = ["interactive", "agent", "chat", "human"] as const
+type OfficerMode = (typeof MODE_CHOICES)[number]
 
 /**
  * Merge touched struct-subfield drafts over the stored struct, for the per-officer
@@ -306,6 +307,13 @@ export function OfficerSettingsScreen(props: {
   const operationModeValue = () =>
     operationMode() ??
     ((agent()?.config?.["operationMode"] as string | undefined) === "unattended" ? "unattended" : "interactive")
+  const modeValue = (): OfficerMode =>
+    postureValue() === "agent" ? (operationModeValue() === "unattended" ? "agent" : "interactive") : postureValue()
+  const selectMode = (mode: OfficerMode) => {
+    setPosture(mode === "interactive" ? "agent" : mode)
+    setOperationMode(mode === "agent" ? "unattended" : "interactive")
+    if (mode === "chat" || mode === "human") setDirectory("")
+  }
   const goalValue = () => goal() ?? (agent()?.config?.["goal"] as string | undefined) ?? ""
   const standingValue = (draft: boolean | undefined, key: string, fallback: boolean) =>
     draft ?? (agent()?.config?.[key] as boolean | undefined) ?? fallback
@@ -1700,10 +1708,6 @@ export function OfficerSettingsScreen(props: {
               <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
                 {language.t("agentConfig.mind")}
               </h3>
-              {/* 🔴 The Interactive<->Unattended switch and the durable Goal now live in the WORK tab
-                  (owner, 2026-09-15). They are standing choices about how this officer OPERATES, the
-                  same family as posture, permission mode and Strict — and the Mind tab is about how it
-                  thinks (its model). Splitting one decision across two tabs is how a user loses it. */}
               {/* 🔴 The model belongs to the COLLEAGUE, not to the chat. A chat-scoped model made the
                 same colleague clever in one conversation and poor in the next, for reasons the user
                 could not see. A colleague has one mind. */}
@@ -1886,21 +1890,18 @@ export function OfficerSettingsScreen(props: {
                   <SelectV2
                     appearance="inline"
                     aria-label={language.t("agentConfig.posture")}
-                    options={POSTURE_CHOICES}
-                    current={postureValue()}
+                    options={MODE_CHOICES}
+                    current={modeValue()}
                     label={(value) =>
-                      language.t(
-                        value === "chat"
-                          ? "prompt.posture.chat.title"
-                          : value === "human"
-                            ? "prompt.posture.human.title"
-                            : "prompt.posture.agent.title",
-                      )
+                      value === "interactive"
+                        ? language.t("agentConfig.mode.interactive")
+                        : value === "agent"
+                          ? language.t("agentConfig.mode.agent")
+                          : language.t(`prompt.posture.${value}.title`)
                     }
                     onSelect={(value) => {
                       if (!value) return
-                      setPosture(value)
-                      if (value !== "agent") setDirectory("")
+                      selectMode(value)
                     }}
                   />
                 </div>
@@ -1909,25 +1910,7 @@ export function OfficerSettingsScreen(props: {
                     {language.t(`prompt.posture.${postureValue()}.description`)}
                   </p>
                 </Show>
-
-
-
-                <div class="mt-3 rounded-xl border border-v2-border-border-base bg-v2-background-bg-layer-01 p-3">
-                  <div class="flex items-start justify-between gap-3">
-                    <span class="block text-sm font-medium">{language.t("agentConfig.unattended")}</span>
-                    <SwitchToggle
-                      aria-label={language.t("agentConfig.unattended")}
-                      checked={operationModeValue() === "unattended"}
-                      onChange={(checked) => setOperationMode(checked ? "unattended" : "interactive")}
-                    />
-                  </div>
-                  <Show when={operationModeValue() === "unattended"}>
-                    <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
-                      {language.t("agentConfig.unattended.on")}
-                    </p>
-                  </Show>
-                </div>
-                <Show when={operationModeValue() === "unattended"}>
+                <Show when={modeValue() === "agent"}>
                   <label class="mt-4 block text-xs text-v2-text-text-muted">
                     Goal
                     <textarea
@@ -2166,8 +2149,8 @@ export function OfficerSettingsScreen(props: {
                   </span>
                 </span>
               </label>
-              <div class="mt-3 flex items-center justify-between gap-2 border-t border-v2-border-border-muted pt-3 text-xs">
-                <span>Calm-baseline temperature</span>
+              <div class="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-v2-border-border-muted pt-3 text-xs">
+                <span class="min-w-0">Calm-baseline temperature</span>
                 <PresetFieldV2
                   field="temperature"
                   value={affTemperatureValue}

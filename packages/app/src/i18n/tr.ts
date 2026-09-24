@@ -304,7 +304,8 @@ export const dict = {
   "settings.tab.general": "Genel",
   "settings.tab.shortcuts": "Kısayollar",
 
-  "settings.general.section.notifications": "Sistem bildirimleri",
+  "settings.general.section.notifications": "Bildirimler",
+  "settings.general.notifications.description": "Bir görevli size ihtiyaç duyduğunda veya bir hata oluştuğunda uyarılar.",
   "settings.general.section.sounds": "Ses efektleri",
 
   "settings.general.row.language.title": "Dil",
@@ -366,13 +367,6 @@ export const dict = {
   "sound.option.yup05": "Evet 05",
   "sound.option.yup06": "Evet 06",
 
-  "settings.general.notifications.agent.title": "Ajan",
-  "settings.general.notifications.agent.description":
-    "Ajan tamamlandığında veya dikkat gerektirdiğinde sistem bildirimi göster",
-  "settings.general.notifications.permissions.title": "İzinler",
-  "settings.general.notifications.permissions.description": "İzin gerektiğinde sistem bildirimi göster",
-  "settings.general.notifications.errors.title": "Hatalar",
-  "settings.general.notifications.errors.description": "Hata oluştuğunda sistem bildirimi göster",
 
   "settings.general.sounds.agent.title": "Ajan",
   "settings.general.sounds.agent.description": "Ajan tamamlandığında veya dikkat gerektirdiğinde ses çal",

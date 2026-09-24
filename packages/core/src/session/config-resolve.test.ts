@@ -271,7 +271,7 @@ describe("rootAttendance — the chain ROOT's thread type (Agent Jail P0b)", () 
   // entirely and, at `AgentJail.decideBash`, returns "raw". Measured before the change, verbatim:
   //   dangling parent, sub-agent row   → "sub-agent"    (attended, stance [])
   //   dangling parent, untyped row     → "interactive"  (attended, stance [])
-  //   cycle of two auto-prompting rows → "interactive"  (attended, stance [])
+  //   cycle of two goal-oriented rows → "interactive"  (attended, stance [])
   //   missing row (NOT a chain fault)  → "interactive"  (attended, stance []) — see below
   test("a session id that names NO row keeps the default — nothing was declared, so nothing faulted", () => {
     // The deliberate non-change, and the boundary of this fix. There is no chain to be wrong about
@@ -290,7 +290,7 @@ describe("rootAttendance — the chain ROOT's thread type (Agent Jail P0b)", () 
     // "sub-agent", which `attendedRoot` reads as ATTENDED, while the root that actually decided
     // attendance is exactly the row that vanished.
     expect(rootOf("child", { child: { id: "child", parentID: "ghost", type: "sub-agent" } })).toBe("unknown")
-    expect(rootOf("child", { child: { id: "child", parentID: "ghost", type: "auto-prompting" } })).toBe("unknown")
+    expect(rootOf("child", { child: { id: "child", parentID: "ghost", type: "goal-oriented" } })).toBe("unknown")
     expect(rootOf("child", { child: { id: "child", parentID: "ghost" } })).toBe("unknown")
   })
 
@@ -298,8 +298,8 @@ describe("rootAttendance — the chain ROOT's thread type (Agent Jail P0b)", () 
     expect(rootOf("a", { a: { id: "a", parentID: "b" }, b: { id: "b", parentID: "a" } })).toBe("unknown")
     expect(
       rootOf("a", {
-        a: { id: "a", parentID: "b", type: "auto-prompting" },
-        b: { id: "b", parentID: "a", type: "auto-prompting" },
+        a: { id: "a", parentID: "b", type: "goal-oriented" },
+        b: { id: "b", parentID: "a", type: "goal-oriented" },
       }),
     ).toBe("unknown")
   })
@@ -330,8 +330,8 @@ describe("the unreadable chain reaches the confinement DECISION, not just the re
         "cycle of unattended rows",
         "a",
         {
-          a: { id: "a", parentID: "b", type: "auto-prompting" },
-          b: { id: "b", parentID: "a", type: "auto-prompting" },
+          a: { id: "a", parentID: "b", type: "goal-oriented" },
+          b: { id: "b", parentID: "a", type: "goal-oriented" },
         },
       ],
     ] as const) {
@@ -364,7 +364,7 @@ describe("the unreadable chain reaches the confinement DECISION, not just the re
 })
 
 describe("narrowRootType — the ONE collapse point for the root tri-state", () => {
-  const KNOWN: SessionType[] = ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+  const KNOWN: SessionType[] = ["interactive", "sub-agent", "goal-oriented"]
 
   test("it is the identity on every readable answer — nothing else is reinterpreted", () => {
     for (const type of KNOWN) expect(narrowRootType(type)).toBe(type)
@@ -539,14 +539,14 @@ describe("resolveConfig — thread type + priority (K1)", () => {
   })
 
   test("a child inherits the parent's type/priority when it defines none", () => {
-    const resolved = resolveConfig(DEFAULTS, [{ type: "auto-prompting", priority: 3 }, {}])
-    expect(resolved.type).toBe("auto-prompting")
+    const resolved = resolveConfig(DEFAULTS, [{ type: "goal-oriented", priority: 3 }, {}])
+    expect(resolved.type).toBe("goal-oriented")
     expect(resolved.priority).toBe(3)
   })
 
   test("a child's own type/priority win over the parent's", () => {
     const resolved = resolveConfig(DEFAULTS, [
-      { type: "auto-prompting", priority: 3 },
+      { type: "goal-oriented", priority: 3 },
       { type: "sub-agent", priority: 1 },
     ])
     expect(resolved.type).toBe("sub-agent")
@@ -573,7 +573,7 @@ describe("resolveConfig — thread type + priority (K1)", () => {
 // resolved permission MODE (`yolo` = the deliberate way out).
 describe("unattendedStanceRules — the unattended confinement stance", () => {
   const ATTENDED: SessionType[] = ["interactive", "sub-agent"]
-  const UNATTENDED: SessionType[] = ["auto-prompting", "goal-oriented"]
+  const UNATTENDED: SessionType[] = ["goal-oriented"]
   const BELOW_YOLO: PermissionMode[] = ["plan", "ask", "surgical", "bypass"]
 
   test("attendedRoot: only interactive + sub-agent have someone to answer", () => {
@@ -631,7 +631,7 @@ describe("unattendedStanceRules — the unattended confinement stance", () => {
 
   test("a child under a yolo root that narrows itself falls BACK INTO the stance", () => {
     const sessions: Record<string, SessionLike> = {
-      root: { id: "root", type: "auto-prompting", permissionMode: "yolo" },
+      root: { id: "root", type: "goal-oriented", permissionMode: "yolo" },
       child: { id: "child", parentID: "root", permissionMode: "bypass" },
     }
     const get = (id: string) => Effect.succeed(sessions[id])

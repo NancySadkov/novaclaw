@@ -328,7 +328,7 @@ export const makeSessionGroups = <
             // perform is its own honesty defect (ruling 2), not something to re-derive from here.
             device: Schema.NonEmptyString.pipe(Schema.optional),
             controlBinding: Schema.NonEmptyString.pipe(Schema.optional),
-            type: Schema.Literals(["interactive", "sub-agent", "auto-prompting", "goal-oriented"]).pipe(
+            type: Schema.Literals(["interactive", "sub-agent", "goal-oriented"]).pipe(
               Schema.optional,
             ),
             priority: Schema.Finite.pipe(Schema.optional),
@@ -908,7 +908,7 @@ export const makeSessionGroups = <
         // agent"), so the switch offers the user-meaningful types: interactive vs the unattended pair.
         HttpApiEndpoint.post("session.switchType", "/api/session/:sessionID/type", {
           params: { sessionID: Session.ID },
-          payload: Schema.Struct({ type: Schema.Literals(["interactive", "auto-prompting", "goal-oriented"]) }),
+          payload: Schema.Struct({ type: Schema.Literals(["interactive", "goal-oriented"]) }),
           success: HttpApiSchema.NoContent,
           error: SessionNotFoundError,
         })
@@ -918,7 +918,7 @@ export const makeSessionGroups = <
               identifier: "v2.session.switchType",
               summary: "Set the session's kernel thread type (Mode)",
               description:
-                "Switch this chat between interactive and the unattended types (auto-prompting · goal-oriented). Attendance derives from the chain root's type: an unattended chat is CONFINED rather than permissive: out-of-folder writes are DENIED outright instead of parked as an ask nobody can answer, and bash is confined by the Agent Jail (denied outright where no jail backend exists). Applies immediately.",
+                "Switch this chat between interactive and goal-oriented. Attendance derives from the chain root's type. Out-of-folder writes are refused when no person can answer a permission request. Applies immediately.",
             }),
           ),
       )

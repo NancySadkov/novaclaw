@@ -234,7 +234,7 @@ Nothing at build time. Start the app, open **Settings**, and add any OpenAI-comp
 
 On Linux, NovaClaw confines the `bash` tool inside a bubblewrap sandbox — one writable bind (the
 session's folder), everything else read-only or masked, and no network — whenever the session has
-no human watching it (an auto-prompting or goal-oriented chain). If no working sandbox exists,
+no human watching it (a goal-oriented chain). If no working sandbox exists,
 those sessions are _denied_ raw shell access instead. Interactive sessions you are watching are
 unaffected either way.
 

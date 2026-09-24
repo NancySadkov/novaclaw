@@ -26,7 +26,6 @@ describe("classForSessionType allocates the interactive lane honestly", () => {
     const cases: Array<[SessionType, SessionClass]> = [
       ["interactive", "interactive"],
       ["sub-agent", "sub-agent"],
-      ["auto-prompting", "auto-prompting"],
       ["goal-oriented", "goal-oriented"],
     ]
     for (const [type, expected] of cases) expect(classForSessionType(type)).toBe(expected)

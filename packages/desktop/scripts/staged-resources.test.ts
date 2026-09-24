@@ -36,7 +36,10 @@ afterEach(() => {
 const stage = (to: string, files: Record<string, Buffer | string> = {}) => {
   const directory = path.join(root, to)
   mkdirSync(directory, { recursive: true })
-  for (const [name, body] of Object.entries(files)) writeFileSync(path.join(directory, name), body)
+  for (const [name, body] of Object.entries(files)) {
+    mkdirSync(path.dirname(path.join(directory, name)), { recursive: true })
+    writeFileSync(path.join(directory, name), body)
+  }
   return directory
 }
 
@@ -58,6 +61,14 @@ const HOST: StagedResource = { from: "../host/build/", to: "host/" }
 const DHT: StagedResource = { from: "../dht/build/", to: "dht/" }
 const WATCHDOG: StagedResource = { from: "../watchdog/build/", to: "watchdog/" }
 const RIPGREP: StagedResource = { from: "resources/third-party/ripgrep/", to: "third-party/ripgrep/" }
+const PORTABLE_GIT: StagedResource = { from: "resources/third-party/portable-git/", to: "third-party/portable-git/" }
+
+test("Windows packages require both embedded Bash and Git", () => {
+  stage(PORTABLE_GIT.to, { "bin/bash.exe": PE })
+  expect(() => verify([PORTABLE_GIT])).toThrow(/cmd\\git\.exe is missing/)
+  stage(PORTABLE_GIT.to, { "cmd/git.exe": PE })
+  expect(verify([PORTABLE_GIT])).toEqual([{ to: PORTABLE_GIT.to, verdict: "verified" }])
+})
 
 test("the native host module must be present, non-empty and built for THIS platform", () => {
   // Arm 1 — absent. This is RF-26's case: the entry was in the config, `prebuild` normally filled it,
@@ -151,7 +162,7 @@ test("every entry the packager actually copies is classified", async () => {
   for (const entry of resources) {
     // Everything is staged so nothing can fail for absence — the only failure available here is the
     // unclassified arm, which is what this case is about.
-    stage(entry.to, { "host.dll": PE, "novaclaw-watchdog.exe": PE, "placeholder.bin": PE })
+    stage(entry.to, { "host.dll": PE, "novaclaw-watchdog.exe": PE, "bin/bash.exe": PE, "cmd/git.exe": PE, "placeholder.bin": PE })
     expect(() => verify([entry])).not.toThrow()
   }
 })

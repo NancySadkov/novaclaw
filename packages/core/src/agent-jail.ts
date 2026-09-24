@@ -9,8 +9,8 @@
  * (what an unattended session's bash is allowed to be — raw, confined, or denied).
  *
  * P0 ships the seam with no backend: `probe()` honestly reports `none` everywhere, and the
- * policy's deny arm only engages for UNATTENDED chains (root type auto-prompting /
- * goal-oriented — no human exists to answer an ask, so an out-of-folder write is denied outright).
+ * policy's deny arm only engages for UNATTENDED chains (goal-oriented roots — no human exists to
+ * answer an ask, so an out-of-folder write is denied outright).
  * P1 adds the Linux namespace backend (the Spark, the primary target); macOS/Windows follow.
  *
  * ⚠️ THE DENY ARM IS NOW OPT-IN — owner directive, 2026-07-30, and it reverses the stance the
@@ -262,8 +262,8 @@ export function resetProbeCache(): void {
 
 /**
  * Attendance is a property of the chain ROOT — the question is who answers. Children of an
- * interactive root surface asks to a human (attention pills); under an auto-prompting or
- * goal-oriented root there is no one to ask.
+ * interactive root surface asks to a human (attention pills); under a goal-oriented root there is
+ * no one to ask.
  *
  * The predicate itself now lives in the pure config module (`session/config-resolve.ts`) because
  * the PERMISSION evaluator needs the same answer for the unattended confinement stance — one
@@ -338,7 +338,7 @@ export function decideBash(input: {
 export interface BashPlan {
   /** A chat a human is watching (`interactive`). */
   readonly attended: BashDecision
-  /** An unattended chain (auto-prompting / goal-oriented) with safe mode off — the default posture. */
+  /** A goal-oriented chain with safe mode off — the default unattended posture. */
   readonly unattended: BashDecision
   /** The same chain with the Tuning *Safe mode* switch on. */
   readonly unattendedSafeMode: BashDecision
@@ -487,7 +487,7 @@ const SAFE_ENV_KEYS = [
 /**
  * The curated, secret-free base environment for an unattended confined command (P3). Copies only
  * the SAFE_ENV_KEYS present in `processEnv`; the caller layers the tool's own functional overlays
- * (shell-bundle PATH, offline egress) on top and passes it with NO env inheritance, so the child
+ * (embedded toolchain PATH, offline egress) on top and passes it with NO env inheritance, so the child
  * sees exactly this set — never the serve process's full environment.
  */
 export function unattendedChildEnv(processEnv: Record<string, string | undefined>): Record<string, string> {

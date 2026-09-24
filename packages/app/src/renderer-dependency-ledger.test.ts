@@ -237,6 +237,7 @@ function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     if (SKIP_DIRS.has(entry) || SKIP_FILES.has(entry)) continue
     const full = join(dir, entry)
+    if (full === join(PACKAGES_DIR, "desktop", "resources", "third-party")) continue
     if (statSync(full).isDirectory()) walk(full, out)
     else if (SOURCE_EXT.test(entry)) out.push(full)
   }

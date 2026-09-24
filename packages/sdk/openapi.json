@@ -8203,38 +8203,6 @@
                         }
                       ]
                     },
-                    "bundle": {
-                      "anyOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "root": {
-                              "type": "string"
-                            },
-                            "bash": {
-                              "type": "string"
-                            },
-                            "git": {
-                              "type": "string"
-                            },
-                            "version": {
-                              "type": "string"
-                            },
-                            "provisionedAt": {
-                              "type": "number"
-                            }
-                          },
-                          "required": ["root", "bash", "git"],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "provisionSupported": {
-                      "type": "boolean"
-                    },
                     "jail": {
                       "type": "object",
                       "properties": {
@@ -8312,7 +8280,7 @@
                       "additionalProperties": false
                     }
                   },
-                  "required": ["platform", "agentShell", "bash", "git", "bundle", "provisionSupported"],
+                  "required": ["platform", "agentShell", "bash", "git"],
                   "additionalProperties": false,
                   "description": "The agent shell substrate on this machine"
                 }
@@ -8330,7 +8298,7 @@
             }
           }
         },
-        "description": "Which bash/git the agents get (bundled PortableGit, system, or platform fallback) and whether the bundle is provisioned.",
+        "description": "The effective agent shell and Git executable on this machine.",
         "summary": "Shell substrate status",
         "x-codeSamples": [
           {
@@ -8426,199 +8394,6 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.shell.offline({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/shell/provision": {
-      "post": {
-        "tags": ["shell"],
-        "operationId": "shell.provision",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Status after provisioning",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "platform": {
-                      "type": "string"
-                    },
-                    "agentShell": {
-                      "type": "string"
-                    },
-                    "bash": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "git": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "bundle": {
-                      "anyOf": [
-                        {
-                          "type": "object",
-                          "properties": {
-                            "root": {
-                              "type": "string"
-                            },
-                            "bash": {
-                              "type": "string"
-                            },
-                            "git": {
-                              "type": "string"
-                            },
-                            "version": {
-                              "type": "string"
-                            },
-                            "provisionedAt": {
-                              "type": "number"
-                            }
-                          },
-                          "required": ["root", "bash", "git"],
-                          "additionalProperties": false
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "provisionSupported": {
-                      "type": "boolean"
-                    },
-                    "jail": {
-                      "type": "object",
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "enum": ["namespaces", "seatbelt", "appcontainer", "none"]
-                        },
-                        "fs": {
-                          "type": "boolean"
-                        },
-                        "net": {
-                          "type": "boolean"
-                        },
-                        "reason": {
-                          "type": "string",
-                          "enum": [
-                            "confined",
-                            "partial-backend",
-                            "platform-unsupported",
-                            "backend-absent",
-                            "backend-blocked"
-                          ]
-                        },
-                        "probeCommand": {
-                          "type": "string"
-                        },
-                        "probeExit": {
-                          "type": "number"
-                        },
-                        "probeError": {
-                          "type": "string"
-                        },
-                        "bash": {
-                          "type": "object",
-                          "properties": {
-                            "attended": {
-                              "type": "string",
-                              "enum": ["raw", "confined", "deny"]
-                            },
-                            "unattended": {
-                              "type": "string",
-                              "enum": ["raw", "confined", "deny"]
-                            },
-                            "unattendedSafeMode": {
-                              "type": "string",
-                              "enum": ["raw", "confined", "deny"]
-                            },
-                            "untrusted": {
-                              "type": "string",
-                              "enum": ["raw", "confined", "deny"]
-                            }
-                          },
-                          "required": ["attended", "unattended", "unattendedSafeMode", "untrusted"],
-                          "additionalProperties": false
-                        }
-                      },
-                      "required": ["kind", "fs", "net", "reason", "bash"],
-                      "additionalProperties": false
-                    },
-                    "enclosure": {
-                      "type": "object",
-                      "properties": {
-                        "kind": {
-                          "type": "string",
-                          "enum": ["container", "vm", "bare", "unknown"]
-                        },
-                        "evidence": {
-                          "type": "string"
-                        },
-                        "platform": {
-                          "type": "string"
-                        }
-                      },
-                      "required": ["kind", "evidence", "platform"],
-                      "additionalProperties": false
-                    }
-                  },
-                  "required": ["platform", "agentShell", "bash", "git", "bundle", "provisionSupported"],
-                  "additionalProperties": false,
-                  "description": "Status after provisioning"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Download + verify + extract the pinned PortableGit bundle (bash + git) into the data dir. Windows-only; fails closed in offline mode (provision before going airgapped).",
-        "summary": "Provision the bundled shell",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.shell.provision({\n  ...\n})"
           }
         ]
       }
@@ -12436,7 +12211,7 @@
                   },
                   "type": {
                     "type": "string",
-                    "enum": ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+                    "enum": ["interactive", "sub-agent", "goal-oriented"]
                   },
                   "priority": {
                     "type": "number"
@@ -14588,7 +14363,7 @@
             }
           }
         },
-        "description": "Switch this chat between interactive and the unattended types (auto-prompting · goal-oriented). Attendance derives from the chain root's type: an unattended chat is CONFINED rather than permissive: out-of-folder writes are DENIED outright instead of parked as an ask nobody can answer, and bash is confined by the Agent Jail (denied outright where no jail backend exists). Applies immediately.",
+        "description": "Switch this chat between interactive and goal-oriented. Attendance derives from the chain root's type. Out-of-folder writes are refused when no person can answer a permission request. Applies immediately.",
         "summary": "Set the session's kernel thread type (Mode)",
         "requestBody": {
           "content": {
@@ -14598,7 +14373,7 @@
                 "properties": {
                   "type": {
                     "type": "string",
-                    "enum": ["interactive", "auto-prompting", "goal-oriented"]
+                    "enum": ["interactive", "goal-oriented"]
                   }
                 },
                 "required": ["type"],
@@ -25669,7 +25444,7 @@
                         "anyOf": [
                           {
                             "type": "string",
-                            "enum": ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+                            "enum": ["interactive", "sub-agent", "goal-oriented"]
                           },
                           {
                             "type": "null"
@@ -31137,7 +30912,7 @@
           },
           "type": {
             "type": "string",
-            "enum": ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+            "enum": ["interactive", "sub-agent", "goal-oriented"]
           },
           "priority": {
             "type": "number"
@@ -33644,7 +33419,7 @@
                     "anyOf": [
                       {
                         "type": "string",
-                        "enum": ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+                        "enum": ["interactive", "sub-agent", "goal-oriented"]
                       },
                       {
                         "type": "null"
@@ -36340,16 +36115,10 @@
       "ConfigV2ContextProfiles": {
         "type": "object",
         "properties": {
-          "interactive": {
+          "officer": {
             "$ref": "#/components/schemas/ConfigV2ContextProfile"
           },
           "sub-agent": {
-            "$ref": "#/components/schemas/ConfigV2ContextProfile"
-          },
-          "auto-prompting": {
-            "$ref": "#/components/schemas/ConfigV2ContextProfile"
-          },
-          "goal-oriented": {
             "$ref": "#/components/schemas/ConfigV2ContextProfile"
           }
         },
@@ -40204,7 +39973,7 @@
                 "anyOf": [
                   {
                     "type": "string",
-                    "enum": ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+                    "enum": ["interactive", "sub-agent", "goal-oriented"]
                   },
                   {
                     "type": "null"
@@ -47303,7 +47072,7 @@
                 "anyOf": [
                   {
                     "type": "string",
-                    "enum": ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+                    "enum": ["interactive", "sub-agent", "goal-oriented"]
                   },
                   {
                     "type": "null"
@@ -50418,7 +50187,7 @@
     },
     {
       "name": "shell",
-      "description": "B11 bundled-shell substrate: status + provisioner."
+      "description": "Agent shell, Git, and offline posture."
     },
     {
       "name": "sync",

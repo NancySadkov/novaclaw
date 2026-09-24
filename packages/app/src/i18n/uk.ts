@@ -387,7 +387,8 @@ export const dict = {
   "settings.tab.general": "Загальні",
   "settings.tab.shortcuts": "Скорочення",
 
-  "settings.general.section.notifications": "Системні сповіщення",
+  "settings.general.section.notifications": "Сповіщення",
+  "settings.general.notifications.description": "Сповіщення, коли офіцеру потрібна ваша допомога або сталася помилка.",
   "settings.general.section.sounds": "Звукові ефекти",
 
   "settings.general.row.language.title": "Мова",
@@ -449,13 +450,6 @@ export const dict = {
   "sound.option.yup05": "Yup 05",
   "sound.option.yup06": "Yup 06",
 
-  "settings.general.notifications.agent.title": "Агент",
-  "settings.general.notifications.agent.description":
-    "Показувати системне сповіщення, коли агент завершує роботу або потребує уваги",
-  "settings.general.notifications.permissions.title": "Дозволи",
-  "settings.general.notifications.permissions.description": "Показувати системне сповіщення, коли потрібен дозвіл",
-  "settings.general.notifications.errors.title": "Помилки",
-  "settings.general.notifications.errors.description": "Показувати системне сповіщення, коли виникає помилка",
 
   "settings.general.sounds.agent.title": "Агент",
   "settings.general.sounds.agent.description": "Відтворювати звук, коли агент завершує роботу або потребує уваги",

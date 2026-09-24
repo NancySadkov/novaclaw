@@ -69,7 +69,7 @@ export const SessionTable = sqliteTable(
     // `computer.display` default. Kept as the display string because that is the whole substrate
     // binding (`config/computer.ts`); a remote host would violate the atomic-instance rule.
     control_binding: text(),
-    type: text().$type<"interactive" | "sub-agent" | "auto-prompting" | "goal-oriented">(),
+    type: text().$type<"interactive" | "sub-agent" | "goal-oriented">(),
     priority: integer(),
     responder: text().$type<"nova" | "operator">(),
     permission_mode: text().$type<"plan" | "ask" | "surgical" | "bypass" | "yolo">(),

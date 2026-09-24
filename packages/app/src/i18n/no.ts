@@ -301,7 +301,8 @@ export const dict = {
   "settings.tab.general": "Generelt",
   "settings.tab.shortcuts": "Snarveier",
 
-  "settings.general.section.notifications": "Systemvarsler",
+  "settings.general.section.notifications": "Varsler",
+  "settings.general.notifications.description": "Varsler når en offiser trenger deg eller noe feiler.",
   "settings.general.section.sounds": "Lydeffekter",
 
   "settings.general.row.language.title": "Språk",
@@ -363,13 +364,6 @@ export const dict = {
   "sound.option.yup05": "Ja 05",
   "sound.option.yup06": "Ja 06",
 
-  "settings.general.notifications.agent.title": "Agent",
-  "settings.general.notifications.agent.description":
-    "Vis systemvarsel når agenten er ferdig eller trenger oppmerksomhet",
-  "settings.general.notifications.permissions.title": "Tillatelser",
-  "settings.general.notifications.permissions.description": "Vis systemvarsel når en tillatelse er påkrevd",
-  "settings.general.notifications.errors.title": "Feil",
-  "settings.general.notifications.errors.description": "Vis systemvarsel når det oppstår en feil",
 
   "settings.general.sounds.agent.title": "Agent",
   "settings.general.sounds.agent.description": "Spill av lyd når agenten er ferdig eller trenger oppmerksomhet",

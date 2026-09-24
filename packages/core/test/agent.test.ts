@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Effect, Exit, Scope } from "effect"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -12,6 +12,12 @@ import { agentHost, host } from "./plugin/host"
 const it = testEffect(AppNodeBuilder.build(AgentV2.node))
 
 describe("AgentV2", () => {
+  test("Chat and Human cannot inherit an autonomous operation mode", () => {
+    expect(AgentV2.operationModeOf({ kind: "agent", operationMode: "unattended" })).toBe("unattended")
+    expect(AgentV2.operationModeOf({ kind: "chat", operationMode: "unattended" })).toBe("interactive")
+    expect(AgentV2.operationModeOf({ kind: "human", operationMode: "unattended" })).toBe("interactive")
+    expect(AgentV2.operationModeOf({ kind: "agent" })).toBeUndefined()
+  })
   it.effect("starts without agents", () =>
     Effect.gen(function* () {
       const agent = yield* AgentV2.Service

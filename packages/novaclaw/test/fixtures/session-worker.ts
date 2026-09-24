@@ -134,7 +134,7 @@ input.on("line", (line) => {
         type: "device-admit",
         requestID: "rpc_admit",
         deviceKey: "provider/model",
-        sessionClass: mode === "device" ? "interactive" : "auto-prompting",
+        sessionClass: mode === "device" ? "interactive" : "goal-oriented",
         ...(mode === "device-maintenance-overlap" ? { concurrency: 1 } : {}),
       })
       return

@@ -56,6 +56,14 @@ NovaClaw Windows distributions embed the w64devkit development environment:
     packages/desktop/resources/third-party/w64devkit/ once the desktop prebuild
     has staged it (bun run --cwd packages/desktop prebuild).
 
+NovaClaw Windows distributions embed PortableGit for Bash and Git:
+
+    PortableGit 2.55.0.5 (Git for Windows)
+    Copyright Git for Windows contributors
+    Components are distributed under their respective open-source licenses
+    License text: third-party/portable-git/LICENSE.txt
+    Notice and source details: licenses/portable-git-NOTICE.md
+
 NovaClaw Windows distributions embed the ImageMagick image toolkit:
 
     ImageMagick 7.1.2-29 (Q16, x64)

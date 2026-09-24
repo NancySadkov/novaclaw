@@ -133,5 +133,6 @@ export const migrations = (
     import("./migration/20260923161501_late_wendell_vaughn"),
     import("./migration/20260923190000_agent_schedule"),
     import("./migration/20260923220841_messenger_agent_owner"),
+    import("./migration/20260924120000_retire_auto_prompting"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

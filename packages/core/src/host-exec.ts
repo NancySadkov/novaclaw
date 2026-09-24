@@ -40,7 +40,6 @@ export * as HostExec from "./host-exec"
 import { Effect } from "effect"
 import { AgentJail } from "./agent-jail"
 import { Shell } from "./shell"
-import { ShellBundle } from "./shell-bundle"
 import type { SessionType } from "./session/config-resolve"
 
 // ── what is being executed ──────────────────────────────────────────────────────────────────────
@@ -252,14 +251,9 @@ export function resolveShell(): string {
   return Shell.agentDefault()
 }
 
-/** The MSYS-bash userland PATH prefix (`bash -c` is not a login shell), or undefined for any other
- *  shell. */
+/** The embedded toolchain PATH prefix for Windows agent commands. */
 export function bundleOverlay(shell: string): Record<string, string> | undefined {
-  return process.platform === "win32"
-    ? Shell.toolchainEnv(shell)
-    : Shell.name(shell) === "bash"
-      ? ShellBundle.envForBash(shell)
-      : undefined
+  return process.platform === "win32" ? Shell.toolchainEnv(shell) : undefined
 }
 
 /**

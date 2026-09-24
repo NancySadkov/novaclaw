@@ -30,7 +30,7 @@ import {
 
 const NONE = AgentJail.NO_BACKEND
 const FULL: AgentJail.BackendInfo = { kind: "namespaces", fs: true, net: true }
-const UNATTENDED = ["auto-prompting", "goal-oriented"] as const
+const UNATTENDED = ["goal-oriented"] as const
 const ATTENDED = ["interactive", "sub-agent"] as const
 
 const coreSrc = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "src")

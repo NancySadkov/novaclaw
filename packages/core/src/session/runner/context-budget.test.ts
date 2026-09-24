@@ -4,20 +4,21 @@ import { ConfigContext } from "../../config/context"
 import { cap, DEFAULT_PROFILES, enabled, resolve } from "./context-budget"
 
 describe("typed context budgets (A2.1 ②)", () => {
-  test("compiled profiles spend exactly one window and give unattended work more tool room", () => {
+  test("compiled officer and worker profiles spend exactly one window", () => {
     for (const profile of Object.values(DEFAULT_PROFILES)) {
       expect(Object.values(profile).reduce((sum, share) => sum + share, 0)).toBe(100)
     }
-    expect(DEFAULT_PROFILES["goal-oriented"].tool_output).toBeGreaterThan(DEFAULT_PROFILES.interactive.tool_output)
-    expect(DEFAULT_PROFILES.interactive.messages).toBeGreaterThan(DEFAULT_PROFILES["goal-oriented"].messages)
+    expect(DEFAULT_PROFILES["sub-agent"].tool_output).toBeGreaterThan(DEFAULT_PROFILES.officer.tool_output)
+    expect(DEFAULT_PROFILES.officer.messages).toBeGreaterThan(DEFAULT_PROFILES["sub-agent"].messages)
   })
 
   test("a live profile override is sparse and field-by-field", () => {
-    const config = Schema.decodeUnknownSync(ConfigContext.Info)({ profiles: { interactive: { tool_output: 28 } } })
+    const config = Schema.decodeUnknownSync(ConfigContext.Info)({ profiles: { officer: { tool_output: 28 } } })
     expect(resolve(config, "interactive")).toEqual({
-      ...DEFAULT_PROFILES.interactive,
+      ...DEFAULT_PROFILES.officer,
       tool_output: 28,
     })
+    expect(resolve(config, "goal-oriented")).toEqual(resolve(config, "interactive"))
   })
 
   test("the per-session stance wins, then the instance setting, then the shipped default", () => {

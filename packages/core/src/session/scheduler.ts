@@ -4,7 +4,7 @@
  * V1 = the ADMISSION GATE at turn boundaries, per device (provider/model):
  *   - Nova always owns the governing lane; on a chat screen the human-visible chat is next, while
  *     Home grants no ordinary chat foreground priority (vLLM still continuously batches them);
- *   - batch-class sessions (sub-agent, auto-prompting, goal-oriented, cron) wait while
+ *   - batch-class sessions (sub-agent, goal-oriented, cron) wait while
  *     the human-visible foreground turn is generating, and all generation classes together are
  *     capped at the device's concurrency limit
  *     — "background agents run on idle device cycles";
@@ -64,8 +64,6 @@ export function classForSessionType(type: string | undefined): SessionClass {
   switch (type) {
     case "sub-agent":
       return "sub-agent"
-    case "auto-prompting":
-      return "auto-prompting"
     case "goal-oriented":
       return "goal-oriented"
     default:

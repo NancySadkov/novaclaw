@@ -136,7 +136,7 @@ describe("AgentJail posture", () => {
     // missing key — so the array is asked to prove itself against the policy, not trusted.
     const partial: AgentJail.BackendInfo = { kind: "appcontainer", fs: true, net: false }
     const produced = new Set<string>()
-    const roots: SessionType[] = ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+    const roots: SessionType[] = ["interactive", "sub-agent", "goal-oriented"]
     for (const rootType of roots)
       for (const backend of [AgentJail.NO_BACKEND, AgentJail.NAMESPACES, partial])
         for (const hostileInput of [true, false, undefined])
@@ -153,7 +153,7 @@ describe("AgentJail posture", () => {
     for (const backend of [AgentJail.NO_BACKEND, AgentJail.NAMESPACES])
       for (const rootType of roots)
         expect(AgentJail.decideBash({ rootType, backend })).toBe(AgentJail.bashPlan(backend).attended)
-    const unattendedRoots: SessionType[] = ["auto-prompting", "goal-oriented"]
+    const unattendedRoots: SessionType[] = ["goal-oriented"]
     for (const backend of [AgentJail.NO_BACKEND, AgentJail.NAMESPACES])
       for (const rootType of unattendedRoots)
         expect(AgentJail.decideBash({ rootType, backend })).toBe(AgentJail.bashPlan(backend).unattended)

@@ -16,7 +16,7 @@ export interface SessionLike {
   readonly id: string
   readonly parentID?: string | undefined
   readonly agent?: string | undefined
-  readonly type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented" | undefined
+  readonly type?: "interactive" | "sub-agent" | "goal-oriented" | undefined
   readonly title?: string | undefined
   readonly location?: { readonly directory: string } | undefined
   readonly tokens?:

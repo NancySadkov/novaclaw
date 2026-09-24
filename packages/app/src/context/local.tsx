@@ -37,7 +37,7 @@ export type FeatureChoices = {
 }
 
 /** The composer's Mode choice (kernel thread type): attended, or the unattended pair. */
-export type SessionModeChoice = "interactive" | "auto-prompting" | "goal-oriented"
+export type SessionModeChoice = "interactive" | "goal-oriented"
 
 type State = {
   agent?: string

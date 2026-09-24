@@ -22,7 +22,7 @@ export type ComposerFeature =
   | "contextBudget"
   | "memory"
   | "shortChat"
-export type ComposerMode = "interactive" | "auto-prompting" | "goal-oriented"
+export type ComposerMode = "interactive" | "goal-oriented"
 
 export type ComposerFeatureOrigin =
   | { kind: "session" }
@@ -123,7 +123,7 @@ const COMPOSER_FEATURES: readonly ComposerFeature[] = [
   "quality",
   "affective",
 ]
-const COMPOSER_MODES: readonly ComposerMode[] = ["interactive", "auto-prompting", "goal-oriented"]
+const COMPOSER_MODES: readonly ComposerMode[] = ["interactive", "goal-oriented"]
 
 const REMOTE_TRUSTS: readonly ComposerRemoteTrust[] = ["operator", "client", "audience"]
 

@@ -6,7 +6,7 @@ import { readFileSync, statSync } from "fs"
 import * as osModule from "node:os"
 import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
-import { ShellBundle } from "./shell-bundle"
+import { WindowsGit } from "./windows-git"
 import { which } from "./util/which"
 
 /**
@@ -15,7 +15,7 @@ import { which } from "./util/which"
  * The implementation lives in `./util/kill-tree` — a LEAF module that imports nothing but `node:`
  * builtins — because the jh engine is one of its callers and `src/jh/imports.test.ts` (§0.7.2)
  * forbids jh from importing anything that reaches the config/service tree, which this file does
- * (`Flag`, `FSUtil`, `ShellBundle`, `which` → `Global`). `Shell.killTree` and the leaf module are
+ * (`Flag`, `FSUtil`, `WindowsGit`, `which` → `Global`). `Shell.killTree` and the leaf module are
  * the SAME function; import whichever spelling is cheaper where you stand.
  *
  * ⚠️ Do not hand-roll another one. `test/kill-tree-ledger.test.ts` fails the build if you do.
@@ -43,10 +43,8 @@ function full(file: string) {
   if (process.platform !== "win32") return file
   const shell = FSUtil.windowsPath(file)
   if (path.win32.dirname(shell) !== ".") {
-    if (shell.startsWith("/") && name(shell) === "bash") return gitbash() || shell
     return shell
   }
-  if (name(shell) === "bash") return gitbash() || which(shell) || shell
   return which(shell) || shell
 }
 
@@ -70,7 +68,7 @@ function resolve(file: string) {
 function win() {
   return Array.from(
     new Set(
-      [w64devkitShell(), gitbash(), which("pwsh"), which("powershell"), process.env.COMSPEC || "cmd.exe"]
+      [w64devkitShell(), which("pwsh"), which("powershell"), process.env.COMSPEC || "cmd.exe"]
         .filter((item): item is string => Boolean(item))
         .map(full),
     ),
@@ -86,42 +84,7 @@ function select(file: string | undefined) {
   return fallback()
 }
 
-export function gitbash() {
-  if (process.platform !== "win32") return
-  if (Flag.NOVACLAW_GIT_BASH_PATH) return Flag.NOVACLAW_GIT_BASH_PATH
-  // B11: a provisioned bundle IS the standard agent environment — it outranks the
-  // system git-bash (the env flag above stays the explicit escape hatch).
-  const bundled = ShellBundle.resolve()?.bash
-  if (bundled) return bundled
-  // A SYSTEM git-for-windows install. `which("git")` lands on whichever of git's several PATH
-  // entries comes first — `<root>/cmd/git.exe`, `<root>/bin/git.exe` OR `<root>/mingw64/bin/git.exe`
-  // — so WALK UP from the resolved binary and test both bash homes at each ancestor instead of
-  // assuming one fixed depth. ⚠️ Measured 2026-07-26: with `mingw64\bin` first on PATH the old
-  // fixed `../../bin/bash.exe` missed, this returned undefined, and every agent silently got
-  // cmd.exe while the tool description and every recipe promised bash — the same prompt scored
-  // 1/100 π digits under cmd.exe and 100/100 under bash.
-  const candidates: string[] = []
-  const git = which("git")
-  if (git) {
-    let dir = path.dirname(git)
-    for (let i = 0; i < 4; i++) {
-      candidates.push(path.join(dir, "bin", "bash.exe"), path.join(dir, "usr", "bin", "bash.exe"))
-      const parent = path.dirname(dir)
-      if (parent === dir) break
-      dir = parent
-    }
-  }
-  // A bash already on PATH counts only when it sits in an MSYS layout (`<root>/bin` or
-  // `<root>/usr/bin`). That test is what rejects `…\WindowsApps\bash.exe` — the WSL launcher stub,
-  // which would run the agent's commands inside a Linux VM against a different filesystem.
-  const onPath = which("bash")
-  if (onPath && ShellBundle.msysRoot(onPath)) candidates.push(onPath)
-  for (const file of candidates) if (stat(file)?.size) return file
-}
-
-/** The Windows distribution's embedded POSIX shell. Unlike the retired PortableGit-only model,
- *  w64devkit is part of every packaged Windows build and also supplies GCC/binutils. The desktop
- *  launcher provides the resource root; source/dev runs may opt into an extracted kit explicitly. */
+/** The Windows distribution's embedded POSIX shell and compiler toolchain. */
 export function w64devkitRoot() {
   if (process.platform !== "win32") return
   const root = Flag.NOVACLAW_W64DEVKIT_PATH
@@ -161,9 +124,7 @@ export function imagemagick() {
   return root ? path.join(root, process.platform === "win32" ? "magick.exe" : "magick") : undefined
 }
 
-/** Functional child environment for the composed Windows toolchain. w64devkit's own shell needs
- *  its bin first; Git Bash keeps its MSYS userland first and receives w64devkit last so GCC is
- *  available without recreating the measured BusyBox-shadowing failure. */
+/** Functional child environment for the embedded Windows shell, Git, and image toolchain. */
 export function toolchainEnv(file: string, base: NodeJS.ProcessEnv = process.env): Record<string, string> | undefined {
   if (process.platform !== "win32") return
   const root = w64devkitRoot()
@@ -180,11 +141,12 @@ export function toolchainEnv(file: string, base: NodeJS.ProcessEnv = process.env
   // toolchain is a rule about position, not about this particular kit — and a third entry inserted
   // in the middle is how that measured failure comes back wearing a different name.
   const magick = imagemagickRoot()
+  const git = WindowsGit.commandDirectory()
   const paths = inKit
-    ? [bin, existing, magick]
+    ? [bin, git, existing, magick]
     : name(file) === "bash"
-      ? [...ShellBundle.pathPrepend(file), existing, bin, magick]
-      : [existing, bin, magick]
+      ? [...WindowsGit.pathPrepend(), bin, existing, magick]
+      : [git, existing, bin, magick]
   const value = Array.from(new Set(paths.filter((item): item is string => Boolean(item)))).join(path.delimiter)
   if (!value) return
   return {
@@ -272,17 +234,13 @@ let defaultPreferred: string | undefined
 let defaultAgent: string | undefined
 
 /**
- * B11 — the AGENT default shell: the shell shipped with NovaClaw on Windows. Packaged Windows
- * builds carry w64devkit; a host Git Bash must not change the agent's runtime or its prompt.
- * The HUMAN terminal default (`preferred`) is deliberately unchanged.
+ * The agent shell shipped with NovaClaw on Windows. Packaged Windows builds carry PortableGit Bash
+ * and w64devkit; a host shell must not change the agent's runtime or its prompt.
+ * The human terminal also defaults to the embedded Bash on Windows.
  */
 export function agentDefault(): string {
   defaultAgent ??= (() => {
-    // The shipped w64devkit is the only Windows agent shell. Falling through to `bash` here would
-    // resolve a random pre-existing Git Bash or WSL launcher and make the prompt describe the
-    // machine's installation instead of NovaClaw's runtime. Native cmd is only a damaged-install
-    // fallback; it never searches for another bash.
-    if (process.platform === "win32") return w64devkitShell() ?? process.env.ComSpec ?? "cmd.exe"
+    if (process.platform === "win32") return WindowsGit.bash() ?? w64devkitShell() ?? process.env.ComSpec ?? "cmd.exe"
     return which("bash") ?? "/bin/sh"
   })()
   return defaultAgent
@@ -309,11 +267,8 @@ export interface AgentPlatform {
  *
  * 🔴 Owner, 2026-09-17. The prompt's environment line said `Windows_NT 10.0.26200 / x64` (Node's
  * `os.type/release/arch`), which is the HOST's view and not what the agent's shell reports. The two
- * disagree on the shipped product: a Windows 7z has no MSYS bash — it embeds w64devkit, whose
- * `bin/sh.exe` is the resolved agent shell, and that `uname` says `MS/Windows`, `10.0`, `x86_64`
- * (verified against the prepared tree). Where a PortableGit bundle HAS been provisioned (or a system
- * git-bash exists) the same shell is MSYS2 bash and `uname` says `Msys`, `3.6.7-…x86_64`, `x86_64`.
- * Either answer is correct — for the shell in force. A colleague reading one box from its prompt and
+ * disagree on the shipped product: Windows embeds PortableGit Bash, whose MSYS view differs from
+ * Node's Windows view. A colleague reading one box from its prompt and
  * another from its own shell has been told two different things, and the prompt is the one that is
  * supposed to be authoritative.
  *
@@ -321,10 +276,8 @@ export interface AgentPlatform {
  * WSL kernel — wrong box entirely — which is why `agentDefault()` deliberately rejects it. Off Windows,
  * or when no shell answers within the bound, this falls back to Node's `os` rather than inventing one.
  *
- * ⚠️ The resolution this reads is `agentDefault()`: the embedded w64devkit `sh` on packaged
- * Windows. The system shell is not a production fallback. Provisioning a shell bundle at runtime
- * changes its own explicit shell capability, so the `shell.provision` handler resets this cache with
- * the others.
+ * ⚠️ The resolution this reads is `agentDefault()`: the embedded PortableGit Bash on packaged
+ * Windows. The system shell is not a production fallback.
  *
  * ⚠️ Cached per process: the prompt is regenerated only at a session start and after a compaction, and
  * the shell cannot change in any way that matters between them. `reset` exists for tests.
@@ -342,7 +295,7 @@ export function agentPlatform(): AgentPlatform {
       encoding: "utf8",
       timeout: 3_000,
       windowsHide: true,
-      env: { ...process.env, ...(ShellBundle.envForBash(shell) ?? {}) },
+      env: { ...process.env, ...(toolchainEnv(shell) ?? {}) },
     })
     const lines = (result.stdout ?? "")
       .split(/\r?\n/)
@@ -364,7 +317,7 @@ agentPlatform.reset = () => {
 
 export function preferred() {
   defaultPreferred ??=
-    process.platform === "win32" ? (w64devkitShell() ?? select(process.env.SHELL)) : select(process.env.SHELL)
+    process.platform === "win32" ? (WindowsGit.bash() ?? w64devkitShell() ?? select(process.env.SHELL)) : select(process.env.SHELL)
   return defaultPreferred
 }
 preferred.reset = () => {

@@ -2,35 +2,20 @@ import { AgentJail } from "@novaclaw/core/agent-jail"
 import { Git } from "@novaclaw/core/git"
 import { Offline } from "@novaclaw/core/offline"
 import { Shell } from "@novaclaw/core/shell"
-import { ShellBundle } from "@novaclaw/core/shell-bundle"
 import { which } from "@novaclaw/core/util/which"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { InvalidRequestError } from "../errors"
-
-// B11 handlers — thin lowering onto the ShellBundle module. Status is a sync probe;
-// provision is the long download+extract (the UI awaits it with a spinner).
 
 const status = () => {
-  const bundle = ShellBundle.resolve()
   const agentShell = Shell.agentDefault()
-  const bash = process.platform === "win32" ? (Shell.gitbash() ?? null) : (which("bash") ?? null)
+  const bash = process.platform === "win32" ? (Shell.name(agentShell) === "bash" ? agentShell : null) : (which("bash") ?? null)
+  const git = Git.binary()
   return {
     platform: process.platform,
     agentShell,
     bash,
-    git: which("git") ?? bundle?.git ?? null,
-    bundle: bundle
-      ? {
-          root: bundle.root,
-          bash: bundle.bash,
-          git: bundle.git,
-          ...(bundle.version === undefined ? {} : { version: bundle.version }),
-          ...(bundle.provisionedAt === undefined ? {} : { provisionedAt: bundle.provisionedAt }),
-        }
-      : null,
-    provisionSupported: process.platform === "win32",
+    git: git === "git" ? (which("git") ?? null) : git,
     // `posture()` memoises for the process — ONE `bwrap` spawn per instance, not one per request,
     // and it shares that cache with the `bash` tool's own probe so the screen and the shell can never
     // disagree about one host. Consequence worth knowing: installing the AppArmor profile on a live
@@ -63,26 +48,6 @@ export const shellHandlers = HttpApiBuilder.group(InstanceHttpApi, "shell", (han
           // nothing: `offline.manifest()` reads that ref.
           const offline = yield* Offline.Service
           return offline.manifest()
-        }),
-      )
-      .handle(
-        "provision",
-        Effect.fn("ShellHttpApi.provision")(function* () {
-          yield* Effect.tryPromise({
-            try: () => ShellBundle.provision(),
-            catch: (error) =>
-              new InvalidRequestError({
-                message: error instanceof Error ? error.message : String(error),
-                kind: "shell-provision",
-              }),
-          })
-          // New binaries just landed — drop every shell/git resolution cache so the
-          // running server picks them up without a restart.
-          Shell.agentDefault.reset()
-          Shell.agentPlatform.reset()
-          Shell.preferred.reset()
-          Git.binary.reset()
-          return status()
         }),
       )
   }),

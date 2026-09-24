@@ -8,21 +8,15 @@ import { Git } from "@/git"
 /**
  * 🔴 **Which git this package runs.**
  *
- * `@novaclaw/core/git`'s `binary()` is `which("git") ?? ShellBundle.resolve()?.git ?? "git"`, and the
- * middle arm is the whole point of it: git is the revert substrate that per-turn snapshot trees ride
- * on, which is why PortableGit is the one Windows bundle NovaClaw provisions. Spawning the bare string
- * `"git"` instead meant that on a Windows box with no system git, snapshot and worktree got `ENOENT`
- * while the provisioned bundle sat on disk — and the Shell screen reported that bundle as this
- * instance's git, so the product named a binary its own revert path never called.
+ * `@novaclaw/core/git` selects the embedded Windows Git before host PATH. The spawn must use the
+ * same executable for snapshots and worktrees.
  *
  * ⚠️ **What this test can and cannot prove.** It proves the resolver decides the executable — on a box
- * with system git on `PATH`, `binary()` returns that git and the spawn carries it, so a regression to
+ * with system git on `PATH`, `binary()` may return that git in a source checkout. A regression to
  * the literal would still pass here IF the literal and the resolved value happened to be equal. That
  * is why the second assertion is the load-bearing one: the string handed to `ChildProcess.make` must be
- * `binary()`'s answer, whatever that answer is, and on a machine where they differ (no system git, a
- * provisioned bundle) it is an absolute path and the literal fails outright. The two-arm probe — the
- * same suite with git removed from `PATH` and the bundle provisioned — cannot be run from inside a
- * checkout whose own tooling needs git, and it is not simulated here.
+ * `binary()`'s answer, whatever that answer is. The embedded selection and PATH order have their
+ * own isolated checks in `windows-git.test.ts` and the packaged artifact smoke test.
  */
 const capture = () => {
   const commands: ChildProcess.Command[] = []

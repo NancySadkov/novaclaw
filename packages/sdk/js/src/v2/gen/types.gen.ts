@@ -443,7 +443,7 @@ export type GlobalEvent = {
           timestamp: number
           sessionID: string
           messageID: string
-          sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented" | null
+          sessionType: "interactive" | "sub-agent" | "goal-oriented" | null
         }
       }
     | {
@@ -2127,7 +2127,7 @@ export type SessionV2Info = {
   model?: ModelRef
   device?: string
   controlBinding?: string
-  type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+  type?: "interactive" | "sub-agent" | "goal-oriented"
   priority?: number
   responder?: "nova" | "operator"
   permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
@@ -2912,7 +2912,7 @@ export type SyncEventSessionNextTypeSwitched = {
       timestamp: number
       sessionID: string
       messageID: string
-      sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented" | null
+      sessionType: "interactive" | "sub-agent" | "goal-oriented" | null
     }
   }
 }
@@ -3717,10 +3717,8 @@ export type ConfigV2ContextProfile = {
 }
 
 export type ConfigV2ContextProfiles = {
-  interactive?: ConfigV2ContextProfile
+  officer?: ConfigV2ContextProfile
   "sub-agent"?: ConfigV2ContextProfile
-  "auto-prompting"?: ConfigV2ContextProfile
-  "goal-oriented"?: ConfigV2ContextProfile
 }
 
 export type ConfigV2ContextTodoReminder = {
@@ -5008,7 +5006,7 @@ export type SessionNextTypeSwitched = {
     timestamp: number
     sessionID: string
     messageID: string
-    sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented" | null
+    sessionType: "interactive" | "sub-agent" | "goal-oriented" | null
   }
 }
 
@@ -7365,7 +7363,7 @@ export type EventSessionNextTypeSwitched = {
     timestamp: number
     sessionID: string
     messageID: string
-    sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented" | null
+    sessionType: "interactive" | "sub-agent" | "goal-oriented" | null
   }
 }
 
@@ -12007,14 +12005,6 @@ export type ShellStatusResponses = {
     agentShell: string
     bash: string | null
     git: string | null
-    bundle: {
-      root: string
-      bash: string
-      git: string
-      version?: string
-      provisionedAt?: number
-    } | null
-    provisionSupported: boolean
     jail?: {
       kind: "namespaces" | "seatbelt" | "appcontainer" | "none"
       fs: boolean
@@ -12077,67 +12067,6 @@ export type ShellOfflineResponses = {
 }
 
 export type ShellOfflineResponse = ShellOfflineResponses[keyof ShellOfflineResponses]
-
-export type ShellProvisionData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/shell/provision"
-}
-
-export type ShellProvisionErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type ShellProvisionError = ShellProvisionErrors[keyof ShellProvisionErrors]
-
-export type ShellProvisionResponses = {
-  /**
-   * Status after provisioning
-   */
-  200: {
-    platform: string
-    agentShell: string
-    bash: string | null
-    git: string | null
-    bundle: {
-      root: string
-      bash: string
-      git: string
-      version?: string
-      provisionedAt?: number
-    } | null
-    provisionSupported: boolean
-    jail?: {
-      kind: "namespaces" | "seatbelt" | "appcontainer" | "none"
-      fs: boolean
-      net: boolean
-      reason: "confined" | "partial-backend" | "platform-unsupported" | "backend-absent" | "backend-blocked"
-      probeCommand?: string
-      probeExit?: number
-      probeError?: string
-      bash: {
-        attended: "raw" | "confined" | "deny"
-        unattended: "raw" | "confined" | "deny"
-        unattendedSafeMode: "raw" | "confined" | "deny"
-        untrusted: "raw" | "confined" | "deny"
-      }
-    }
-    enclosure?: {
-      kind: "container" | "vm" | "bare" | "unknown"
-      evidence: string
-      platform: string
-    }
-  }
-}
-
-export type ShellProvisionResponse = ShellProvisionResponses[keyof ShellProvisionResponses]
 
 export type SyncReplayData = {
   body?: {
@@ -13454,7 +13383,7 @@ export type V2SessionCreateData = {
     model?: ModelRef
     device?: string
     controlBinding?: string
-    type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+    type?: "interactive" | "sub-agent" | "goal-oriented"
     priority?: number
     permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
     responder?: "nova" | "operator"
@@ -14456,7 +14385,7 @@ export type V2SessionSwitchFeatureResponse = V2SessionSwitchFeatureResponses[key
 
 export type V2SessionSwitchTypeData = {
   body: {
-    type: "interactive" | "auto-prompting" | "goal-oriented"
+    type: "interactive" | "goal-oriented"
   }
   path: {
     sessionID: string

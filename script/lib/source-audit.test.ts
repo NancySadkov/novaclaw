@@ -7,12 +7,12 @@ const listing = (...paths: string[]) => paths.join("\n")
 describe("source drop audit", () => {
   test("a tidy drop passes", () => {
     const audit = auditSourceListing(
-      listing(`${ROOT}/`, `${ROOT}/NOTICE`, `${ROOT}/package.json`, `${ROOT}/packages/core/src/agent.ts`),
+      listing(`${ROOT}/`, `${ROOT}/NOTICE`, `${ROOT}/package.json`, `${ROOT}/licenses/portable-git-NOTICE.md`, `${ROOT}/packages/core/src/agent.ts`),
       ROOT,
     )
     expect(audit.ok).toBe(true)
     expect(audit.problems).toEqual([])
-    expect(audit.entries).toBe(4)
+    expect(audit.entries).toBe(5)
   })
 
   test("🔴 an EMPTY listing fails — it means unread, not clean", () => {
@@ -78,6 +78,7 @@ describe("source drop audit", () => {
       listing(
         `${ROOT}/NOTICE`,
         `${ROOT}/package.json`,
+        `${ROOT}/licenses/portable-git-NOTICE.md`,
         `${ROOT}/docs/my_node_modules_notes.md`,
         `${ROOT}/script/git/github.ts`,
       ),
@@ -88,7 +89,7 @@ describe("source drop audit", () => {
 
   test("the vocabularies are the ones the batch file used", () => {
     // The bat once spelled these four things inline. If either list drifts, this is where it surfaces.
-    expect(REQUIRED_ENTRIES).toEqual(["NOTICE", "package.json"])
+    expect(REQUIRED_ENTRIES).toEqual(["NOTICE", "package.json", "licenses/portable-git-NOTICE.md"])
     expect(FORBIDDEN_MARKERS).toEqual(["/node_modules/", "/.git/", "/tmp/"])
   })
 })

@@ -219,10 +219,10 @@ export const HOST_MUTATING_ACTIONS: readonly string[] = [...new Set(MODE_RULES.y
  * permissive answers** — `attendedRoot` is true for `interactive`/`sub-agent`, so
  * `unattendedStanceRules` returns `[]` and `AgentJail.decideBash` returns `"raw"`. Observed:
  * a `sub-agent` row whose parent had vanished → `"sub-agent"`, stance `[]`; a CYCLE of two
- * `auto-prompting` rows → `"interactive"`, stance `[]` — a chain every row of which says "nobody
+ * `goal-oriented` rows → `"interactive"`, stance `[]` — a chain every row of which says "nobody
  * is watching" bought the operator's full host authority. That is a containment decision made on
  * missing data, which is what ruling 2 forbids ("a fault is never described falsely"). A
- * four-member enum has nowhere to put *we could not find out*, so no amount of care at the call
+ * three-member enum has nowhere to put *we could not find out*, so no amount of care at the call
  * sites could have fixed it; the file's own tests asserted the hole as intended behaviour ("both
  * fail OPEN to interactive").
  *
@@ -266,7 +266,7 @@ export const narrowRootType = (rootType: RootType): SessionType =>
 /**
  * Attendance is a property of the chain ROOT — the question is who answers (Agent Jail P0b).
  * Children of an interactive root surface asks to a human (attention pills); under an
- * auto-prompting or goal-oriented root there is nobody to reply. Canonical home: this pure
+ * goal-oriented root there is nobody to reply. Canonical home: this pure
  * config module, so the permission evaluator and `AgentJail` share ONE predicate.
  *
  * Takes `RootType`, not `SessionType`: an unreadable chain is NOT attended, because "somebody is
@@ -330,7 +330,7 @@ export interface ModelRef {
 }
 
 /** The Vision's typed threads: how a session decides whether to keep running (K1). */
-export type SessionType = "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+export type SessionType = "interactive" | "sub-agent" | "goal-oriented"
 
 /** B10: who answers on our side — Nova (AI, default) or a human operator who took control. */
 export type Responder = "nova" | "operator"
@@ -744,7 +744,7 @@ export const resolveSessionConfig = <E, R>(
 // ⚠️ THE ONE BEHAVIOUR THIS CHANGES BEYOND CONFIG, named rather than discovered later. `type` has
 // two consumers that read it differently: attendance walks to the chain ROOT (`rootAttendance`),
 // while the self-drive reads the session's OWN row (`runner/drive.ts`). Materialising `type` is
-// REQUIRED by the first — a fork is its own root, so a fork of an `auto-prompting`/`goal-oriented`
+// REQUIRED by the first — a fork is its own root, so a fork of a `goal-oriented`
 // chain that did not carry the type would come back ATTENDED, i.e. out of the unattended
 // confinement stance, which is exactly the loosening ruling 8 forbids. The second then follows:
 // forking a CHILD that inherited `goal-oriented` yields a root that self-drives, where the child
@@ -1024,7 +1024,7 @@ export const rootAttendance = <E, R>(
       }
       root = session
       // A cycle: this tree has no root to report. Reporting the default here was the worst of the
-      // three — a ring of `auto-prompting` rows answered `"interactive"`.
+      // three — a ring of `goal-oriented` rows answered `"interactive"`.
       if (session.parentID !== undefined && seen.has(session.parentID)) return "unknown" as const
       id = session.parentID
     }

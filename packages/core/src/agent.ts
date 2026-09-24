@@ -270,6 +270,11 @@ export const kindOf = (info: { readonly kind?: Kind | undefined; readonly shortC
 /** Is this the instance's owning user, rather than a model-driven colleague? */
 export const isHuman = (info: Parameters<typeof kindOf>[0]): boolean => kindOf(info) === "human"
 
+export const operationModeOf = (
+  info: ({ readonly operationMode?: "interactive" | "unattended" | undefined } & Parameters<typeof kindOf>[0]) | undefined,
+): "interactive" | "unattended" | undefined =>
+  kindOf(info) === "agent" ? info?.operationMode : "interactive"
+
 export const Color = Agent.Color
 
 export const Info = Agent.Info

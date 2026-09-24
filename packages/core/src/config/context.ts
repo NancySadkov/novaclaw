@@ -16,10 +16,8 @@ export class Profile extends Schema.Class<Profile>("ConfigV2.Context.Profile")({
 }) {}
 
 export class Profiles extends Schema.Class<Profiles>("ConfigV2.Context.Profiles")({
-  interactive: Profile.pipe(Schema.optional),
+  officer: Profile.pipe(Schema.optional),
   "sub-agent": Profile.pipe(Schema.optional),
-  "auto-prompting": Profile.pipe(Schema.optional),
-  "goal-oriented": Profile.pipe(Schema.optional),
 }) {}
 
 export class TodoReminder extends Schema.Class<TodoReminder>("ConfigV2.Context.TodoReminder")({

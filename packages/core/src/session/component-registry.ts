@@ -1340,7 +1340,7 @@ const compiledDefinitions = Effect.gen(function* () {
     kernelDefinition({
       kind: "session_type",
       description:
-        "This chat's kernel thread type — interactive, sub-agent, auto-prompting or goal-oriented. READ-ONLY to an agent: it is set by the person driving the chat.",
+        "This chat's kernel thread type — interactive, sub-agent or goal-oriented. READ-ONLY to an agent: it is set by the person driving the chat.",
       cardinality: "singleton",
       lifetime: "entity",
       version: 1,

@@ -5,14 +5,14 @@ describe("TG-EEVDF ledger", () => {
   test("interactive-focused beats batch at every fresh turn boundary (earlier deadline)", () => {
     const ledger = new Ledger()
     ledger.ensure("ui", "interactive-focused")
-    ledger.ensure("batch", "auto-prompting")
+    ledger.ensure("batch", "goal-oriented")
     expect(ledger.pick([{ id: "ui" }, { id: "batch" }])).toBe("ui")
   })
 
   test("over-consumption drives lag negative → ineligible until virtual time catches up", () => {
     const ledger = new Ledger()
     ledger.ensure("ui", "interactive-focused")
-    ledger.ensure("batch", "auto-prompting")
+    ledger.ensure("batch", "goal-oriented")
     // The UI session burns a huge turn: its vruntime races ahead of virtual time.
     ledger.charge("ui", 100_000)
     expect(ledger.eligible("ui")).toBe(false)
@@ -38,24 +38,24 @@ describe("TG-EEVDF ledger", () => {
   test("share follows weights over the long run", () => {
     const ledger = new Ledger()
     ledger.ensure("heavy", "interactive")
-    ledger.ensure("light", "auto-prompting")
+    ledger.ensure("light", "goal-oriented")
     const счёт: Record<string, number> = { heavy: 0, light: 0 }
     for (let turn = 0; turn < 300; turn++) {
       const pick = ledger.pick([{ id: "heavy" }, { id: "light" }])!
       счёт[pick]!++
       ledger.charge(pick, 1_000)
     }
-    // weight 50 vs 10 → heavy should take roughly 5x the turns (loose bounds).
-    expect(счёт.heavy! / счёт.light!).toBeGreaterThan(3)
-    expect(счёт.heavy! / счёт.light!).toBeLessThan(8)
+    // Weight 50 vs 20 gives the interactive lane about 2.5 times the turns.
+    expect(счёт.heavy! / счёт.light!).toBeGreaterThan(2)
+    expect(счёт.heavy! / счёт.light!).toBeLessThan(3)
   })
 
   test("cache-affinity is hysteresis, not override: bonus is capped", () => {
     const ledger = new Ledger({ forgivenessMs: 1000 })
-    ledger.ensure("warm", "auto-prompting")
+    ledger.ensure("warm", "goal-oriented")
     ledger.ensure("cold", "interactive-focused")
     // Same starting point: warmth breaks the tie toward the resident session…
-    ledger.ensure("peer", "auto-prompting")
+    ledger.ensure("peer", "goal-oriented")
     expect(ledger.pick([{ id: "warm", warmthTokens: 6_000 }, { id: "peer" }])).toBe("warm")
     // …but an interactive session's deadline lead beats ANY warmth (the cap): the
     // cold focused session wins even against a fully-warm batch peer.

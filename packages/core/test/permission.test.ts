@@ -93,7 +93,7 @@ const fixtureAgents = new Set<string>(["test"])
 /** Insert an extra session row so a test can exercise the CHAIN (type + mode live on the row). */
 function insertSession(input: {
   readonly id: string
-  readonly type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+  readonly type?: "interactive" | "sub-agent" | "goal-oriented"
   readonly permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   readonly parentID?: string
   /** Override the session's agent; defaults to the session id (one live root per agent). */
@@ -794,8 +794,8 @@ describe("PermissionV2 — unattended confinement stance", () => {
   it.effect("a CYCLIC chain is confined too — it used to answer 'interactive' and run raw", () =>
     Effect.gen(function* () {
       yield* setup(buildAgentRules)
-      yield* insertSession({ id: "ses_a", type: "auto-prompting", permissionMode: "bypass", parentID: "ses_b" })
-      yield* insertSession({ id: "ses_b", type: "auto-prompting", permissionMode: "bypass", parentID: "ses_a" })
+      yield* insertSession({ id: "ses_a", type: "goal-oriented", permissionMode: "bypass", parentID: "ses_b" })
+      yield* insertSession({ id: "ses_b", type: "goal-oriented", permissionMode: "bypass", parentID: "ses_a" })
       const service = yield* PermissionV2.Service
       const error = yield* service.assert(outside({ sessionID: SessionV2.ID.make("ses_a") })).pipe(Effect.flip)
       expect((error as PermissionV2.DeniedError).reason).toBe("chain-unreadable")
@@ -827,7 +827,7 @@ describe("PermissionV2 — unattended confinement stance", () => {
       const cases = [
         ["plan", "interactive"],
         ["ask", "sub-agent"],
-        ["surgical", "auto-prompting"],
+        ["surgical", "goal-oriented"],
         ["bypass", "goal-oriented"],
         ["yolo", "goal-oriented"],
       ] as const
@@ -1130,7 +1130,7 @@ describe("PermissionV2 — an unattended ask denies FAST", () => {
       // name the MODEL chose at runtime. It is exactly the case this arm has to cover, because no
       // rule written in advance can ever name it.
       yield* setup(b4cBaseline)
-      yield* insertSession({ id: "ses_cron", type: "auto-prompting", permissionMode: "bypass" })
+      yield* insertSession({ id: "ses_cron", type: "goal-oriented", permissionMode: "bypass" })
       const service = yield* PermissionV2.Service
       const error = yield* denialFor(
         service,

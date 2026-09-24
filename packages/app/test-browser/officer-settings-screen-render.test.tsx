@@ -363,14 +363,13 @@ describe("Officer Settings screen renders", () => {
     )
 
     const mind = document.querySelector('[data-section="model"][data-settings-tab="mind"]')
-    // 🔴 Re-pinned 2026-09-15 (twice): the Interactive/Unattended PAIR became ONE switch, and then
-    // that switch and the durable Goal moved to the WORK tab. Re-pinned 2026-09-16 (owner): Mood
+    // Mode and the durable Goal live in Work. Re-pinned 2026-09-16 (owner): Mood
     // sampling moved to the END of this list, and Superior and Maximum tool wait moved OUT of it.
     // Re-pinned 2026-09-18 (per-agent tuning): Mood sampling moved OUT to its own Affective tab —
     // Mind is now only how this officer THINKS (its models) and how its thinking is bounded.
     // The translator echoes keys, so Mind is asserted to hold what it still owns.
     expect(mind?.textContent).not.toContain("Mood sampling")
-    expect(mind?.textContent).not.toContain("agentConfig.unattended")
+    expect(mind?.textContent).not.toContain("agentConfig.mode.interactive")
     expect(mind?.textContent).not.toContain("Goal")
     // The two that left: the reporting line is identity, and a per-step timeout is how the officer
     // works. Neither is a fact about its model.
@@ -381,11 +380,9 @@ describe("Officer Settings screen renders", () => {
     // 🔴 The operating choices — posture, permissions, tool wait, mode, goal and the work rules —
     // live here. Strict and the stuck detector moved OUT to their own tabs (per-agent tuning,
     // 2026-09-18): they fine-tune the harness, not the work.
-    expect(work?.textContent).toContain("agentConfig.unattended")
-    expect(work?.textContent).not.toContain("agentConfig.unattended.off")
-    // The control is a real switch, not a radio pair. Asserted as a BOOLEAN — never hand `expect()` an
-    // element; see the note at `charterControls` above.
-    expect((work?.querySelector('[data-component="switch"]') ?? null) !== null).toBe(true)
+    const mode = work?.querySelector<HTMLElement>('[aria-label="agentConfig.posture"]')
+    expect(mode).toBeDefined()
+    expect(selectText(mode!)).toBe("agentConfig.mode.interactive")
     expect((work?.querySelector('input[type="radio"]') ?? null) === null).toBe(true)
     expect(work?.textContent).not.toContain("Goal")
     const capabilities = document.querySelector('[data-section="workers"][data-settings-tab="capabilities"]')
@@ -421,12 +418,8 @@ describe("Officer Settings screen renders", () => {
     const profileLabels = [...(profile?.querySelectorAll("label") ?? [])]
     expect(profileLabels.at(-1)?.textContent).toContain("agentConfig.superior")
 
-    // 🔴 The mode control is a SWITCH now (owner ruling 2026-09-15), and it lives in the WORK tab
-    // (owner, 2026-09-15), so this drives it the way a person does: one click turns Unattended ON.
-    // It used to click the "interactive" radio, which was the old default's resting state — a control
-    // that is already off proves nothing about being wired, so the assertion below reads "unattended"
-    // rather than "interactive".
-    document.querySelector<HTMLInputElement>('[data-section="work"] [data-component="switch"] input')!.click()
+    await choose(mode!, "agent")
+    expect(selectText(mode!)).toBe("agentConfig.mode.agent")
     expect(work?.textContent).toContain("Goal")
     const goal = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Goal"]')!
     goal.value = "Publish the reviewed manuscript."
@@ -440,8 +433,7 @@ describe("Officer Settings screen renders", () => {
     expect(writes.at(-1)).toMatchObject({
       agents: {
         theron: {
-          // One click on the Work tab's switch, and it reaches the save payload as the unattended
-          // mode. This is the half that proves the control is WIRED rather than merely rendered.
+          // The Agent choice reaches the standing operation mode in the save payload.
           operationMode: "unattended",
           goal: "Publish the reviewed manuscript.",
           surgicalEdits: true,

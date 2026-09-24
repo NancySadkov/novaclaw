@@ -1466,7 +1466,7 @@ class ApiV2Session extends NovaClawApiClient {
       model?: T.ModelRef
       device?: string
       controlBinding?: string
-      type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+      type?: "interactive" | "sub-agent" | "goal-oriented"
       priority?: number
       permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
       responder?: "nova" | "operator"
@@ -1993,12 +1993,12 @@ class ApiV2Session extends NovaClawApiClient {
   /**
    * Set the session's kernel thread type (Mode)
    *
-   * Switch this chat between interactive and the unattended types (auto-prompting · goal-oriented). Attendance derives from the chain root's type: an unattended chat is CONFINED rather than permissive: out-of-folder writes are DENIED outright instead of parked as an ask nobody can answer, and bash is confined by the Agent Jail (denied outright where no jail backend exists). Applies immediately.
+   * Switch this chat between interactive and goal-oriented. Attendance derives from the chain root's type. Out-of-folder writes are refused when no person can answer a permission request. Applies immediately.
    */
   public switchType<ThrowOnError extends boolean = false>(
     parameters: {
       sessionID: string
-      type: "interactive" | "auto-prompting" | "goal-oriented"
+      type: "interactive" | "goal-oriented"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -7018,7 +7018,7 @@ class ApiShell extends NovaClawApiClient {
   /**
    * Shell substrate status
    *
-   * Which bash/git the agents get (bundled PortableGit, system, or platform fallback) and whether the bundle is provisioned.
+   * The effective agent shell and Git executable on this machine.
    */
   public status<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -7050,26 +7050,6 @@ class ApiShell extends NovaClawApiClient {
     const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
     return (options?.client ?? this.client).get<T.ShellOfflineResponses, T.ShellOfflineErrors, ThrowOnError>({
       url: "/shell/offline",
-      ...options,
-      query,
-    })
-  }
-
-  /**
-   * Provision the bundled shell
-   *
-   * Download + verify + extract the pinned PortableGit bundle (bash + git) into the data dir. Windows-only; fails closed in offline mode (provision before going airgapped).
-   */
-  public provision<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const query = { directory: parameters?.["directory"], workspace: parameters?.["workspace"] }
-    return (options?.client ?? this.client).post<T.ShellProvisionResponses, T.ShellProvisionErrors, ThrowOnError>({
-      url: "/shell/provision",
       ...options,
       query,
     })

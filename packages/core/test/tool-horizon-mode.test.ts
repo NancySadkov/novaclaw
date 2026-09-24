@@ -37,7 +37,7 @@ describe("the tool horizon sees what the evaluator will refuse", () => {
   test("the Tuning switches and the unattended stance narrow the horizon the way they narrow the verdict", () => {
     expect(withdrawn("write", horizon({ resolved: { surgicalEdits: true } }))).toBe(true)
     expect(withdrawn("edit", horizon({ resolved: { surgicalEdits: true } }))).toBe(false)
-    expect(withdrawn("external_directory_write", horizon({ rootType: "auto-prompting" }))).toBe(true)
-    expect(withdrawn("external_directory_write", horizon({ rootType: "auto-prompting", mode: "yolo" }))).toBe(false)
+    expect(withdrawn("external_directory_write", horizon({ rootType: "goal-oriented" }))).toBe(true)
+    expect(withdrawn("external_directory_write", horizon({ rootType: "goal-oriented", mode: "yolo" }))).toBe(false)
   })
 })

@@ -56,7 +56,7 @@ test("host scheduler receives the device's declared capacity and locality", asyn
       scheduler,
       lease,
       message: request("device-admit", {
-        sessionClass: "auto-prompting",
+        sessionClass: "goal-oriented",
         concurrency: 5,
         locality: "local",
       }),
@@ -67,11 +67,11 @@ test("host scheduler receives the device's declared capacity and locality", asyn
 
 test("host revokes an excess worker device request when capacity is lowered", async () => {
   const scheduler = SessionScheduler.make()
-  await Effect.runPromise(scheduler.admit({ sessionID: "first", deviceKey: "provider/model", sessionClass: "auto-prompting", concurrency: 2 }))
+  await Effect.runPromise(scheduler.admit({ sessionID: "first", deviceKey: "provider/model", sessionClass: "goal-oriented", concurrency: 2 }))
   await Effect.runPromise(SessionWorkerDeviceBridge.handle({
     scheduler,
     lease,
-    message: request("device-admit", { sessionClass: "auto-prompting", concurrency: 2 }),
+    message: request("device-admit", { sessionClass: "goal-oriented", concurrency: 2 }),
   }))
   const revocation = Effect.runFork(SessionWorkerDeviceBridge.handle({
     scheduler,
@@ -208,7 +208,7 @@ test("evicting a queued worker admission produces no admitted reply", async () =
     SessionWorkerDeviceBridge.handle({
       scheduler,
       lease,
-      message: request("device-admit", { sessionClass: "auto-prompting" }),
+      message: request("device-admit", { sessionClass: "goal-oriented" }),
     }).pipe(
       Effect.tap((value) =>
         Effect.sync(() => {

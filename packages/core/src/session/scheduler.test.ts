@@ -23,7 +23,7 @@ describe("session scheduler admission gate", () => {
       const gate = yield* Service
       expect(ConfigStoreWrite.registeredReloads("devices")).toBeGreaterThan(0)
       for (const sessionID of ["a", "b", "c"])
-        yield* gate.admit({ sessionID, deviceKey: "d", sessionClass: "auto-prompting", concurrency: 3 })
+        yield* gate.admit({ sessionID, deviceKey: "d", sessionClass: "goal-oriented", concurrency: 3 })
       concurrency = 1
       yield* ConfigStoreWrite.refreshDomain("devices")
       expect((yield* gate.snapshot())[0]!.concurrency).toBe(1)
@@ -65,7 +65,7 @@ describe("session scheduler admission gate", () => {
   test("foreground is next without exceeding a saturated device's hard cap", async () => {
     const gate = make()
     for (let i = 1; i <= MAX_BATCH; i++)
-      await run(gate.admit({ sessionID: `b${i}`, deviceKey: "d", sessionClass: "auto-prompting" }))
+      await run(gate.admit({ sessionID: `b${i}`, deviceKey: "d", sessionClass: "goal-oriented" }))
     let admitted = false
     const ui = Effect.runFork(
       gate
@@ -104,10 +104,10 @@ describe("session scheduler admission gate", () => {
   test("MAX_BATCH cap: the next batch session waits for a slot", async () => {
     const gate = make()
     for (let i = 1; i <= MAX_BATCH; i++)
-      await run(gate.admit({ sessionID: `b${i}`, deviceKey: "d", sessionClass: "auto-prompting" }))
+      await run(gate.admit({ sessionID: `b${i}`, deviceKey: "d", sessionClass: "goal-oriented" }))
     let admitted = false
     const fiber = Effect.runFork(
-      gate.admit({ sessionID: "waiting", deviceKey: "d", sessionClass: "auto-prompting" }).pipe(
+      gate.admit({ sessionID: "waiting", deviceKey: "d", sessionClass: "goal-oriented" }).pipe(
         Effect.map(() => {
           admitted = true
         }),
@@ -126,7 +126,7 @@ describe("session scheduler admission gate", () => {
       gate.admit({
         sessionID: "b1",
         deviceKey: "spark",
-        sessionClass: "auto-prompting",
+        sessionClass: "goal-oriented",
         concurrency: 1,
         locality: "lan",
       }),
@@ -137,7 +137,7 @@ describe("session scheduler admission gate", () => {
         .admit({
           sessionID: "b2",
           deviceKey: "spark",
-          sessionClass: "auto-prompting",
+          sessionClass: "goal-oriented",
           concurrency: 1,
           locality: "lan",
         })
@@ -158,11 +158,11 @@ describe("session scheduler admission gate", () => {
     // endpoint that is not a registered Device) reset an operator's cap of 1 back to 4 and a second
     // agent reached the box. `undefined` is "no new policy", not "the fallback".
     const gate = make()
-    await run(gate.admit({ sessionID: "pinned", deviceKey: "d", sessionClass: "auto-prompting", concurrency: 1 }))
+    await run(gate.admit({ sessionID: "pinned", deviceKey: "d", sessionClass: "goal-oriented", concurrency: 1 }))
     let admitted = false
     const fiber = Effect.runFork(
       gate
-        .admit({ sessionID: "carryless", deviceKey: "d", sessionClass: "auto-prompting" })
+        .admit({ sessionID: "carryless", deviceKey: "d", sessionClass: "goal-oriented" })
         .pipe(Effect.map(() => (admitted = true))),
     )
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -182,17 +182,17 @@ describe("session scheduler admission gate", () => {
     // full re-prefill. A session that ran within `minRunMs` outranks a cold peer in the next pick.
     let clock = 0
     const gate = make({ now: () => clock })
-    await run(gate.admit({ sessionID: "warm", deviceKey: "d", sessionClass: "auto-prompting", concurrency: 1, minRunMs: 30_000 }))
+    await run(gate.admit({ sessionID: "warm", deviceKey: "d", sessionClass: "goal-oriented", concurrency: 1, minRunMs: 30_000 }))
     clock = 1_000
     await run(gate.release({ sessionID: "warm", deviceKey: "d" }))
     // A cold session with a huge EEVDF weight would win the next pick on its own.
-    await run(gate.admit({ sessionID: "cold", deviceKey: "d", sessionClass: "auto-prompting", priority: 1_000 }))
+    await run(gate.admit({ sessionID: "cold", deviceKey: "d", sessionClass: "goal-oriented", priority: 1_000 }))
     // Both queue while `cold` holds the only slot.
     const warmFiber = Effect.runFork(
-      gate.admit({ sessionID: "warm", deviceKey: "d", sessionClass: "auto-prompting" }),
+      gate.admit({ sessionID: "warm", deviceKey: "d", sessionClass: "goal-oriented" }),
     )
     const peerFiber = Effect.runFork(
-      gate.admit({ sessionID: "peer", deviceKey: "d", sessionClass: "auto-prompting", priority: 1_000 }),
+      gate.admit({ sessionID: "peer", deviceKey: "d", sessionClass: "goal-oriented", priority: 1_000 }),
     )
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect([...(await run(gate.snapshot()))[0]!.waiting].sort()).toEqual(["peer", "warm"])
@@ -212,15 +212,15 @@ describe("session scheduler admission gate", () => {
     // The NEGATIVE CONTROL: the test above must be measuring the window, not an artefact of order.
     let clock = 0
     const gate = make({ now: () => clock })
-    await run(gate.admit({ sessionID: "warm", deviceKey: "d", sessionClass: "auto-prompting", concurrency: 1 }))
+    await run(gate.admit({ sessionID: "warm", deviceKey: "d", sessionClass: "goal-oriented", concurrency: 1 }))
     clock = 1_000
     await run(gate.release({ sessionID: "warm", deviceKey: "d" }))
-    await run(gate.admit({ sessionID: "cold", deviceKey: "d", sessionClass: "auto-prompting", priority: 1_000 }))
+    await run(gate.admit({ sessionID: "cold", deviceKey: "d", sessionClass: "goal-oriented", priority: 1_000 }))
     const warmFiber = Effect.runFork(
-      gate.admit({ sessionID: "warm", deviceKey: "d", sessionClass: "auto-prompting" }),
+      gate.admit({ sessionID: "warm", deviceKey: "d", sessionClass: "goal-oriented" }),
     )
     const peerFiber = Effect.runFork(
-      gate.admit({ sessionID: "peer", deviceKey: "d", sessionClass: "auto-prompting", priority: 1_000 }),
+      gate.admit({ sessionID: "peer", deviceKey: "d", sessionClass: "goal-oriented", priority: 1_000 }),
     )
     await new Promise((resolve) => setTimeout(resolve, 20))
     clock = 2_000
@@ -234,10 +234,10 @@ describe("session scheduler admission gate", () => {
 
   test("a live concurrency increase opens capacity on the next admission", async () => {
     const gate = make()
-    await run(gate.admit({ sessionID: "b1", deviceKey: "d", sessionClass: "auto-prompting", concurrency: 1 }))
+    await run(gate.admit({ sessionID: "b1", deviceKey: "d", sessionClass: "goal-oriented", concurrency: 1 }))
     // The second request carries the newly edited Device value. It refreshes the shared device
     // policy before checking capacity, so no restart or release is needed to use the added slot.
-    await run(gate.admit({ sessionID: "b2", deviceKey: "d", sessionClass: "auto-prompting", concurrency: 2 }))
+    await run(gate.admit({ sessionID: "b2", deviceKey: "d", sessionClass: "goal-oriented", concurrency: 2 }))
     const [device] = await run(gate.snapshot())
     expect(device!.concurrency).toBe(2)
     expect(device!.inFlightBatch).toEqual(["b1", "b2"])
@@ -246,7 +246,7 @@ describe("session scheduler admission gate", () => {
   test("a saved lower cap revokes excess generations immediately and stale admissions cannot widen it", async () => {
     const gate = make()
     for (const sessionID of ["first", "second", "third"])
-      await run(gate.admit({ sessionID, deviceKey: "d", sessionClass: "auto-prompting", concurrency: 3 }))
+      await run(gate.admit({ sessionID, deviceKey: "d", sessionClass: "goal-oriented", concurrency: 3 }))
     const revokedSecond = Effect.runFork(gate.awaitRevocation({ sessionID: "second", deviceKey: "d" }))
     const revokedThird = Effect.runFork(gate.awaitRevocation({ sessionID: "third", deviceKey: "d" }))
     await run(gate.syncDevices({ d: { concurrency: 1 } }))
@@ -256,7 +256,7 @@ describe("session scheduler admission gate", () => {
     await run(gate.release({ sessionID: "third", deviceKey: "d" }))
     await run(gate.release({ sessionID: "second", deviceKey: "d" }))
     const waiting = Effect.runFork(
-      gate.admit({ sessionID: "stale", deviceKey: "d", sessionClass: "auto-prompting", concurrency: 3 }),
+      gate.admit({ sessionID: "stale", deviceKey: "d", sessionClass: "goal-oriented", concurrency: 3 }),
     )
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect((await run(gate.snapshot()))[0]!.waiting).toEqual(["stale"])
@@ -266,11 +266,11 @@ describe("session scheduler admission gate", () => {
 
   test("a device lease transfer keeps the revocation watch through a private reasoning phase", async () => {
     const gate = make()
-    await run(gate.admit({ sessionID: "turn", deviceKey: "answer", sessionClass: "auto-prompting", concurrency: 2 }))
+    await run(gate.admit({ sessionID: "turn", deviceKey: "answer", sessionClass: "goal-oriented", concurrency: 2 }))
     const watch = Effect.runFork(gate.awaitRevocation({ sessionID: "turn", deviceKey: "answer" }))
     await run(gate.transferRelease({ sessionID: "turn", deviceKey: "answer" }))
-    await run(gate.admit({ sessionID: "peer", deviceKey: "answer", sessionClass: "auto-prompting", concurrency: 2 }))
-    await run(gate.admit({ sessionID: "turn", deviceKey: "answer", sessionClass: "auto-prompting", concurrency: 2 }))
+    await run(gate.admit({ sessionID: "peer", deviceKey: "answer", sessionClass: "goal-oriented", concurrency: 2 }))
+    await run(gate.admit({ sessionID: "turn", deviceKey: "answer", sessionClass: "goal-oriented", concurrency: 2 }))
     await run(gate.syncDevices({ answer: { concurrency: 1 } }))
     expect(await run(Fiber.join(watch))).toBe(true)
     await run(gate.release({ sessionID: "turn", deviceKey: "answer" }))
@@ -279,11 +279,11 @@ describe("session scheduler admission gate", () => {
 
   test("a raised cap admits an existing waiter before the request that carried the edit", async () => {
     const gate = make()
-    await run(gate.admit({ sessionID: "b1", deviceKey: "d", sessionClass: "auto-prompting", concurrency: 1 }))
+    await run(gate.admit({ sessionID: "b1", deviceKey: "d", sessionClass: "goal-oriented", concurrency: 1 }))
     let oldAdmitted = false
     const old = Effect.runFork(
       gate
-        .admit({ sessionID: "old", deviceKey: "d", sessionClass: "auto-prompting", concurrency: 1 })
+        .admit({ sessionID: "old", deviceKey: "d", sessionClass: "goal-oriented", concurrency: 1 })
         .pipe(Effect.map(() => (oldAdmitted = true))),
     )
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -291,7 +291,7 @@ describe("session scheduler admission gate", () => {
     let newAdmitted = false
     const newcomer = Effect.runFork(
       gate
-        .admit({ sessionID: "new", deviceKey: "d", sessionClass: "auto-prompting", concurrency: 2 })
+        .admit({ sessionID: "new", deviceKey: "d", sessionClass: "goal-oriented", concurrency: 2 })
         .pipe(Effect.map(() => (newAdmitted = true))),
     )
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -324,18 +324,18 @@ describe("session scheduler admission gate", () => {
   test("drain picks fairly: the indebted session yields the first freed slot", async () => {
     const gate = make()
     for (let i = 1; i <= MAX_BATCH; i++)
-      await run(gate.admit({ sessionID: `b${i}`, deviceKey: "d", sessionClass: "auto-prompting" }))
+      await run(gate.admit({ sessionID: `b${i}`, deviceKey: "d", sessionClass: "goal-oriented" }))
     const order: string[] = []
     // Queue BOTH waiters first (registration order favors hot), THEN charge hot's
     // debt — with peers registered, virtual time advances slower than hot's vruntime.
     const hotFiber = Effect.runFork(
       gate
-        .admit({ sessionID: "hot", deviceKey: "d", sessionClass: "auto-prompting" })
+        .admit({ sessionID: "hot", deviceKey: "d", sessionClass: "goal-oriented" })
         .pipe(Effect.map(() => order.push("hot"))),
     )
     const coldFiber = Effect.runFork(
       gate
-        .admit({ sessionID: "cold", deviceKey: "d", sessionClass: "auto-prompting" })
+        .admit({ sessionID: "cold", deviceKey: "d", sessionClass: "goal-oriented" })
         .pipe(Effect.map(() => order.push("cold"))),
     )
     await new Promise((resolve) => setTimeout(resolve, 20))
@@ -387,7 +387,7 @@ describe("session scheduler admission gate", () => {
     process.env.NOVACLAW_DISABLE_SCHEDULER = "1"
     const gate = make()
     for (let i = 0; i < 10; i++)
-      await run(gate.admit({ sessionID: `b${i}`, deviceKey: "d", sessionClass: "auto-prompting" }))
+      await run(gate.admit({ sessionID: `b${i}`, deviceKey: "d", sessionClass: "goal-oriented" }))
     const devices = await run(gate.snapshot())
     expect(devices.length).toBe(0) // no bookkeeping at all when disabled
   })
@@ -403,7 +403,7 @@ describe("session scheduler admission gate", () => {
     const gate = make()
     await run(gate.admit({ sessionID: "ui", deviceKey: "spark", sessionClass: "interactive-focused" }))
     // A batch turn on ANOTHER device is not blocked by spark's interactive turn.
-    await run(gate.admit({ sessionID: "bg", deviceKey: "other", sessionClass: "auto-prompting" }))
+    await run(gate.admit({ sessionID: "bg", deviceKey: "other", sessionClass: "goal-oriented" }))
     const devices = await run(gate.snapshot())
     expect(devices.length).toBe(2)
   })
@@ -642,11 +642,11 @@ describe("ledger retention: bounded by the forgiveness TTL, not by session lifet
 
   test("a QUEUED waiter is never swept — losing its entry would strand it forever", async () => {
     const { gate, advance } = fake()
-    await run(gate.admit({ sessionID: "b1", deviceKey: "d", sessionClass: "auto-prompting" }))
-    await run(gate.admit({ sessionID: "b2", deviceKey: "d", sessionClass: "auto-prompting" }))
+    await run(gate.admit({ sessionID: "b1", deviceKey: "d", sessionClass: "goal-oriented" }))
+    await run(gate.admit({ sessionID: "b2", deviceKey: "d", sessionClass: "goal-oriented" }))
     let admitted = false
     const fiber = Effect.runFork(
-      gate.admit({ sessionID: "queued", deviceKey: "d", sessionClass: "auto-prompting" }).pipe(
+      gate.admit({ sessionID: "queued", deviceKey: "d", sessionClass: "goal-oriented" }).pipe(
         Effect.map(() => {
           admitted = true
         }),
@@ -727,7 +727,7 @@ describe("dispatch-slot release on interrupt (shared provider-dispatch compositi
     const [device] = await run(gate.snapshot())
     expect(device!.inFlightInteractive).toEqual([])
     // and the device is usable again: a batch turn admits immediately
-    await run(gate.admit({ sessionID: "bg", deviceKey: "d", sessionClass: "auto-prompting" }))
+    await run(gate.admit({ sessionID: "bg", deviceKey: "d", sessionClass: "goal-oriented" }))
     expect((await run(gate.snapshot()))[0]!.inFlightBatch).toEqual(["bg"])
   })
 
@@ -744,7 +744,7 @@ describe("dispatch-slot release on interrupt (shared provider-dispatch compositi
     // …and every batch session on that device is now blocked forever
     let admitted = false
     const blocked = Effect.runFork(
-      gate.admit({ sessionID: "bg", deviceKey: "d", sessionClass: "auto-prompting" }).pipe(
+      gate.admit({ sessionID: "bg", deviceKey: "d", sessionClass: "goal-oriented" }).pipe(
         Effect.map(() => {
           admitted = true
         }),

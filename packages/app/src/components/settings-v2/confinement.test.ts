@@ -117,8 +117,6 @@ describe("confinement surface", () => {
       agentShell: "",
       bash: null,
       git: null,
-      bundle: null,
-      provisionSupported: false,
       jail,
     }) as ShellStatusWithJail
 

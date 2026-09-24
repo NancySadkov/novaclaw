@@ -459,7 +459,7 @@ function createServerNotificationState(input: {
           error: { message: detail },
           metadata,
         })
-        if (settings.notifications.errors()) {
+        if (settings.notifications.enabled()) {
           void platform.notify(language.t("notification.session.recovery.title"), detail, href)
         }
         return
@@ -478,7 +478,7 @@ function createServerNotificationState(input: {
         metadata,
       })
 
-      if (settings.notifications.agent()) {
+      if (settings.notifications.enabled()) {
         void platform.notify(language.t("notification.session.responseReady.title"), session.title ?? sessionID, href)
       }
     })
@@ -525,7 +525,7 @@ function createServerNotificationState(input: {
         session?.title ??
         language.t("notification.session.error.fallbackDescription")
       const href = sessionID ? `/${base64Encode(directory)}/session/${sessionID}` : `/${base64Encode(directory)}`
-      if (settings.notifications.errors()) {
+      if (settings.notifications.enabled()) {
         void platform.notify(language.t("notification.session.error.title"), description, href)
       }
     })

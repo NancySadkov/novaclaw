@@ -62,7 +62,7 @@ const it = testEffect(
 
 const insert = (input: {
   readonly id: string
-  readonly type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+  readonly type?: "interactive" | "sub-agent" | "goal-oriented"
   readonly permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
 }) =>
   Effect.gen(function* () {

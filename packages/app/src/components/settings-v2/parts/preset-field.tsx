@@ -66,7 +66,7 @@ export const PresetFieldV2 = (p: PresetFieldProps) => {
     // No disabled state here any more. It existed for ONE caller — the old budgeting switch, which greyed
     // the budget row out via `pointer-events-none`. "Disabled" is now a value in the list itself, so a row
     // that cannot be clicked is always a bug; keeping the mechanism around only preserved a way to cause it.
-    <div class="flex items-center gap-2 justify-end">
+    <div class="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
       <SelectV2<Opt>
         appearance="inline"
         aria-label={p.ariaLabel}
@@ -78,8 +78,9 @@ export const PresetFieldV2 = (p: PresetFieldProps) => {
         gutter={6}
         onSelect={(o) => o && p.onValue(o.num === undefined ? "" : String(o.num))}
       />
-      <div class="w-[76px] shrink-0">
+      <div class="w-[76px] min-w-0 shrink-0">
         <TextInputV2
+          class="w-full"
           type="text"
           appearance="base"
           inputmode="decimal"

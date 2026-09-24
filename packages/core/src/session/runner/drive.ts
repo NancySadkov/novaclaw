@@ -1,9 +1,7 @@
 export * as SessionDrive from "./drive"
 
-// The auto-prompt SELF-DRIVE (architecture.md "run until exit()"). When an auto-prompting or
-// goal-oriented session's drain runs out of input, the harness injects the next prompt itself — a
-// provenance-prefixed steer — so the agent keeps working with nobody at the keyboard. Auto-prompting
-// sessions end on accepted `exit(result)`. Goal-oriented officers do not: accepted exit closes one
+// The goal-oriented self-drive. When a session's drain runs out of input, the harness injects the
+// next prompt itself so the agent keeps working with nobody at the keyboard. Accepted exit closes one
 // work unit and sleeps them, while only Stop (an authority interrupt) ends the officer.
 // Resource governors may pace, reroute, or restart work; they do not acquire completion authority.
 //
@@ -15,7 +13,7 @@ export * as SessionDrive from "./drive"
 // PURE — no Effect, no db. The runner supplies the session row, the per-drain state, and the
 // clock; this module answers "keep driving or stop".
 
-export type DriveType = "auto-prompting" | "goal-oriented"
+export type DriveType = "goal-oriented"
 
 export interface DriveSession {
   readonly type?: string
@@ -50,12 +48,7 @@ export type DriveDecision =
 
 /** The session's own drive type, if it declares one (undefined row/type = no drive). */
 export const driveType = (session: DriveSession | undefined): DriveType | undefined =>
-  session?.type === "auto-prompting" || session?.type === "goal-oriented" ? session.type : undefined
-
-const AUTO_CONTINUE =
-  "You are an unattended auto-prompting session — no user is present and none will reply. " +
-  "Continue working on your task now: take the next concrete action. When the task is genuinely " +
-  "finished, call the `exit` tool with a short result summary — that is how this session ends."
+  session?.type === "goal-oriented" ? session.type : undefined
 
 const SUB_AGENT_CONTINUE =
   "You are a delegated worker and your parent remains waiting for your result. You have not called `exit`, " +
@@ -192,7 +185,7 @@ export const decide = (
   // not fall back to it, which would make the switch to Interactive inert on exactly the sessions
   // that were driving. Only a chat with no role statement keeps its own classification.
   const effective: DriveType | undefined = goalDrive ? "goal-oriented" : declared === "goal-oriented" ? undefined : declared
-  // A terminal result ends auto-prompting runs. It cannot end a goal-oriented officer: that type is
+  // A terminal result cannot end a goal-oriented officer: that type is
   // alive until Stop, even if a stale result survived a type switch or an older build.
   if (session !== undefined && session.result !== undefined && effective !== "goal-oriented")
     return { kind: "terminated" }
@@ -221,5 +214,5 @@ export const decide = (
           "concrete action if progress is possible; if the goal is reached, checkpoint the work unit with `exit`.",
       }
   }
-  return { kind: "continue", message: effective === "auto-prompting" ? AUTO_CONTINUE : goalContinue(context) }
+  return { kind: "continue", message: goalContinue(context) }
 }

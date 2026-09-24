@@ -312,7 +312,8 @@ export const dict = {
   "settings.tab.general": "Основные",
   "settings.tab.shortcuts": "Горячие клавиши",
 
-  "settings.general.section.notifications": "Системные уведомления",
+  "settings.general.section.notifications": "Уведомления",
+  "settings.general.notifications.description": "Оповещения, когда офицеру нужна ваша помощь или что-то пошло не так.",
   "settings.general.section.sounds": "Звуковые эффекты",
 
   "settings.general.row.language.title": "Язык",
@@ -374,14 +375,6 @@ export const dict = {
   "sound.option.yup05": "Yup 05",
   "sound.option.yup06": "Yup 06",
 
-  "settings.general.notifications.agent.title": "Агент",
-  "settings.general.notifications.agent.description":
-    "Показывать системное уведомление когда агент завершён или требует внимания",
-  "settings.general.notifications.permissions.title": "Разрешения",
-  "settings.general.notifications.permissions.description":
-    "Показывать системное уведомление когда требуется разрешение",
-  "settings.general.notifications.errors.title": "Ошибки",
-  "settings.general.notifications.errors.description": "Показывать системное уведомление когда происходит ошибка",
 
   "settings.general.sounds.agent.title": "Агент",
   "settings.general.sounds.agent.description": "Воспроизводить звук когда агент завершён или требует внимания",

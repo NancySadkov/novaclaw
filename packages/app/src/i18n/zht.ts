@@ -298,7 +298,8 @@ export const dict = {
   "settings.tab.general": "一般",
   "settings.tab.shortcuts": "快速鍵",
 
-  "settings.general.section.notifications": "系統通知",
+  "settings.general.section.notifications": "通知",
+  "settings.general.notifications.description": "軍官需要你或發生錯誤時提醒。",
   "settings.general.section.sounds": "音效",
 
   "settings.general.row.language.title": "語言",
@@ -359,12 +360,6 @@ export const dict = {
   "sound.option.yup04": "是 04",
   "sound.option.yup05": "是 05",
   "sound.option.yup06": "是 06",
-  "settings.general.notifications.agent.title": "代理程式",
-  "settings.general.notifications.agent.description": "當代理程式完成或需要注意時顯示系統通知",
-  "settings.general.notifications.permissions.title": "權限",
-  "settings.general.notifications.permissions.description": "當需要權限時顯示系統通知",
-  "settings.general.notifications.errors.title": "錯誤",
-  "settings.general.notifications.errors.description": "發生錯誤時顯示系統通知",
 
   "settings.general.sounds.agent.title": "代理程式",
   "settings.general.sounds.agent.description": "當代理程式完成或需要注意時播放聲音",

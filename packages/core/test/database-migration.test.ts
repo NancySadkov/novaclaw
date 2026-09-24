@@ -22,6 +22,7 @@ import dropLegacyMessagePartMigration from "@novaclaw/core/database/migration/20
 import jhPlanTimeUpdatedIndexMigration from "@novaclaw/core/database/migration/20260728181001_add_jh_plan_time_updated_index"
 import sessionDeviceMigration from "@novaclaw/core/database/migration/20260807173556_add_session_device"
 import messengerOwnerMigration from "@novaclaw/core/database/migration/20260923220841_messenger_agent_owner"
+import retireAutoPromptingMigration from "@novaclaw/core/database/migration/20260924120000_retire_auto_prompting"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
@@ -72,6 +73,20 @@ const migrationCheckUnavailable = (() => {
 })()
 
 describe("DatabaseMigration", () => {
+  test("retired auto-prompting roots resume as goal-oriented sessions", async () => {
+    await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        yield* db.run(sql`CREATE TABLE session (id text PRIMARY KEY, type text)`)
+        yield* db.run(sql`INSERT INTO session (id, type) VALUES ('old', 'auto-prompting'), ('worker', 'sub-agent')`)
+        yield* DatabaseMigration.applyOnly(db, [retireAutoPromptingMigration])
+        expect(yield* db.all(sql`SELECT id, type FROM session ORDER BY id`)).toEqual([
+          { id: "old", type: "goal-oriented" },
+          { id: "worker", type: "sub-agent" },
+        ])
+      }),
+    )
+  })
   test("serializes concurrent embedded initialization for one database path", async () => {
     await using tmp = await tmpdir()
     const filename = path.join(tmp.path, "embedded.sqlite")

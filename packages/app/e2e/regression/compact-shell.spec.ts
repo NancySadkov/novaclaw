@@ -184,7 +184,7 @@ test("settings switches its navigation orientation when a phone rotates", async 
   await page.keyboard.press("ArrowRight")
   await expect(general).not.toBeFocused()
   await expect(page.getByRole("tab", { name: "Appearance", exact: true })).toBeFocused()
-  await expect(page.locator('[data-action="settings-color-scheme"]')).toHaveCount(0)
+  await expect(page.getByRole("radiogroup", { name: "Color scheme" })).toBeVisible()
   await page.mouse.move(2, 2)
   await page.screenshot({ path: info.outputPath("settings-phone.png") })
   await page.setViewportSize({ width: 1024, height: 820 })

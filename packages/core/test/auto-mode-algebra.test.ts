@@ -20,7 +20,7 @@ import { PermissionTool } from "@novaclaw/core/tool/permission"
 
 const MODES: readonly PermissionMode[] = ["plan", "ask", "surgical", "bypass", "yolo"]
 const ATTENDED: readonly RootType[] = ["interactive", "sub-agent"]
-const UNATTENDED: readonly RootType[] = ["auto-prompting", "goal-oriented", "unknown"]
+const UNATTENDED: readonly RootType[] = ["goal-oriented", "unknown"]
 
 describe("auto mode: the ladder is untouched", () => {
   // The item's ONE hard shape rule: "`auto` is not a sixth rung". A rung added to MODE_RANK would

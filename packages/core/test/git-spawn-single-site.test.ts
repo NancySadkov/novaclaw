@@ -21,13 +21,13 @@ import { stripComments } from "./lib/source-scan"
  *
  * So the invariant is structural: exactly one place in `packages/novaclaw/src` may hand a git
  * executable to `ChildProcess.make`, and it is `Git.spawn`, which applies the list unconditionally.
- * That one place now passes `gitBinary()` — core's `binary()`, which prefers a system git and falls
- * back to the provisioned PortableGit, so the revert substrate works on a machine with no git. The
+ * That one place now passes `gitBinary()` — core's `binary()`, which selects the embedded Git on
+ * packaged Windows installations, so the revert substrate works on a machine with no system Git. The
  * bare `"git"` literal is still matched here, so a regression back to it is a SECOND site rather
  * than an invisible one.
  *
  * ⚠️ Scoped to `packages/novaclaw/src` on purpose. `packages/core/src/git.ts` is a different service
- * with its own executable resolution (`binary()` → system git, else the bundled PortableGit) and its
+ * with its own executable resolution (`binary()` → embedded Windows Git, else source-checkout Git) and its
  * own per-repository `core.longpaths` config write; it is not a fourth copy of this prefix and must
  * not be dragged in by a wider glob.
  */

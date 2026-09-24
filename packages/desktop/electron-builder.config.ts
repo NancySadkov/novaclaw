@@ -143,6 +143,10 @@ const EXTRA_RESOURCES: readonly StagedResource[] = [
           to: "third-party/w64devkit/",
         },
         {
+          from: "resources/third-party/portable-git/",
+          to: "third-party/portable-git/",
+        },
+        {
           // ImageMagick (owner, 2026-08-23) — one static `magick.exe` plus the XML configuration
           // it reads from beside itself. Prepared and SHA-256 verified by
           // scripts/prepare-imagemagick.ts. 32 MB, not the 240 MB the archive expands to: the

@@ -24,7 +24,7 @@ export interface SchedulerDevice {
   readonly minRunMs: number
   /** Sessions currently holding an interactive slot on this device. */
   readonly inFlightInteractive: readonly string[]
-  /** Sessions currently holding a batch slot (sub-agent, auto-prompting, goal, cron classes). */
+  /** Sessions currently holding a batch slot (sub-agent, goal, cron classes). */
   readonly inFlightBatch: readonly string[]
   /** Sessions queued for a slot — a non-empty list here is contention, not a bug. */
   readonly waiting: readonly string[]

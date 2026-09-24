@@ -53,7 +53,7 @@ describe("context allocation arithmetic", () => {
   })
 
   test("a stored partial profile wins per key over the default", () => {
-    expect(allocationShares("interactive", { messages: 60 })).toEqual([25, 60, 10, 5, 20])
+    expect(allocationShares("officer", { messages: 60 })).toEqual([25, 60, 10, 5, 20])
     expect(allocationShares("sub-agent", { system: 5, tool_output: 45 })).toEqual([5, 30, 10, 5, 45])
   })
 })

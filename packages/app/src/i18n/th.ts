@@ -299,7 +299,8 @@ export const dict = {
   "settings.tab.general": "ทั่วไป",
   "settings.tab.shortcuts": "ทางลัด",
 
-  "settings.general.section.notifications": "การแจ้งเตือนระบบ",
+  "settings.general.section.notifications": "การแจ้งเตือน",
+  "settings.general.notifications.description": "แจ้งเตือนเมื่อเจ้าหน้าที่ต้องการคุณหรือเกิดข้อผิดพลาด",
   "settings.general.section.sounds": "เสียงเอฟเฟกต์",
 
   "settings.general.row.language.title": "ภาษา",
@@ -361,12 +362,6 @@ export const dict = {
   "sound.option.yup05": "Yup 05",
   "sound.option.yup06": "Yup 06",
 
-  "settings.general.notifications.agent.title": "เอเจนต์",
-  "settings.general.notifications.agent.description": "แสดงการแจ้งเตือนระบบเมื่อเอเจนต์เสร็จสิ้นหรือต้องการความสนใจ",
-  "settings.general.notifications.permissions.title": "สิทธิ์",
-  "settings.general.notifications.permissions.description": "แสดงการแจ้งเตือนระบบเมื่อต้องการสิทธิ์",
-  "settings.general.notifications.errors.title": "ข้อผิดพลาด",
-  "settings.general.notifications.errors.description": "แสดงการแจ้งเตือนระบบเมื่อเกิดข้อผิดพลาด",
 
   "settings.general.sounds.agent.title": "เอเจนต์",
   "settings.general.sounds.agent.description": "เล่นเสียงเมื่อเอเจนต์เสร็จสิ้นหรือต้องการความสนใจ",

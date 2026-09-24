@@ -240,29 +240,15 @@ export function localModelStop(server: ServerConnection.HttpBase, input: { direc
   return call<LocalModelStatus>(server, "POST", "api/provider/local-models/stop", input.directory)
 }
 
-// B11 — the bundled-shell substrate (status + provisioner). Provisioning downloads
-// ~59 MB and extracts for a minute; the caller shows a busy state and awaits.
 export interface ShellStatus {
   readonly platform: string
   readonly agentShell: string
   readonly bash: string | null
   readonly git: string | null
-  readonly bundle: {
-    readonly root: string
-    readonly bash: string
-    readonly git: string
-    readonly version?: string
-    readonly provisionedAt?: number
-  } | null
-  readonly provisionSupported: boolean
 }
 
 export function shellStatus(server: ServerConnection.HttpBase, input: { directory: string }) {
   return call<ShellStatus>(server, "GET", "shell/status", input.directory)
-}
-
-export function shellProvision(server: ServerConnection.HttpBase, input: { directory: string }) {
-  return call<ShellStatus>(server, "POST", "shell/provision", input.directory)
 }
 
 // OFF-C — the N/8 offline-layer posture (the airgap status indicator).
@@ -397,9 +383,9 @@ export function switchFeature(
 }
 
 // The chat's kernel thread type (the composer's Mode control). Attendance derives from the chain
-// root's type: an unattended chat (auto-prompting · goal-oriented) DENIES out-of-folder writes and runs bash
-// confined by the Agent Jail. "sub-agent" is spawn-only, so the switch offers these three.
-export type SessionModeName = "interactive" | "auto-prompting" | "goal-oriented"
+// root's type: a goal-oriented chat DENIES out-of-folder writes and runs bash confined by the
+// Agent Jail. "sub-agent" is spawn-only, so the switch offers the two root thread types.
+export type SessionModeName = "interactive" | "goal-oriented"
 
 export function switchType(
   server: ServerConnection.HttpBase,

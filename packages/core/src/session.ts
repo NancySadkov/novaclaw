@@ -157,7 +157,7 @@ type CreateInput = {
   device?: string
   /** Explicit computer display for this session; undefined = inherit, then instance default. */
   controlBinding?: string
-  type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+  type?: "interactive" | "sub-agent" | "goal-oriented"
   priority?: number
   permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   // Who answers this session; `sessionRow` has always written the column, but until 2026-07-29 no
@@ -399,7 +399,7 @@ export interface Interface {
   }) => Effect.Effect<void, NotFoundError>
   readonly switchType: (input: {
     sessionID: SessionSchema.ID
-    type: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+    type: "interactive" | "sub-agent" | "goal-oriented"
   }) => Effect.Effect<void, NotFoundError>
   readonly setTitle: (input: { sessionID: SessionSchema.ID; title: string }) => Effect.Effect<void, NotFoundError>
   readonly setMetadata: (input: {
@@ -1149,9 +1149,9 @@ export const layer = Layer.effect(
             : undefined
         const type =
           input.type ??
-          (colleague?.operationMode === "interactive"
+          (AgentV2.operationModeOf(colleague) === "interactive"
             ? "interactive"
-            : colleague?.operationMode === "unattended"
+            : AgentV2.operationModeOf(colleague) === "unattended"
               ? "goal-oriented"
               : undefined)
         return yield* createSessionRecord({ db, events, projects, store }, { ...input, type })
@@ -1538,7 +1538,7 @@ export const layer = Layer.effect(
         })
       }),
       // The chat's kernel thread type (the composer's Mode control). Attendance derives from the
-      // chain ROOT's type, so flipping a root chat to auto-prompting/goal-oriented is the "keep
+      // chain ROOT's type, so flipping a root chat to goal-oriented is the "keep
       // working without me" switch (out-of-folder writes denied not asked, bash confined by the Agent Jail, affective
       // nudges engage). Consumers read the projected column fresh, so it applies immediately.
       switchType: Effect.fn("V2Session.switchType")(function* (input) {

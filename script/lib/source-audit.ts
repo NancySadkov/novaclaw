@@ -25,8 +25,8 @@ export type SourceAudit = {
   readonly entries: number
 }
 
-/** Every one must be present at the drop root: the attribution and the thing `bun` reads first. */
-export const REQUIRED_ENTRIES = ["NOTICE", "package.json"] as const
+/** Every one must be present in the source drop: attribution, manifest, and bundled Git source offer. */
+export const REQUIRED_ENTRIES = ["NOTICE", "package.json", "licenses/portable-git-NOTICE.md"] as const
 
 /** Content classes that must never reach a source drop, however tidy the rest of it looks. */
 export const FORBIDDEN_MARKERS = ["/node_modules/", "/.git/", "/tmp/"] as const

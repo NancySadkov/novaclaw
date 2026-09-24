@@ -10,9 +10,7 @@ export type ExpertiseLevel = "normal" | "advanced" | "developer"
 export const EXPERTISE_ORDER: Record<ExpertiseLevel, number> = { normal: 0, advanced: 1, developer: 2 }
 
 export interface NotificationSettings {
-  agent: boolean
-  permissions: boolean
-  errors: boolean
+  enabled: boolean
 }
 
 export interface SoundSettings {
@@ -140,9 +138,7 @@ const defaultSettings: Settings = {
     autoApprove: false,
   },
   notifications: {
-    agent: true,
-    permissions: true,
-    errors: false,
+    enabled: true,
   },
   sounds: {
     agentEnabled: true,
@@ -273,17 +269,9 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         },
       },
       notifications: {
-        agent: withFallback(() => store.notifications?.agent, defaultSettings.notifications.agent),
-        setAgent(value: boolean) {
-          setStore("notifications", "agent", value)
-        },
-        permissions: withFallback(() => store.notifications?.permissions, defaultSettings.notifications.permissions),
-        setPermissions(value: boolean) {
-          setStore("notifications", "permissions", value)
-        },
-        errors: withFallback(() => store.notifications?.errors, defaultSettings.notifications.errors),
-        setErrors(value: boolean) {
-          setStore("notifications", "errors", value)
+        enabled: withFallback(() => store.notifications?.enabled, defaultSettings.notifications.enabled),
+        setEnabled(value: boolean) {
+          setStore("notifications", "enabled", value)
         },
       },
       sounds: {

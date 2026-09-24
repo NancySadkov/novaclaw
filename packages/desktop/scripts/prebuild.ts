@@ -6,6 +6,7 @@ import { MINIMUM_FREE_BYTES } from "./build-memory"
 import { sweepStrayServers } from "../../../script/lib/stray-servers"
 import { resolveChannel } from "./utils"
 import { prepareW64devkit } from "./prepare-w64devkit"
+import { preparePortableGit } from "./prepare-portable-git"
 import { prepareImageMagick } from "./prepare-imagemagick"
 import { prepareRipgrep } from "./prepare-ripgrep"
 import { dhtBuildArguments } from "./dht-packaging"
@@ -34,6 +35,7 @@ sweepStrayServers({ reason: "a desktop build" })
 const channel = resolveChannel()
 await prepareRipgrep()
 await prepareW64devkit()
+await preparePortableGit()
 // ⚠️ NOT wrapped in a soft catch, and that is deliberate — the same lesson `prepareW64devkit` above
 // carries. A tolerated failure here ships a build whose agents believe they can edit images and
 // cannot, and the word WARNING scrolls past in a 4,000-line log. It is idempotent and cheap after

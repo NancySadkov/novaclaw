@@ -1,15 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { SessionDrive } from "./drive"
 
-// The self-drive decision: drive only sessions that DECLARE an unattended type. Accepted exit ends
-// auto-prompting sessions; a goal-oriented officer stays alive until Stop.
+// The self-drive decision: a goal-oriented officer stays alive until Stop.
 
 const t0 = 1_000_000
 
 describe("SessionDrive.decide", () => {
   test("drives self-declared autonomous sessions and delegated workers", () => {
     const state = SessionDrive.initialState(t0)
-    expect(SessionDrive.decide({ type: "auto-prompting" }, state, t0).kind).toBe("continue")
     expect(SessionDrive.decide({ type: "goal-oriented" }, state, t0).kind).toBe("continue")
     expect(SessionDrive.decide({ type: "interactive" }, state, t0).kind).toBe("idle")
     expect(SessionDrive.decide({ type: "sub-agent" }, state, t0).kind).toBe("continue")
@@ -17,29 +15,24 @@ describe("SessionDrive.decide", () => {
     expect(SessionDrive.decide(undefined, state, t0).kind).toBe("idle") // missing row = never drive
   })
 
-  test("a terminal result stops auto-prompting but never kills a goal-oriented officer", () => {
+  test("a terminal result never kills a goal-oriented officer", () => {
     const state = SessionDrive.initialState(t0)
-    expect(SessionDrive.decide({ type: "auto-prompting", result: "done" }, state, t0).kind).toBe("terminated")
     expect(SessionDrive.decide({ type: "goal-oriented", result: "" }, state, t0).kind).toBe("continue")
   })
 
   test("long-horizon work has no round or wall-clock completion authority", () => {
     const state = SessionDrive.initialState(t0)
     state.rounds = Number.MAX_SAFE_INTEGER
-    expect(SessionDrive.decide({ type: "auto-prompting" }, state, Number.MAX_SAFE_INTEGER).kind).toBe("continue")
     expect(SessionDrive.decide({ type: "goal-oriented" }, state, Number.MAX_SAFE_INTEGER).kind).toBe("continue")
     expect(SessionDrive.decide({ type: "sub-agent" }, state, Number.MAX_SAFE_INTEGER).kind).toBe("continue")
   })
 
-  test("continuation messages teach exit() and differ by type", () => {
+  test("the continuation message teaches exit()", () => {
     const state = SessionDrive.initialState(t0)
-    const auto = SessionDrive.decide({ type: "auto-prompting" }, state, t0)
     const goal = SessionDrive.decide({ type: "goal-oriented" }, state, t0)
-    if (auto.kind !== "continue" || goal.kind !== "continue") throw new Error("expected continue")
-    expect(auto.message).toContain("`exit` tool")
+    if (goal.kind !== "continue") throw new Error("expected continue")
     expect(goal.message).toContain("`exit` tool")
     expect(goal.message).toContain("goal")
-    expect(auto.message).not.toBe(goal.message)
   })
 
   test("the goal drive names the first unfinished plan step and does NOT repeat the goal", () => {

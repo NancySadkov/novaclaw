@@ -1,4 +1,4 @@
-import { Component, Show, createMemo, createResource, createSignal, onMount } from "solid-js"
+import { Component, Show, createMemo, createResource, onMount } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
@@ -17,10 +17,8 @@ import { useServerManagementController } from "../dialog-select-server"
 import { ConfigExportImport } from "./config-io"
 import { SettingsPoliciesSection } from "./policies"
 import { SettingsProfileSection } from "./profile"
-// Confinement is no longer rendered here — it is part of the health report now. `ShellStatus` below
-// still types the shell-BUNDLE row's own fetch, which stays in this tab because it has a control.
 import { useSettings } from "@/context/settings"
-import { offlineStatus, shellProvision, shellStatus, type OfflineStatus, type ShellStatus } from "@/utils/fs-api"
+import { offlineStatus, type OfflineStatus } from "@/utils/fs-api"
 import { Link } from "../link"
 import { DialogExpertise } from "./dialog-expertise"
 import { DialogTelemetryStatus, type TelemetryStatus } from "./dialog-telemetry-status"
@@ -54,7 +52,6 @@ export const SettingsGeneralV2: Component<{
 
   const desktop = createMemo(() => platform.platform === "desktop")
 
-  // B11 — bundled-shell substrate status + provisioner (raw-fetch endpoints, not in the SDK).
   const globalCtx = useGlobal()
   const serverCtx = useServer()
   // Settings-IA (i) — the quick instance picker (tie-break #7, P2P vision): redirect the UI at
@@ -85,9 +82,9 @@ export const SettingsGeneralV2: Component<{
     const target = defaultInstance()
     if (target) void serversCtl.select(target.item)
   }
-  const shellConn = createMemo(() => serverCtx.current ?? globalCtx.servers.list()[0])
-  const shellRouteDir = createMemo(() => {
-    const conn = shellConn()
+  const instanceConn = createMemo(() => serverCtx.current ?? globalCtx.servers.list()[0])
+  const instanceRouteDir = createMemo(() => {
+    const conn = instanceConn()
     if (!conn) return undefined
     const ctx = globalCtx.ensureServerCtx(conn)
     // ⚠️ `|| undefined`, not `|| ""`, is the one variation in the eighteen sites that is NOT the
@@ -97,39 +94,13 @@ export const SettingsGeneralV2: Component<{
     // caller's `!directory()` check read a different value for the same condition.
     return scopedDirectory(ctx.sync.data.path) || undefined
   })
-  const [provisioning, setProvisioning] = createSignal(false)
-  const [bundle, { refetch: refetchBundle }] = createResource(
-    () => (shellConn() && shellRouteDir() ? { conn: shellConn()!, d: shellRouteDir()! } : undefined),
-    ({ conn, d }) => shellStatus(conn.http, { directory: d }).catch(() => undefined),
-  )
-  const bundleLabel = createMemo(() => {
-    const status = bundle.latest as ShellStatus | undefined
-    if (!status) return language.t("settings.general.row.shellBundle.unknown")
-    if (status.bundle)
-      return `${language.t("settings.general.row.shellBundle.bundled")}${status.bundle.version ? ` ${status.bundle.version}` : ""}`
-    if (status.bash) return `${language.t("settings.general.row.shellBundle.system")} (${status.bash})`
-    return language.t("settings.general.row.shellBundle.none")
-  })
-  const provisionShell = async () => {
-    const conn = shellConn()
-    const d = shellRouteDir()
-    if (!conn || !d || provisioning()) return
-    setProvisioning(true)
-    try {
-      await shellProvision(conn.http, { directory: d })
-    } catch (error) {
-      console.error("shell provision failed", error)
-    } finally {
-      setProvisioning(false)
-      void refetchBundle()
-    }
-  }
-
   // OFF-C — the N/8 airgap-layer indicator (refetches when offline mode is toggled).
   const offlineEnabled = createMemo(() => (serverSync().data.config as { offline?: boolean }).offline === true)
   const [offline] = createResource(
     () =>
-      shellConn() && shellRouteDir() ? { conn: shellConn()!, d: shellRouteDir()!, on: offlineEnabled() } : undefined,
+      instanceConn() && instanceRouteDir()
+        ? { conn: instanceConn()!, d: instanceRouteDir()!, on: offlineEnabled() }
+        : undefined,
     ({ conn, d }) => offlineStatus(conn.http, { directory: d }).catch(() => undefined),
   )
   const telemetryConsent = createMemo(
@@ -137,7 +108,7 @@ export const SettingsGeneralV2: Component<{
   )
   const [telemetryStatus] = createResource(
     () => {
-      const d = shellRouteDir()
+      const d = instanceRouteDir()
       return d ? { d, consent: telemetryConsent(), offline: offlineEnabled() } : undefined
     },
     () =>
@@ -247,24 +218,6 @@ export const SettingsGeneralV2: Component<{
             />
           </SettingsRowV2>
         </Show>
-
-        <SettingsRowV2
-          minLevel="developer"
-          title={language.t("settings.general.row.shellBundle.title")}
-          description={`${language.t("settings.general.row.shellBundle.description")} — ${bundleLabel()}`}
-        >
-          <Show when={(bundle.latest as ShellStatus | undefined)?.provisionSupported}>
-            <div data-action="settings-shell-bundle-provision">
-              <ButtonV2 size="small" variant="outline" disabled={provisioning()} onClick={() => void provisionShell()}>
-                {provisioning()
-                  ? language.t("settings.general.row.shellBundle.provisioning")
-                  : (bundle.latest as ShellStatus | undefined)?.bundle
-                    ? language.t("settings.general.row.shellBundle.reprovision")
-                    : language.t("settings.general.row.shellBundle.provision")}
-              </ButtonV2>
-            </div>
-          </Show>
-        </SettingsRowV2>
 
         <SettingsRowV2
           minLevel="advanced"
@@ -380,41 +333,15 @@ export const SettingsGeneralV2: Component<{
   // is the layout's job; a user who wants a different surface asks an agent for it.
   const NotificationsSection = () => (
     <div class="settings-v2-section">
-      <h3 class="settings-v2-section-title">{language.t("settings.general.section.notifications")}</h3>
-
       <SettingsListV2>
         <SettingsRowV2
-          title={language.t("settings.general.notifications.agent.title")}
-          description={language.t("settings.general.notifications.agent.description")}
+          title={language.t("settings.general.section.notifications")}
+          description={language.t("settings.general.notifications.description")}
         >
-          <div data-action="settings-notifications-agent">
+          <div data-action="settings-notifications">
             <Switch
-              checked={settings.notifications.agent()}
-              onChange={(checked) => settings.notifications.setAgent(checked)}
-            />
-          </div>
-        </SettingsRowV2>
-
-        <SettingsRowV2
-          title={language.t("settings.general.notifications.permissions.title")}
-          description={language.t("settings.general.notifications.permissions.description")}
-        >
-          <div data-action="settings-notifications-permissions">
-            <Switch
-              checked={settings.notifications.permissions()}
-              onChange={(checked) => settings.notifications.setPermissions(checked)}
-            />
-          </div>
-        </SettingsRowV2>
-
-        <SettingsRowV2
-          title={language.t("settings.general.notifications.errors.title")}
-          description={language.t("settings.general.notifications.errors.description")}
-        >
-          <div data-action="settings-notifications-errors">
-            <Switch
-              checked={settings.notifications.errors()}
-              onChange={(checked) => settings.notifications.setErrors(checked)}
+              checked={settings.notifications.enabled()}
+              onChange={(checked) => settings.notifications.setEnabled(checked)}
             />
           </div>
         </SettingsRowV2>
@@ -491,12 +418,6 @@ export const SettingsGeneralV2: Component<{
         <GeneralSection />
 
         <SettingsProfileSection />
-
-        {/* Confinement used to sit here, directly under the safety rows above. It is now part of the
-            health report (see the block at the top of this tab) — it was a read-only reading with no
-            control in it, which makes it a finding rather than a setting. `bundle` below is still
-            fetched for the shell-BUNDLE row inside GeneralSection; the report makes its own
-            `shell/status` call, which is named as a cost in `nova-health.tsx` rather than hidden. */}
 
         {/* 🗑️ `SettingsProjectSection` stood here: the folder's own `novaclaw.json` — which file governs
             it, which rules it adds, which paths it forbids, and the `.gitignore` import. It went with the

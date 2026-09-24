@@ -309,7 +309,8 @@ export const dict = {
   "settings.tab.general": "Opšte",
   "settings.tab.shortcuts": "Prečice",
 
-  "settings.general.section.notifications": "Sistemske obavijesti",
+  "settings.general.section.notifications": "Obavijesti",
+  "settings.general.notifications.description": "Upozorenja kada vas oficir treba ili nešto ne uspije.",
   "settings.general.section.sounds": "Zvučni efekti",
 
   "settings.general.row.language.title": "Jezik",
@@ -371,13 +372,6 @@ export const dict = {
   "sound.option.yup05": "Da 05",
   "sound.option.yup06": "Da 06",
 
-  "settings.general.notifications.agent.title": "Agent",
-  "settings.general.notifications.agent.description":
-    "Prikaži sistemsku obavijest kada agent završi ili zahtijeva pažnju",
-  "settings.general.notifications.permissions.title": "Dozvole",
-  "settings.general.notifications.permissions.description": "Prikaži sistemsku obavijest kada je potrebna dozvola",
-  "settings.general.notifications.errors.title": "Greške",
-  "settings.general.notifications.errors.description": "Prikaži sistemsku obavijest kada dođe do greške",
 
   "settings.general.sounds.agent.title": "Agent",
   "settings.general.sounds.agent.description": "Pusti zvuk kada agent završi ili zahtijeva pažnju",

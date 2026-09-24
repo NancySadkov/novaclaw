@@ -1338,7 +1338,7 @@ export const layer = Layer.effect(
           Effect.orElseSucceed(() => undefined),
         )
         const unattended = SessionDrive.unattendedMode({
-          operationMode: agent.info?.operationMode,
+          operationMode: AgentV2.operationModeOf(agent.info),
           sessionType,
         })
         // 🔴 THE MEMO AREA COMES FROM THE MATERIALISED `durable_prompt`, NOT THE LIVE `durable` SHADOW.
@@ -5334,9 +5334,8 @@ export const layer = Layer.effect(
         if (!shouldRun) {
           const driveConfig = yield* effective.resolve(input.sessionID)
           if (ShortChat.enabled(driveConfig.shortChat)) break
-          // The auto-prompt SELF-DRIVE (architecture.md "run until exit()"): an auto-prompting /
-          // goal-oriented session whose queue ran dry keeps working — the harness injects the next
-          // prompt as a provenance-prefixed steer. Accepted exit terminates an auto-prompting run;
+          // The goal-oriented self-drive: a session whose queue ran dry keeps working — the harness
+          // injects the next prompt as a provenance-prefixed steer.
           // for a goal-oriented officer it closes the visible work unit and starts an interruptible
           // ten-minute sleep instead. The role's standing `operationMode` and the chat's OWN `type`
           // are folded into ONE answer by `SessionDrive.decide` (`unattendedMode`), never the
@@ -5379,7 +5378,7 @@ export const layer = Layer.effect(
             // 🔴 The role's own mode, so the drive and the goal block answer the same question from the
             // same source. Without this the drive kept reading the `type` column stamped at creation
             // and a mode switch waited for the UI's second `switchType` request (owner, 2026-09-16).
-            { operationMode: officer?.operationMode },
+            { operationMode: AgentV2.operationModeOf(officer) },
           )
           if (decision.kind === "sleep") {
             const heartbeatMinutes = officer?.runtimeHeartbeatMinutes ?? OwnedRuntimeContext.DEFAULT_HEARTBEAT_MINUTES
@@ -5435,7 +5434,7 @@ export const layer = Layer.effect(
                 awake?.agent === undefined ? undefined : yield* agents.get(AgentV2.ID.make(awake.agent))
               if (
                 !SessionDrive.unattendedMode({
-                  operationMode: awakeOfficer?.operationMode,
+                  operationMode: AgentV2.operationModeOf(awakeOfficer),
                   sessionType: awake?.type,
                 })
               ) {

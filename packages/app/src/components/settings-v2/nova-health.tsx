@@ -198,15 +198,8 @@ export const NovaHealthBoard: Component = () => {
    * The report is now the home of every read-only reading, so it owns the fetches that feed it and
    * can be mounted wherever the tab layout puts it without a parent having to know what it needs.
    *
-   * ⚠️ This is a SECOND `shell/status` call on a Settings open — General still makes its own for the
-   * shell-bundle row, and the two do not share a cache. That is a real cost and it is named rather
-   * than hidden: it is one local GET against the user's own instance (no egress, which is the rule
-   * this board actually guards), and keeping a status board in the wrong tab to save it would be the
-   * worse trade. If a third reader ever wants it, lift it to a shared query then.
-   *
-   * ⚠️ `.catch(() => undefined)` matches what General did with the same call: an unreachable
-   * instance must reach `ConfinementRows` as "we do not know", which is a state it renders honestly,
-   * and never as a throw that the root ErrorBoundary turns into "Something went wrong".
+   * An unreachable instance reaches `ConfinementRows` as "we do not know" instead of throwing
+   * through the root ErrorBoundary.
    */
   const confinementDir = createMemo(() => scopedDirectory(sync().data.path))
   const [shell] = createResource(

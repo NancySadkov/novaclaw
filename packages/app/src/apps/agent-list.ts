@@ -156,7 +156,6 @@ export const listSessions = async (sdk: {
         type:
           row["type"] === "interactive" ||
           row["type"] === "sub-agent" ||
-          row["type"] === "auto-prompting" ||
           row["type"] === "goal-oriented"
             ? row["type"]
             : undefined,

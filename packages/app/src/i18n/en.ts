@@ -349,20 +349,16 @@ export const dict = {
   "prompt.mode.title": "Mode",
   "prompt.mode.interactive.title": "Interactive",
   "prompt.mode.interactive.description": "You drive: the agent answers and waits for you.",
-  "prompt.mode.auto-prompting.title": "Auto-prompting",
   // ⚠️ This said "shell commands run sandboxed" until 2026-07-31, and the owner's 2026-07-30 directive
   // had already made that false: unattended shell runs UNBOXED by default so the agent can actually
   // work, and Safe mode is the opt-in that puts it back in a sandbox. Caught in the web preview,
   // where the new Confinement panel two clicks away stated the opposite — a promise of containment
   // the product does not keep is ruling 2's *a fault is never described falsely*, and it is worse
   // than silence because a user picks this mode BECAUSE of it.
-  "prompt.mode.auto-prompting.description":
-    "Unattended: the agent keeps prompting itself until the task is done. Permission asks are auto-approved, and shell commands run with your account unless you turn on Safe mode below.",
   "prompt.mode.control": "Autonomy mode",
   "prompt.mode.goal-oriented.title": "Goal-oriented",
   "prompt.mode.goal-oriented.description":
-    "Unattended: the agent loops toward the goal you set until it's reached. Same guardrails as auto-prompting.",
-  "prompt.mode.short.auto-prompting": "Auto",
+    "The agent keeps working toward your goal, pausing to recheck it after each completed work unit.",
   "prompt.mode.short.goal-oriented": "Goal",
 
   "prompt.remote.title": "Remote chat",
@@ -1073,11 +1069,9 @@ export const dict = {
   "officer.context.guard.enabled.description.more":
     "System instructions and the original task are always protected. Each session type is split on its own; turn the guard off to let the five parts share the whole window freely.",
   "officer.context.guard.off": "Context guard is off. These splits are not applied.",
-  "officer.context.profiles.title": "How each session type splits context",
-  "officer.context.profile.interactive": "Interactive chat",
+  "officer.context.profiles.title": "Context layout",
   "officer.context.profile.sub-agent": "Sub-agent",
-  "officer.context.profile.auto-prompting": "Auto-prompting",
-  "officer.context.profile.goal-oriented": "Goal-oriented",
+  "officer.context.profile.officer": "Officer",
   "officer.context.profile.total": "{{total}}% allocated",
   "officer.context.boundary.aria": "Resize {{left}} and {{right}}",
   "officer.context.category.system": "Instructions",
@@ -1207,7 +1201,8 @@ export const dict = {
   "settings.appearance.feedDisplay.collapsed": "Collapsed",
   "settings.appearance.row.commandTiming.title": "Command timer",
   "settings.appearance.row.commandTiming.description": "Show elapsed and timeout seconds while a command runs.",
-  "settings.general.section.notifications": "System notifications",
+  "settings.general.section.notifications": "Notifications",
+  "settings.general.notifications.description": "Alerts when an officer needs you or something fails.",
   "settings.general.section.sounds": "Sound effects",
 
   "settings.general.row.instance.title": "Connected instance",
@@ -1337,16 +1332,6 @@ export const dict = {
   "settings.general.row.mobileTitlebarBottom.title": "Bottom navigation",
   "settings.general.row.mobileTitlebarBottom.description":
     "Place the title bar and session tabs at the bottom of the screen on mobile",
-  "settings.general.row.shellBundle.title": "Shell environment",
-  "settings.general.row.shellBundle.description":
-    "The bash + git substrate agents run on. Provisioning downloads the pinned PortableGit bundle (~59 MB) so every machine gets the same environment — do it before going airgapped",
-  "settings.general.row.shellBundle.bundled": "Bundled PortableGit",
-  "settings.general.row.shellBundle.system": "System bash",
-  "settings.general.row.shellBundle.none": "No bash — agents fall back to cmd.exe",
-  "settings.general.row.shellBundle.unknown": "Status unavailable",
-  "settings.general.row.shellBundle.provision": "Provision",
-  "settings.general.row.shellBundle.reprovision": "Re-provision",
-  "settings.general.row.shellBundle.provisioning": "Provisioning…",
   "settings.general.row.telemetry.title": "Telemetry",
   "settings.general.row.telemetry.statusUnavailable": "Crash-reporting status is temporarily unavailable.",
   "settings.general.row.telemetry.statusAirgap": "Offline / airgap mode is keeping every crash report on this device.",
@@ -1532,14 +1517,6 @@ export const dict = {
   "sound.option.yup04": "Yup 04",
   "sound.option.yup05": "Yup 05",
   "sound.option.yup06": "Yup 06",
-
-  "settings.general.notifications.agent.title": "Agent",
-  "settings.general.notifications.agent.description":
-    "Show system notification when the agent is complete or needs attention",
-  "settings.general.notifications.permissions.title": "Permissions",
-  "settings.general.notifications.permissions.description": "Show system notification when a permission is required",
-  "settings.general.notifications.errors.title": "Errors",
-  "settings.general.notifications.errors.description": "Show system notification when an error occurs",
 
   "settings.general.sounds.agent.title": "Agent",
   "settings.general.sounds.agent.description": "Play sound when the agent is complete or needs attention",
@@ -2179,14 +2156,6 @@ export const dict = {
   "agentConfig.memory": "What it remembers",
   "agentConfig.memoryRag": "Persistent Agent Memory (RAG)",
   "agentConfig.mind": "Model",
-  // The Mind tab's one switch. Named for the mode that is NOT the default (Interactive), because a
-  // switch labelled with its own off-position says nothing; the line under it states which mode is in
-  // force in BOTH positions, which is the rule a control has to obey to be readable when it is off.
-  "agentConfig.unattended": "Unattended",
-  "agentConfig.unattended.on":
-    "Works toward its goal between messages and rests when idle.",
-  "agentConfig.unattended.off":
-    "Answers, then waits for your next message.",
   // Said when the mode was saved onto the colleague but the chat ON SCREEN could not be switched with
   // it. The two halves really are separate: the profile write has already committed, and a sentence
   // that claimed the whole thing worked would be false about the thing the user is looking at.
@@ -2255,6 +2224,8 @@ export const dict = {
   // 2026-08-21: re-choosing per chat is a question asked again for a decision that never changes.
   "agentConfig.work": "Work style",
   "agentConfig.posture": "Mode",
+  "agentConfig.mode.interactive": "Interactive",
+  "agentConfig.mode.agent": "Agent",
   "agentConfig.strict": "Strict — verify each step, and retry a step that fails",
   "agentConfig.toolLabels": "Caption each command",
   "agentConfig.computerUse": "Computer Use — see the screen and drive the mouse and keyboard",

@@ -36,8 +36,8 @@ describe("controlPatch", () => {
       controlPatch(envelope("session.next.feature.switched", { sessionID: "s", feature: "quality", enabled: true })),
     ).toEqual({ sessionID: "s", patch: { quality: true } })
     expect(
-      controlPatch(envelope("session.next.type.switched", { sessionID: "s", sessionType: "auto-prompting" })),
-    ).toEqual({ sessionID: "s", patch: { type: "auto-prompting" } })
+      controlPatch(envelope("session.next.type.switched", { sessionID: "s", sessionType: "goal-oriented" })),
+    ).toEqual({ sessionID: "s", patch: { type: "goal-oriented" } })
     // T3 shape: the move patches the record's `location` struct (+ subpath), never a flat
     // top-level `directory` — that field doesn't exist on the record and patching it left every
     // reader (folder chip, Chats grouping) on the OLD folder until reload.

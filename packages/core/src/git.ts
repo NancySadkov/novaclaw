@@ -13,18 +13,17 @@ import { makeGlobalNode } from "./effect/app-node"
 import { File } from "./file"
 import { KeyedMutex } from "./effect/keyed-mutex"
 import { Flock } from "./util/flock"
-import { ShellBundle } from "./shell-bundle"
+import { WindowsGit } from "./windows-git"
 import { which } from "./util/which"
 import { displayPath } from "./util/path"
 
 let cachedBinary: string | undefined
 /**
- * B11 — the git executable: system git when on PATH, else the bundled PortableGit's
- * git (so snapshots/revert work on machines with no git installed). Bare "git" as the
- * last resort keeps the old spawn-time ENOENT behavior when neither exists.
+ * Windows distributions name their verified, embedded Git explicitly. Source development on a
+ * machine without that distribution uses the host's Git.
  */
 export function binary(): string {
-  cachedBinary ??= which("git") ?? ShellBundle.resolve()?.git ?? "git"
+  cachedBinary ??= WindowsGit.binary() ?? which("git") ?? "git"
   return cachedBinary
 }
 binary.reset = () => {
