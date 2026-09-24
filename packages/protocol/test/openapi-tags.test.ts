@@ -15,7 +15,7 @@ import { InvalidRequestError, SessionNotFoundError } from "../src/errors"
  *    annotations into every group it takes (`Context.merge(api.annotations, group.annotations)`), so
  *    a group that never named itself is published under the API's OWN title and description. Seven
  *    groups here had none, and the served document filed **nineteen** operations — `/api/agent*`,
- *    `/api/app/{id}`, `/api/credential*`, `/api/health`, `/api/location`, `/api/telemetry/status`
+ *    `/api/app/{id}`, `/api/credential*`, `/api/health`, `/api/location`
  *    and all nine of `/api/memory/*` — under a heading literally named `novaclaw HttpApi`,
  *    described as an experimental surface covering selected routes. Meanwhile the DEPRECATED
  *    `/memory/*` routes sat under a tidy `memory` section: the document's own taxonomy pointed
@@ -90,7 +90,7 @@ describe("the OpenAPI taxonomy", () => {
   test("the sweep found the whole surface", () => {
     // A guard over an empty document passes for the wrong reason. Both floors are the counts at the
     // time of writing, asserted as floors so adding a group or a route never silently empties this.
-    expect(spec.tags.length).toBeGreaterThanOrEqual(29)
+    expect(spec.tags.length).toBeGreaterThanOrEqual(28)
     expect(operations.length).toBeGreaterThanOrEqual(140)
   })
 

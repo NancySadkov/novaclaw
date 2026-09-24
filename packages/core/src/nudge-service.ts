@@ -17,8 +17,11 @@ import { SessionCompactionTable } from "./session/sql"
 import { NudgeDeliveryTable } from "./nudge-delivery.sql"
 import { SessionInput } from "./session/input"
 import { SessionMessage } from "./session/message"
+import { Shell } from "./shell"
 
 export interface Interface {
+  readonly beforeTool: (input: { readonly sessionID: string; readonly agentID: string; readonly callID: string; readonly name: string; readonly arguments: unknown; readonly directory?: string }) => Effect.Effect<string | undefined>
+  readonly confirmBefore: (input: { readonly sessionID: string; readonly agentID: string; readonly id: string; readonly callID: string }) => Effect.Effect<boolean>
   readonly deliverScheduled: (input: {
     readonly sessionID: string
     readonly sessionEpoch: number
@@ -50,13 +53,37 @@ export const layer = Layer.effect(
       maxOutputBytes: 16_384,
       plan: ({ command, cwd }) =>
         HostExec.spawnPlan({
-          shape: { kind: "shell-command", shell: HostExec.resolveShell(), command },
+          shape: { kind: "shell-command", shell: process.platform === "win32" ? (Shell.w64devkitShell() ?? HostExec.resolveShell()) : HostExec.resolveShell(), command },
           cwd,
           worktree: cwd,
           consent: "none",
         }),
     })
     const runScript = (command: string, directory: string) => runner.run({ command, cwd: directory, timeoutMs: 5_000 })
+    const renderInline = Effect.fn("NudgeService.renderInline")(function* (source: string, directory: string) {
+      let text = source.trim()
+      let count = 0
+      for (const match of source.matchAll(/\$\(([^()\r\n]+)\)/g)) {
+        count++
+        if (count > 4 || match[1]!.length > 512) {
+          text = text.replace(match[0], "[inline command omitted: limit reached]")
+          continue
+        }
+        const result = yield* runScript(match[1]!, directory)
+        if (result.exitCode !== 0 || result.timedOut) {
+          text = text.replace(match[0], "[command failed]")
+          continue
+        }
+        const output = result.output.trim().slice(0, 1_024)
+        const trustedDate = /^date(?:\s|$)/.test(match[1]!.trim()) && /^\d{4}-\d{2}-\d{2} [A-Za-z]+$/.test(output)
+        text = text.replace(match[0], trustedDate
+          ? output
+          : `${SessionOrigin.externalContentFrame("configured nudge inline command output")}${output}`)
+      }
+      return text
+    })
+    const pending = new Map<string, { callID: string; signature: string; confirmed: boolean; at: number }>()
+    const pendingKey = (sessionID: string, agentID: string, id: string) => `${sessionID}\u0000${agentID}\u0000${id}`
     /** What this session was last told about this nudge, if anything. */
     const priorDelivery = (sessionID: string, deliveryID: string) =>
       db
@@ -66,6 +93,34 @@ export const layer = Layer.effect(
         .get()
         .pipe(Effect.orDie)
     return Service.of({
+      beforeTool: Effect.fn("NudgeService.beforeTool")(function* (input) {
+        const agent = AgentConfigStore.fold((yield* agents.configured())[input.agentID] ?? [])
+        const event: Nudge.Event = { type: "tool", phase: "before", id: input.callID, name: input.name, input: input.arguments }
+        const matched = (agent?.nudges ?? []).filter((nudge) =>
+          (nudge.hook.type === "tool-call" || nudge.hook.type === "shell-command") && nudge.hook.phase === "before" && Nudge.matches(nudge, event))
+        const signature = JSON.stringify([input.name, input.arguments])
+        const now = Date.now()
+        const waiting = matched.find((nudge) => {
+          const key = pendingKey(input.sessionID, input.agentID, nudge.id)
+          const prior = pending.get(key)
+          return !(prior?.confirmed && prior.signature === signature && now - prior.at < 10 * 60_000)
+        })
+        if (waiting) {
+          const key = pendingKey(input.sessionID, input.agentID, waiting.id)
+          pending.set(key, { callID: input.callID, signature, confirmed: false, at: now })
+          const rendered = yield* renderInline(waiting.text, input.directory ?? process.cwd())
+          return `${Nudge.prompt({ ...waiting, text: rendered })}\nThis call was blocked before execution. Find nudge with tool_search if needed, then call nudge({"op":"confirm","id":${JSON.stringify(waiting.id)},"callId":${JSON.stringify(input.callID)}}) and retry the same call.`
+        }
+        for (const nudge of matched) pending.delete(pendingKey(input.sessionID, input.agentID, nudge.id))
+        return undefined
+      }),
+      confirmBefore: Effect.fn("NudgeService.confirmBefore")(function* (input) {
+        const key = pendingKey(input.sessionID, input.agentID, input.id)
+        const item = pending.get(key)
+        if (!item || item.callID !== input.callID || Date.now() - item.at >= 10 * 60_000) return false
+        pending.set(key, { ...item, confirmed: true })
+        return true
+      }),
       deliverScheduled: Effect.fn("NudgeService.deliverScheduled")(function* (input) {
         const messageID = SessionMessage.ID.make("msg_" + createHash("sha256")
           .update(`${input.sessionID}:${input.sessionEpoch}:${input.scheduleID}:${input.occurrence}`)
@@ -107,11 +162,11 @@ export const layer = Layer.effect(
         const claimed: ConfigNudge.Info[] = []
         for (const scoped of definitions) {
           if (!Nudge.matches(scoped.nudge, input.event)) continue
-          let occurrence = Nudge.occurrence(input.event)
+          let occurrence = Nudge.occurrenceFor(scoped.nudge, input.event)
           // The interval cap is tested BEFORE any hook runs: saying "quiet" must not itself cost a
           // command execution on the way to the answer.
           const prior = yield* priorDelivery(input.sessionID, scoped.deliveryID)
-          if (prior && scoped.nudge.spammable !== true && Date.now() - prior.firedAt < Nudge.QUIET_INTERVAL_MS) {
+          if (prior && !Nudge.periodic(occurrence) && scoped.nudge.spammable !== true && Date.now() - prior.firedAt < Nudge.QUIET_INTERVAL_MS) {
             suppressed++
             continue
           }
@@ -122,20 +177,6 @@ export const layer = Layer.effect(
             hookOutput = result.output.trim()
             occurrence = `script:${createHash("sha256").update(hookOutput).digest("hex")}`
           }
-          const rendered = scoped.nudge.script?.trim()
-            ? yield* runScript(scoped.nudge.script, input.directory)
-            : undefined
-          const dynamic = rendered?.exitCode === 0 && !rendered.timedOut ? rendered.output.trim() : ""
-          const text = [
-            scoped.nudge.text.trim(),
-            hookOutput ? SessionOrigin.externalContentFrame("configured nudge hook output") + hookOutput : "",
-            dynamic ? SessionOrigin.externalContentFrame("configured nudge script output") + dynamic : "",
-          ]
-            .filter(Boolean)
-            .join("\n")
-          // A script-only nudge whose renderer failed has no honest payload. Leave the occurrence
-          // unclaimed so a repaired command can deliver it on the next clock event.
-          if (!text) continue
           const now = Date.now()
           // The occurrence is final now (a script hook rewrote it), so the full rule can be answered.
           if (
@@ -172,6 +213,19 @@ export const layer = Layer.effect(
             // updates the row below and delivers the Nudge once.
             if (seeded) continue
           }
+          const rendered = scoped.nudge.script?.trim()
+            ? yield* runScript(scoped.nudge.script, input.directory)
+            : undefined
+          const dynamic = rendered?.exitCode === 0 && !rendered.timedOut ? rendered.output.trim() : ""
+          const interpolated = yield* renderInline(scoped.nudge.text, input.directory)
+          const text = [
+            interpolated,
+            hookOutput ? SessionOrigin.externalContentFrame("configured nudge hook output") + hookOutput : "",
+            dynamic ? SessionOrigin.externalContentFrame("configured nudge script output") + dynamic : "",
+          ]
+            .filter(Boolean)
+            .join("\n")
+          if (!text) continue
           const recorded = yield* db
             .insert(NudgeDeliveryTable)
             .values({

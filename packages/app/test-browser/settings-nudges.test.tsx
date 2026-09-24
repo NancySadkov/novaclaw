@@ -47,6 +47,18 @@ const typeInto = (selector: string, value: string) => {
   field.dispatchEvent(new Event("input", { bubbles: true }))
 }
 
+const chooseHook = async (key: string) => {
+  const select = document.querySelector<HTMLElement>('[data-component="settings-nudges-editor"] [data-component="select-v2"]')!
+  select.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }))
+  select.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }))
+  await settle()
+  const option = document.querySelector<HTMLElement>(`[role="option"][data-key="${key}"]`)!
+  expect(option).toBeDefined()
+  option.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }))
+  option.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }))
+  await settle()
+}
+
 const mount = (fixedAgentID = "writer") => {
   const [store, setStore] = createStore<{ config: Record<string, unknown> }>({ config: {} })
   const sync = () => ({
@@ -87,6 +99,37 @@ const mount = (fixedAgentID = "writer") => {
 }
 
 describe("Officer Nudges", () => {
+  test("edits a before-call shell nudge and a recurring heartbeat for the selected officer", async () => {
+    const config = mount()
+    await settle()
+    click(t("settings.nudges.add"))
+    await settle()
+    typeInto(`input[placeholder="${t("settings.nudges.field.name")}"]`, "Check deployments")
+    await chooseHook("shell-command")
+    typeInto(`input[placeholder="${t("settings.nudges.field.shellPattern")}"]`, "deploy")
+    const before = document.querySelector<HTMLButtonElement>('.nudge-phase-option[aria-pressed="false"]')!
+    expect(before.textContent).toContain(t("settings.nudges.phase.before"))
+    before.click()
+    typeInto(`textarea[placeholder="${t("settings.nudges.field.text")}"]`, "Check the release target.")
+    click(t("common.save"))
+    await settle()
+    const saved = (config().agents as { writer: { nudges: Array<{ hook: unknown }> } }).writer.nudges
+    expect(saved[0]?.hook).toEqual({ type: "shell-command", pattern: "deploy", phase: "before" })
+
+    click(t("settings.nudges.add"))
+    await settle()
+    typeInto(`input[placeholder="${t("settings.nudges.field.name")}"]`, "Heartbeat")
+    await chooseHook("interval")
+    typeInto('.nudge-interval-field input', "15")
+    document.querySelector('.nudge-interval-field input')?.dispatchEvent(new Event("change", { bubbles: true }))
+    typeInto(`textarea[placeholder="${t("settings.nudges.field.text")}"]`, "Today is $(date +%F).")
+    click(t("common.save"))
+    await settle()
+    const updated = (config().agents as { writer: { nudges: Array<{ hook: unknown }> } }).writer.nudges
+    expect(updated[1]?.hook).toEqual({ type: "interval", minutes: 15 })
+    expect(document.body.textContent).toContain("Runs bash")
+  })
+
   test("one officer's list, no global scope, and a saved personal nudge", async () => {
     const config = mount()
     await settle()

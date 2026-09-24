@@ -10,7 +10,7 @@ name: "tool/schedule",
 layer: LazyBuiltin.layer({
 definition: new ToolDefinition({
   "name": "schedule",
-  "description": "List your scheduled work or confirm one active work window complete. A schedule nudge gives the scheduleId and occurrenceMillis needed for confirmation. Each overlapping task must be confirmed separately.",
+  "description": "List your scheduled work, confirm one active window complete, or disable a recurring schedule. A schedule nudge gives the scheduleId and occurrenceMillis needed for confirmation.",
   "inputSchema": {
     "anyOf": [
       {
@@ -48,6 +48,25 @@ definition: new ToolDefinition({
           "op",
           "scheduleId",
           "occurrenceMillis"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "disable"
+            ]
+          },
+          "scheduleId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "op",
+          "scheduleId"
         ],
         "additionalProperties": false
       }

@@ -43,8 +43,7 @@ import { displayPath } from "../util/path"
  * 2. **Its error channel is `PlatformError`** — the boot-killer above.
  * 3. 🔴 **It batches into a `setTimeout` a short-lived process never reaches.** `novaclaw.log` was
  *    empty for the CLI entry point, for *every* event, while a long-lived `serve` flushed fine. A
- *    log nobody can read after a crash is the same defect as the crash-telemetry packet that is
- *    issued and then lost because the process exits first. Closed here by writing SYNCHRONOUSLY
+ *    log nobody can read after a crash defeats diagnosis. Closed here by writing SYNCHRONOUSLY
  *    from a `process.on("exit")` hook — see {@link Writer.flush}.
  *
  * ── the filename grammar IS the contract (§0.7) ─────────────────────────────────────────────────

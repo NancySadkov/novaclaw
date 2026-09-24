@@ -41,7 +41,7 @@ export const defaults = (): ReadonlyArray<ConfigNudge.Info> => [
     name: "A new day begins",
     enabled: true,
     hook: { type: "new-day" },
-    text: "A new local calendar day has begun. If the exact date matters, read the clock with a tool instead of relying on prompt context.",
+    text: "Today is $(date '+%Y-%m-%d %A').",
   },
 ]
 

@@ -625,7 +625,6 @@ function childEnv(home: string): Record<string, string> {
   ])
     delete env[key]
   env.NOVACLAW_HOME = home
-  // A portable/dev build has no update feed; checking for one only produces noise in a smoke.
   return env
 }
 

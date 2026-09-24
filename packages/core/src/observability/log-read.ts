@@ -33,9 +33,8 @@ import { LogFile } from "./log-file"
  *
  * ── ⭐ the asymmetry this module is built around ────────────────────────────────────────────────
  *
- * The file serves the **local plane**, where every attribute class is legible — including the ones
- * telemetry may never send. That is deliberate (AGENTS.md design-principle 4): it is exactly what
- * lets an agent inside the OS read what the maintenance plane cannot. So {@link project} has two
+ * The file serves the **local plane**, where every attribute class is legible. That lets an agent
+ * inside the OS read what a redacted export omits. So {@link project} has two
  * modes and the DEFAULT is the permissive one, because a redacted `fault=` column is a log an agent
  * cannot repair from.
  *
@@ -341,7 +340,7 @@ export const withheld = (cls: ContentClass | undefined) => `‹${cls ?? "unclass
  * here would defeat the item this module exists for.
  *
  * `maintenance` keeps only columns whose class is `none`, which is `egressSafe()` by another name
- * and is derived from the same field `observability/telemetry.ts` derives its own from. Everything
+ * and is derived from the event attribute class. Everything
  * else becomes {@link withheld}: the column STAYS so the reader can see that something was held
  * back and what kind of thing it was. A silently shorter line is a lie about what the log contains.
  */

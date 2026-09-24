@@ -13,6 +13,7 @@ export type Event =
       readonly name: string
       readonly input: unknown
       readonly output?: unknown
+      readonly phase?: "before" | "after"
     }
   | { readonly type: "compaction"; readonly id: string }
   | {
@@ -95,7 +96,9 @@ export function matches(nudge: ConfigNudge.Info, event: Event): boolean {
       if (event.type !== "tool" || !toolWrites.has(event.name) || !validPattern(hook.pattern)) return false
       return new RegExp(hook.pattern, "i").test(printable(event.input))
     case "tool-call":
-      return event.type === "tool" && event.name === hook.tool
+      return event.type === "tool" && event.name === hook.tool && (hook.phase ?? "after") === (event.phase ?? "after")
+    case "shell-command":
+      return event.type === "tool" && event.name === "bash" && (hook.phase ?? "after") === (event.phase ?? "after") && validPattern(hook.pattern) && typeof event.input === "object" && event.input !== null && "command" in event.input && typeof event.input.command === "string" && new RegExp(hook.pattern, "i").test(event.input.command)
     case "mcp-call":
       return event.type === "tool" && event.name.startsWith(`${hook.server}_`)
     case "file-read":
@@ -124,6 +127,8 @@ export function matches(nudge: ConfigNudge.Info, event: Event): boolean {
     }
     case "new-day":
       return event.type === "clock"
+    case "interval":
+      return event.type === "clock" && Number.isFinite(hook.minutes) && hook.minutes >= 1
     case "script":
       return event.type === "clock" && hook.command.trim() !== ""
   }
@@ -138,6 +143,11 @@ export const occurrence = (event: Event): string => {
   return `clock:${year}-${month}-${day}`
 }
 
+export const occurrenceFor = (nudge: ConfigNudge.Info, event: Event): string =>
+  event.type === "clock" && nudge.hook.type === "interval"
+    ? `interval:${Math.floor(event.at.getTime() / (nudge.hook.minutes * 60_000))}`
+    : occurrence(event)
+
 /**
  * Whether an occurrence names a **period** rather than an **event**.
  *
@@ -151,7 +161,7 @@ export const occurrence = (event: Event): string => {
  * `script:` occurrences are hashes of the hook's output, so they change exactly as often as the
  * output does — that is repetition by construction, and such a nudge needs `spammable` to be chatty.
  */
-export const periodic = (occurrence: string): boolean => occurrence.startsWith("clock:") || occurrence.startsWith("resource:")
+export const periodic = (occurrence: string): boolean => occurrence.startsWith("clock:") || occurrence.startsWith("resource:") || occurrence.startsWith("interval:")
 
 /**
  * 🔴 **THE QUIET RULE.** How long a delivered nudge stays silenced before the same one may be
@@ -190,16 +200,17 @@ export const deliverable = (input: {
   // The same occurrence twice is a replay, not a repeat — that guard predates this rule and stays.
   if (input.prior.occurrence === input.occurrence) return false
   if (input.spammable) return true
-  if (input.now - input.prior.firedAt < QUIET_INTERVAL_MS) return false
+  if (!periodic(input.occurrence) && input.now - input.prior.firedAt < QUIET_INTERVAL_MS) return false
   if (!periodic(input.occurrence) && !input.compactedAfter) return false
   return true
 }
 
 export const select = (definitions: readonly ConfigNudge.Info[], event: Event): ReadonlyArray<Match> =>
-  definitions.filter((nudge) => matches(nudge, event)).map((nudge) => ({ nudge, occurrence: occurrence(event) }))
+  definitions.filter((nudge) => matches(nudge, event)).map((nudge) => ({ nudge, occurrence: occurrenceFor(nudge, event) }))
 
-export const prompt = (nudge: Pick<ConfigNudge.Info, "name" | "text">, event?: Event): string =>
+export const prompt = (nudge: ConfigNudge.Info, event?: Event): string =>
   [
     `Nudge — ${nudge.name}: ${nudge.text.trim()}`,
+    `Will recur; to disable call nudge({"op":"disable","id":${JSON.stringify(nudge.id)}}).`,
     ...(event?.type === "resource" && event.detail?.length ? ["Current resource status:", ...event.detail] : []),
   ].join("\n")

@@ -251,7 +251,7 @@ export function shellStatus(server: ServerConnection.HttpBase, input: { director
   return call<ShellStatus>(server, "GET", "shell/status", input.directory)
 }
 
-// OFF-C — the N/8 offline-layer posture (the airgap status indicator).
+// OFF-C — the offline-layer posture (the airgap status indicator).
 export interface OfflineStatus {
   readonly enabled: boolean
   readonly active: number

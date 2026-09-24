@@ -1807,6 +1807,42 @@ body[data-new-layout] [data-slot="dialog-container"] {
   flex-wrap: wrap;
   gap: 6px;
 }
+.nudge-phase-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.nudge-phase-option {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: start;
+  gap: 4px;
+  padding: 11px 12px;
+  border: 1px solid #b9955c38;
+  border-radius: 9px;
+  color: var(--v2-text-text-muted);
+  background: var(--v2-background-bg-layer-02);
+  text-align: left;
+}
+.nudge-phase-option[data-active="true"] {
+  border-color: #d6b875;
+  color: var(--v2-text-text-base);
+  background: #b9955c1b;
+}
+.nudge-phase-option strong { font-size: 12px; }
+.nudge-phase-option span { font-size: 11px; line-height: 1.4; }
+.nudge-phase-option:focus-visible { outline: 2px solid #d6b875; outline-offset: 2px; }
+.nudge-interval-field { display: grid; gap: 6px; color: var(--v2-text-text-muted); font-size: 12px; }
+.nudge-interval-field input {
+  width: min(100%, 220px);
+  min-height: 38px;
+  padding: 7px 10px;
+  border: 1px solid #b9955c55;
+  border-radius: 8px;
+  color: var(--v2-text-text-base);
+  background: var(--v2-background-bg-layer-02);
+}
 @media (max-width: 700px) {
   .schedule-layout {
     grid-template-columns: 1fr;
@@ -1814,6 +1850,9 @@ body[data-new-layout] [data-slot="dialog-container"] {
   .schedule-calendar {
     max-width: 340px;
   }
+}
+@media (max-width: 440px) {
+  .nudge-phase-picker { grid-template-columns: 1fr; }
 }
 @media (max-width: 440px) {
   .schedule-form-grid {

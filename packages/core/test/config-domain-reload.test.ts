@@ -282,10 +282,10 @@ describe("the agents reload hook derives the scratch grant instead of carrying i
 
           // NEGATIVE CONTROL: the row really does carry the foreign grant. Without this, "the
           // materialized agent has no foreign grant" is satisfiable by a fixture that never had one.
-          expect(held.map((rule) => String(rule.resource))).toContain(foreign)
+          expect(held.map((rule) => String(rule.resource).replaceAll("\\", "/"))).toContain(foreign)
           // THE STRIP — the assertion only the wiring line can satisfy.
           expect(resources.some((resource) => resource.includes("scratch/some-colleague"))).toBe(false)
-          expect(resources).toContain(own)
+          expect(resources.map((resource) => resource.replaceAll("\\", "/"))).toContain(own)
 
           // A SECOND write, now that the agent exists: the floor is skipped for an agent already in the
           // draft, so if the own grant still shows up it came from the hook re-deriving it, not from
@@ -295,7 +295,7 @@ describe("the agents reload hook derives the scratch grant instead of carrying i
           )
           const again = (yield* agents.get(id))?.permissions.map((rule) => String(rule.resource)) ?? []
           expect(again.some((resource) => resource.includes("scratch/some-colleague"))).toBe(false)
-          expect(again).toContain(own)
+          expect(again.map((resource) => resource.replaceAll("\\", "/"))).toContain(own)
         }).pipe(Effect.provide(LocationServiceMap.Service.get(location))),
       ),
     ),

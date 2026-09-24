@@ -40,6 +40,7 @@ export * as HostExec from "./host-exec"
 import { Effect } from "effect"
 import { AgentJail } from "./agent-jail"
 import { Shell } from "./shell"
+import { Global } from "./global"
 import type { SessionType } from "./session/config-resolve"
 
 // ── what is being executed ──────────────────────────────────────────────────────────────────────
@@ -488,11 +489,13 @@ export function childEnv(request: EnvRequest): Env {
     ...(request.backend === undefined ? {} : { backend: request.backend }),
     ...(request.safeMode === undefined ? {} : { safeMode: request.safeMode }),
   })
+  const temporary = decision === "confined" ? "/tmp" : Global.Path.tmp
+  const tempVars = { TMPDIR: temporary, TMP: temporary, TEMP: temporary }
   // The host-authority path: a human approved this exact command, so the child inherits the
   // operator's environment and may carry the peer tokens an agent drives other instances with.
   if (decision === "raw" && request.consent === "per-command")
     return {
-      vars: { ...request.overlay, ...request.egress, ...request.credentials },
+      vars: { ...request.overlay, ...request.egress, ...request.credentials, ...tempVars },
       inherit: true,
     }
   // Everything else — confined, or nobody approved it — starts from the curated base with NO
@@ -502,6 +505,7 @@ export function childEnv(request: EnvRequest): Env {
       ...curatedEnv(request.processEnv ?? process.env, request.platform ?? process.platform),
       ...request.overlay,
       ...request.egress,
+      ...tempVars,
     },
     inherit: false,
   }

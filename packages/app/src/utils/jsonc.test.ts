@@ -3,6 +3,39 @@ import { generateConfigTemplate } from "../components/settings-v2/config-io"
 import { JSONCParseError, parseJSONC } from "./jsonc"
 
 describe("JSONC config import", () => {
+  test("exports home-owned paths portably and keeps an agent project absolute", () => {
+    const home = "C:\\Users\\owner\\NovaClaw"
+    const config = {
+      agents: {
+        nova: {
+          directory: `${home}\\projects\\app`,
+          scratch: `${home}\\data\\scratch\\nova`,
+          resources: [`${home}\\tmp\\tool-output\\1`],
+        },
+        writer: { directory: `${home}\\data\\scratch\\writer` },
+      },
+    }
+    const paths = {
+      home,
+      data: `${home}\\data`,
+      config: `${home}\\config`,
+      state: `${home}\\state`,
+      cache: `${home}\\cache`,
+      tmp: `${home}\\tmp`,
+    }
+
+    expect(parseJSONC(generateConfigTemplate(config, paths))).toMatchObject({
+      agents: {
+        nova: {
+          directory: `${home}\\projects\\app`,
+          scratch: "novaclaw-home:/data/scratch/nova",
+          resources: ["novaclaw-home:/tmp/tool-output/1"],
+        },
+        writer: { directory: "novaclaw-home:/data/scratch/writer" },
+      },
+    })
+  })
+
   test("preserves every string byte through export and import", () => {
     const config = {
       agents: {

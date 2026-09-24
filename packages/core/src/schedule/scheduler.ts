@@ -46,7 +46,8 @@ export const heartbeatText = (schedule: ScheduleStore.Schedule, fire: ScheduleSt
   `This window ends at ${new Date(fire.windowEndAt).toISOString()}. ` +
   `When finished, call the schedule tool with op: confirm, scheduleId: ${schedule.id}, ` +
   `occurrenceMillis: ${fire.occurrenceMillis}. You will receive another reminder every ` +
-  `${schedule.heartbeatMinutes} minutes until you confirm or the window ends.`
+  `${schedule.heartbeatMinutes} minutes until you confirm or the window ends. ` +
+  `Will recur; to disable call schedule({"op":"disable","scheduleId":${JSON.stringify(schedule.id)}}).`
 
 export const escalationText = (schedule: ScheduleStore.Schedule, fire: ScheduleStore.Fire): string =>
   `Scheduled work was not confirmed before its window ended. Officer: ${schedule.agent}. ` +

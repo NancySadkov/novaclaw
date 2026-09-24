@@ -29,7 +29,7 @@ describe("InstanceRegistry", () => {
     const { registry, fromFuture } = InstanceRegistry.parse({
       version: 99,
       entries: [{ name: "work", home: "/home/n/work", colour: "blue" }],
-      telemetry: { enabled: true },
+      futureFeature: { enabled: true },
     })
     expect(fromFuture).toBe(true)
     expect(registry.entries[0]?.name).toBe("work")
@@ -40,11 +40,11 @@ describe("InstanceRegistry", () => {
     // silently deleted by an older one merely reading and saving.
     const input = {
       version: 1,
-      telemetry: { enabled: true },
+      futureFeature: { enabled: true },
       entries: [{ name: "work", home: "/home/n/work", colour: "blue" }],
     }
     const written = InstanceRegistry.serialize(InstanceRegistry.parse(input).registry)
-    expect(written["telemetry"]).toEqual({ enabled: true })
+    expect(written["futureFeature"]).toEqual({ enabled: true })
     expect((written["entries"] as Record<string, unknown>[])[0]).toMatchObject({
       name: "work",
       home: "/home/n/work",

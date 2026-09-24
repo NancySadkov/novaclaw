@@ -1,7 +1,6 @@
 export * as ExitIntent from "./exit-intent"
 
 import { mkdirSync, renameSync, writeFileSync } from "node:fs"
-import os from "node:os"
 import path from "node:path"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Global } from "@novaclaw/core/global"
@@ -44,7 +43,7 @@ export const VAR = "NOVACLAW_WATCHDOG_STATE"
  * Roots in which NovaClaw is allowed to own watchdog protocol bytes.
  *
  * The environment says which supervision edge is present; it does not grant filesystem authority.
- * Keep that authority rooted in the instance directories or the OS temp directory. A caller with a
+ * Keep that authority rooted in the instance directories. A caller with a
  * real project root may pass it explicitly through `trustedRoots` — an ambient cwd is not proof that
  * a folder is a selected project.
  */
@@ -54,7 +53,6 @@ export const trustedStateRoots = (): readonly string[] => [
   Global.Path.config,
   Global.Path.state,
   Global.Path.tmp,
-  os.tmpdir(),
 ]
 
 /** Canonical containment closes the ordinary symlink/junction escape for prospective paths. */

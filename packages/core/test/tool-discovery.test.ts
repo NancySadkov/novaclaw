@@ -13,6 +13,7 @@ import { ToolDiscovery } from "@novaclaw/core/tool-discovery"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
 import { Location } from "@novaclaw/core/location"
 import { ToolSearchTool } from "@novaclaw/core/tool/tool-search"
+import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { ToolCallTool } from "@novaclaw/core/tool/tool-call"
 import { Tool } from "@novaclaw/core/tool/tool"
 import { Tools } from "@novaclaw/core/tool/tools"
@@ -71,6 +72,7 @@ async function executeWith(
   search: ToolCatalogueStore.Interface["search"],
   input: { query: string; limit?: number } = { query: "file bug" },
   limits = { maxBytes: 50 * 1024, maxLines: 2_000 },
+  replace: ToolCatalogueStore.Interface["replace"] = () => Effect.void,
 ) {
   let registered: Tool.AnyTool | undefined
   const root = AbsolutePath.make("/workspace")
@@ -78,7 +80,8 @@ async function executeWith(
     Layer.mock(Tools.Service, {
       register: (entries) => Effect.sync(() => void (registered = entries.tool_search)),
     }),
-    Layer.mock(ToolCatalogueStore.Service, { replace: () => Effect.void, search }),
+    Layer.mock(ToolCatalogueStore.Service, { replace, search }),
+    Layer.mock(ToolRegistry.Service, { catalogue: () => Effect.succeed(deferred) }),
     Layer.mock(ToolOutputStore.Service, { limits: () => Effect.succeed(limits) }),
     Layer.mock(Location.Service, { directory: root, root, origin: Project.ID.make("prj_test") }),
   )
@@ -100,6 +103,20 @@ async function executeWith(
 }
 
 describe("tool_search", () => {
+  test("refreshes the catalogue before searching when no prompt component seeded it", async () => {
+    let indexed = false
+    await executeWith(
+      () => {
+        expect(indexed).toBe(true)
+        return Effect.succeed([])
+      },
+      { query: "issue" },
+      { maxBytes: 50 * 1024, maxLines: 2_000 },
+      (_scope, rows) => Effect.sync(() => { indexed = rows.some((row) => row.name === "tracker_create_issue") }),
+    )
+    expect(indexed).toBe(true)
+  })
+
   test("returns complete schemas and limits retrieval to the filtered deferred horizon", async () => {
     let allowed: ReadonlySet<string> | undefined
     const output = await executeWith((_scope, _query, limit, names) => {

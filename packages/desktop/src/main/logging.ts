@@ -1,9 +1,8 @@
 import { MainLogger } from "electron-log"
 import log from "electron-log/main.js"
-import { app, crashReporter, netLog, shell } from "electron"
+import { app, netLog, shell } from "electron"
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs"
 import { dirname, join } from "node:path"
-import { tmpdir } from "node:os"
 import { describeLogDirectory, resolveLogDirectory, type LogDirectory } from "./log-directory"
 import {
   collectRecentFiles,
@@ -60,19 +59,6 @@ export function initLogging() {
   return logger
 }
 
-export function initCrashReporter() {
-  // Same shape as the log directory: an unguarded mkdirSync here died before any window existed.
-  try {
-    const dir = join(app.getPath("userData"), "Crashpad")
-    mkdirSync(dir, { recursive: true })
-    app.setPath("crashDumps", dir)
-    crashReporter.start({ uploadToServer: false, compress: true })
-    write("crash", "crash reporter started", { path: dir })
-  } catch (error) {
-    write("crash", "crash reporter unavailable", { error: String(error) }, "warn")
-  }
-}
-
 export async function startNetLog() {
   if (netLog.currentlyLogging) return
   if (!run) {
@@ -90,10 +76,9 @@ export async function exportDebugLogs(serverDiagnostics?: string) {
     await netLog.stopLogging().catch((error) => write("network", "failed to stop net log", { error }))
   }
 
-  // Keep the archive inside NovaClaw's own log directory; when that directory is unavailable, the
-  // OS temp directory is the allowed fallback. The recovery action opens the resulting file's
-  // folder, so there is no need to scatter an unsolicited archive into the user's Downloads.
-  const output = join(root || tmpdir(), `novaclaw-debug-${stamp()}.zip`)
+  const exportDirectory = root || join(app.getPath("userData"), "tmp")
+  mkdirSync(exportDirectory, { recursive: true })
+  const output = join(exportDirectory, `novaclaw-debug-${stamp()}.zip`)
   const controller = new AbortController()
   const deadlineAt = Date.now() + DEFAULT_DEBUG_EXPORT_LIMITS.timeoutMs
   const timer = setTimeout(
@@ -111,20 +96,13 @@ export async function exportDebugLogs(serverDiagnostics?: string) {
       signal: controller.signal,
     }
     const desktop = await collectRecentFiles(root, "desktop", EXPORT_WINDOW, budget)
-    const remaining = {
-      ...budget,
-      maxFiles: budget.maxFiles - desktop.entries.length,
-      maxTotalBytes: budget.maxTotalBytes - desktop.bytes,
-    }
-    const crashpad = await collectRecentFiles(app.getPath("crashDumps"), "crashpad", EXPORT_WINDOW, remaining)
     const entries: DebugExportEntry[] = [
       {
         name: "manifest.json",
-        data: JSON.stringify(manifest(serverDiagnostics, { desktop: desktop.omitted, crashpad: crashpad.omitted }), null, 2),
+        data: JSON.stringify(manifest(serverDiagnostics, { desktop: desktop.omitted }), null, 2),
       },
       ...(serverDiagnostics ? [serverDiagnosticEntry(serverDiagnostics)] : []),
       ...desktop.entries,
-      ...crashpad.entries,
     ]
     await writeDebugZip(output, entries, { signal: controller.signal, deadlineAt })
     shell.showItemInFolder(output)
@@ -164,11 +142,8 @@ export function tail(): string {
 }
 
 function initRunDirectory(): LogDirectory {
-  // The profile folder first; the OS temp dir second. Both are locations AGENTS.md principle 11
-  // allows NovaClaw to write to, and the second exists so an unwritable profile degrades to
-  // "logs land somewhere else and say so" instead of killing the process.
   const result = resolveLogDirectory(
-    [join(app.getPath("userData"), "logs"), join(tmpdir(), "novaclaw-logs")],
+    [join(app.getPath("userData"), "logs"), join(app.getPath("userData"), "tmp", "logs")],
     stamp(),
     (dir) => mkdirSync(dir, { recursive: true }),
   )
@@ -224,7 +199,6 @@ function manifest(
   serverDiagnostics: string | undefined,
   omitted: {
     desktop: { symlinks: number; races: number; budget: number }
-    crashpad: { symlinks: number; races: number; budget: number }
   },
 ) {
   return {
@@ -239,7 +213,6 @@ function manifest(
     userData: app.getPath("userData"),
     logs: root,
     currentRun: run,
-    crashDumps: app.getPath("crashDumps"),
     serverLog: serverDiagnostics ? { included: true, bytes: Buffer.byteLength(serverDiagnostics) } : { included: false },
     omitted,
     netLog: netLogPath,

@@ -7,7 +7,6 @@ describe("owned callout policy audit", () => {
       "mcp_tool",
       "quality_gate",
       "summarizer",
-      "telemetry_logs",
       "webfetch",
       "websearch",
     ])
@@ -33,7 +32,6 @@ describe("owned callout policy audit", () => {
     expect(CalloutPolicy.AUDIT.webfetch.failureMode).toBe("fail_closed")
     expect(CalloutPolicy.AUDIT.quality_gate.failureMode).toBe("fail_closed")
     expect(CalloutPolicy.AUDIT.websearch.failureMode).toBe("fail_open")
-    expect(CalloutPolicy.AUDIT.telemetry_logs.failureMode).toBe("fail_open")
     expect(CalloutPolicy.AUDIT.summarizer.failureMode).toBe("fail_open")
     expect(CalloutPolicy.AUDIT.summarizer.timeoutMs).toBe(30_000)
   })

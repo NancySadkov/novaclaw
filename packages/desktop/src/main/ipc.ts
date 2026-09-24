@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process"
 import { stat } from "node:fs/promises"
 import { basename } from "node:path"
-import { app, BrowserWindow, Notification, clipboard, dialog, ipcMain, shell } from "electron"
+import { app, BrowserWindow, Notification, clipboard, dialog, ipcMain, screen, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 
 import type { SuperviseStatus } from "@novaclaw/script/supervise"
@@ -13,6 +13,7 @@ import { getPinchZoomEnabled, setPinchZoomEnabled, setTitlebar, updateTitlebar }
 import { createSubscriptions } from "./subscriptions"
 import type { OpenedRecipePackage } from "./recipe-package-open"
 import { isRecipeNavigation, recipeBrowserURL } from "./recipe-browser"
+import { restoreWindowDrag, windowDragPosition, type WindowDrag } from "./window-drag"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -42,15 +43,7 @@ const openStore = (name: unknown) => {
 const pickedFiles = createPickedFileAuthorizations()
 const pickedSaves = createSaveFileAuthorizations()
 const saveCleanupSenders = new WeakSet<object>()
-const windowDrags = new WeakMap<BrowserWindow, {
-  screenX: number
-  screenY: number
-  clientX: number
-  clientY: number
-  x: number
-  y: number
-  maximized: boolean
-}>()
+const windowDrags = new WeakMap<BrowserWindow, WindowDrag>()
 
 type Deps = {
   killSidecar: () => Promise<void> | void
@@ -316,25 +309,35 @@ export function registerIpcHandlers(deps: Deps) {
     if (!win) return
     setTitlebar(win, theme)
   })
-  ipcMain.on("begin-window-drag", (event: IpcMainEvent, screenX: number, screenY: number, clientX: number, clientY: number) => {
+  ipcMain.on("begin-window-drag", (event: IpcMainEvent, clientX: number, clientY: number) => {
     const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win || win.isFullScreen() || ![screenX, screenY, clientX, clientY].every(Number.isFinite)) return
+    if (!win || win.isDestroyed() || win.isFullScreen() || !Number.isFinite(clientX) || !Number.isFinite(clientY)) return
+    const { x: screenX, y: screenY } = screen.getCursorScreenPoint()
     const [x, y] = win.getPosition()
     windowDrags.set(win, { screenX, screenY, clientX, clientY, x, y, maximized: win.isMaximized() })
   })
-  ipcMain.on("move-window-drag", (event: IpcMainEvent, screenX: number, screenY: number) => {
+  ipcMain.on("move-window-drag", (event: IpcMainEvent) => {
     const win = BrowserWindow.fromWebContents(event.sender)
-    if (!win || !Number.isFinite(screenX) || !Number.isFinite(screenY)) return
+    if (!win || win.isDestroyed()) return
     const drag = windowDrags.get(win)
     if (!drag) return
-    if (drag.maximized) {
-      win.unmaximize()
-      const [width, height] = win.getSize()
-      drag.x = drag.screenX - Math.min(drag.clientX, width - 40)
-      drag.y = drag.screenY - Math.min(drag.clientY, height - 40)
-      drag.maximized = false
+    try {
+      const cursor = screen.getCursorScreenPoint()
+      if (drag.maximized) {
+        win.unmaximize()
+        const [width, height] = win.getSize()
+        restoreWindowDrag(drag, cursor, [width, height])
+      }
+      const position = windowDragPosition(drag, cursor)
+      if (!position) {
+        windowDrags.delete(win)
+        return
+      }
+      win.setPosition(...position)
+    } catch (error) {
+      windowDrags.delete(win)
+      console.error("Unable to move desktop window", error)
     }
-    win.setPosition(Math.round(drag.x + screenX - drag.screenX), Math.round(drag.y + screenY - drag.screenY))
   })
   ipcMain.on("end-window-drag", (event: IpcMainEvent) => {
     const win = BrowserWindow.fromWebContents(event.sender)

@@ -12,6 +12,7 @@ import type { SessionMessage } from "../message"
 import type { JhEngine } from "../../jh/engine"
 import type { JhLog } from "../../jh/log"
 import { JhTree } from "../../jh/tree"
+import { Global } from "../../global"
 
 // P14-minimal (jh-improve8 P3) — the session-independent half of the Strict route. The engine
 // integration itself is gated by the LIVE smoke (tests/jh-strict-session-smoke.ts, plan P4).
@@ -114,7 +115,7 @@ describe("SessionStrict racing helpers (improve11 P5)", () => {
     const fork = await SessionStrict.forkWorkspace(src, 2)
     if ("refused" in fork) throw new Error(fork.refused)
     // An aged workspace: back-date its mtime past the window (what a race nobody won leaves behind).
-    const old = fs.mkdtempSync(path.join(os.tmpdir(), "jh-attempt9-stale-"))
+    const old = fs.mkdtempSync(path.join(Global.Path.tmp, "jh-attempt9-stale-"))
     const aged = Date.now() - SessionStrict.FORK_RETENTION_MS - 60_000
     fs.utimesSync(old, aged / 1000, aged / 1000)
     expect(await SessionStrict.sweepStaleForks()).toBeGreaterThan(0)

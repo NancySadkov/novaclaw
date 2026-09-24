@@ -288,7 +288,7 @@ export function communityParticipation(server: ServerConnection.HttpBase) {
 /**
  * Record that the user read the warning and accepted it, or flip the app's own switch.
  *
- * ⚠️ Goes through `/config` because this is a PRIVILEGED setting, beside the airgap and telemetry:
+ * ⚠️ Goes through `/config` because this is a PRIVILEGED setting, beside the airgap:
  * it has consequences off this machine. Routing it through a community-specific endpoint would have
  * quietly given it a second, ungated path.
  */

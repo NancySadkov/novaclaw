@@ -1,21 +1,9 @@
 .debug-page {
+  user-select: text;
   background:
     radial-gradient(ellipse at 88% -10%, #66407d30, transparent 44%),
     radial-gradient(ellipse at 8% 58%, #7d5b2812, transparent 48%),
     var(--v2-background-bg-base);
-}
-
-.debug-page [data-component="app-page-header"] {
-  flex-wrap: wrap;
-  border-bottom-color: #c9a86d30;
-  background: linear-gradient(90deg, #bd945b0e, transparent 65%);
-}
-
-.debug-page [data-component="app-page-header"] > span:last-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .debug-scroll {

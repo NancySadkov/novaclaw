@@ -5,8 +5,7 @@
  * file, etc.). Uniform handling: even a "basic chat" is an agent bound to a folder.
  *
  * It is a REAL host directory under `<data>/scratch` that the app fully controls — NOT the
- * user's home dir (safe by construction), and distinct from the FS-3 `vfs` (which is the
- * no-browsable-FS fallback). Env override exists for tests.
+ * user's home dir (safe by construction). Env override exists for tests.
  */
 export * as Scratch from "./scratch"
 
@@ -21,7 +20,7 @@ export function root(): string {
 
 /**
  * Ensure the scratch dir exists. Idempotent; returns the absolute path. Cheap to call on every
- * `/path` request (like `VirtualFs.ensure`).
+ * `/path` request.
  *
  * 🔴 **It seeds NOTHING, and that is the point** (owner, 2026-08-27). Both scratch `ensure`s used to
  * write a README explaining what the folder was. The reader that copy cost was never the user — it

@@ -84,7 +84,7 @@ const Fire = Schema.Struct({
   scheduleId: Schema.String,
   occurrenceMillis: Schema.Finite,
   firedAt: Schema.Finite,
-  outcome: Schema.Literals(["pending", "confirmed", "failed"]),
+  outcome: Schema.Literals(["pending", "confirmed", "failed", "cancelled"]),
   windowEndAt: Schema.Finite,
   lastHeartbeatAt: Schema.NullOr(Schema.Finite),
   confirmedAt: Schema.NullOr(Schema.Finite),

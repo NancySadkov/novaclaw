@@ -10,7 +10,6 @@ import * as Socket from "effect/unstable/socket/Socket"
 import { WorkspaceV2 } from "@novaclaw/core/workspace"
 import { ControlPaths } from "../../src/server/routes/instance/httpapi/groups/control"
 import { InstancePaths } from "../../src/server/routes/instance/httpapi/groups/instance"
-import { TelemetryPaths } from "@novaclaw/protocol/groups/telemetry"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { HEADER as FenceHeader } from "../../src/server/shared/fence"
 import { resetDatabase } from "../fixture/db"
@@ -477,47 +476,6 @@ describe("instance HttpApi", () => {
     }),
   )
 
-  it.live("serves ordinary-user crash-reporting status from the sender's own preview path", () =>
-    Effect.gen(function* () {
-      const dir = yield* tmpdirScoped({ git: true })
-      const response = yield* HttpClientRequest.get(TelemetryPaths.status).pipe(
-        directoryHeader(dir),
-        HttpClient.execute,
-      )
-
-      expect(response.status).toBe(200)
-      const body = (yield* response.json) as {
-        gate: { consent: boolean; airgap: boolean }
-        endpointConfigured: boolean
-        refusals: string[]
-        payloadPreview?: { signature: Record<string, unknown>; attributes: Record<string, unknown> }
-        disclosure: Array<{ field: string; meaning: string; condition: string }>
-      }
-      expect(body.gate).toEqual({ consent: true, airgap: false })
-      expect(body.endpointConfigured).toBe(true)
-      expect(body.refusals).toEqual([])
-      expect(body.payloadPreview?.signature).toMatchObject({
-        plane: "server",
-        kind: "TelemetryPreview",
-        uptime: 0,
-      })
-      expect(body.payloadPreview?.attributes).toEqual({})
-      expect(body.disclosure.length).toBeGreaterThanOrEqual(10)
-      expect(body.disclosure.every((row) => row.meaning.length > 0 && row.condition.length > 0)).toBe(true)
-      const disabled = yield* HttpClientRequest.patch("/config").pipe(
-        HttpClientRequest.bodyJson({ telemetry: { enabled: false } }),
-        Effect.flatMap(HttpClient.execute),
-      )
-      expect(disabled.status).toBe(200)
-      const status = yield* HttpClient.get(TelemetryPaths.status)
-      expect(yield* status.json).toMatchObject({
-        gate: { consent: false, airgap: false },
-        endpointConfigured: true,
-        refusals: ["consent_off"],
-      })
-    }),
-  )
-
   /**
    * Nova Health. The composition is unit-tested in core; what only a LIVE request can show is that
    * the readings survive the wire — every row is gathered from a real service against a real
@@ -541,7 +499,7 @@ describe("instance HttpApi", () => {
       // The four readings always available at instance scope. A provider row joins them only when a
       // default model names one, so this asserts the four are PRESENT rather than pinning the exact
       // set — pinning it would fail the moment a fixture configures a model, for no real reason.
-      for (const id of ["database", "scheduler", "storage", "updates"]) {
+      for (const id of ["database", "scheduler", "storage"]) {
         expect(
           body.signals.map((signal) => signal.id),
           `missing the ${id} row`,
@@ -562,13 +520,7 @@ describe("instance HttpApi", () => {
         expect(signal.status, "a provider row was PROBED on plain open").not.toBe("ok")
       }
 
-      // ⚠️ THE rule this endpoint exists to keep: `unknown` is never dressed as healthy. The updater
-      // flag lives in the desktop main process, so a served board genuinely cannot read it — and the
-      // verdict must carry that ignorance upward rather than quietly answering "ok".
-      const updates = body.signals.find((signal) => signal.id === "updates")!
-      expect(updates.status).toBe("unknown")
-      expect(body.overall).not.toBe("ok")
-      expect(body.headline).not.toMatch(/all good|healthy/i)
+      expect(body.signals.some((signal) => signal.id === "updates")).toBe(false)
 
       // Every non-ok row is actionable or explains itself; none is a bare status a person cannot use.
       for (const signal of body.signals) {

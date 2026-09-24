@@ -141,6 +141,25 @@ describe("Nudge", () => {
     expect(Nudge.occurrence({ type: "clock", at: new Date(2026, 8, 8, 23, 0) })).toBe("clock:2026-09-08")
   })
 
+  test("before and after hooks distinguish tool calls and bash commands", () => {
+    const before = { type: "tool-call", tool: "write", phase: "before" } as const
+    const shell = { type: "shell-command", pattern: "rm\\s+-r", phase: "before" } as const
+    const call = { type: "tool", id: "call-1", name: "write", input: { path: "x" } } as const
+    expect(Nudge.matches(definition(before), { ...call, phase: "before" })).toBe(true)
+    expect(Nudge.matches(definition(before), { ...call, phase: "after" })).toBe(false)
+    expect(Nudge.matches(definition(shell), { type: "tool", id: "call-2", name: "bash", phase: "before", input: { command: "rm -rf x" } })).toBe(true)
+    expect(Nudge.matches(definition(shell), { type: "tool", id: "call-2", name: "bash", phase: "after", input: { command: "rm -rf x" } })).toBe(false)
+  })
+
+  test("interval occurrences recur by elapsed bucket", () => {
+    const item = definition({ type: "interval", minutes: 5 })
+    const first = { type: "clock", at: new Date("2026-09-24T10:01:00Z") } as const
+    const second = { type: "clock", at: new Date("2026-09-24T10:06:00Z") } as const
+    expect(Nudge.matches(item, first)).toBe(true)
+    expect(Nudge.occurrenceFor(item, first)).not.toBe(Nudge.occurrenceFor(item, second))
+    expect(Nudge.prompt(item)).toContain('nudge({"op":"disable","id":"test"})')
+  })
+
 })
 
 /**

@@ -97,7 +97,7 @@ export const homeOverride = (argv: readonly string[], env: Env): string | undefi
  * Every base directory for an instance, resolved together.
  *
  * The instance always has ONE home. Without an override that home is the existing data directory
- * (`$XDG_DATA_HOME/novaclaw`, normally `~/.local/share/novaclaw`); config, cache and state are
+ * (`~/.local/share/novaclaw`); config, cache and state are
  * children of it. With an explicit home, the same four children live below the chosen folder.
  *
  * The old split-XDG layout made `config` a second writable root at `~/.config/novaclaw` even after
@@ -132,9 +132,9 @@ export const baseDirs = (
       explicitHome: root,
     }
   }
-  const dataRoot = baseDir(env, osHomedir, "XDG_DATA_HOME", ".local", "share")
-  if (dataRoot === undefined) return undefined
-  const root = path.join(dataRoot, app)
+  const home = resolveHome(env, osHomedir)
+  if (home === undefined) return undefined
+  const root = path.join(home, ".local", "share", app)
   return {
     // Keep the database and every existing data component exactly where they already are. The
     // other roots move UNDER this directory; there is no data/data nesting and no second home.

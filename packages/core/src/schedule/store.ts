@@ -57,7 +57,7 @@ export interface Fire {
   readonly failedAt: number | null
   readonly escalatedAt: number | null
   readonly nextHeartbeatAt: number | null
-  readonly outcome: "pending" | "confirmed" | "failed"
+  readonly outcome: "pending" | "confirmed" | "failed" | "cancelled"
 }
 
 const validMinutes = (value: number, maximum: number): number => {
@@ -188,6 +188,13 @@ export const update = (db: Db, id: string, patch: UpdateInput, now: EpochMillis)
       .where(eq(AgentScheduleTable.id, id))
       .run()
       .pipe(Effect.orDie)
+    if (existing.enabled && !enabled)
+      yield* db
+        .update(AgentScheduleWindowTable)
+        .set({ outcome: "cancelled", next_heartbeat_at: null })
+        .where(and(eq(AgentScheduleWindowTable.schedule_id, id), eq(AgentScheduleWindowTable.outcome, "active")))
+        .run()
+        .pipe(Effect.orDie)
     return yield* get(db, id)
   })
 
@@ -282,7 +289,7 @@ export const activeWindows = (db: Db, now: EpochMillis): Effect.Effect<Array<{ s
     .select({ schedule: AgentScheduleTable, fire: AgentScheduleWindowTable })
     .from(AgentScheduleWindowTable)
     .innerJoin(AgentScheduleTable, eq(AgentScheduleWindowTable.schedule_id, AgentScheduleTable.id))
-    .where(and(eq(AgentScheduleWindowTable.outcome, "active"), lte(AgentScheduleWindowTable.occurrence_millis, now)))
+    .where(and(eq(AgentScheduleTable.enabled, true), eq(AgentScheduleWindowTable.outcome, "active"), lte(AgentScheduleWindowTable.occurrence_millis, now)))
     .all()
     .pipe(
       Effect.orDie,

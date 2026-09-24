@@ -39,7 +39,7 @@ export const controlHandlers = HttpApiBuilder.group(RootHttpApi, "control", (han
      *    can add, overwrite or forge one of the line's own columns.
      *  · **A refusal is `false`, never an exception and never a silent `true`.** The success schema
      *    means *written*; ruling 2 forbids answering otherwise. Logging must not be able to take the
-     *    instance down, so nothing here throws and nothing here rejects a crash report for size.
+     *    instance down, so nothing here throws and nothing here rejects a diagnostic for size.
      */
     const log = Effect.fn("ControlHttpApi.log")(function* (ctx: { payload: typeof LogInput.Type }) {
       // 🔴 A KEYED event per level, not `Effect.log*`. This used to select `Effect.logDebug`/`logInfo`/…

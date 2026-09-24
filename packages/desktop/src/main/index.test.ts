@@ -34,11 +34,10 @@ test("the desktop owns a reconnecting watchdog service and the headless process 
   expect(read("./headless-server.ts")).toContain("serveControl(service, () => stop(0, true))")
   expect(application).toContain("subscribeSupervisorState: local.subscribe")
 })
-test("desktop has no maintenance scheduler and crash capture follows home selection", () => {
+test("desktop has no maintenance scheduler and home selection precedes diagnostics", () => {
   expect(application.indexOf('prepareInstanceHome("client", options.mode === "both")')).toBeLessThan(application.indexOf("createDesktopDiagnostics()"))
   expect(application.indexOf('prepareInstanceHome("client", options.mode === "both")')).toBeLessThan(
     application.indexOf("app.requestSingleInstanceLock()"),
   )
-  expect(read("./diagnostics.ts")).toContain('import("@novaclaw/core/observability/crash-capture")')
   expect(application).not.toMatch(/(?:checkForUpdates|downloadUpdate|setInterval)\(/)
 })

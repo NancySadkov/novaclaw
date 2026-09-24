@@ -46,7 +46,7 @@ export interface ScheduleFire {
   readonly failedAt: number | null
   readonly escalatedAt: number | null
   readonly nextHeartbeatAt: number | null
-  readonly outcome: "pending" | "confirmed" | "failed"
+  readonly outcome: "pending" | "confirmed" | "failed" | "cancelled"
 }
 
 export interface CreateScheduleInput {

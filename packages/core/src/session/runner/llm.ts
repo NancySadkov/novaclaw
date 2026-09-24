@@ -3277,6 +3277,7 @@ export const layer = Layer.effect(
                     ...(ran?.name === undefined ? {} : { name: ran.name }),
                   },
                   attachmentPaths,
+                  directory: location.directory,
                   // The mechanical half of the vision fix (`tool/tool.ts` → `imageBudget`). Counted
                   // PER ASSISTANT TURN, which is what makes it sound: within one turn there is no
                   // assistant text between tool calls, so every image past the cap is necessarily

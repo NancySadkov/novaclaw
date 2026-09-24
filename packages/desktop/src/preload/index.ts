@@ -106,9 +106,8 @@ const api: ElectronAPI = {
     return () => ipcRenderer.removeListener("zoom-factor-changed", handler)
   },
   setTitlebar: (theme) => ipcRenderer.invoke("set-titlebar", theme),
-  beginWindowDrag: (screenX, screenY, clientX, clientY) =>
-    ipcRenderer.send("begin-window-drag", screenX, screenY, clientX, clientY),
-  moveWindowDrag: (screenX, screenY) => ipcRenderer.send("move-window-drag", screenX, screenY),
+  beginWindowDrag: (clientX, clientY) => ipcRenderer.send("begin-window-drag", clientX, clientY),
+  moveWindowDrag: () => ipcRenderer.send("move-window-drag"),
   endWindowDrag: () => ipcRenderer.send("end-window-drag"),
   setBackgroundColor: (color: string) => ipcRenderer.invoke("set-background-color", color),
   exportDebugLogs: (serverDiagnostics) => ipcRenderer.invoke("export-debug-logs", serverDiagnostics),

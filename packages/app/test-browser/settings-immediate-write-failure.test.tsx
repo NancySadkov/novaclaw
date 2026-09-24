@@ -10,8 +10,7 @@ import { languageStub } from "./language-stub"
 
 const CASES = [
   ["offline", { offline: true }],
-  ["virtual-fs", { virtualFs: true }],
-  ["telemetry", { telemetry: { enabled: false } }],
+  ["memory", { memory: { enabled: false } }],
 ] as const
 
 let dispose: (() => void) | undefined

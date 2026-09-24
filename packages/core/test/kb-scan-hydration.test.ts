@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url"
 // The rule that makes memory readable: **a SCAN never carries the long string.**
 //
 // 🔴 Measured on the owner's instance 2026-08-21: a table scan returned an empty `text` for rows that
-// a primary-key lookup returned in full — 40 of 40 blanked rows recovered by id, and a full scan found
+// an exact-id lookup returned in full — 40 of 40 blanked rows recovered by id, and a full scan found
 // text on only 64 of 745. Every product read path scans, so the Memory app, the roster's per-agent
 // cabinets and per-turn recall all showed blanks while the data sat there intact.
 //
@@ -34,7 +34,7 @@ const methodBody = (name: string): string => {
 /** Cypher projections that pull the long string out of a multi-row selection. */
 const selectsText = (body: string): boolean => /RETURN[^`]*m\.text AS text/s.test(body)
 
-describe("a scan selects ids; the bodies come back by primary key", () => {
+describe("a scan selects ids; the bodies come back by exact id", () => {
   for (const name of ["list", "graph"]) {
     test(`${name}() does not project the long string from its scan`, () => {
       const body = methodBody(name)
@@ -55,9 +55,9 @@ describe("a scan selects ids; the bodies come back by primary key", () => {
     expect(body).toContain("this.hydrate(")
   })
 
-  test("hydrate itself matches on the PRIMARY KEY — the one read that comes back whole", () => {
+  test("hydrate itself matches one exact id — the one read that comes back whole", () => {
     const body = methodBody("hydrate")
-    expect(body).toContain("MATCH (m:Memory {id: $id})")
+    expect(body).toContain("starts_with(m.id, $id) AND starts_with($id, m.id)")
     // Per id, not `IN $ids`: the batched form HANGS on that store, pinning gigabytes before a kill.
     expect(body).not.toContain("IN $ids")
   })

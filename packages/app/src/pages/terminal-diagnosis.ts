@@ -8,8 +8,8 @@
  * A scrollback is the wrong size for a paste. And terminal output is exactly the content T4 requires
  * be scrubbed from error reports: a shell transcript can hold a token someone echoed, a password
  * typed at a prompt that did not suppress it, or a customer's data. The copy is user-initiated and
- * goes to their own clipboard rather than to our VPS, which makes it a weaker case than telemetry —
- * but "they asked for it" is not a reason to hand someone a blob they did not read and might forward.
+ * goes to their own clipboard, but "they asked for it" is not a reason to hand someone a blob
+ * they did not read and might forward.
  * The fields below are all facts the user can see on screen already.
  */
 export function terminalDiagnosis(input: {

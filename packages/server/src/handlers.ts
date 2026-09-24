@@ -22,7 +22,6 @@ import { RecipeHandler } from "./handlers/recipe"
 import { AppHandler } from "./handlers/app"
 import { ConfigHandler } from "./handlers/config"
 import { LogHandler } from "./handlers/log"
-import { TelemetryHandler } from "./handlers/telemetry"
 import { QualityHandler } from "./handlers/quality"
 
 type HandlerLayers =
@@ -49,7 +48,6 @@ type HandlerLayers =
   | typeof ReferenceHandler
   | typeof ConfigHandler
   | typeof LogHandler
-  | typeof TelemetryHandler
   | typeof QualityHandler
 
 export const handlers: Layer.Layer<
@@ -80,6 +78,5 @@ export const handlers: Layer.Layer<
   ReferenceHandler,
   ConfigHandler,
   LogHandler,
-  TelemetryHandler,
   QualityHandler,
 )

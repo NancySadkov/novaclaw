@@ -8,7 +8,7 @@ import { SETTINGS_KEYS, settingsInfoFromStore } from "./settings-config-seed"
 //
 // The defect this file pins: the store snapshot used to be decoded as ONE document, so a single
 // bad row silently discarded ALL of SETTINGS_KEYS — reverting `permissions`, `offline`,
-// `user_profile`, `mcp` and the telemetry choice to compiled defaults together, with nothing logged.
+// `user_profile` and `mcp` to compiled defaults together, with nothing logged.
 // Losing `permissions` that way is a LOOSENING, which is what makes this a safety item.
 
 // The decode options `settings-config-seed.ts` uses. Replicated (not imported) on purpose: the
@@ -29,7 +29,6 @@ const VALID: Record<string, unknown> = {
   model_order: ["spark-holo/holo3.1"],
   officer_order: ["theron", "aris"],
   expertise: "normal",
-  virtualFs: false,
   folder_bookmarks: ["/home/nancy/code"],
   instances: [{ name: "spark", url: "http://127.0.0.1:4097" }],
   disabled_providers: ["openai"],
@@ -97,7 +96,6 @@ const VALID: Record<string, unknown> = {
   harness_drives: { children: true, imageShortcut: true },
   offline: true,
   storage: { max_database_mib: 2048, prune_interval_hours: 3 },
-  telemetry: { enabled: false },
   memory: { enabled: true },
   web_search: { timeoutMs: 8000 },
   // `tool_policy` is a SPARSE per-id switch map whose absent entry means ON, so a fixture entry has
@@ -146,7 +144,6 @@ describe("settingsInfoFromStore — per-key fallback (B5)", () => {
     expect(present(info, "mcp")).toBe(false)
     for (const key of SETTINGS_KEYS) if (key !== "mcp") expect(present(info, key)).toBe(true)
     expect(info?.offline).toBe(true)
-    expect(info?.telemetry?.enabled).toBe(false)
     expect(info?.snapshots).toBe(false)
 
     // ...and the user is told exactly which key was lost, from where, and why.

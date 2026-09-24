@@ -10,7 +10,7 @@
  * English sentence. `grep 'message="watcher backend"'` is not a query, it is a bet on nobody
  * rewording a string literal. Worse, one word can name two unrelated faults: `Effect.logError(
  * "failed", …)` appears in the HTTP error middleware AND in the formatter, with nothing on the line
- * to tell them apart. This file adds the stable column that a saved query, a telemetry cluster and
+ * to tell them apart. This file adds the stable column that a saved query and
  * an agent's repair heuristic can key off.
  *
  * ── what this module is, and what it is NOT ─────────────────────────────────────────────────────
@@ -270,32 +270,20 @@ export const RESERVED_ATTRIBUTES: ReadonlyArray<string> = ["timestamp", "level",
  *  2. **One class per name.** The class is decided by this table, not per event, so `session.id`
  *     cannot be `correlate` on one key and `text` on the next.
  *
- * ── 🔴 the egress ruling, and it is a REVERSAL ──────────────────────────────────────────────────
- *
- * Before this table, a session id was class `id` — **`egress: true`** — and 30 keys carrying one
- * were declared `content: "none"`. That is not a theoretical hole: `Telemetry.build` was exercised
- * on 2026-08-07 with `event: "session.drain.exit"` and returned `ok: true` with
- * `attributes: { "session.id": "ses_…" }` in the envelope, while `observability/telemetry.ts`'s own
- * disclosure says in as many words *"No hostname, username, machine id, **session id**, project name
- * or working directory."* One of the two was false, and per ruling 2 a subsystem does not get to
- * describe itself falsely. **The prose was right and the type was wrong**, so the type moved.
+ * ── Correlation ids and redacted exports ────────────────────────────────────────────────────────
  *
  * **The argument, stated rather than assumed.** A session id is not user *content* — it is an opaque
  * token we minted and it quotes nobody. It is a **join key into the data plane**, and that is a
  * different thing from content:
  *
  *  · One id is inert. A **stream** of ids is a behavioural trace: how many sessions this person ran,
- *    when, how often they crashed, which ones came back. That is telemetry about a person wearing a
- *    maintenance-plane label — exactly the fingerprinting `releaseLine()` already strips a build
- *    stamp to avoid.
- *  · It is a key that **joins across planes**. The moment an id exists on both sides — a crash report
- *    here, a shared URL or a pasted log there — the maintenance plane can be joined to the data plane
- *    that AGENTS.md promises never egresses. A join key does not have to carry content to defeat the
+ *    when, how often they crashed, which ones came back.
+ *  · It is a key that **joins across planes**. The moment an id exists in a pasted log and in a
+ *    shared URL, a redacted export can be joined to the local data plane. A join key does not have to carry content to defeat the
  *    separation; it only has to be stable.
  *  · **It costs us nothing.** Correlation exists to close the self-healing loop, and that loop is
  *    LOCAL: the agent repairing an instance reads the instance's own file, where every class is
- *    written regardless of plane. Meanwhile the maintenance plane already has its grouping key in the
- *    `run=` column — per-process, minted at boot, naming no user artefact. So `correlate` gives up no
+ *    written regardless of plane. Redacted exports retain the per-process `run=` column, which names no user artefact. So `correlate` gives up no
  *    capability that anything actually uses.
  *
  * ⇒ **A correlation id is `correlate`: content-free, and it never leaves this machine.** The one
@@ -3254,8 +3242,7 @@ export function derivedContent(declaration: EventDeclaration): ContentClass {
 
 /**
  * Whether this event may leave the machine at all — the precondition for the egress
- * filter and for anything the maintenance plane carries. `observability/telemetry.ts` gate 4 is its
- * consumer.
+ * filter used by an optional, user-initiated redacted log export.
  *
  * ⚠️ `"correlated"` is a refusal, exactly like `"user"`. See {@link CORRELATION_ATTRIBUTES} for the
  * argument; the short version is that a stable join key defeats the two-plane separation without

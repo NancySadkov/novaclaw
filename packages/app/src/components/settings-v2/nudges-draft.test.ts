@@ -43,4 +43,13 @@ describe("planNudgeSave", () => {
       }),
     ).toEqual({ ok: false, reason: "hook" })
   })
+
+  test("validates shell patterns and heartbeat intervals", () => {
+    expect(planNudgeSave({ nudges: [], draft: { ...draft(), hook: { type: "shell-command", pattern: "[", phase: "before" } } })).toEqual({ ok: false, reason: "pattern" })
+    expect(planNudgeSave({ nudges: [], draft: { ...draft(), hook: { type: "interval", minutes: 0 } } })).toEqual({ ok: false, reason: "hook" })
+    expect(planNudgeSave({ nudges: [], draft: { ...draft(), hook: { type: "interval", minutes: 15 }, spammable: true } })).toEqual({
+      ok: true,
+      next: [{ ...draft(), name: "Time safety", text: "Check the transport shape.", hook: { type: "interval", minutes: 15 }, spammable: true }],
+    })
+  })
 })

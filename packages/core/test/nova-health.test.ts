@@ -90,19 +90,6 @@ describe("mapping each subsystem's vocabulary", () => {
     expect(NovaHealth.fromScheduler("unavailable").detail).toContain("scheduled work")
   })
 
-  // ⚠️ UPDATER_ENABLED lives in the desktop main process. Claiming updates are OFF when the server
-  // simply cannot see the flag is a false description of the user's own configuration.
-  test("an unreadable updater flag is unknown, never off", () => {
-    const signal = NovaHealth.fromUpdater(undefined)
-    expect(signal.status).toBe("unknown")
-    expect(signal.detail).toContain("desktop-only")
-    expect(signal.detail ?? "").not.toContain("Off,")
-  })
-
-  test("a readable updater reports its real setting", () => {
-    expect(NovaHealth.fromUpdater(false).detail).toContain("Off, by your setting")
-    expect(NovaHealth.fromUpdater(true).detail).toContain("On.")
-  })
 })
 
 // A composed board, the way a screen would build one.
@@ -112,7 +99,7 @@ describe("a whole board", () => {
       NovaHealth.fromPressure({ level: "ok" }),
       NovaHealth.fromDatabase({ status: "ok" }),
       NovaHealth.fromScheduler("ready"),
-      NovaHealth.fromUpdater(undefined),
+      NovaHealth.fromModel({ name: undefined, tools: undefined }),
     ]
     expect(NovaHealth.worst(board)).toBe("unknown")
     expect(NovaHealth.headline(board)).toContain("incomplete")
@@ -211,7 +198,7 @@ describe("NovaHealth.fromMemory", () => {
     const board = [
       NovaHealth.fromScheduler("ready"),
       NovaHealth.fromMemory({ stage: "error" }),
-      NovaHealth.fromUpdater(true),
+      NovaHealth.fromDatabase({ status: "ok" }),
     ]
     expect(NovaHealth.worst(board)).toBe("problem")
     expect(NovaHealth.headline(board)).not.toContain("nothing")
@@ -219,6 +206,13 @@ describe("NovaHealth.fromMemory", () => {
 })
 
 describe("NovaHealth.fromWorldMemory", () => {
+  test("a retention fault reports cleanup without claiming recall stopped", () => {
+    const signal = NovaHealth.fromWorldMemory({ stage: "error", detail: "retention failed: memory graph stagedScopes(agent:) failed: timeout" })
+    expect(signal.status).toBe("problem")
+    expect(signal.detail).toContain("Memory cleanup is failing")
+    expect(signal.detail).not.toContain("unavailable")
+    expect(signal.action).toBe("Check the error log in Debug.")
+  })
   test("keeps the automatic world model distinct from the explicit KB", () => {
     const signal = NovaHealth.fromWorldMemory({ stage: "error", detail: "world path is unreadable" })
     expect(signal.id).toBe("world-memory")

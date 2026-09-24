@@ -25,8 +25,7 @@ const npmPath = fileURLToPath(new URL("..", import.meta.url))
  * the real `process.env` regardless, so the copy buys nothing here.
  *
  * ⚠️ Found 2026-08-12 via the test gate, where the damage is easiest to see and worst: two 🔴 guards
- * key on `NODE_ENV === "test"` — `crash-capture.ts` refuses to install real crash handlers, and
- * `db-path.ts` refuses to open the real instance database (added 2026-08-07 after a test reached the
+ * key on `NODE_ENV === "test"` — `db-path.ts` refuses to open the real instance database (added 2026-08-07 after a test reached the
  * owner's data). Both silently switch OFF for the rest of a process that has read npm config. It
  * presented as an ordering-dependent flake, because it only fires in a run where something imports
  * this module before those guards are consulted.

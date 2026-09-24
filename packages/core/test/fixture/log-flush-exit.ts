@@ -4,7 +4,7 @@
  * 🔴 The filed defect (``): `Logger.toFile` batches into a `setTimeout`, so a process
  * that exits before the batch window writes NOTHING — `novaclaw.log` was empty for the CLI entry
  * point, for every event, while a long-lived `serve` flushed fine. A log nobody can read after a
- * crash is the same defect as a crash-telemetry packet that is issued and then lost.
+ * crash is the same defect as any buffered diagnostic that is issued and then lost.
  *
  * ⚠️ This has to be a real child process. `bun test` does not run `process.on("exit")` handlers
  * (AGENTS.md pitfall #8), so the fix is invisible to an in-process assertion — and so is the defect.

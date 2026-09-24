@@ -96,7 +96,6 @@ export default defineConfig({
     publicDir: "../../../app/public",
     root: "src/renderer",
     build: {
-      // Production crash reporting is symbolized from named log events, not renderer source maps.
       // Avoid building and packaging a large map on the low-memory Windows machines NovaClaw targets.
       sourcemap: channel !== "prod",
       rollupOptions: {

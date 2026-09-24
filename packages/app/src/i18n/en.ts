@@ -1028,7 +1028,7 @@ export const dict = {
 
   "settings.nudges.title": "Nudges",
   "settings.nudges.description":
-    "Store guidance the officer recalls when a matching event occurs. Choose a built-in event or match text with a regular expression. It stays out of the prompt until needed.",
+    "Choose when this officer receives guidance: on a schedule, around a tool call, or when content matches. Each nudge stays out of the conversation until it fires.",
   "settings.nudges.add": "Add nudge",
   "settings.nudges.edit": "Edit nudge",
   "settings.nudges.toast.failed": "Couldn't save nudges",
@@ -1038,13 +1038,23 @@ export const dict = {
   "settings.nudges.field.text": "Instruction shown to the agent",
   "settings.nudges.field.pattern": "Regular expression",
   "settings.nudges.field.tool": "Tool name, for example bash",
+  "settings.nudges.field.shellPattern": "Bash command pattern (regular expression)",
+  "settings.nudges.shellPattern.description": "Match the command the officer asks bash to run. The same pattern works on Windows and Unix.",
+  "settings.nudges.phase.title": "When to deliver the nudge",
+  "settings.nudges.phase.before": "Before the call",
+  "settings.nudges.phase.before.description": "Pause the call. The officer reads the nudge, then uses nudge confirm to run that exact call.",
+  "settings.nudges.phase.after": "After the call",
+  "settings.nudges.phase.after.description": "Show the nudge after the tool or command returns.",
+  "settings.nudges.field.interval": "Repeat interval in minutes",
+  "settings.nudges.interval.description": "Checks the interval while this officer is working. Turn on repeated delivery for a heartbeat at every interval.",
+  "settings.nudges.text.description": "Use $(date +%F), or another short bash command, to insert fresh output when the nudge fires.",
   "settings.nudges.field.mcp": "MCP server name",
   "settings.nudges.field.extension": "File extension, for example ts",
   "settings.nudges.field.hookScript": "Command: exit 0 when the nudge should fire",
   "settings.nudges.field.script": "Optional command whose output is inserted into the nudge",
-  "settings.nudges.field.spammable": "Spammable",
+  "settings.nudges.field.spammable": "Repeat at every match",
   "settings.nudges.spammable.description":
-    "Deliver this nudge every time it fires. While it is off, the same nudge reaches a session at most once every 30 minutes and once per context — again after a compaction, when the reminder would otherwise be summarised away.",
+    "Use for heartbeats or changing output. When off, repeated matches stay quiet for at least 30 minutes and until the conversation is compacted.",
   "settings.nudges.error.name": "Give this nudge a name.",
   "settings.nudges.error.text": "Write the instruction the agent should receive.",
   "settings.nudges.error.pattern": "This regular expression isn't valid.",
@@ -1053,6 +1063,7 @@ export const dict = {
   "settings.nudges.hook.text-match": "Text matches a regular expression",
   "settings.nudges.hook.write-match": "Content being written matches a regular expression",
   "settings.nudges.hook.tool-call": "A specific tool is called",
+  "settings.nudges.hook.shell-command": "A bash command matches a pattern",
   "settings.nudges.hook.mcp-call": "A tool from an MCP server is called",
   "settings.nudges.hook.file-read": "A file type is read",
   "settings.nudges.hook.file-write": "A file type is written",
@@ -1060,6 +1071,7 @@ export const dict = {
   "settings.nudges.hook.resource-pressure": "When resources run low",
   "settings.nudges.hook.time-of-day": "During a time of day",
   "settings.nudges.hook.new-day": "When a new local day begins",
+  "settings.nudges.hook.interval": "At intervals while active",
   "settings.nudges.hook.script": "When a script succeeds or its output changes",
   "settings.nudges.resource.either": "Warning or critical",
   "settings.nudges.resource.warning": "Warning only",
@@ -1128,7 +1140,7 @@ export const dict = {
   // deletion only sees closed segments, while the independent byte ceiling may reclaim them sooner.
   "settings.storage.logs.title": "Activity log",
   "settings.storage.logs.description":
-    "NovaClaw writes down what it does, so a problem can be explained instead of guessed at. This log stays on your computer — it is not the crash reporting you can switch off in Developer settings.",
+    "NovaClaw writes down what it does, so a problem can be explained instead of guessed at. This log stays on your computer.",
   "settings.storage.logs.retention": "How much is kept",
   "settings.storage.logs.retention.description":
     "Keeps about {{days}} days of activity when space allows, and never more than {{size}} in total. Older entries are compressed, and the oldest are removed first.",
@@ -1332,33 +1344,9 @@ export const dict = {
   "settings.general.row.mobileTitlebarBottom.title": "Bottom navigation",
   "settings.general.row.mobileTitlebarBottom.description":
     "Place the title bar and session tabs at the bottom of the screen on mobile",
-  "settings.general.row.telemetry.title": "Telemetry",
-  "settings.general.row.telemetry.statusUnavailable": "Crash-reporting status is temporarily unavailable.",
-  "settings.general.row.telemetry.statusAirgap": "Offline / airgap mode is keeping every crash report on this device.",
-  "settings.general.row.telemetry.statusConsentOff": "Crash reporting is turned off on this instance.",
-  "settings.general.row.telemetry.statusNoEndpoint":
-    "Crash reports stay on this device because no collector is configured.",
-  "settings.general.row.telemetry.statusNotReady":
-    "Crash reporting is configured but the collector has not passed its intake check yet.",
-  "settings.general.row.telemetry.statusReady":
-    "Crash reporting is ready. You can inspect the exact payload before anything leaves this device.",
-  "settings.general.row.telemetry.inspect": "See exactly what's shared",
-  "settings.general.row.telemetry.controlTitle": "Crash reporting",
-  "settings.general.row.telemetry.controlDescription":
-    "Let NovaClaw send scrubbed crash fingerprints so we can fix faults.",
-  "settings.telemetryStatus.title": "What a crash report shares",
-  "settings.telemetryStatus.description":
-    "This sample is made by the same code that builds a real report. Chats, code, file paths, error messages, hostnames and session IDs are never included.",
-  "settings.telemetryStatus.payload": "Exact payload preview",
-  "settings.telemetryStatus.fields": "Every possible field",
-  // ⚠️ Ruling 2, and Kiro Crew's disclosure in spirit: when something else pins the switch off, the
-  // switch says so instead of sitting there looking effective. Airgap is an INDEPENDENT veto — it
-  // does not withdraw consent, it overrides it — so the copy states the override rather than
-  // silently flipping the toggle the user set.
-  "settings.general.row.telemetry.forcedOff": "forced off — offline/airgap mode is on",
   "settings.general.row.offline.title": "Offline mode",
   "settings.general.row.offline.description":
-    "Restrict NovaClaw's network requests to local connections, configured model providers and explicitly allowed hosts. Maintenance uploads and package downloads stop. Changes apply to new requests immediately. Shell programs can ignore proxy settings; a complete airgap needs operating-system or network isolation.",
+    "Restrict NovaClaw's network requests to local connections, configured model providers and explicitly allowed hosts. Other network requests stop. Changes apply to new requests immediately. Shell programs can ignore proxy settings; a complete airgap needs operating-system or network isolation.",
   "settings.general.row.offline.active": "on — process isolation not guaranteed",
   "settings.general.row.offline.inactive": "ready (offline mode is off)",
 
@@ -1465,9 +1453,6 @@ export const dict = {
   "settings.instances.peers.add": "Add peer",
   "settings.instances.peers.saveFailed":
     "Saving failed — the peer list has not changed, and the name, address and token you typed are still below. Try again once the instance answers.",
-  "settings.general.row.virtualFs.title": "Virtual workspace",
-  "settings.general.row.virtualFs.description":
-    "Keep this instance's projects, notes, and files in an app-private folder — for hosts without a browsable filesystem.",
   "settings.general.row.pinchZoom.title": "Pinch to zoom",
   "settings.general.row.pinchZoom.description": "Allow trackpad pinch and Ctrl-scroll gestures to zoom",
 

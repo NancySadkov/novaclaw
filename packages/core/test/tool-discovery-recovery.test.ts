@@ -79,6 +79,7 @@ async function search(hits: ReadonlyArray<ToolCatalogueStore.SearchHit>, limits:
       register: (entries) => Effect.sync(() => void (registered = entries.tool_search)),
     }),
     Layer.mock(ToolCatalogueStore.Service, { replace: () => Effect.void, search: () => Effect.succeed(hits) }),
+    Layer.mock(ToolRegistry.Service, { catalogue: () => Effect.succeed(deferredSources) }),
     Layer.mock(ToolOutputStore.Service, { limits: () => Effect.succeed(limits) }),
     Layer.mock(Location.Service, { directory: root, root, origin: Project.ID.make("prj_test") }),
   )

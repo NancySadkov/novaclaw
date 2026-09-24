@@ -35,6 +35,7 @@ const forkSlot = globalThis as unknown as Record<symbol, (() => unknown) | undef
 void mock.module("electron", () => ({
   default: {},
   app: { on: () => {}, off: () => {}, isPackaged: false },
+  screen: { getCursorScreenPoint: () => ({ x: 0, y: 0 }) },
   utilityProcess: {
     fork: () => {
       const hook = forkSlot[FORK_SLOT]

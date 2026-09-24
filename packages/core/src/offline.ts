@@ -202,7 +202,7 @@ export function loadPolicy(input: PolicySource): Policy {
 // The policy used to be computed ONCE inside `layer` and captured by `check`/`egressEnv`/
 // `manifest`. Flipping airgap ON in Settings therefore blocked NOTHING until the process was
 // restarted — while `/shell/offline`, which re-reads the same sources on every request, honestly
-// reported 8/8 layers active. A guard that is off while the status surface says it is on is not a
+// reported every layer active. A guard that is off while the status surface says it is on is not a
 // latency wart; it is v0.2.0 ruling 3's *a fault is never described falsely*.
 //
 // The ref is MODULE-level, not layer-level, deliberately:
@@ -302,7 +302,7 @@ export function egressEnv(policy: Policy): Record<string, string> | undefined {
   }
 }
 
-// ── The offline-layer manifest (the "N/8 layers active" indicator) ──────────────────────
+// ── The offline-layer manifest ────────────────────────────────────────────────────────
 export interface LayerStatus {
   readonly layer: number
   readonly name: string
@@ -310,7 +310,7 @@ export interface LayerStatus {
   readonly detail?: string
 }
 
-/** Snapshot the eight offline layers. A policy request cannot attest OS process confinement. */
+/** Snapshot the offline layers. A policy request cannot attest OS process confinement. */
 export function layerManifest(policy: Policy): {
   readonly enabled: boolean
   readonly active: number
@@ -337,17 +337,11 @@ export function layerManifest(policy: Policy): {
       active: on,
       detail: "MCP servers ride the chokepoint or their own Offline check",
     },
+    { layer: 4, name: "share/sync egress", active: on, detail: "share URLs ride the chokepoint" },
+    { layer: 5, name: "LAN services", active: on, detail: "loopback and explicitly allowed service hosts only" },
+    { layer: 6, name: "npm installs", active: on, detail: "package fetches fail closed (pre-provision or mirror)" },
     {
-      layer: 4,
-      name: "maintenance telemetry",
-      active: on,
-      detail: "the closed crash sender applies the live airgap gate before every report",
-    },
-    { layer: 5, name: "share/sync egress", active: on, detail: "share URLs ride the chokepoint" },
-    { layer: 6, name: "LAN services", active: on, detail: "loopback and explicitly allowed service hosts only" },
-    { layer: 7, name: "npm installs", active: on, detail: "package fetches fail closed (pre-provision or mirror)" },
-    {
-      layer: 8,
+      layer: 7,
       name: "process egress guard",
       active: false,
       detail: on
@@ -367,7 +361,7 @@ export interface Interface {
   readonly check: (url: string) => Verdict
   /** OFF-C: the child-process env overlay (undefined when offline mode is off). */
   readonly egressEnv: () => Record<string, string> | undefined
-  /** The N/8 layer manifest for the status surface. */
+  /** The layer manifest for the status surface. */
   readonly manifest: () => ReturnType<typeof layerManifest>
   // No `reload` member, deliberately. Refreshing is a MODULE function (`Offline.reload`), because
   // the one caller that needs it — the config write path — has no `Offline.Service` in context,

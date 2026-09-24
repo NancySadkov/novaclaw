@@ -213,9 +213,7 @@ export const SettingsStorageV2: Component = () => {
           instance needs to READ what went wrong."* There is therefore **no off switch here and there
           must never be one**; a lay user who silenced this would be disabling the thing that makes
           their own instance diagnosable, and they would do it believing they had turned off
-          telemetry. The switch they are actually looking for is crash reporting, which is a
-          different plane (AGENTS.md principle 4), is Developer-gated on purpose, and the description
-          below names so nobody hunts for it here.
+          another system feature. The description below makes clear that these logs stay local.
 
           The controls write the active instance through PATCH /config. Core projects that SQLite row
           into a synchronous hot-path policy, so the already-open writer changes immediately. */}

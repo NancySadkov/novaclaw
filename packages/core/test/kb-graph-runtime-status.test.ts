@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { describeRuntimeStatus } from "@novaclaw/core/kb-graph/world-memory"
+import { Effect } from "effect"
+import { describeRuntimeStatus, forgetEverywhere } from "@novaclaw/core/kb-graph/world-memory"
+import type { GraphEngine } from "@novaclaw/core/kb-graph/isolated-engine"
+import type { Database } from "@novaclaw/core/database/database"
+import type { EventV2 } from "@novaclaw/core/event"
 
 /**
  * `WasmMemory.publishBlocked` is set on every failed checkpoint and cleared on the next success.
@@ -9,6 +13,14 @@ import { describeRuntimeStatus } from "@novaclaw/core/kb-graph/world-memory"
  * composition is pure so this can pin it without a WASM engine.
  */
 describe("memory runtime status carries the blocked-writes reason", () => {
+  test("retention identifies the failed worker operation and preserves its cause", async () => {
+    const engine = { stagedScopes: () => Promise.reject(new Error("worker timed out")) } as unknown as GraphEngine
+    const message = await Effect.runPromise(forgetEverywhere(engine, {} as Database.Interface["db"], {} as EventV2.Interface, 3).pipe(
+      Effect.match({ onFailure: (error) => String(error), onSuccess: () => "unexpected success" }),
+    ))
+    expect(message).toContain("stagedScopes(session:)")
+    expect(message).toContain("worker timed out")
+  })
   test("🔴 a ready store with a blocked checkpoint says so in detail", () => {
     expect(describeRuntimeStatus({ stage: "ready" }, "IO error: disk full")).toEqual({
       stage: "ready",

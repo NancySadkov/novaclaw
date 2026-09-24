@@ -132,23 +132,31 @@ process.chdir(guarded)
 const { Global } = await import("@novaclaw/core/global")
 const { Scratch } = await import("@novaclaw/core/scratch")
 
-const resolved: Record<string, string> = {
-  data: Global.Path.data,
-  cache: Global.Path.cache,
-  config: Global.Path.config,
-  state: Global.Path.state,
-  log: Global.Path.log,
-  repos: Global.Path.repos,
-  bin: Global.Path.bin,
-  tmp: Global.Path.tmp,
-  scratch: Scratch.root(),
-}
-// Not just resolution — the scratch dir is where a folder-less agent's session lands, and creating
-// one is what 500'd in v0.1.0. Make the bytes happen.
+let resolved: Record<string, string> = {}
+let status: ReturnType<typeof Global.directoryStatus> | undefined
+let resolveError: string | undefined
 try {
-  await Scratch.ensure()
-} catch {
-  /* an unwritable fallback is not what this fixture measures; the disk scan below is */
+  resolved = {
+    data: Global.Path.data,
+    cache: Global.Path.cache,
+    config: Global.Path.config,
+    state: Global.Path.state,
+    log: Global.Path.log,
+    repos: Global.Path.repos,
+    bin: Global.Path.bin,
+    tmp: Global.Path.tmp,
+    scratch: Scratch.root(),
+  }
+  status = Global.directoryStatus()
+} catch (error) {
+  resolveError = String(error)
+}
+if (resolveError === undefined) {
+  try {
+    await Scratch.ensure()
+  } catch {
+    /* an unwritable fallback is not what this fixture measures; the disk scan below is */
+  }
 }
 
 /** Every entry named exactly `undefined` or `null`, anywhere under `dir`. */
@@ -177,7 +185,8 @@ process.stdout.write(
     scenario,
     twin: { target: twinTarget, created: twinCreated, strays: straysUnder(unguarded) },
     resolved,
-    status: Global.directoryStatus(),
+    status,
+    resolveError,
     // The guarded arm's whole reachable world: its cwd, the fake home, and the temp root it was given.
     strays: [...straysUnder(guarded), ...straysUnder(home), ...straysUnder(sandboxTmp)],
   }) + "\n",

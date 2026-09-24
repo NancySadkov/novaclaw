@@ -26,7 +26,7 @@ export function planNudgeSave(input: {
   if (input.nudges.some((item) => item.id === draft.id && item.id !== input.editingID))
     return { ok: false, reason: "duplicate" }
   if (
-    (draft.hook.type === "text-match" || draft.hook.type === "write-match") &&
+    (draft.hook.type === "text-match" || draft.hook.type === "write-match" || draft.hook.type === "shell-command") &&
     !Nudge.validPattern(draft.hook.pattern)
   )
     return { ok: false, reason: "pattern" }
@@ -34,6 +34,7 @@ export function planNudgeSave(input: {
     (draft.hook.type === "tool-call" && !draft.hook.tool.trim()) ||
     (draft.hook.type === "mcp-call" && !draft.hook.server.trim()) ||
     (draft.hook.type === "script" && !draft.hook.command.trim()) ||
+    (draft.hook.type === "interval" && (!Number.isInteger(draft.hook.minutes) || draft.hook.minutes < 1 || draft.hook.minutes > 10080)) ||
     ((draft.hook.type === "file-read" || draft.hook.type === "file-write") && !draft.hook.extension.trim()) ||
     (draft.hook.type === "time-of-day" && (!validTime(draft.hook.after) || !validTime(draft.hook.before)))
   )

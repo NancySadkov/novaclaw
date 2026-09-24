@@ -213,8 +213,6 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // re-grounded, a fan-out's forgotten child stops being reported. It grants nothing — it removes a
   // check — and a removed check is still a different instance afterwards.
   harness_drives: "consequential",
-  // Real filesystem vs an app-private root — it decides what the product will browse at all.
-  virtualFs: "consequential",
   // The FS watcher's ignore globs: it decides which file changes the product NOTICES, so a write
   // here can make the agent's own edits invisible in the user's live view.
   watcher: "consequential",
@@ -248,7 +246,7 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // The airgap itself. Turning it off RELEASES the egress guard, which is the one switch that makes
   // every other egress possible.
   /**
-   * 🔴 PRIVILEGED, beside `offline` and `telemetry` and for the same reason: it is a consent
+   * 🔴 PRIVILEGED, beside `offline` and for the same reason: it is a consent
    * decision with consequences outside this machine. Turning the community on exposes this box's IP
    * address to anyone it talks to — there is no central server to hide behind — and subscribes the
    * user to content nobody moderates.
@@ -290,8 +288,6 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // inside this session can widen it". An agent that could flip this without a card would make that
   // sentence false. Turning a policy off is the operator's to do, at the keyboard.
   tool_policy: "privileged",
-  // A consent flag for outbound reporting. Flipping a user's consent on their behalf is theirs to do.
-  telemetry: "privileged",
   // Free text the `profile` tool hands to the model on demand (`tool/profile.ts`).
   user_profile: "privileged",
   // Not cosmetic: `tool/profile.ts` falls back to `username` as the profile name it delivers to the

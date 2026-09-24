@@ -67,14 +67,10 @@ export function FilesPage() {
 
   // Resolve a starting directory + the host's filesystem roots (drives on Windows, "/" on POSIX);
   // /path is authoritative — `roots`/`data` postdate the generated SDK type, hence the cast.
-  // FS-3: `virtual`/`virtualRoot` postdate the SDK type too; in virtual mode the app-private
-  // root is the start dir and there are no host drives to jump to.
   type PathLike = {
     home?: string
     directory?: string
     roots?: readonly string[]
-    virtual?: boolean
-    virtualRoot?: string
     places?: readonly { name: string; path: string }[]
   }
   // ⚠️ Every resource below is read through `.latest`, never by calling it. Calling a Solid resource
@@ -83,23 +79,15 @@ export function FilesPage() {
   // (`layout-new.tsx`), blanking is visible rather than silent. `.latest` keeps the last good value
   // on screen while the next one loads; `.loading` still drives the explicit spinners.
   // Ported from outside contribution #11 by @DassaultFalconKing.
-  const shape = (p: PathLike | undefined) =>
-    p?.virtual && p.virtualRoot
-      ? {
-          start: p.virtualRoot,
-          roots: [] as readonly string[],
-          home: "",
-          places: [] as readonly { name: string; path: string }[],
-        }
-      : {
-          start: p?.home || p?.directory || "",
-          roots: p?.roots ?? [],
-          home: p?.home ?? "",
-          places: p?.places ?? [],
-        }
+  const shape = (p: PathLike | undefined) => ({
+    start: p?.home || p?.directory || "",
+    roots: p?.roots ?? [],
+    home: p?.home ?? "",
+    places: p?.places ?? [],
+  })
   const [pathInfo] = createResource(ctx, async (c) => {
     const p = c.sync.data.path as PathLike | undefined
-    if (p && (p.virtual ? p.virtualRoot : (p.home || p.directory) && p.roots?.length)) return shape(p)
+    if (p && (p.home || p.directory) && p.roots?.length) return shape(p)
     const got = await c.sdk.client.path
       .get()
       .then((r) => r.data as PathLike | undefined)

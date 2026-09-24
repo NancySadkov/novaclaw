@@ -1,7 +1,7 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core"
 import { Timestamps } from "../database/schema.sql"
 
-export type WindowOutcome = "active" | "confirmed" | "failed"
+export type WindowOutcome = "active" | "confirmed" | "failed" | "cancelled"
 
 export const AgentScheduleTable = sqliteTable(
   "agent_schedule",

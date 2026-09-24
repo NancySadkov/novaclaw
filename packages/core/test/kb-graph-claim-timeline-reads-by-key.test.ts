@@ -9,7 +9,7 @@ import { WasmMemory } from "../src/kb-graph/wasm-engine"
  *
  * 1. **A body read through a TRAVERSAL is not a body read by key.** `hydrate`'s own doc records the
  *    measurement: on the owner's store a scan found text on 64 of 745 rows, and 40 of 40 rows it
- *    called empty came back complete through `MATCH (m:Memory {id: $id})`. `neighbors` and `list`
+ *    called empty came back complete through an exact-id lookup. `neighbors` and `list`
  *    obey it — the traversal picks the rows, the bodies come back by key. The claim timeline's
  *    evidence pass did not: it projected `b.text` out of the relationship traversal and used it as
  *    the source label. So the one surface whose entire job is *"why is this claim here"* rendered
@@ -24,7 +24,7 @@ import { WasmMemory } from "../src/kb-graph/wasm-engine"
  * ⚠️ **The pathology is INJECTED, not waited for.** It reproduces on a large real store about a
  * second after a write and not at all on a fresh one, so a test that merely wrote rows and read them
  * back would be green on both the fixed and the broken code — which is the same as no test. The
- * double below blanks `text` for every read that is NOT a primary-key lookup, which is exactly the
+ * double below blanks `text` for every read that is NOT an exact-id lookup, which is exactly the
  * behaviour `hydrate` was written against, and it is installed AFTER the writes so the store being
  * queried is a real, intact one.
  */
@@ -59,7 +59,7 @@ describe("the claim timeline's evidence labels come back by key", () => {
     realRows = internals.rows.bind(mem)
     internals.rows = async (cypher, params) => {
       const rows = await realRows(cypher, params)
-      if (/MATCH \(m:Memory \{id: \$id\}\)/.test(cypher)) return rows
+      if (/starts_with\(m\.id, \$id\) AND starts_with\(\$id, m\.id\)/.test(cypher)) return rows
       return rows.map((row) => ("text" in row ? { ...row, text: "" } : row))
     }
   }, 180_000)

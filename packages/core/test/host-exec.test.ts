@@ -4,6 +4,7 @@ import path from "node:path"
 import { Effect } from "effect"
 import { AgentJail } from "../src/agent-jail"
 import { HostExec } from "../src/host-exec"
+import { Global } from "../src/global"
 import { JhProcessRunner } from "../src/jh/process-runner"
 import { stripComments } from "./lib/source-scan"
 
@@ -236,6 +237,7 @@ describe("HostExec.childEnv — the credential rule", () => {
     expect(env.inherit).toBe(true)
     expect(env.vars.NOVACLAW_INSTANCE_SPARK_TOKEN).toBe("peer-secret")
     expect(env.vars.HTTPS_PROXY).toBe("http://127.0.0.1:9")
+    expect(env.vars.TMPDIR).toBe(Global.Path.tmp)
   })
 
   test("per-command consent + CONFINED: no inheritance, credentials dropped", () => {
@@ -251,6 +253,7 @@ describe("HostExec.childEnv — the credential rule", () => {
     expect(env.vars.NOVACLAW_INSTANCE_SPARK_TOKEN).toBeUndefined()
     expect(env.vars.OPENAI_API_KEY).toBeUndefined()
     expect(env.vars.PATH).toBe("/usr/bin:/bin")
+    expect(env.vars.TMPDIR).toBe("/tmp")
   })
 
   test("NO consent (the jh runner, the js sandbox) is uncredentialed even when it runs RAW", () => {

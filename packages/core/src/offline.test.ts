@@ -94,22 +94,22 @@ describe("OFF-C egress env (layer 9)", () => {
   })
 })
 
-describe("offline layer manifest (N/8 indicator)", () => {
-  test("disabled → 0/8 active", () => {
+describe("offline layer manifest", () => {
+  test("disabled → 0/7 active", () => {
     const manifest = layerManifest(disabledPolicy)
     expect(manifest.enabled).toBe(false)
     expect(manifest.active).toBe(0)
-    expect(manifest.total).toBe(8)
+    expect(manifest.total).toBe(7)
     expect(manifest.layers.every((l) => !l.active)).toBe(true)
   })
 
   test("enabling a policy cannot attest OS process confinement", () => {
     const manifest = layerManifest({ enabled: true, allowedHosts: new Set(["x.lan"]) })
-    expect(manifest.active).toBe(7)
-    expect(manifest.layers[7]!.layer).toBe(8)
-    expect(manifest.layers[7]!.name).toMatch(/process egress/i)
-    expect(manifest.layers[7]!.active).toBe(false)
-    expect(manifest.layers[7]!.detail).toContain("Programs can ignore them")
+    expect(manifest.active).toBe(6)
+    expect(manifest.layers[6]!.layer).toBe(7)
+    expect(manifest.layers[6]!.name).toMatch(/process egress/i)
+    expect(manifest.layers[6]!.active).toBe(false)
+    expect(manifest.layers[6]!.detail).toContain("Programs can ignore them")
   })
 })
 
@@ -290,7 +290,7 @@ describe("loadPolicy store sourcing", () => {
 // The defect these tests pin: `Offline.layer` computed the policy ONCE and captured it in
 // `check`/`egressEnv`/`manifest`, so flipping airgap ON through Settings blocked NOTHING until the
 // process restarted — while `/shell/offline`, which re-reads the same stores on every request,
-// reported 8/8 layers active. The guard was off while the status surface said it was on
+// reported every layer active. The guard was off while the status surface said it was on
 // (v0.2.0 ruling 3: *a fault is never described falsely*).
 //
 // So the gate has to be end-to-end and it has to be over the REAL graph: the real store layers,
@@ -368,12 +368,12 @@ describe("A3: a config write engages the airgap without a restart", () => {
         // …while the configured provider and loopback stay reachable.
         expect(offline.check("http://192.168.178.40:8000/v1/chat/completions").allowed).toBe(true)
         expect(offline.check("http://127.0.0.1:4096/global/health").allowed).toBe(true)
-        // OFF-C (layer 8) follows on the same call, and the status surface now agrees with the guard.
+        // OFF-C (process guard) follows on the same call, and the status surface now agrees with the guard.
         expect(offline.egressEnv()?.HTTP_PROXY).toBe(PROXY_SINK)
         expect(offline.egressEnv()?.NO_PROXY).toContain("192.168.178.40")
         expect(offline.manifest().enabled).toBe(true)
-        expect(offline.manifest().active).toBe(7)
-        expect(offline.manifest().layers[7]!.active).toBe(false)
+        expect(offline.manifest().active).toBe(6)
+        expect(offline.manifest().layers[6]!.active).toBe(false)
 
         expect(frozen.enabled).toBe(false)
         expect(checkUrl("https://api.openai.com/v1/chat", frozen).allowed).toBe(true)

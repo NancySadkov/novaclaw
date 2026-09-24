@@ -27,10 +27,8 @@ import { Tools } from "./tools"
  *
  * ── ⭐ the asymmetry, because it is the whole justification ─────────────────────────────────────
  *
- * The writer serves the **local plane**, where every attribute class is legible — including the ones
- * telemetry may never send (AGENTS.md design-principle 4, *two planes*). That asymmetry is
- * deliberate, and it is exactly what lets an agent inside the OS read what the maintenance plane
- * cannot. So the default `plane` here is `local` and it returns the `fault=`, `path=` and `text=`
+ * The writer serves the **local plane**, where every attribute class is legible. An agent inside the
+ * OS can read what a redacted export omits. So the default `plane` here is `local` and it returns the `fault=`, `path=` and `text=`
  * columns in full. Redacting by default would produce a tool that is safe and useless, which is the
  * shape this item was written to avoid.
  *

@@ -14,7 +14,6 @@ import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { Credential } from "@novaclaw/core/credential"
 import { CredentialRepair } from "@novaclaw/core/credential/repair"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
-import { VirtualFs } from "@novaclaw/core/virtual-fs"
 import { Scratch } from "@novaclaw/core/scratch"
 import { OsPlaces } from "@/server/os-places"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
@@ -61,7 +60,6 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
   Effect.gen(function* () {
     const locations = yield* LocationServiceMap.Service
     const config = yield* Config.Service
-    const settingsStore = yield* SettingsConfigStore.Service
 
     const dispose = Effect.fn("InstanceHttpApi.dispose")(function* () {
       yield* markInstanceForDisposal(yield* InstanceState.context)
@@ -71,18 +69,12 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
     const getPath = Effect.fn("InstanceHttpApi.path")(function* () {
       const ctx = yield* InstanceState.context
       const roots: string[] = yield* Effect.promise(() => probeRoots())
-      // FS-3: when the host has no browsable FS, provision + advertise the app-private root.
-      // T7: the store-backed `virtualFs` setting joins the env flag as the on-switch.
-      const virtual = VirtualFs.enabled(yield* settingsStore.all())
-      const virtualRoot = virtual ? yield* Effect.promise(() => VirtualFs.ensure()) : undefined
       // The shared default cwd for folder-less agents ("New Agent" with no project). Provisioned
       // always (idempotent) so the client can always start an agent without picking a folder.
       const scratchDir = yield* Effect.promise(() => Scratch.ensure())
-      // The picker's Places rail: the host's existing well-known folders. Suppressed in virtual
-      // mode (no host FS to jump to); never fails the route (degrades to none).
-      const places = virtual
-        ? []
-        : yield* Effect.promise(() => OsPlaces.probePlaces(Global.Path.home)).pipe(Effect.orElseSucceed(() => []))
+      const places = yield* Effect.promise(() => OsPlaces.probePlaces(Global.Path.home)).pipe(
+        Effect.orElseSucceed(() => []),
+      )
       return {
         home: Global.Path.home,
         state: Global.Path.state,
@@ -100,7 +92,6 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
         db: DatabasePath.path(),
         ...(Global.Path.explicitHome ? { instanceHome: Global.Path.explicitHome } : {}),
         ...(places.length > 0 ? { places } : {}),
-        ...(virtual ? { virtual: true, virtualRoot } : {}),
       }
     })
 
@@ -295,10 +286,6 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
               ...(worldMemory.detail === undefined ? {} : { detail: worldMemory.detail }),
             }),
             NovaHealth.fromScheduler(schedulerState),
-            // ⚠️ `undefined`, not `false`. UPDATER_ENABLED lives in the desktop main process and a
-            // server-side board cannot read it; reporting "updates are off" would describe the
-            // user's own configuration falsely.
-            NovaHealth.fromUpdater(undefined),
             NovaHealth.fromConfigDocument({ unreadable: unreadableConfig }),
             ...(providerRow === undefined ? [] : [providerRow]),
             ...downCapabilities,

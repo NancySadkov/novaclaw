@@ -16,8 +16,8 @@ export * as SessionStrict from "./strict"
 import { Effect } from "effect"
 import crypto from "node:crypto"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
+import { Global } from "../../global"
 import { JhArtifact } from "../../jh/artifact"
 import { JhBasicTools } from "../../jh/tools-basic"
 import { JhBudget } from "../../jh/budget"
@@ -572,13 +572,13 @@ export async function sweepStaleForks(now: number = Date.now(), retentionMs: num
   let removed = 0
   let entries: string[]
   try {
-    entries = await fs.promises.readdir(os.tmpdir())
+    entries = await fs.promises.readdir(Global.Path.tmp)
   } catch {
     return 0
   }
   for (const name of entries) {
     if (!name.startsWith("jh-attempt")) continue
-    const full = path.join(os.tmpdir(), name)
+    const full = path.join(Global.Path.tmp, name)
     try {
       const st = await fs.promises.stat(full)
       if (!st.isDirectory() || now - st.mtimeMs < retentionMs) continue
@@ -604,7 +604,8 @@ export async function forkWorkspace(
     return {
       refused: `the folder is ${(bytes / 1e6).toFixed(0)} MB (racing forks are capped at ${MAX_FORK_BYTES / 1e6} MB)`,
     }
-  const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), `jh-attempt${attempt}-`))
+  await fs.promises.mkdir(Global.Path.tmp, { recursive: true })
+  const dir = await fs.promises.mkdtemp(path.join(Global.Path.tmp, `jh-attempt${attempt}-`))
   await fs.promises.cp(src, dir, { recursive: true, filter: (p) => path.basename(p) !== ".git" })
   return { dir }
 }

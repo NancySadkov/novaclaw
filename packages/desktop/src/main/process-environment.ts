@@ -32,9 +32,6 @@ export function prepareProcessEnvironment(logger: Logger) {
   }
   refreshProxyEnvironment(logger)
   app.commandLine.appendSwitch("proxy-bypass-list", "<-loopback>")
-  const feature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
-  const features = app.commandLine.getSwitchValue("enable-features")
-  app.commandLine.appendSwitch("enable-features", features ? `${feature},${features}` : feature)
   if (!app.isPackaged) app.commandLine.appendSwitch("remote-debugging-port", "9222")
 }
 

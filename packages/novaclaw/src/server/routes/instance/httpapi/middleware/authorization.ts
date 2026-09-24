@@ -14,11 +14,11 @@ const WWW_AUTHENTICATE = 'Basic realm="Secure Area"'
 
 /**
  * The launcher credential is a bootstrap default, not a second data-plane password. These two
- * read-only probes are the only requests the desktop parent must still make after a stored token
- * takes authority: liveness for supervision and the updater's airgap decision. Everything carrying
+ * read-only probe is the only request the desktop parent must still make after a stored token
+ * takes authority: liveness for supervision. Everything carrying
  * user data is authorized solely against the effective (stored-first) credential.
  */
-const LAUNCH_DEFAULT_PROBE_PATHS = new Set(["/global/health", "/shell/offline"])
+const LAUNCH_DEFAULT_PROBE_PATHS = new Set(["/global/health"])
 
 export function acceptsLaunchDefaultProbe(method: string, pathname: string) {
   return method === "GET" && LAUNCH_DEFAULT_PROBE_PATHS.has(pathname)

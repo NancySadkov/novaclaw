@@ -73,16 +73,6 @@ export const qualityGate = (timeoutMs = 60_000) =>
     queueLimit: 0,
   })
 
-export const telemetryLogs = define({
-  mode: "async",
-  timeoutMs: 3_000,
-  retries: 3,
-  retryDelayMs: 1_000,
-  failureMode: "fail_open",
-  maxConcurrency: "unbounded",
-  queueLimit: 1_000,
-})
-
 export const summarizer = define({
   mode: "blocking",
   // A summary is an optimization with a deterministic pack fallback. Five minutes here produced a
@@ -102,6 +92,5 @@ export const AUDIT = {
   webfetch: webfetch(),
   websearch: websearch(),
   quality_gate: qualityGate(),
-  telemetry_logs: telemetryLogs,
   summarizer,
 } satisfies Readonly<Record<string, Policy>>

@@ -92,9 +92,9 @@ const basic = (username: string, password: string) => ServerAuth.header({ userna
 
 const token = (username: string, password: string) => Buffer.from(`${username}:${password}`).toString("base64")
 
-test("launcher defaults are confined to the two read-only supervisor probes", () => {
+test("launcher defaults are confined to the read-only supervisor probe", () => {
   expect(acceptsLaunchDefaultProbe("GET", "/global/health")).toBe(true)
-  expect(acceptsLaunchDefaultProbe("GET", "/shell/offline")).toBe(true)
+  expect(acceptsLaunchDefaultProbe("GET", "/shell/offline")).toBe(false)
   expect(acceptsLaunchDefaultProbe("PATCH", "/global/health")).toBe(false)
   expect(acceptsLaunchDefaultProbe("GET", "/global/config")).toBe(false)
   expect(acceptsLaunchDefaultProbe("GET", "/api/session")).toBe(false)

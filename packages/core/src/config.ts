@@ -68,7 +68,7 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   username: Schema.String.pipe(Schema.optional).annotate({
     description:
-      "Username displayed in conversations and used for telemetry identity. ⚠️ Ruling 4: PRIVILEGED, " +
+      "Username displayed in conversations. ⚠️ Ruling 4: PRIVILEGED, " +
       "which is not obvious from the name — `tool/profile.ts` falls back to this string as the profile " +
       "NAME it hands the model, so it is free text that reaches a future session's context.",
   }),
@@ -185,36 +185,21 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       "Verified 2026-07-31: the only consumers are the directory picker and the Files app, so a pin " +
       "is presentation and grants no access.",
   }),
-  virtualFs: Schema.Boolean.pipe(Schema.optional).annotate({
-    description:
-      "FS-3: force the app-private virtual filesystem root (phones/sandboxes without a browsable FS); the NOVACLAW_VIRTUAL_FS env flag also enables it",
-  }),
   offline: Schema.Boolean.pipe(Schema.optional).annotate({
     description:
       "Offline/airgap mode (OFF-A): outbound HTTP restricted to loopback + configured provider hosts, fail-closed. GLOBAL config only — the chokepoint is machine-level",
   }),
-  // Dependability P6 / batch item 3.2: the telemetry CONSENT field. This is one of the TWO
-  // independent conditions the upload path consults — the other is the live offline/airgap policy,
-  // which force-disables telemetry regardless of this value (AGENTS.md design-principle 4). The
-  // path itself is `observability/telemetry.ts`; it carries only `egress: true` attributes and a
-  // crash SIGNATURE (error kind, a hash of the frames, OS, release line), never user content, and
-  // it refuses with a named reason — `no_endpoint` — until a collector is configured, which is the
-  // state on every machine today. ⚠️ Do not fold the airgap condition into this field's default:
-  // the two are held apart on purpose and `telemetry.test.ts` fails if either starts reading the
-  // other's source.
   /**
    * 🔴 The community P2P module is OFF until the user turns it on, and `consented` is why it stays
    * that way rather than defaulting on for convenience.
    *
-   * Two fields, held apart for the same reason `telemetry.enabled` and `offline` are: they answer
-   * different questions and folding them loses one of the answers.
+   * Two fields answer different questions and folding them loses one of the answers.
    *
    *   · `consented` — has this person been shown what joining costs them, and said yes. STICKY: it
    *     records that a warning was read, and turning the module off later does not un-read it.
    *   · `enabled` — the switch in the Community app's settings. Off is a normal, reversible state.
    *
-   * The module runs only when BOTH are true, and the airgap independently forces it off — the same
-   * override telemetry has (design-principle 4). ⚠️ `consented: false` with `enabled: true` must
+   * The module runs only when BOTH are true, and the airgap independently forces it off. ⚠️ `consented: false` with `enabled: true` must
    * never run: that combination means somebody edited the config by hand to skip the warning.
    *
    * What the warning has to say is not decoration, and is recorded here because the fields exist to
@@ -349,31 +334,6 @@ export class Info extends Schema.Class<Info>("Config.Info")({
         "Community P2P participation. Off until explicitly accepted — joining is a decision with consequences the user has to see first.",
     }),
 
-  telemetry: Schema.Struct({
-    endpoint: Schema.String.pipe(Schema.optional).annotate({
-      description: "Crash-intake URL override; leave empty to use the NovaClaw maintenance endpoint",
-    }),
-    enabled: ConfigAnnotation.depends(
-      Schema.Boolean.pipe(Schema.optional).annotate({
-        description: "Allow crash telemetry uploads (default: true; offline/airgap mode forces off independently)",
-      }),
-      [
-        {
-          path: ["offline"],
-          when: "unset",
-          effect:
-            "airgap mode force-disables telemetry and this consent flag does not override it — an explicit " +
-            "true still refuses. Airgap OVERRIDES consent, it does not withdraw it",
-          source: "packages/core/src/observability/telemetry.ts resolveGate",
-        },
-      ],
-    ),
-  })
-    .pipe(Schema.optional)
-    .annotate({
-      description:
-        "Telemetry consent and maintenance intake — gates crash signatures only, never user content; the endpoint is replaceable at runtime",
-    }),
   memory: Schema.Struct({
     enabled: Schema.Boolean.pipe(Schema.optional).annotate({
       description:

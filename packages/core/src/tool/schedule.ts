@@ -14,12 +14,13 @@ export const name = "schedule"
 export const Input = Schema.Union([
   Schema.Struct({ op: Schema.Literal("list") }),
   Schema.Struct({ op: Schema.Literal("confirm"), scheduleId: Schema.String, occurrenceMillis: Schema.Finite }),
+  Schema.Struct({ op: Schema.Literal("disable"), scheduleId: Schema.String }),
 ])
 export const Output = Schema.String
 
 export const metadata = {
   description:
-    "List your scheduled work or confirm one active work window complete. A schedule nudge gives the scheduleId and occurrenceMillis needed for confirmation. Each overlapping task must be confirmed separately.",
+    "List your scheduled work, confirm one active window complete, or disable a recurring schedule. A schedule nudge gives the scheduleId and occurrenceMillis needed for confirmation.",
   input: Input,
   output: Output,
   sideEffect: "idempotent-write",
@@ -43,6 +44,11 @@ export const layer = Layer.effectDiscard(
                   return JSON.stringify({ schedules, windows })
                 }
                 const now = yield* Clock.currentTimeMillis
+                if (input.op === "disable") {
+                  const disabled = yield* ScheduleStore.updateForAgent(db, agentID, input.scheduleId, { enabled: false }, now)
+                  if (!disabled) return yield* new ToolFailure({ message: "No schedule with that id belongs to you." })
+                  return `Schedule ${input.scheduleId} disabled. No future windows will open.`
+                }
                 const confirmed = yield* ScheduleStore.confirmForAgent(
                   db,
                   agentID,

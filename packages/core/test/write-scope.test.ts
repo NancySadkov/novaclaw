@@ -200,6 +200,7 @@ describe("design principle 11: a stringified `undefined` never becomes a directo
       const report = JSON.parse(line) as {
         twin: { target: string; created: boolean; strays: string[] }
         resolved: Record<string, string>
+        resolveError?: string
         strays: string[]
       }
 
@@ -209,6 +210,13 @@ describe("design principle 11: a stringified `undefined` never becomes a directo
       expect(NULLISH_SEGMENT.test(report.twin.target)).toBe(true)
       expect(report.twin.created).toBe(true)
       expect(report.twin.strays.length).toBeGreaterThan(0)
+
+      if (scenario === "empty-homedir") {
+        expect(report.resolveError).toContain("Pass --home")
+        expect(report.resolved).toEqual({})
+      } else {
+        expect(report.resolveError).toBeUndefined()
+      }
 
       // The claim: nothing the guarded resolver produced carries the segment…
       expect(Object.entries(report.resolved).filter(([, v]) => NULLISH_SEGMENT.test(v))).toEqual([])

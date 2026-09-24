@@ -14,6 +14,7 @@ import { useConfirm } from "@/components/dialog-confirm"
 import { reportedWrite } from "@/utils/config-write"
 import { showToast } from "@/utils/toast"
 import { SettingsRowV2 } from "./parts/row"
+import { SettingsNumberFieldV2 } from "./parts/number-field"
 import { planNudgeSave, type Refusal } from "./nudges-draft"
 
 type HookType = ConfigNudge.Hook["type"]
@@ -32,6 +33,7 @@ const HOOK_KEY: Record<HookType, TranslationKey> = {
   "text-match": "settings.nudges.hook.text-match",
   "write-match": "settings.nudges.hook.write-match",
   "tool-call": "settings.nudges.hook.tool-call",
+  "shell-command": "settings.nudges.hook.shell-command",
   "mcp-call": "settings.nudges.hook.mcp-call",
   "file-read": "settings.nudges.hook.file-read",
   "file-write": "settings.nudges.hook.file-write",
@@ -39,6 +41,7 @@ const HOOK_KEY: Record<HookType, TranslationKey> = {
   "resource-pressure": "settings.nudges.hook.resource-pressure",
   "time-of-day": "settings.nudges.hook.time-of-day",
   "new-day": "settings.nudges.hook.new-day",
+  interval: "settings.nudges.hook.interval",
   script: "settings.nudges.hook.script",
 }
 
@@ -55,7 +58,9 @@ const hookFor = (type: HookType): ConfigNudge.Hook => {
     case "write-match":
       return { type, pattern: "" }
     case "tool-call":
-      return { type, tool: "" }
+      return { type, tool: "", phase: "after" }
+    case "shell-command":
+      return { type, pattern: "", phase: "after" }
     case "mcp-call":
       return { type, server: "" }
     case "file-read":
@@ -70,6 +75,8 @@ const hookFor = (type: HookType): ConfigNudge.Hook => {
       return { type, after: "18:00", before: "06:00" }
     case "new-day":
       return { type }
+    case "interval":
+      return { type, minutes: 60 }
     case "script":
       return { type, command: "" }
   }
@@ -122,6 +129,7 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
         "text-match",
         "write-match",
         "tool-call",
+        "shell-command",
         "mcp-call",
         "file-read",
         "file-write",
@@ -129,6 +137,7 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
         "resource-pressure",
         "time-of-day",
         "new-day",
+        "interval",
         "script",
       ] as const
     ).map((value) => ({ value, label: language.t(HOOK_KEY[value]) })),
@@ -175,7 +184,7 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
     <div class="nudge-surface">
       <div class="nudge-heading">
         <div>
-          <span class="nudge-eyebrow">LONG-TERM MEMORY</span>
+          <span class="nudge-eyebrow">OFFICER AUTOMATION</span>
           <h2>{language.t("settings.nudges.title")}</h2>
           <p>{language.t("settings.nudges.description")}</p>
         </div>
@@ -199,7 +208,7 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
                       <span class="nudge-status-dot" data-state={item.enabled === false ? "off" : "on"} />
                       <div class="nudge-card-title">
                         <h4>{item.name}</h4>
-                        <p>{language.t(HOOK_KEY[item.hook.type])}</p>
+                        <p>{language.t(HOOK_KEY[item.hook.type])}{"phase" in item.hook ? ` · ${item.hook.phase ?? "after"}` : ""}{item.hook.type === "interval" ? ` · ${item.hook.minutes} min` : ""}</p>
                       </div>
                       <Switch
                         checked={item.enabled !== false}
@@ -214,8 +223,8 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
                     <p class="nudge-card-prompt">{item.text}</p>
                     <div class="nudge-card-foot">
                       <span>
-                        {item.spammable ? "Repeats whenever triggered" : "Quiet delivery"}
-                        {item.script ? " · Dynamic text" : ""}
+                        {item.spammable ? "Every matching event" : "Quiet delivery"}
+                        {item.script || item.text.includes("$(") ? " · Runs bash" : ""}
                       </span>
                       <div class="nudge-actions">
                         <button type="button" onClick={() => open(item)}>
@@ -279,6 +288,34 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
                     >
                       {tool}
                     </ButtonV2>
+                  )}
+                </For>
+              </div>
+            </Show>
+            <Show when={draft().hook.type === "shell-command"}>
+              <TextInputV2
+                appearance="base"
+                value={(draft().hook as { pattern: string }).pattern}
+                placeholder={language.t("settings.nudges.field.shellPattern")}
+                spellcheck={false}
+                onInput={(event) => patchHook({ pattern: event.currentTarget.value })}
+              />
+              <p class="settings-v2-field-description">{language.t("settings.nudges.shellPattern.description")}</p>
+            </Show>
+            <Show when={draft().hook.type === "tool-call" || draft().hook.type === "shell-command"}>
+              <div class="nudge-phase-picker" role="group" aria-label={language.t("settings.nudges.phase.title")}>
+                <For each={(["before", "after"] as const)}>
+                  {(phase) => (
+                    <button
+                      type="button"
+                      class="nudge-phase-option"
+                      data-active={(draft().hook as { phase?: string }).phase === phase}
+                      aria-pressed={(draft().hook as { phase?: string }).phase === phase}
+                      onClick={() => patchHook({ phase })}
+                    >
+                      <strong>{language.t(`settings.nudges.phase.${phase}`)}</strong>
+                      <span>{language.t(`settings.nudges.phase.${phase}.description`)}</span>
+                    </button>
                   )}
                 </For>
               </div>
@@ -347,6 +384,19 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
                 />
               </div>
             </Show>
+            <Show when={draft().hook.type === "interval"}>
+              <label class="nudge-interval-field">
+                <span>{language.t("settings.nudges.field.interval")}</span>
+                <SettingsNumberFieldV2
+                  value={() => (draft().hook as { minutes: number }).minutes}
+                  onCommit={(minutes) => setDraft((item) => ({ ...item, hook: { type: "interval", minutes } }))}
+                  min={1}
+                  max={10080}
+                  ariaLabel={language.t("settings.nudges.field.interval")}
+                />
+              </label>
+              <p class="settings-v2-field-description">{language.t("settings.nudges.interval.description")}</p>
+            </Show>
             <Show when={draft().hook.type === "script"}>
               <TextInputV2
                 appearance="base"
@@ -363,6 +413,7 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
               placeholder={language.t("settings.nudges.field.text")}
               onInput={(event) => setDraft((item) => ({ ...item, text: event.currentTarget.value }))}
             />
+            <p class="settings-v2-field-description">{language.t("settings.nudges.text.description")}</p>
             <TextInputV2
               appearance="base"
               value={draft().script ?? ""}
@@ -370,9 +421,6 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
               spellcheck={false}
               onInput={(event) => setDraft((item) => ({ ...item, script: event.currentTarget.value }))}
             />
-            {/* 🔴 Off by default, and the default is the point: a quiet nudge reaches a session at
-                most once per 30 minutes and once per context. Switch this ON only for a nudge whose
-                repetition IS its payload — a heartbeat reporting a changing count, say. */}
             <SettingsRowV2
               title={language.t("settings.nudges.field.spammable")}
               description={language.t("settings.nudges.spammable.description")}

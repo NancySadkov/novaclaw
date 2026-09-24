@@ -9,7 +9,6 @@ import { createServer } from "node:http"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { BootProfile } from "@novaclaw/core/observability/boot-profile"
-import { CrashCapture } from "@novaclaw/core/observability/crash-capture"
 import { MDNS } from "./mdns"
 import { HttpApiApp } from "./routes/instance/httpapi/server"
 import { disposeMiddleware } from "./routes/instance/httpapi/lifecycle"
@@ -113,14 +112,6 @@ export async function openapi() {
 export let url: URL | undefined
 
 export async function listen(opts: ListenOptions): Promise<Listener> {
-  // The crash-capture seam installs HERE for the same reason `BootProfile` marks here: this is the
-  // ONE shared spine of both real server boots (`cli/cmd/serve.ts` and the Electron sidecar, per the
-  // note at the top of this file), so one call site covers both with no second harness. It is
-  // idempotent — `web.ts` and a relisten call `listen` again in the same process, and a second
-  // install is an explicit no-op — and it refuses to install at all under `NODE_ENV=test`, which
-  // matters because four test files call `Server.listen` and would otherwise get a crash reporter
-  // that reports the suite's own deliberate failures. Synchronous, total, and cannot fail the boot.
-  CrashCapture.install({ plane: "server" })
   const listener = await Effect.runPromise(listenEffect(opts))
   return {
     hostname: listener.hostname,

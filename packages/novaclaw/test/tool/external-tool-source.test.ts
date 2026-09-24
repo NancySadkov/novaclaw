@@ -25,6 +25,7 @@ import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
 import { McpExternal } from "@novaclaw/core/tool/mcp-external"
 import { PluginTools } from "@novaclaw/core/tool/plugin-tools"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
+import { NudgeService } from "@novaclaw/core/nudge-service"
 import { Tool } from "@novaclaw/core/tool/tool"
 import { ApplicationTools } from "@novaclaw/core/tool/application-tools"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
@@ -116,6 +117,7 @@ const registryOver = (base: ReturnType<typeof testBase>) =>
     // `tool-policy*` suites build the real node. Named `bypassed…` on purpose: a reader must not
     // mistake this for coverage, and it is test-only with no production twin.
     Layer.provide(bypassedPolicyGate),
+    Layer.provide(Layer.mock(NudgeService.Service, { beforeTool: () => Effect.succeed(undefined) })),
     Layer.provide(base),
   )
 

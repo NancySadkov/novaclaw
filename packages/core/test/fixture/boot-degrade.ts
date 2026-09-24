@@ -32,6 +32,7 @@ const report: Record<string, unknown> = {}
 const paths = Global.make()
 report["status"] = Global.directoryStatus()
 report["data"] = paths.data
+report["tmp"] = paths.tmp
 report["log"] = paths.log
 
 // The unguarded twin: the loop this module used to run, over the directories the boot actually

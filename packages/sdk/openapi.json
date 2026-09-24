@@ -6509,7 +6509,7 @@
             "description": "Unauthorized"
           }
         },
-        "description": "Compose storage, conversation store, memory, scheduler, updater and provider readings into one verdict. Nothing costs egress unless probe=provider is passed, so opening a diagnostics screen never contacts anyone.",
+        "description": "Compose storage, conversation store, memory, scheduler and provider readings into one verdict. Nothing costs egress unless probe=provider is passed, so opening a diagnostics screen never contacts anyone.",
         "summary": "Diagnose this instance",
         "x-codeSamples": [
           {
@@ -23877,152 +23877,6 @@
           }
         ]
       }
-    },
-    "/api/telemetry/status": {
-      "get": {
-        "tags": ["telemetry"],
-        "operationId": "v2.telemetry.status",
-        "parameters": [],
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "gate": {
-                      "type": "object",
-                      "properties": {
-                        "consent": {
-                          "type": "boolean"
-                        },
-                        "airgap": {
-                          "type": "boolean"
-                        }
-                      },
-                      "required": ["consent", "airgap"],
-                      "additionalProperties": false
-                    },
-                    "endpointConfigured": {
-                      "type": "boolean"
-                    },
-                    "ready": {
-                      "type": "boolean"
-                    },
-                    "refusals": {
-                      "type": "array",
-                      "items": {
-                        "type": "string",
-                        "enum": [
-                          "consent_off",
-                          "airgap",
-                          "no_endpoint",
-                          "content_bearing_event",
-                          "unknown_event",
-                          "empty_signature"
-                        ]
-                      }
-                    },
-                    "payloadPreview": {
-                      "type": "object",
-                      "properties": {
-                        "signature": {
-                          "type": "object",
-                          "additionalProperties": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "number"
-                              },
-                              {
-                                "type": "boolean"
-                              }
-                            ]
-                          }
-                        },
-                        "attributes": {
-                          "type": "object",
-                          "additionalProperties": {
-                            "anyOf": [
-                              {
-                                "type": "string"
-                              },
-                              {
-                                "type": "number"
-                              },
-                              {
-                                "type": "boolean"
-                              }
-                            ]
-                          }
-                        }
-                      },
-                      "required": ["signature", "attributes"],
-                      "additionalProperties": false
-                    },
-                    "disclosure": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "field": {
-                            "type": "string"
-                          },
-                          "class": {
-                            "type": "string"
-                          },
-                          "meaning": {
-                            "type": "string"
-                          },
-                          "condition": {
-                            "type": "string"
-                          }
-                        },
-                        "required": ["field", "class", "meaning", "condition"],
-                        "additionalProperties": false
-                      }
-                    }
-                  },
-                  "required": ["gate", "endpointConfigured", "ready", "refusals", "disclosure"],
-                  "additionalProperties": false
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Show every live refusal, the exact synthetic payload the sender would produce, and its generated field disclosure.",
-        "summary": "Crash-reporting status",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.telemetry.status({\n  ...\n})"
-          }
-        ]
-      }
     }
   },
   "components": {
@@ -24208,12 +24062,6 @@
           },
           {
             "$ref": "#/components/schemas/EventSessionError"
-          },
-          {
-            "$ref": "#/components/schemas/EventInstallationUpdated"
-          },
-          {
-            "$ref": "#/components/schemas/EventInstallationUpdate-available"
           },
           {
             "$ref": "#/components/schemas/EventServerInstanceDisposed"
@@ -27424,56 +27272,6 @@
                   },
                   "type": {
                     "type": "string",
-                    "enum": ["installation.updated"]
-                  },
-                  "properties": {
-                    "type": "object",
-                    "properties": {
-                      "version": {
-                        "type": "string"
-                      }
-                    },
-                    "required": ["version"],
-                    "additionalProperties": false
-                  }
-                },
-                "required": ["id", "type", "properties"],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^evt_"
-                  },
-                  "type": {
-                    "type": "string",
-                    "enum": ["installation.update-available"]
-                  },
-                  "properties": {
-                    "type": "object",
-                    "properties": {
-                      "version": {
-                        "type": "string"
-                      }
-                    },
-                    "required": ["version"],
-                    "additionalProperties": false
-                  }
-                },
-                "required": ["id", "type", "properties"],
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": {
-                  "id": {
-                    "type": "string",
-                    "pattern": "^evt_"
-                  },
-                  "type": {
-                    "type": "string",
                     "enum": ["server.instance.disposed"]
                   },
                   "properties": {
@@ -29005,12 +28803,6 @@
               "type": "string"
             }
           },
-          "virtual": {
-            "type": "boolean"
-          },
-          "virtualRoot": {
-            "type": "string"
-          },
           "scratchDir": {
             "type": "string"
           },
@@ -30387,12 +30179,6 @@
           },
           {
             "$ref": "#/components/schemas/SessionError"
-          },
-          {
-            "$ref": "#/components/schemas/InstallationUpdated"
-          },
-          {
-            "$ref": "#/components/schemas/InstallationUpdate-available"
           },
           {
             "$ref": "#/components/schemas/ServerInstanceDisposed"
@@ -36247,9 +36033,31 @@
                   },
                   "tool": {
                     "type": "string"
+                  },
+                  "phase": {
+                    "type": "string",
+                    "enum": ["before", "after"]
                   }
                 },
                 "required": ["type", "tool"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["shell-command"]
+                  },
+                  "pattern": {
+                    "type": "string"
+                  },
+                  "phase": {
+                    "type": "string",
+                    "enum": ["before", "after"]
+                  }
+                },
+                "required": ["type", "pattern"],
                 "additionalProperties": false
               },
               {
@@ -36346,6 +36154,40 @@
                   }
                 },
                 "required": ["type"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["interval"]
+                  },
+                  "minutes": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  }
+                },
+                "required": ["type", "minutes"],
                 "additionalProperties": false
               },
               {
@@ -36873,6 +36715,22 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 365
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfigV2Storage": {
+        "type": "object",
+        "properties": {
+          "max_database_mib": {
+            "type": "integer",
+            "minimum": 512,
+            "maximum": 32768
+          },
+          "prune_interval_hours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 24
           }
         },
         "additionalProperties": false
@@ -37969,6 +37827,9 @@
           "trash": {
             "$ref": "#/components/schemas/ConfigV2Trash"
           },
+          "storage": {
+            "$ref": "#/components/schemas/ConfigV2Storage"
+          },
           "tool_output": {
             "$ref": "#/components/schemas/ConfigV2ToolOutput"
           },
@@ -38038,9 +37899,6 @@
               "type": "string"
             }
           },
-          "virtualFs": {
-            "type": "boolean"
-          },
           "offline": {
             "type": "boolean"
           },
@@ -38097,18 +37955,6 @@
                   }
                 },
                 "additionalProperties": false
-              }
-            },
-            "additionalProperties": false
-          },
-          "telemetry": {
-            "type": "object",
-            "properties": {
-              "endpoint": {
-                "type": "string"
-              },
-              "enabled": {
-                "type": "boolean"
               }
             },
             "additionalProperties": false
@@ -43601,7 +43447,7 @@
           },
           "outcome": {
             "type": "string",
-            "enum": ["pending", "confirmed", "failed"]
+            "enum": ["pending", "confirmed", "failed", "cancelled"]
           },
           "windowEndAt": {
             "type": "number"
@@ -44652,100 +44498,6 @@
               "error": {}
             },
             "required": ["error"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "InstallationUpdated": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["installation.updated"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "version": {
-                "type": "string"
-              }
-            },
-            "required": ["version"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "data"],
-        "additionalProperties": false
-      },
-      "InstallationUpdate-available": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["installation.update-available"]
-          },
-          "durable": {
-            "type": "object",
-            "properties": {
-              "aggregateID": {
-                "type": "string"
-              },
-              "seq": {
-                "type": "integer"
-              },
-              "version": {
-                "type": "integer"
-              }
-            },
-            "required": ["aggregateID", "seq", "version"],
-            "additionalProperties": false
-          },
-          "location": {
-            "$ref": "#/components/schemas/LocationRef"
-          },
-          "data": {
-            "type": "object",
-            "properties": {
-              "version": {
-                "type": "string"
-              }
-            },
-            "required": ["version"],
             "additionalProperties": false
           }
         },
@@ -49026,56 +48778,6 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
-      "EventInstallationUpdated": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["installation.updated"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {
-              "version": {
-                "type": "string"
-              }
-            },
-            "required": ["version"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
-      "EventInstallationUpdate-available": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^evt_"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["installation.update-available"]
-          },
-          "properties": {
-            "type": "object",
-            "properties": {
-              "version": {
-                "type": "string"
-              }
-            },
-            "required": ["version"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "type", "properties"],
-        "additionalProperties": false
-      },
       "EventServerInstanceDisposed": {
         "type": "object",
         "properties": {
@@ -50304,10 +50006,6 @@
     {
       "name": "log",
       "description": "The instance's own activity log, read-only."
-    },
-    {
-      "name": "telemetry",
-      "description": "The maintenance plane, made inspectable: what crash reporting would send, what is stopping it, and what every field means."
     }
   ]
 }

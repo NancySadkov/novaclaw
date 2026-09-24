@@ -216,7 +216,7 @@ export const measure = (input: Input): Footprint => {
  * growth trend nobody can look at.
  *
  * So the struct is richer than the event, on purpose. The name is available in-process, to whatever
- * renders the footprint locally; the wire carries the sizes. If the name is ever wanted in telemetry,
+ * renders the footprint locally; the wire carries the sizes. If the name is ever wanted in aggregate metrics,
  * the way to get it is to emit it only when it matches the closed set of registered core tool names —
  * making it genuinely an `id` — and not by reclassifying an open one.
  *

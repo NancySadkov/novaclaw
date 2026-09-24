@@ -56,8 +56,6 @@ const novaBackground = {
 let rendererCspCache: string | undefined
 const RENDERER_CSP = () => (rendererCspCache ??= rendererCsp(THEME_PRELOAD_SHA256))
 
-const documentPolicyHeader = "Document-Policy"
-const jsCallStacksDocumentPolicy = "include-js-call-stacks-in-crash-reports"
 export const PRELOAD_READY_TIMEOUT_MS = 15_000
 
 protocol.registerSchemesAsPrivileged([
@@ -490,7 +488,6 @@ function addHtmlDocumentHeaders(response: Response, file: string) {
     headers.set(CSP_HEADER, HTML_EMBED_CSP)
     return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
   }
-  headers.set(documentPolicyHeader, jsCallStacksDocumentPolicy)
   headers.set(CSP_HEADER, RENDERER_CSP())
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
 }
@@ -560,7 +557,7 @@ function isTrustedRendererUrl(value?: string) {
  * `cors-scope.test.ts` ratchets.
  */
 function addRendererHeaders(value: string, headers: Record<string, any>) {
-  // Same gate the Document-Policy header already uses, and it is the right one: it is true for
+  // This gate is true for
   // `nc://renderer/*.html` (packaged) and for `*.html` on the dev-server origin (dev), i.e. for
   // exactly the documents this policy is written for — and never for a remote instance's HTML.
   if (!isRendererUrl(value, true)) return
@@ -571,7 +568,6 @@ function addRendererHeaders(value: string, headers: Record<string, any>) {
     upsertKeyValue(headers, CSP_HEADER, [HTML_EMBED_CSP])
     return
   }
-  upsertKeyValue(headers, documentPolicyHeader, [jsCallStacksDocumentPolicy])
   upsertKeyValue(headers, CSP_HEADER, [RENDERER_CSP()])
 }
 

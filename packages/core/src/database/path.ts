@@ -1,5 +1,7 @@
 import nodePath from "path"
 import { customType } from "drizzle-orm/sqlite-core"
+import { store, resolve } from "./instance-path"
+import { Scratch } from "../scratch"
 
 function storagePath(input: string) {
   if (process.platform !== "win32") return input
@@ -34,10 +36,10 @@ export const directoryColumn = customType<{
     return "text"
   },
   toDriver(input) {
-    return input ? absolute(input) : input
+    return input ? Scratch.contains(input) ? store(absolute(input)) : absolute(input) : input
   },
   fromDriver(input) {
-    return input ? toPlatform(absolute(input)) : input
+    return input ? toPlatform(absolute(resolve(input))) : input
   },
 })
 

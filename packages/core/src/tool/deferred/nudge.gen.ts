@@ -3,15 +3,17 @@ import { ToolDefinition } from "@novaclaw/llm"
 import { makeLocationNode } from "../../effect/app-node"
 import { LazyBuiltin } from "../lazy-builtin"
 import { AgentConfigStore } from "../../agent-config-store"
+import { AgentV2 } from "../../agent"
 import { PermissionV2 } from "../../permission"
 import { ToolRegistry } from ".././registry"
+import { NudgeService } from "../../nudge-service"
 
 export const node = makeLocationNode({
 name: "tool/nudge",
 layer: LazyBuiltin.layer({
 definition: new ToolDefinition({
   "name": "nudge",
-  "description": "List, view, add, edit, or delete an officer's personal Nudges — the targeted instructions that fire inside its own sessions. Nova may manage any officer's nudges. Other officers may manage only their own. A nudge can use a new-day, time, tool, file, compaction, resource, or script hook; its optional script appends bounded dynamic stdout at delivery time.",
+  "description": "List, view, add, edit, enable, disable, or delete personal Nudges for yourself or an officer below you in the reporting chain. A nudge may run a bounded bash command in $(...) at delivery. Before-tool nudges require nudge confirm before retrying the same call.",
   "inputSchema": {
     "anyOf": [
       {
@@ -104,7 +106,9 @@ definition: new ToolDefinition({
           "op": {
             "type": "string",
             "enum": [
-              "delete"
+              "delete",
+              "disable",
+              "enable"
             ]
           },
           "id": {
@@ -124,6 +128,29 @@ definition: new ToolDefinition({
         "required": [
           "op",
           "id"
+        ],
+        "additionalProperties": false
+      },
+      {
+        "type": "object",
+        "properties": {
+          "op": {
+            "type": "string",
+            "enum": [
+              "confirm"
+            ]
+          },
+          "id": {
+            "type": "string"
+          },
+          "callId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "op",
+          "id",
+          "callId"
         ],
         "additionalProperties": false
       }
@@ -200,11 +227,58 @@ definition: new ToolDefinition({
                   },
                   "tool": {
                     "type": "string"
+                  },
+                  "phase": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "before",
+                          "after"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
                   "type",
                   "tool"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "shell-command"
+                    ]
+                  },
+                  "pattern": {
+                    "type": "string"
+                  },
+                  "phase": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "before",
+                          "after"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "type",
+                  "pattern"
                 ],
                 "additionalProperties": false
               },
@@ -348,6 +422,47 @@ definition: new ToolDefinition({
                   "type": {
                     "type": "string",
                     "enum": [
+                      "interval"
+                    ]
+                  },
+                  "minutes": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "NaN"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "Infinity"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "-Infinity"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "type",
+                  "minutes"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
                       "script"
                     ]
                   },
@@ -408,5 +523,5 @@ sideEffect: "idempotent-write",
 load: () => import("../nudge"),
 
 }),
-deps: [ToolRegistry.node, PermissionV2.node, AgentConfigStore.node],
+deps: [ToolRegistry.node, PermissionV2.node, AgentConfigStore.node, AgentV2.node, NudgeService.node],
 })

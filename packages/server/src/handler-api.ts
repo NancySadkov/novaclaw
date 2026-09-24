@@ -19,7 +19,6 @@ import { PtyInstanceGroup } from "@novaclaw/protocol/groups/pty-instance"
 import { RecipeGroup } from "@novaclaw/protocol/groups/recipe"
 import { AppGroup } from "@novaclaw/protocol/groups/app"
 import { ReferenceGroup } from "@novaclaw/protocol/groups/reference"
-import { TelemetryGroup } from "@novaclaw/protocol/groups/telemetry"
 import { QualityGroup } from "@novaclaw/protocol/groups/quality"
 import { VcsGroup } from "@novaclaw/protocol/groups/vcs"
 import { Authorization } from "@novaclaw/protocol/middleware/authorization"
@@ -62,7 +61,6 @@ export const PtyInstanceApi = fragment(PtyInstanceGroup)
 export const RecipeApi = fragment(RecipeGroup)
 export const AppApi = fragment(AppGroup)
 export const ReferenceApi = fragment(ReferenceGroup.middleware(LocationMiddleware))
-export const TelemetryApi = fragment(TelemetryGroup)
 // ⚠️ Declared here, HANDLED in `packages/novaclaw`. The VCS service needs that package's `Git`,
 // `InstanceState` and `EventV2Bridge`, none of which this package can see — and none of which it
 // needs to, because a handler layer only has to satisfy the group's type. Every other fragment

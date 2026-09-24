@@ -8,7 +8,8 @@ export const Hook = Schema.Union([
     description:
       "Fires when the content a writing tool is about to write matches the pattern. Never tested against a tool's OUTPUT, so text the agent merely read cannot fire it.",
   }),
-  Schema.Struct({ type: Schema.Literal("tool-call"), tool: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("tool-call"), tool: Schema.String, phase: Schema.Literals(["before", "after"]).pipe(Schema.optional) }),
+  Schema.Struct({ type: Schema.Literal("shell-command"), pattern: Schema.String, phase: Schema.Literals(["before", "after"]).pipe(Schema.optional) }),
   Schema.Struct({ type: Schema.Literal("mcp-call"), server: Schema.String }),
   Schema.Struct({ type: Schema.Literal("file-read"), extension: Schema.String }),
   Schema.Struct({ type: Schema.Literal("file-write"), extension: Schema.String }),
@@ -16,6 +17,7 @@ export const Hook = Schema.Union([
   Schema.Struct({ type: Schema.Literal("resource-pressure"), level: Schema.Literals(["warning", "floor", "either"]) }),
   Schema.Struct({ type: Schema.Literal("time-of-day"), after: Schema.String, before: Schema.String }),
   Schema.Struct({ type: Schema.Literal("new-day") }),
+  Schema.Struct({ type: Schema.Literal("interval"), minutes: Schema.Number }),
   Schema.Struct({ type: Schema.Literal("script"), command: Schema.String }),
 ]).annotate({ description: "A harness-owned event selector. Script hooks fire when their command exits successfully." })
 export type Hook = typeof Hook.Type

@@ -4766,20 +4766,6 @@ class ApiV2Log extends NovaClawApiClient {
   }
 }
 
-class ApiV2Telemetry extends NovaClawApiClient {
-  /**
-   * Crash-reporting status
-   *
-   * Show every live refusal, the exact synthetic payload the sender would produce, and its generated field disclosure.
-   */
-  public status<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<T.V2TelemetryStatusResponses, T.V2TelemetryStatusErrors, ThrowOnError>({
-      url: "/api/telemetry/status",
-      ...options,
-    })
-  }
-}
-
 class ApiV2 extends NovaClawApiClient {
   private _instance?: ApiV2Instance
   get instance(): ApiV2Instance {
@@ -4904,11 +4890,6 @@ class ApiV2 extends NovaClawApiClient {
   private _log?: ApiV2Log
   get log(): ApiV2Log {
     return (this._log ??= new ApiV2Log({ client: this.client }))
-  }
-
-  private _telemetry?: ApiV2Telemetry
-  get telemetry(): ApiV2Telemetry {
-    return (this._telemetry ??= new ApiV2Telemetry({ client: this.client }))
   }
 }
 
@@ -6493,7 +6474,7 @@ class ApiInstance extends NovaClawApiClient {
   /**
    * Diagnose this instance
    *
-   * Compose storage, conversation store, memory, scheduler, updater and provider readings into one verdict. Nothing costs egress unless probe=provider is passed, so opening a diagnostics screen never contacts anyone.
+   * Compose storage, conversation store, memory, scheduler and provider readings into one verdict. Nothing costs egress unless probe=provider is passed, so opening a diagnostics screen never contacts anyone.
    */
   public diagnosis<ThrowOnError extends boolean = false>(
     parameters?: {

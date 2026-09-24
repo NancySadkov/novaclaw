@@ -5,6 +5,7 @@ import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core"
 import { Cause, Effect, Exit, Schema, SchemaIssue } from "effect"
 import { Log } from "@novaclaw/schema/log"
 import type { Database } from "./database/database"
+import * as InstancePath from "./database/instance-path"
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // The seven config stores, collapsed onto factories (v0.2.0-prep Wave 4 item 10).
@@ -205,7 +206,7 @@ export const makeLayeredStore = <Item>(spec: LayeredSpec<Item>): LayeredStore<It
         const skipped: string[] = []
         for (const row of yield* rows.selectAll()) {
           const name = row[spec.keyName] as string
-          const decoded = spec.decode(row.layers)
+          const decoded = spec.decode(InstancePath.mapValues(row.layers, InstancePath.resolve))
           if (Exit.isSuccess(decoded)) {
             result[name] = [...decoded.value]
             continue
@@ -215,7 +216,10 @@ export const makeLayeredStore = <Item>(spec: LayeredSpec<Item>): LayeredStore<It
         if (skipped.length > 0) yield* warnUnreadable(reported, skipped, spec.report)
         return result
       }),
-    setLayers: (name, layers) => rows.upsert({ [spec.keyName]: name, layers }, { layers }),
+    setLayers: (name, layers) => {
+      const stored = InstancePath.mapValues(layers, InstancePath.store, InstancePath.preserveProjectDirectory)
+      return rows.upsert({ [spec.keyName]: name, layers: stored }, { layers: stored })
+    },
     remove: (name) => rows.deleteOne(name),
     isEmpty: () => rows.isEmpty(),
   }
@@ -282,7 +286,10 @@ export const makeKeyValueStore = <Value = unknown>(spec: {
   readonly keyColumn: SQLiteColumn
 }): KeyValueStore<Value> => {
   const rows = makeRowStore(spec.db, spec.table, spec.keyColumn)
-  const put = (key: string, value: Value) => rows.upsert({ key, value }, { value })
+  const put = (key: string, value: Value) => {
+    const stored = InstancePath.mapValues(value, InstancePath.store)
+    return rows.upsert({ key, value: stored }, { value: stored })
+  }
   /**
    * The one place a read and the write it decides are joined.
    *
@@ -309,13 +316,13 @@ export const makeKeyValueStore = <Value = unknown>(spec: {
     all: () =>
       Effect.gen(function* () {
         const result: Record<string, Value> = {}
-        for (const row of yield* rows.selectAll()) result[row.key as string] = row.value as Value
+        for (const row of yield* rows.selectAll()) result[row.key as string] = InstancePath.mapValues(row.value, InstancePath.resolve) as Value
         return result
       }),
-    get: (key) => rows.selectOne(key).pipe(Effect.map((row) => row?.value as Value | undefined)),
+    get: (key) => rows.selectOne(key).pipe(Effect.map((row) => row === undefined ? undefined : InstancePath.mapValues(row.value, InstancePath.resolve) as Value)),
     set: put,
     update: (key, change) =>
-      readModifyWrite(key, (row) => change(row === undefined ? undefined : (row.value as Value))),
+      readModifyWrite(key, (row) => change(row === undefined ? undefined : InstancePath.mapValues(row.value, InstancePath.resolve) as Value)),
     // ⚠️ This was the primitive's OWN read-modify-write, and it was two statements with nothing
     // holding them together: two boots seeding the same key both saw no row and both wrote.
     setIfAbsent: (key, value) => readModifyWrite(key, (row) => (row === undefined ? value : undefined)),

@@ -97,7 +97,6 @@ export async function runDesktop(options: DesktopLaunchOptions) {
         exportDebugLogs: (serverDiagnostics) => exportDebugLogs(serverDiagnostics),
         recordFatalRendererError: (error) => {
           writeLog("renderer", "fatal renderer error", { ...error }, "error")
-          diagnostics.captureFailure("renderer-fatal-error")
         },
         markBootPhase: (phase) => {
           if (phase === "renderer-interactive" || phase === "first-chat-token") mark(phase)

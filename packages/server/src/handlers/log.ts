@@ -80,7 +80,7 @@ const BOUNDED_FIELDS = ["key", "subsystem", "correlator", "match", "since"] as c
  * without saying how is one more thing to debug.
  *
  * ⚠️ **A length cap REJECTS here where `POST /log` TRUNCATES**, and the asymmetry is deliberate. A
- * client's log message arrives during a crash, so a truncated crash report beats a 400; a filter is
+ * client's log message arrives during a crash, so a truncated diagnostic beats a 400; a filter is
  * a question asked by something that is still running, and silently answering a different question
  * than the one asked is the worse failure.
  */

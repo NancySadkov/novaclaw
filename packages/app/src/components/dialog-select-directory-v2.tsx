@@ -79,18 +79,10 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
         .catch(() => undefined),
     { initialValue: undefined },
   )
-  // FS-3: when the host has no browsable FS, the server reports `virtual` + `virtualRoot`
-  // (an app-private directory); the picker starts there and skips host-drive roots.
-  const virtualRoot = createMemo(() => {
-    const p = sync.data.path as { virtual?: boolean; virtualRoot?: string }
-    const f = fallbackPath() as { virtual?: boolean; virtualRoot?: string } | undefined
-    return p.virtual && p.virtualRoot ? p.virtualRoot : f?.virtual && f.virtualRoot ? f.virtualRoot : undefined
-  })
-  const home = createMemo(() => virtualRoot() || sync.data.path.home || fallbackPath()?.home || "")
+  const home = createMemo(() => sync.data.path.home || fallbackPath()?.home || "")
   // Host filesystem roots (drives on Windows) — `roots` postdates the generated SDK type, hence the
-  // cast; an older server just yields no buttons. Suppressed in virtual mode (no host drives to jump to).
+  // cast; an older server just yields no buttons.
   const hostRoots = createMemo(() => {
-    if (virtualRoot()) return []
     const fromSync = (sync.data.path as { roots?: readonly string[] }).roots
     const fromFallback = (fallbackPath() as { roots?: readonly string[] } | undefined)?.roots
     return fromSync ?? fromFallback ?? []
@@ -98,7 +90,6 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
   const start = createMemo(
     () =>
       props.start ||
-      virtualRoot() ||
       sync.data.path.home ||
       sync.data.path.directory ||
       fallbackPath()?.home ||
@@ -108,7 +99,6 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
   // user's pinned bookmarks (the `folder_bookmarks` config key — instance-wide, exported with
   // config, agent-editable per the self-healing law).
   const places = createMemo(() => {
-    if (virtualRoot()) return []
     const fromSync = (sync.data.path as { places?: readonly { name: string; path: string }[] }).places
     const fromFallback = (fallbackPath() as { places?: readonly { name: string; path: string }[] } | undefined)?.places
     return fromSync ?? fromFallback ?? []

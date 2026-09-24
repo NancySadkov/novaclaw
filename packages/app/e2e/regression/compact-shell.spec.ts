@@ -52,12 +52,6 @@ test.beforeEach(async ({ page }) => {
   await page.route("**/api/policy", (route) =>
     route.fulfill({ headers, json: { installed: [], requested: [], missing: [], disabledButRequested: [] } }),
   )
-  await page.route("**/api/telemetry/status", (route) =>
-    route.fulfill({
-      headers,
-      json: { gate: { airgap: false, consent: true }, endpointConfigured: false, ready: false },
-    }),
-  )
   await page.route("**/api/instance/pty?*", (route) => route.fulfill({ headers, json: [] }))
   await page.route("**/api/agent", (route) => route.fulfill({ headers, json: { data: agents } }))
   await page.route("**/api/agent/nova/avatar", (route) =>

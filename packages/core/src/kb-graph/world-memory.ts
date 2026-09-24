@@ -63,6 +63,11 @@ const RETAIN_BATCH_SIZE = 16
 const RETAIN_SCOPE_BATCH_SIZE = 8
 const RETAIN_BATCH_PAUSE_MS = 100
 const RETAIN_BACKLOG_RETRY_MS = 5_000
+const graphCall = <A>(operation: string, run: () => Promise<A>) =>
+  Effect.tryPromise({
+    try: run,
+    catch: (cause) => new Error(`memory graph ${operation} failed: ${String(cause)}`, { cause }),
+  })
 
 /** Bound one ECS-owned cabinet using the recall ledger, never another agent's activity. */
 export const forgetOverCap = (
@@ -75,13 +80,13 @@ export const forgetOverCap = (
   candidateOffset = 0,
 ) =>
   Effect.gen(function* () {
-    const count = yield* Effect.tryPromise(() => live.stagedCount(scope))
+    const count = yield* graphCall(`stagedCount(${scope})`, () => live.stagedCount(scope))
     const excess = count - Math.max(0, Math.floor(cap))
     if (excess <= 0 || budget <= 0)
       return { attempted: 0, forgotten: 0, failed: 0, failure: undefined, backlog: excess > 0, nextCandidateOffset: 0 }
     const offset = candidateOffset >= count ? 0 : candidateOffset
     const limit = Math.min(Math.max(excess * 4, 64), 256)
-    const candidates = yield* Effect.tryPromise(() =>
+    const candidates = yield* graphCall(`candidates(${scope})`, () =>
       live.candidates({
         scopes: [scope],
         relation: "staged",
@@ -112,7 +117,7 @@ export const forgetOverCap = (
     let failure: string | undefined
     for (const id of choice.victims) {
       attempted++
-      const invalidation = yield* Effect.tryPromise(() => live.invalidate(id, undefined, { scopes: [scope] })).pipe(
+      const invalidation = yield* graphCall(`invalidate(${scope}/${id})`, () => live.invalidate(id, undefined, { scopes: [scope] })).pipe(
         Effect.match({ onFailure: (error) => ({ error }), onSuccess: () => ({ success: true }) }),
       )
       if ("success" in invalidation) {
@@ -143,8 +148,8 @@ export const forgetEverywhere = (
   Effect.gen(function* () {
     const scopes = [
       ...new Set([
-        ...(yield* Effect.tryPromise(() => live.stagedScopes("session:"))),
-        ...(yield* Effect.tryPromise(() => live.stagedScopes("agent:"))),
+        ...(yield* graphCall("stagedScopes(session:)", () => live.stagedScopes("session:"))),
+        ...(yield* graphCall("stagedScopes(agent:)", () => live.stagedScopes("agent:"))),
         "global",
       ]),
     ]

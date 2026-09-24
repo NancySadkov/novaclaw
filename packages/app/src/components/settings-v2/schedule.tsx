@@ -369,6 +369,7 @@ export const SettingsScheduleV2: Component<{ agentID: string }> = (props) => {
   const fireLabel = (fire: ScheduleFire | undefined) => {
     if (!fire) return "No run yet"
     if (fire.outcome === "confirmed") return "Confirmed"
+    if (fire.outcome === "cancelled") return "Cancelled"
     if (fire.outcome === "failed") return fire.escalatedAt ? "Missed · escalated" : "Missed"
     if (fire.windowEndAt && fire.windowEndAt > now()) return `Active until ${formatDate(fire.windowEndAt)}`
     return "Awaiting confirmation"

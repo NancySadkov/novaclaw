@@ -39,6 +39,16 @@ const outside = mkdtempSync(join(tmpdir(), "novaclaw-store-outside-"))
 
 type Handler = (event: unknown, ...args: unknown[]) => unknown
 const handlers = new Map<string, Handler>()
+let dragWindow: {
+  isDestroyed: () => boolean
+  isFullScreen: () => boolean
+  isMaximized: () => boolean
+  getPosition: () => [number, number]
+  getSize: () => [number, number]
+  unmaximize: () => void
+  setPosition: (x: number, y: number) => void
+} | null = null
+let cursor = { x: 100, y: 100 }
 
 /** Present so the export name exists; reaching it from a `store-*` handler is the bug, not the test. */
 const unusable =
@@ -68,13 +78,13 @@ const electronStub = {
   ipcRenderer: { invoke: unusable("ipcRenderer.invoke"), send: unusable("ipcRenderer.send") },
   contextBridge: { exposeInMainWorld: unusable("contextBridge.exposeInMainWorld") },
   webUtils: { getPathForFile: unusable("webUtils.getPathForFile") },
-  BrowserWindow: { getAllWindows: () => [], fromWebContents: () => null },
+  BrowserWindow: { getAllWindows: () => [], fromWebContents: () => dragWindow },
+  screen: { getCursorScreenPoint: () => cursor },
   Menu: { setApplicationMenu: () => {}, buildFromTemplate: () => ({}) },
   Notification: class {
     show() {}
   },
   clipboard: { readImage: () => ({ isEmpty: () => true }), readText: () => "", writeText: () => {} },
-  crashReporter: { start: () => {} },
   dialog: {
     showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
     showSaveDialog: async () => ({ canceled: true }),
@@ -139,6 +149,31 @@ const invoke = (channel: string, ...args: unknown[]) => {
   if (!handler) throw new Error(`no handler registered for "${channel}"`)
   return handler({ sender: { id: 1 } }, ...args)
 }
+
+test("Home drag reads the OS cursor and never passes invalid positions to Electron", () => {
+  const positions: [number, number][] = []
+  dragWindow = {
+    isDestroyed: () => false,
+    isFullScreen: () => false,
+    isMaximized: () => false,
+    getPosition: () => [400, 300],
+    getSize: () => [800, 600],
+    unmaximize: () => {},
+    setPosition: (x, y) => positions.push([x, y]),
+  }
+  try {
+    cursor = { x: 100, y: 100 }
+    invoke("begin-window-drag", 20, 12)
+    cursor = { x: 125, y: 140 }
+    invoke("move-window-drag")
+    expect(positions).toEqual([[425, 340]])
+    cursor = { x: 1e308, y: 140 }
+    invoke("move-window-drag")
+    expect(positions).toEqual([[425, 340]])
+  } finally {
+    dragWindow = null
+  }
+})
 
 /** The name-minting formula from `app/src/utils/persist.ts` and `core/src/util/encode.ts`. */
 const checksum = (content: string) => {

@@ -41,7 +41,6 @@ export const SETTINGS_KEYS = [
   // stored value arranges every other visible colleague and is shared by every client.
   "officer_order",
   "expertise",
-  "virtualFs",
   "folder_bookmarks",
   "instances",
   "disabled_providers",
@@ -70,7 +69,6 @@ export const SETTINGS_KEYS = [
   // crash-loops the instance at boot, and this one is written by an operator A/B'ing a drive off.
   "harness_drives",
   "offline",
-  "telemetry",
   "memory",
   "web_search",
   "provider_presets",
@@ -136,7 +134,7 @@ const PERMISSIONS_BACKSTOP = { action: "*", resource: "*", effect: "ask" } as co
  *
  * PER-KEY, like `decodeText` below — and for the same reason, only worse on this path. A whole-
  * document decode meant ONE bad row silently discarded all of `SETTINGS_KEYS` at once, reverting
- * `permissions`, `offline`, `user_profile`, `mcp` and the telemetry choice to compiled defaults
+ * `permissions`, `offline`, `user_profile` and `mcp` to compiled defaults
  * together, with nothing logged. So: whole-document fast path (the overwhelmingly common all-valid
  * snapshot, byte-for-byte the old behaviour), then a salvage that keeps every key which decodes on
  * its own and NAMES the rest in `skipped`.

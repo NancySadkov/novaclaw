@@ -934,8 +934,10 @@ export class WasmMemory {
     {
       const access = input.scopes ? `AND a.scope IN $scopes AND b.scope IN $scopes` : ``
       const rows = await this.rows(
-        `MATCH (a:Memory {id: $from}), (b:Memory {id: $to})
-         WHERE (a.scope = b.scope OR a.scope = 'global' OR b.scope = 'global') ${access}
+        `MATCH (a:Memory), (b:Memory)
+         WHERE true AND starts_with(a.id, $from) AND starts_with($from, a.id)
+           AND starts_with(b.id, $to) AND starts_with($to, b.id)
+           AND (a.scope = b.scope OR a.scope = 'global' OR b.scope = 'global') ${access}
          CREATE (a)-[:Rel { type: $type,
                             source: $source, confidence: $confidence,
                             t_valid: current_timestamp(), t_created: current_timestamp() }]->(b)
@@ -994,7 +996,7 @@ export class WasmMemory {
       // RE-assertion of something already retired is different: reviving the old row in place would
       // rewrite history, so it gets a fresh id and supersedes whatever is current now.
       let id = KbClaim.claimID(identity, scope, statement)
-      const existing = await this.rows(`MATCH (m:Memory {id: $id}) RETURN m.status AS status`, { id })
+      const existing = await this.rows(`MATCH (m:Memory) WHERE true AND starts_with(m.id, $id) AND starts_with($id, m.id) RETURN m.status AS status`, { id })
       const priorStatus = existing[0]?.status as KbClaim.ClaimStatus | undefined
       if (priorStatus !== undefined && !KbClaim.isRetired(priorStatus))
         return { ok: true, id, status: priorStatus, deduped: true, identified: key !== undefined, superseded: [] }
@@ -1006,7 +1008,7 @@ export class WasmMemory {
         let minted: string | undefined
         for (let n = 2; n <= MAX_CLAIM_CHAIN * 8; n++) {
           const candidate = `${id}_r${n}`
-          const taken = await this.rows(`MATCH (m:Memory {id: $id}) RETURN m.id AS id`, { id: candidate })
+          const taken = await this.rows(`MATCH (m:Memory) WHERE true AND starts_with(m.id, $id) AND starts_with($id, m.id) RETURN m.id AS id`, { id: candidate })
           if (taken.length === 0) {
             minted = candidate
             break
@@ -1101,7 +1103,7 @@ export class WasmMemory {
       // and the replacement does not exist yet.
       for (const prior of priors) {
         await this.q(
-          `MATCH (m:Memory {id: $prior}) SET m.status = 'superseded', m.superseded_by = $id,
+          `MATCH (m:Memory) WHERE true AND starts_with(m.id, $prior) AND starts_with($prior, m.id) SET m.status = 'superseded', m.superseded_by = $id,
              m.t_expired = current_timestamp()`,
           { prior, id },
         )
@@ -1125,7 +1127,7 @@ export class WasmMemory {
     return this.serialize(async () => {
       const admits = (scope: string) => opts.scopes === undefined || opts.scopes.includes(scope)
       const load = async (target: string): Promise<MemoryRow | undefined> => {
-        const rows = await this.rows(`MATCH (m:Memory {id: $id}) RETURN ${ROW_PROJECTION}`, { id: target })
+        const rows = await this.rows(`MATCH (m:Memory) WHERE true AND starts_with(m.id, $id) AND starts_with($id, m.id) RETURN ${ROW_PROJECTION}`, { id: target })
         const row = rows[0]
         if (!row) return undefined
         const built = toRow(row)
@@ -1151,7 +1153,8 @@ export class WasmMemory {
       while (frontier.length > 0 && timeline.length < MAX_CLAIM_CHAIN) {
         const from = frontier.shift()!
         const rows = await this.rows(
-          `MATCH (a:Memory {id: $from})-[r:Rel {type: '${KbClaim.SUPERSEDES_EDGE}'}]->(b:Memory)
+          `MATCH (a:Memory)-[r:Rel {type: '${KbClaim.SUPERSEDES_EDGE}'}]->(b:Memory)
+           WHERE true AND starts_with(a.id, $from) AND starts_with($from, a.id)
            RETURN b.id AS id LIMIT 50`,
           { from },
         )
@@ -1185,8 +1188,8 @@ export class WasmMemory {
       const cited: { claimID: string; sourceID: string }[] = []
       for (const entry of timeline) {
         const rows = await this.rows(
-          `MATCH (a:Memory {id: $from})-[r:Rel {type: '${KbClaim.SUPPORTED_BY_EDGE}'}]->(b:Memory)
-           WHERE b.t_invalid IS NULL
+          `MATCH (a:Memory)-[r:Rel {type: '${KbClaim.SUPPORTED_BY_EDGE}'}]->(b:Memory)
+           WHERE true AND starts_with(a.id, $from) AND starts_with($from, a.id) AND b.t_invalid IS NULL
            RETURN b.id AS id LIMIT 25`,
           { from: entry.id },
         )
@@ -1237,13 +1240,14 @@ export class WasmMemory {
       for (const row of sources) {
         const scopeFilter = opts.scopes ? `AND c.scope IN $scopes` : ``
         const claims = await this.rows(
-          `MATCH (c:Memory)-[r:Rel {type: '${KbClaim.SUPPORTED_BY_EDGE}'}]->(s:Memory {id: $source})
-           WHERE c.status = 'active' AND c.t_invalid IS NULL ${scopeFilter}
+          `MATCH (c:Memory)-[r:Rel {type: '${KbClaim.SUPPORTED_BY_EDGE}'}]->(s:Memory)
+           WHERE true AND starts_with(s.id, $source) AND starts_with($source, s.id)
+             AND c.status = 'active' AND c.t_invalid IS NULL ${scopeFilter}
            RETURN c.id AS id LIMIT 500`,
           { source: String(row.id), ...(opts.scopes ? { scopes: opts.scopes } : {}) },
         )
         for (const claim of claims) {
-          await this.q(`MATCH (m:Memory {id: $id}) SET m.status = 'needs_review'`, { id: String(claim.id) })
+          await this.q(`MATCH (m:Memory) WHERE true AND starts_with(m.id, $id) AND starts_with($id, m.id) SET m.status = 'needs_review'`, { id: String(claim.id) })
           flagged++
         }
       }
@@ -1282,7 +1286,8 @@ export class WasmMemory {
     return this.serialize(async () => {
       const scopeFilter = opts.scopes ? `AND m.scope IN $scopes` : ``
       const rows = await this.rows(
-        `MATCH (m:Memory {id: $id}) WHERE m.kind = 'claim' AND m.status <> 'superseded' ${scopeFilter}
+        `MATCH (m:Memory) WHERE true AND starts_with(m.id, $id) AND starts_with($id, m.id)
+          AND m.kind = 'claim' AND m.status <> 'superseded' ${scopeFilter}
          SET m.status = $status RETURN m.id AS id`,
         { id, status, ...(opts.scopes ? { scopes: opts.scopes } : {}) },
       )
@@ -1319,7 +1324,7 @@ export class WasmMemory {
      * single-key lookups and the rest through one equality scan projecting no long string.
      */
     for (const token of KbClaim.identifierTokens(input.query ?? "")) {
-      const byKey = await this.rows(`MATCH (m:Memory {id: $id}) RETURN m.id AS id`, { id: token })
+      const byKey = await this.rows(`MATCH (m:Memory) WHERE true AND starts_with(m.id, $id) AND starts_with($id, m.id) RETURN m.id AS id`, { id: token })
       if (byKey.length > 0) {
         fuse(
           byKey.map((row) => String(row.id)),
@@ -1363,7 +1368,7 @@ export class WasmMemory {
     // at retrieval, which is the one place where competing with the current answer does damage.
     const statuses = input.statuses ?? KbClaim.RECALL_STATUSES
     // The filter pass carries NO long string: the ranked ids are checked for validity, scope and kind
-    // here, and the bodies come back by primary key below (`hydrate` holds the why). Keeping `text`
+    // here, and the bodies come back by exact id below (`hydrate` holds the why). Keeping `text`
     // in this projection is what made every hit render blank.
     const allowed = await this.rows(
       `MATCH (m:Memory) WHERE m.id IN $ids AND m.t_invalid IS NULL AND m.status IN $statuses
@@ -1455,8 +1460,9 @@ export class WasmMemory {
         // Measured on the board-game corpus: the graph is worth 45% vs 10% for passages alone, and
         // the outgoing-only walk reached the gold answer 0/40. The whole benefit was unreachable
         // through this accessor. Direction is a storage detail; `r.type` still carries the relation.
-        `MATCH (m:Memory {id: $id})-[r:Rel]-(n:Memory)
-         WHERE r.t_invalid IS NULL AND n.t_invalid IS NULL ${scopeFilter}
+        `MATCH (m:Memory)-[r:Rel]-(n:Memory)
+         WHERE true AND starts_with(m.id, $id) AND starts_with($id, m.id)
+           AND r.t_invalid IS NULL AND n.t_invalid IS NULL ${scopeFilter}
          RETURN n.id AS id, r.type AS type LIMIT ${opts.k ?? 25}`,
         { id, ...(opts.scopes ? { scopes: opts.scopes } : {}) },
       )
@@ -1471,7 +1477,7 @@ export class WasmMemory {
     return this.serialize(async () => {
       const scopeFilter = opts.scopes ? `AND m.scope IN $scopes` : ``
       const rows = await this.rows(
-        `MATCH (m:Memory {id: $id}) WHERE m.t_invalid IS NULL ${scopeFilter} RETURN m.id AS id`,
+        `MATCH (m:Memory) WHERE true AND starts_with(m.id, $id) AND starts_with($id, m.id) AND m.t_invalid IS NULL ${scopeFilter} RETURN m.id AS id`,
         { id, ...(opts.scopes ? { scopes: opts.scopes } : {}) },
       )
       if (rows.length === 0) return null
@@ -1494,7 +1500,9 @@ export class WasmMemory {
   ): Promise<{ ids: string[]; hops: number } | null> {
     return this.serialize(async () => {
       const rows = await this.rows(
-        `MATCH p = (a:Memory {id: $from})-[:Rel* SHORTEST 1..${Math.max(1, maxHops | 0)}]->(b:Memory {id: $to})
+        `MATCH p = (a:Memory)-[:Rel* SHORTEST 1..${Math.max(1, maxHops | 0)}]->(b:Memory)
+         WHERE true AND starts_with(a.id, $from) AND starts_with($from, a.id)
+           AND starts_with(b.id, $to) AND starts_with($to, b.id)
          RETURN length(p) AS hops, nodes(p) AS ns`,
         { from, to },
       )
@@ -1516,11 +1524,11 @@ export class WasmMemory {
    */
   invalidate(id: string, at?: string, opts: { scopes?: readonly string[] } = {}): Promise<void> {
     return this.serialize(async () => {
-      const scopeFilter = opts.scopes ? `WHERE m.scope IN $scopes` : ``
+      const scopeFilter = opts.scopes ? `AND m.scope IN $scopes` : ``
       const params = { id, ...(opts.scopes ? { scopes: opts.scopes } : {}) }
       await this.requireErasable("forget", id, scopeFilter, params, opts.scopes !== undefined)
       const when = at ? `timestamp($at)` : `current_timestamp()`
-      await this.q(`MATCH (m:Memory {id: $id}) ${scopeFilter} SET m.t_invalid = ${when}`, {
+      await this.q(`MATCH (m:Memory) WHERE true AND starts_with(m.id, $id) AND starts_with($id, m.id) ${scopeFilter} SET m.t_invalid = ${when}`, {
         ...params,
         ...(at ? { at } : {}),
       })
@@ -1531,10 +1539,10 @@ export class WasmMemory {
   /** ⚠️ Same rule as `invalidate`, and it matters more: this one destroys the history too. */
   purge(id: string, opts: { scopes?: readonly string[] } = {}): Promise<void> {
     return this.serialize(async () => {
-      const scopeFilter = opts.scopes ? `WHERE m.scope IN $scopes` : ``
+      const scopeFilter = opts.scopes ? `AND m.scope IN $scopes` : ``
       const params = { id, ...(opts.scopes ? { scopes: opts.scopes } : {}) }
       await this.requireErasable("purge", id, scopeFilter, params, opts.scopes !== undefined)
-      await this.q(`MATCH (m:Memory {id: $id}) ${scopeFilter} DETACH DELETE m`, params)
+      await this.q(`MATCH (m:Memory) WHERE true AND starts_with(m.id, $id) AND starts_with($id, m.id) ${scopeFilter} DETACH DELETE m`, params)
       this.touch()
     })
   }
@@ -1555,7 +1563,7 @@ export class WasmMemory {
    * through five signatures for the same outcome, and every site that forgot to read it would be the
    * present bug again. The refusal reaches the model as *"Couldn't forget …"* with no change above.
    *
-   * ⚠️ The probe is a PRIMARY-KEY lookup returning one short column. A scan on this engine can hand
+   * ⚠️ The probe is an exact-id lookup returning one short column. A scan on this engine can hand
    * back an empty `text` for an intact row (see `hydrate`), and an empty result is indistinguishable
    * from a failed query — so the probe reads the id it matched on and nothing else, and a genuine
    * engine fault throws rather than being read as "no such row". It runs inside the SAME `serialize`
@@ -1568,7 +1576,7 @@ export class WasmMemory {
     params: Record<string, unknown>,
     scoped: boolean,
   ): Promise<void> {
-    const seen = await this.rows(`MATCH (m:Memory {id: $id}) ${scopeFilter} RETURN m.id AS id`, params)
+    const seen = await this.rows(`MATCH (m:Memory) WHERE true AND starts_with(m.id, $id) AND starts_with($id, m.id) ${scopeFilter} RETURN m.id AS id`, params)
     if (seen.length > 0) return
     throw new Error(
       `kb-memory: refused to ${what} "${id}" — nothing was erased. ` +
@@ -1692,17 +1700,17 @@ export class WasmMemory {
   }
 
   /**
-   * Fetch full rows for ids the caller already selected — BY PRIMARY KEY, one at a time.
+   * Fetch full rows for ids the caller already selected, one at a time.
    *
    * 🔴 **A table scan on this engine can return an empty string for `text` while the row is intact.**
    * Measured on the owner's store 2026-08-21: a scan found text on 64 of 745 rows, and **40 of 40**
-   * rows it reported as empty came back complete through `MATCH (m:Memory {id: $id})`. New writes
+   * rows it reported as empty came back complete through an exact-id lookup. New writes
    * enter that state about a second after they are stored (the snapshot debounce); a from-scratch
    * store does not reproduce it at 100 rows × 20 KB. Ids, kinds and scopes survive scans — only the
    * long string comes back blank — so the selection can stay a scan and only the bodies move.
    *
    * ⚠️ Per id, deliberately. `WHERE m.id IN $ids` HANGS on that store, pinning gigabytes before it is
-   * killed, and so does `WITH m ORDER BY … RETURN …`. A page of single-key lookups is the shape that
+   * killed, and so does `WITH m ORDER BY … RETURN …`. A page of single-id lookups is the shape that
    * works.
    *
    * A row that has vanished between the scan and the hydration is skipped rather than faked: the
@@ -1715,7 +1723,7 @@ export class WasmMemory {
   private async hydrate(ids: readonly string[]): Promise<MemoryRow[]> {
     const out: MemoryRow[] = []
     for (const id of ids) {
-      const rows = await this.rows(`MATCH (m:Memory {id: $id}) RETURN ${ROW_PROJECTION}`, { id })
+      const rows = await this.rows(`MATCH (m:Memory) WHERE true AND starts_with(m.id, $id) AND starts_with($id, m.id) RETURN ${ROW_PROJECTION}`, { id })
       const row = rows[0]
       if (row) out.push(toRow(row))
     }
@@ -1867,7 +1875,7 @@ export class WasmMemory {
         if (!text) continue
         const gid =
           "mem_g" + createHash("sha256").update(`global\n${text.trim().toLowerCase()}`).digest("hex").slice(0, 24)
-        const existing = await this.rows(`MATCH (g:Memory {id: $gid}) WHERE g.t_invalid IS NULL RETURN g.id AS id`, {
+        const existing = await this.rows(`MATCH (g:Memory) WHERE true AND starts_with(g.id, $gid) AND starts_with($gid, g.id) AND g.t_invalid IS NULL RETURN g.id AS id`, {
           gid,
         })
         if (existing.length === 0) {
@@ -1904,13 +1912,17 @@ export class WasmMemory {
          * deleted, the same fact learned again elsewhere) must not accumulate parallel edges.
          */
         const already = await this.rows(
-          `MATCH (t:Memory {id: $gid})-[r:Rel {type: 'consolidated_from'}]->(o:Memory {id: $origin})
+          `MATCH (t:Memory)-[r:Rel {type: 'consolidated_from'}]->(o:Memory)
+           WHERE true AND starts_with(t.id, $gid) AND starts_with($gid, t.id)
+             AND starts_with(o.id, $origin) AND starts_with($origin, o.id)
            RETURN r.type AS type`,
           { gid, origin: String(row.id) },
         )
         if (already.length === 0) {
           await this.q(
-            `MATCH (t:Memory {id: $gid}), (o:Memory {id: $origin})
+            `MATCH (t:Memory), (o:Memory)
+             WHERE true AND starts_with(t.id, $gid) AND starts_with($gid, t.id)
+               AND starts_with(o.id, $origin) AND starts_with($origin, o.id)
              CREATE (t)-[:Rel { type: 'consolidated_from', source: 'consolidated',
                                 confidence: null,
                                 t_valid: current_timestamp(), t_created: current_timestamp() }]->(o)`,
@@ -1918,7 +1930,7 @@ export class WasmMemory {
           )
         }
         // Supersede the session original (bitemporal): it's now represented globally.
-        await this.q(`MATCH (m:Memory {id: $id}) SET m.t_invalid = current_timestamp()`, { id: String(row.id) })
+        await this.q(`MATCH (m:Memory) WHERE true AND starts_with(m.id, $id) AND starts_with($id, m.id) SET m.t_invalid = current_timestamp()`, { id: String(row.id) })
         promoted++
       }
       // Carry the RELATIONSHIPS up with the nodes. Without this, consolidation silently destroyed every
@@ -1944,13 +1956,17 @@ export class WasmMemory {
           if (from === undefined || to === undefined || from === to) continue
           const type = String(edge.type ?? "related_to")
           const dup = await this.rows(
-            `MATCH (a:Memory {id: $from})-[r:Rel {type: $type}]->(b:Memory {id: $to})
-             WHERE r.t_invalid IS NULL RETURN r.type AS type`,
+            `MATCH (a:Memory)-[r:Rel {type: $type}]->(b:Memory)
+             WHERE true AND starts_with(a.id, $from) AND starts_with($from, a.id)
+               AND starts_with(b.id, $to) AND starts_with($to, b.id)
+               AND r.t_invalid IS NULL RETURN r.type AS type`,
             { from, to, type },
           )
           if (dup.length > 0) continue
           await this.q(
-            `MATCH (a:Memory {id: $from}), (b:Memory {id: $to})
+            `MATCH (a:Memory), (b:Memory)
+             WHERE true AND starts_with(a.id, $from) AND starts_with($from, a.id)
+               AND starts_with(b.id, $to) AND starts_with($to, b.id)
              CREATE (a)-[:Rel { type: $type, source: $source, confidence: $confidence,
                                 t_valid: current_timestamp(), t_created: current_timestamp() }]->(b)`,
             {
@@ -2105,8 +2121,8 @@ export class WasmMemory {
     if (embedding.length !== this.dim)
       return Promise.reject(new Error(`embedding length ${embedding.length} != store dim ${this.dim}`))
     return this.serialize(async () => {
-      await this.q(`MATCH (m:Memory {id: $id}) SET m.embedding = ${vectorLiteral(embedding)}`, { id })
-      const seen = await this.rows(`MATCH (m:Memory {id: $id}) RETURN m.id AS id`, { id })
+      await this.q(`MATCH (m:Memory) WHERE true AND starts_with(m.id, $id) AND starts_with($id, m.id) SET m.embedding = ${vectorLiteral(embedding)}`, { id })
+      const seen = await this.rows(`MATCH (m:Memory) WHERE true AND starts_with(m.id, $id) AND starts_with($id, m.id) RETURN m.id AS id`, { id })
       if (seen.length === 0) throw new Error(`setEmbedding: no memory ${id} — the row went away before the vector did`)
       this.touch()
     })

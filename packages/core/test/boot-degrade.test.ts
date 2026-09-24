@@ -51,6 +51,7 @@ const FIXTURE = path.join(import.meta.dir, "fixture", "boot-degrade.ts")
 interface Report {
   status: Global.DirectoryStatus
   data: string
+  tmp: string
   log: string
   unguarded: ReadonlyArray<{ directory: string; threw: boolean }>
   unguardedLogger: "failed" | "opened"
@@ -103,7 +104,7 @@ describe("Global's directory creation", () => {
     expect(faults.every((fault) => fault.message.length > 0)).toBe(true)
   })
 
-  test("an unusable home relocates to the emergency root and says so — the boot still comes up", async () => {
+  test("an unusable home stays selected and reports its failure without using system temp", async () => {
     await using dir = await tmpdir()
     const blocker = path.join(dir.path, "blocker")
     fsSync.writeFileSync(blocker, "not a directory")
@@ -117,9 +118,10 @@ describe("Global's directory creation", () => {
     // The claim.
     expect(exitCode).toBe(0)
     expect(report.booted).toBe(true)
-    expect(report.status.state).toBe("relocated")
-    if (report.status.state !== "relocated") throw new Error("unreachable")
-    expect(report.data.startsWith(report.status.root)).toBe(true)
+    expect(report.status.state).toBe("degraded")
+    if (report.status.state !== "degraded") throw new Error("unreachable")
+    expect(report.data).toBe(path.join(blocker, "home", "data"))
+    expect(report.tmp).toBe(path.join(report.data, "tmp"))
     // Ruling 2: an unavailable subsystem names itself. Every failed directory is on the line, with
     // the reason, and the documented way out.
     expect(report.status.failures.length).toBeGreaterThanOrEqual(3)

@@ -46,6 +46,18 @@ describe("officer schedule store", () => {
     expect(result.again?.confirmedAt).toBe(start + 2)
   })
 
+  test("disabling a schedule cancels its active heartbeat window", async () => {
+    const result = await withDb((db) => Effect.gen(function* () {
+      const schedule = yield* ScheduleStore.create(db, { agent: "post", recurrence, prompt: "Sort mail" }, start - 1)
+      yield* ScheduleStore.openWindow(db, schedule, start, start)
+      const disabled = yield* ScheduleStore.updateForAgent(db, "post", schedule.id, { enabled: false }, start + 1)
+      return { disabled, active: yield* ScheduleStore.activeWindows(db, start + 1), fires: yield* ScheduleStore.fires(db, schedule.id) }
+    }))
+    expect(result.disabled?.enabled).toBe(false)
+    expect(result.active).toEqual([])
+    expect(result.fires[0]?.outcome).toBe("cancelled")
+  })
+
   test("expired windows reject confirmation and independent overlaps remain active", async () => {
     const result = await withDb((db) => Effect.gen(function* () {
       const first = yield* ScheduleStore.create(db, { agent: "post", recurrence, prompt: "Mail", durationMinutes: 60 }, start - 1)

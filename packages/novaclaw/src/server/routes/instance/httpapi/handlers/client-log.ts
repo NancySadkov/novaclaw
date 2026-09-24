@@ -30,7 +30,7 @@ import { RESERVED_ATTRIBUTES } from "@novaclaw/schema/log-events"
  *    `event=` on the line, and `{"extra":{"level":"ERROR"}}` a second `level=`. Both are in
  *    `RESERVED_ATTRIBUTES`, whose own doc records the same collision shipping once before from the
  *    MCP relay. A forged `event=` defeats the entire keyed vocabulary: every saved query, every
- *    telemetry cluster and the `log` tool's own filters key off that column.
+ *    diagnostic grouping and the `log` tool's own filters key off that column.
  *    → **Every caller key is namespaced under `client.extra.`**, which cannot collide with a
  *      reserved name or with any future one. A prefix is mechanical; a deny-list is a list somebody
  *      has to remember to extend.
@@ -49,7 +49,7 @@ import { RESERVED_ATTRIBUTES } from "@novaclaw/schema/log-events"
  *    sustained loop does not.
  *
  * ⚠️ **And the fifth rule is what none of them may do: logging must never take the instance down.**
- * So an oversize message is TRUNCATED rather than rejected — a truncated crash report beats a 400
+ * So an oversize message is TRUNCATED rather than rejected — a truncated diagnostic beats a 400
  * during a crash — and a rate-limited post is answered `false` (the success schema already means
  * *written*), never with an exception and never with a silent `true`. Ruling 2: a subsystem does not
  * describe itself falsely, so "I dropped it" is an answer and `true` would be a lie.

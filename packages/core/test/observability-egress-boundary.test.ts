@@ -29,7 +29,11 @@ function sources(directory: string): string[] {
   })
 }
 
-describe("the shipping runtime has one telemetry egress boundary", () => {
+describe("the shipping runtime has no observability exporter", () => {
+  test("the crash sender and capture modules are absent", () => {
+    expect(fs.existsSync(path.join(ROOT, "packages", "core", "src", "observability", "telemetry.ts"))).toBe(false)
+    expect(fs.existsSync(path.join(ROOT, "packages", "core", "src", "observability", "crash-capture.ts"))).toBe(false)
+  })
   test("the raw OTLP exporter module is absent", () => {
     expect(fs.existsSync(path.join(ROOT, "packages", "core", "src", "observability", "otlp.ts"))).toBe(false)
   })

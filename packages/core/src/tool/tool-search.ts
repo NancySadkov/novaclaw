@@ -87,6 +87,7 @@ export const render = (output: Output) => {
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
+    const registry = yield* ToolRegistry.Service
     const store = yield* ToolCatalogueStore.Service
     const outputStore = yield* ToolOutputStore.Service
     const location = yield* Location.Service
@@ -115,7 +116,11 @@ export const layer = Layer.effectDiscard(
             const allowed = new Set(deferred.map((source) => source.definition.name))
             return Effect.gen(function* () {
               const limits = yield* outputStore.limits()
-              return yield* store.search(location.directory, input.query, input.limit ?? DEFAULT_LIMIT, allowed).pipe(
+              return yield* Effect.gen(function* () {
+                const catalogue = yield* registry.catalogue()
+                yield* store.replace(location.directory, ToolCatalogue.rows(location.directory, catalogue))
+                return yield* store.search(location.directory, input.query, input.limit ?? DEFAULT_LIMIT, allowed)
+              }).pipe(
                 Effect.map((hits): Output => resultWithin(limits, input.query, deferred, hits)),
                 Effect.catch((error) => {
                   const message = `tool_search is unavailable because its catalogue index failed: ${error instanceof Error ? error.message : String(error)}. Resident tools remain callable.`

@@ -146,7 +146,7 @@ describe("Xdg.baseDirs", () => {
     expect(d.explicitHome).toBeUndefined()
   })
 
-  test("legacy XDG config/cache/state overrides cannot split one instance across the machine", () => {
+  test("XDG overrides cannot split one instance or write outside its home", () => {
     const d = Xdg.baseDirs(
       [],
       {
@@ -158,7 +158,7 @@ describe("Xdg.baseDirs", () => {
       "C:\\Users\\n",
       "novaclaw",
     )!
-    const root = path.join("D:\\instances", "novaclaw")
+    const root = path.join("C:\\Users\\n", ".local", "share", "novaclaw")
     expect(d).toMatchObject({
       data: root,
       config: path.join(root, "config"),

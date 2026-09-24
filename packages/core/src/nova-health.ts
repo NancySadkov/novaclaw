@@ -6,8 +6,8 @@ import { displayPath } from "./util/path"
  * One calm answer to *"is anything wrong?"*, composed from signals that already exist.
  *
  * Model-free checks across storage, database, provider reachability,
- * model capability, sidecar state, scheduler and update/telemetry — *"with calm repairs rather than
- * raw internals"*. All seven now have a reading
+ * model capability, sidecar state and scheduler — *"with calm repairs rather than
+ * raw internals"*. Each has a reading
  * (`notes/reports/nova-health-inputs-2026-08-11.md`); this is the part that turns readings into
  * something a person can act on.
  *
@@ -20,8 +20,8 @@ import { displayPath } from "./util/path"
  * ## The two rules that make it worth having
  *
  * 1. **Unknown is never a tick.** Half these signals can legitimately answer "cannot tell" — the
- *    updater flag is unreadable outside the desktop shell, a pressure probe reports `unknown`
- *    rather than guessing, a reachability probe that was never run has no verdict. Rendering any of
+ *    pressure probe reports `unknown` rather than guessing, a reachability probe that was never run
+ *    has no verdict. Rendering any of
  *    those as healthy is ruling 2 on the ONE screen a person opens when they already suspect
  *    something is broken.
  * 2. **Every non-ok row names what to DO.** "pressure: floor" is an internal; *"Close some
@@ -206,23 +206,6 @@ export const fromScheduler = (state: "idle" | "starting" | "ready" | "unavailabl
 }
 
 /**
- * The updater.
- *
- * ⚠️ `UPDATER_ENABLED` lives in the desktop main process, so a server-side board CANNOT read it. It
- * reports `unknown` rather than `off` — claiming updates are disabled when we simply cannot see the
- * flag would be a false description of the user's own configuration.
- */
-export const fromUpdater = (enabled: boolean | undefined): Signal =>
-  enabled === undefined
-    ? {
-        id: "updates",
-        label: "Updates",
-        status: "unknown",
-        detail: "This build cannot see the updater — it is a desktop-only setting.",
-      }
-    : { id: "updates", label: "Updates", status: "ok", detail: enabled ? "On." : "Off, by your setting." }
-
-/**
  * The model the session will actually use — the seventh signal.
  *
  * ⚠️ **DECLARED, not probed, and the row says so.** `Model.Capabilities` is what the catalogue
@@ -303,7 +286,7 @@ export const fromMemory = (input: {
       detail: `Nothing is being remembered, and saved memories cannot be read.${detail ? ` ${detail}` : ""}`,
       action: "Open Memory and choose Retry. If it keeps failing, check the error log in Debug.",
     }
-  // Switched off deliberately is not a fault — the same reading the updater row takes.
+  // Switched off deliberately is not a fault.
   if (input.stage === "disabled")
     return { id: "memory", label: "Memory", status: "ok", detail: "Off, by your setting." }
   if (input.stage === "ready") return { id: "memory", label: "Memory", status: "ok" }
@@ -321,6 +304,7 @@ export const fromWorldMemory = (input: {
   readonly detail?: string
 }): Signal => {
   const detail = input.detail?.trim()
+  const retentionFailure = detail?.startsWith("retention failed:") || detail?.includes("memory erases failed:")
   if (input.stage === undefined)
     return { id: "world-memory", label: "Agent memory", status: "unknown", detail: "Could not read agent memory." }
   if (input.stage === "error")
@@ -328,8 +312,12 @@ export const fromWorldMemory = (input: {
       id: "world-memory",
       label: "Agent memory",
       status: "problem",
-      detail: `Automatic recall and learning are unavailable.${detail ? ` ${detail}` : ""}`,
-      action: "Open a chat and choose Retry for Agent memory, or check the error log in Debug.",
+      detail: retentionFailure
+        ? `Memory cleanup is failing; recall and learning may still work. ${detail}`
+        : `Automatic recall and learning are unavailable.${detail ? ` ${detail}` : ""}`,
+      action: retentionFailure
+        ? "Check the error log in Debug."
+        : "Open a chat and choose Retry for Agent memory, or check the error log in Debug.",
     }
   if (input.stage === "disabled")
     return { id: "world-memory", label: "Agent memory", status: "ok", detail: "Off, by the runtime setting." }

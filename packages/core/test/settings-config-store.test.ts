@@ -35,12 +35,12 @@ describe("SettingsConfigStore", () => {
 
       yield* store.set("username", "store-user")
       yield* store.set("snapshots", false)
-      yield* store.set("telemetry", { enabled: true })
+      yield* store.set("memory", { enabled: true })
       expect(yield* store.isEmpty()).toBe(false)
       expect(yield* store.all()).toEqual({
         username: "store-user",
         snapshots: false,
-        telemetry: { enabled: true },
+        memory: { enabled: true },
       })
 
       yield* store.set("username", "edited")
@@ -48,7 +48,7 @@ describe("SettingsConfigStore", () => {
 
       yield* store.remove("username")
       yield* store.remove("snapshots")
-      yield* store.remove("telemetry")
+      yield* store.remove("memory")
       expect(yield* store.isEmpty()).toBe(true)
     }),
   )

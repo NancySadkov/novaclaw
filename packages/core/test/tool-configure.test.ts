@@ -228,7 +228,6 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "storage",
       "tool_routing",
       "trash",
-      "virtualFs",
       "watcher",
     ])
 
@@ -241,7 +240,7 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "agents",
       "capability_services",
       "commands",
-      // Community participation. PRIVILEGED beside `offline` and `telemetry` and for the same
+      // Community participation. PRIVILEGED beside `offline` and for the same
       // reason: it has consequences outside this machine — joining exposes this box's IP to anyone
       // it talks to, and subscribes the user to content nobody moderates. An agent may USE the
       // community once its owner enabled it; deciding to JOIN is not a thing a model does on
@@ -263,7 +262,6 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "providers",
       "references",
       "server",
-      "telemetry",
       // Which pre-action policies are switched off. PRIVILEGED because switching one off is the only
       // way to stop a guard that screens every tool call before it runs — it changes who may do what,
       // which is this tier's own definition.

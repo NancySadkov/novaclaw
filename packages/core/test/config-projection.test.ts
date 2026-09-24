@@ -501,7 +501,6 @@ describe("authored annotations cannot drift", () => {
       "memory.embedding.model -> memory.embedding.url (set)",
       "memory.rerank -> memory.enabled (set)",
       "server.mdnsDomain -> server.mdns (set)",
-      "telemetry.enabled -> offline (unset)",
       "web_search.disabledEngines -> web_search.searxngUrl (unset)",
     ])
   })

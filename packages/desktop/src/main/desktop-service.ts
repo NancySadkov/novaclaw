@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { spawn } from "node:child_process"
-import { renameSync, unlinkSync } from "node:fs"
+import { mkdirSync, renameSync, unlinkSync } from "node:fs"
 import { createConnection, createServer } from "node:net"
-import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { app } from "electron"
@@ -14,6 +13,7 @@ import type { DesktopLaunchOptions } from "./desktop-cli"
 import type { LocalInstanceOwner } from "./lifecycle"
 import { checkHealth } from "./server"
 import { serviceHomeArgs, type ServiceInstancePaths } from "./instance-home-path"
+import { InvalidServiceDescriptor, resolveServicePath, storeServicePath } from "./service-path-codec"
 
 type Descriptor = {
   id: string
@@ -25,10 +25,6 @@ type Descriptor = {
   watchdogPid: number
   databaseFile?: string
   closeRequested?: boolean
-}
-
-class InvalidServiceDescriptor extends Error {
-  constructor() { super("Service descriptor is invalid") }
 }
 
 export function servicePath(home: string) {
@@ -62,7 +58,11 @@ export function readService(home: string): Descriptor | undefined {
       typeof item.username !== "string" || typeof item.password !== "string" ||
       typeof item.pipe !== "string" || !Number.isInteger(item.watchdogPid))
       throw new InvalidServiceDescriptor()
-    return item as Descriptor
+    return {
+      ...item,
+      pipe: resolveServicePath(home, item.pipe),
+      ...(item.databaseFile ? { databaseFile: resolveServicePath(home, item.databaseFile) } : {}),
+    } as Descriptor
   } catch (error) {
     throw new Error(`Cannot read NovaClaw service descriptor at ${path}`, { cause: error })
   } finally {
@@ -102,7 +102,11 @@ export function writeService(home: string, descriptor: Descriptor) {
   const database = new DatabaseSync(servicePath(home))
   try {
     database.exec("CREATE TABLE IF NOT EXISTS desktop_service (slot INTEGER PRIMARY KEY CHECK (slot = 1), value TEXT NOT NULL)")
-    database.prepare("INSERT OR REPLACE INTO desktop_service (slot, value) VALUES (1, ?)").run(JSON.stringify(descriptor))
+    database.prepare("INSERT OR REPLACE INTO desktop_service (slot, value) VALUES (1, ?)").run(JSON.stringify({
+      ...descriptor,
+      pipe: storeServicePath(home, descriptor.pipe),
+      ...(descriptor.databaseFile ? { databaseFile: storeServicePath(home, descriptor.databaseFile) } : {}),
+    }))
   } finally {
     database.close()
   }
@@ -180,8 +184,11 @@ export function serveControl(descriptor: Descriptor, stop: () => Promise<void>) 
   })
 }
 
-function pipeName(id: string) {
-  return process.platform === "win32" ? `\\\\.\\pipe\\novaclaw-${id}` : join(tmpdir(), `novaclaw-${id}.sock`)
+function pipeName(home: string, id: string) {
+  if (process.platform === "win32") return `\\\\.\\pipe\\novaclaw-${id}`
+  const directory = join(home, "tmp")
+  mkdirSync(directory, { recursive: true })
+  return join(directory, `nc-${id.slice(0, 12)}.sock`)
 }
 
 function watchdogBinary() {
@@ -221,9 +228,10 @@ export function createDesktopService(instance: ServiceInstancePaths, options: De
     async start(signal) {
       signal.throwIfAborted()
       descriptor = readOrRepairService(home)
-      if (descriptor && alive(descriptor.watchdogPid) && descriptor.databaseFile !== databaseFile)
+      const running = descriptor !== undefined && alive(descriptor.watchdogPid) && await control(descriptor, "ping")
+      if (running && descriptor && descriptor.databaseFile !== databaseFile)
         throw new Error(`A previous NovaClaw server is using a different database. Close that server before opening ${databaseFile}.`)
-      if (descriptor?.closeRequested && alive(descriptor.watchdogPid)) {
+      if (descriptor?.closeRequested && running) {
         const deadline = Date.now() + 10_000
         while (alive(descriptor.watchdogPid) && Date.now() < deadline) {
           signal.throwIfAborted()
@@ -232,7 +240,7 @@ export function createDesktopService(instance: ServiceInstancePaths, options: De
         if (alive(descriptor.watchdogPid)) throw new Error("The previous server is still shutting down")
         descriptor = undefined
       }
-      if (!descriptor || !alive(descriptor.watchdogPid)) {
+      if (!descriptor || !running) {
         const id = randomUUID()
         const binary = watchdogBinary()
         if (!pathPresent(binary)) throw new Error(`NovaClaw watchdog is missing: ${binary}`)
@@ -243,7 +251,7 @@ export function createDesktopService(instance: ServiceInstancePaths, options: De
           port: options.port && options.port > 0 ? options.port : await freePort(),
           username: options.username,
           password: ServerToken.storedPassword(databaseFile) ?? options.password ?? randomUUID(),
-          pipe: pipeName(id),
+          pipe: pipeName(home, id),
           watchdogPid: 0,
           databaseFile,
         }

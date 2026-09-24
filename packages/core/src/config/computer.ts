@@ -1,8 +1,8 @@
 export * as ConfigComputer from "./computer"
 
 import { Schema } from "effect"
-import { tmpdir } from "node:os"
 import path from "node:path"
+import { Global } from "../global"
 import { ConfigAnnotation } from "@novaclaw/schema/config-annotation"
 import { optional } from "@novaclaw/schema/schema"
 
@@ -12,7 +12,7 @@ import { optional } from "@novaclaw/schema/schema"
 // A measured 1435x1000 Chrome PNG was 1.05 MiB and its base64 projection alone was estimated at
 // 148k context tokens; the worker then crossed its containment boundary during the next capture.
 // Screens are observations, not archival assets, so bounded lossy encoding is the correct default.
-export const DEFAULT_SCREENSHOT_PATH = path.join(tmpdir(), "novaclaw-computer.jpg")
+export const DEFAULT_SCREENSHOT_PATH = path.join(Global.Path.tmp, "novaclaw-computer.jpg")
 
 /**
  * Where the `computer` tool sends its input, and where it captures from.

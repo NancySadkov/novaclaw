@@ -14,8 +14,7 @@ const gate = (config: unknown, airgap = false) => CommunityConsent.resolveGate({
 
 describe("CommunityConsent", () => {
   test("🔴 a fresh install does NOT participate — absence means never asked", () => {
-    // ⚠️ The opposite default from telemetry, which is on until refused. Here absence means the
-    // question has never been put to anyone, and answering it for them is what this exists to stop.
+    // Absence means the question has never been put to anyone, and answering it for them is what this exists to stop.
     expect(CommunityConsent.participates(gate(undefined))).toBe(false)
     expect(CommunityConsent.participates(gate({}))).toBe(false)
     expect(CommunityConsent.refusals(gate({}))).toEqual(["never_consented"])
@@ -50,7 +49,7 @@ describe("CommunityConsent", () => {
     /**
      * ⚠️ An ARRAY, not a first match. Never-consented AND airgapped is a real state, and a surface
      * reporting only one would send the user to fix a thing that would not help — the reason
-     * telemetry's gate returns a list too.
+     * both reasons must remain visible.
      */
     const both = gate({}, true)
     expect(CommunityConsent.refusals(both)).toEqual(["never_consented", "airgap"])

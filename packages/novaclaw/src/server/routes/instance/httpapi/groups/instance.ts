@@ -19,17 +19,12 @@ const PathInfo = Schema.Struct({
   worktree: Schema.String,
   directory: Schema.String,
   roots: Schema.Array(Schema.String),
-  // FS-3: when true the host exposes no browsable FS — the picker/Files use `virtualRoot`
-  // (an app-private directory) instead of `roots`. Optional so old clients ignore it.
-  virtual: Schema.optional(Schema.Boolean),
-  virtualRoot: Schema.optional(Schema.String),
   // The shared default working directory for folder-less agents ("New Agent" with no project).
   // A real app-managed dir under `<data>/scratch`; the client uses it as the cwd when no folder
   // is picked. Optional so old clients ignore it.
   scratchDir: Schema.optional(Schema.String),
   // The instance host's existing well-known user folders (+ Linux GTK bookmarks) — the
-  // directory-picker's "Places" rail. Existence-checked server-side; suppressed in virtual
-  // mode. Optional so old clients ignore it.
+  // directory-picker's "Places" rail. Existence-checked server-side.
   places: Schema.optional(Schema.Array(Schema.Struct({ name: Schema.String, path: Schema.String }))),
   // The remaining storage locations, surfaced so Settings can SHOW a user where their instance keeps
   // things (Advanced+). Not needed to operate the app, which is why they are optional — but a user who
@@ -203,7 +198,7 @@ export const InstanceApi = HttpApi.make("instance")
             identifier: "instance.diagnosis",
             summary: "Diagnose this instance",
             description:
-              "Compose storage, conversation store, memory, scheduler, updater and provider readings into one " +
+              "Compose storage, conversation store, memory, scheduler and provider readings into one " +
               "verdict. " +
               "Nothing costs egress unless probe=provider is passed, so opening a diagnostics screen never contacts anyone.",
           }),

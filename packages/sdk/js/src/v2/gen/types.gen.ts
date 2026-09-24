@@ -65,8 +65,6 @@ export type Event =
   | EventSessionNextRevertCleared
   | EventSessionNextRevertCommitted
   | EventSessionError
-  | EventInstallationUpdated
-  | EventInstallationUpdateAvailable
   | EventServerInstanceDisposed
   | EventAppRegistered
   | EventAgentStatusUpdated
@@ -996,20 +994,6 @@ export type GlobalEvent = {
       }
     | {
         id: string
-        type: "installation.updated"
-        properties: {
-          version: string
-        }
-      }
-    | {
-        id: string
-        type: "installation.update-available"
-        properties: {
-          version: string
-        }
-      }
-    | {
-        id: string
         type: "server.instance.disposed"
         properties: {
           directory: string
@@ -1460,8 +1444,6 @@ export type Path = {
   worktree: string
   directory: string
   roots: Array<string>
-  virtual?: boolean
-  virtualRoot?: string
   scratchDir?: string
   places?: Array<{
     name: string
@@ -1929,8 +1911,6 @@ export type V2Event =
   | SessionNextRevertCleared
   | SessionNextRevertCommitted
   | SessionError
-  | InstallationUpdated
-  | InstallationUpdateAvailable
   | ServerInstanceDisposed
   | AppRegistered
   | AgentStatusUpdated
@@ -3766,6 +3746,12 @@ export type ConfigV2Nudge = {
     | {
         type: "tool-call"
         tool: string
+        phase?: "before" | "after"
+      }
+    | {
+        type: "shell-command"
+        pattern: string
+        phase?: "before" | "after"
       }
     | {
         type: "mcp-call"
@@ -3793,6 +3779,10 @@ export type ConfigV2Nudge = {
       }
     | {
         type: "new-day"
+      }
+    | {
+        type: "interval"
+        minutes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
       }
     | {
         type: "script"
@@ -3961,6 +3951,11 @@ export type ConfigV2Log = {
 
 export type ConfigV2Trash = {
   retention_days?: number
+}
+
+export type ConfigV2Storage = {
+  max_database_mib?: number
+  prune_interval_hours?: number
 }
 
 export type ConfigV2ToolOutput = {
@@ -4341,6 +4336,7 @@ export type ConfigInfo = {
   attachments?: ConfigV2Attachments
   log?: ConfigV2Log
   trash?: ConfigV2Trash
+  storage?: ConfigV2Storage
   tool_output?: ConfigV2ToolOutput
   tool_routing?: ConfigV2ToolRouting
   resource_pressure?: ResourcePressure
@@ -4367,7 +4363,6 @@ export type ConfigInfo = {
     token?: string
   }>
   folder_bookmarks?: Array<string>
-  virtualFs?: boolean
   offline?: boolean
   community?: {
     consented?: boolean
@@ -4386,10 +4381,6 @@ export type ConfigInfo = {
     dht?: {
       bootstrap?: Array<string>
     }
-  }
-  telemetry?: {
-    endpoint?: string
-    enabled?: boolean
   }
   memory?: {
     enabled?: boolean
@@ -6188,7 +6179,7 @@ export type ScheduleFire = {
   scheduleId: string
   occurrenceMillis: number
   firedAt: number
-  outcome: "pending" | "confirmed" | "failed"
+  outcome: "pending" | "confirmed" | "failed" | "cancelled"
   windowEndAt: number
   lastHeartbeatAt: number | null
   confirmedAt: number | null
@@ -6534,40 +6525,6 @@ export type SessionError = {
   data: {
     sessionID?: string
     error: unknown
-  }
-}
-
-export type InstallationUpdated = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  type: "installation.updated"
-  durable?: {
-    aggregateID: string
-    seq: number
-    version: number
-  }
-  location?: LocationRef
-  data: {
-    version: string
-  }
-}
-
-export type InstallationUpdateAvailable = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  type: "installation.update-available"
-  durable?: {
-    aggregateID: string
-    seq: number
-    version: number
-  }
-  location?: LocationRef
-  data: {
-    version: string
   }
 }
 
@@ -7955,22 +7912,6 @@ export type EventSessionError = {
   properties: {
     sessionID?: string
     error: unknown
-  }
-}
-
-export type EventInstallationUpdated = {
-  id: string
-  type: "installation.updated"
-  properties: {
-    version: string
-  }
-}
-
-export type EventInstallationUpdateAvailable = {
-  id: string
-  type: "installation.update-available"
-  properties: {
-    version: string
   }
 }
 
@@ -18795,56 +18736,3 @@ export type V2LogExportResponses = {
 }
 
 export type V2LogExportResponse = V2LogExportResponses[keyof V2LogExportResponses]
-
-export type V2TelemetryStatusData = {
-  body?: never
-  path?: never
-  query?: never
-  url: "/api/telemetry/status"
-}
-
-export type V2TelemetryStatusErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * UnauthorizedError
-   */
-  401: UnauthorizedError
-}
-
-export type V2TelemetryStatusError = V2TelemetryStatusErrors[keyof V2TelemetryStatusErrors]
-
-export type V2TelemetryStatusResponses = {
-  /**
-   * Success
-   */
-  200: {
-    gate: {
-      consent: boolean
-      airgap: boolean
-    }
-    endpointConfigured: boolean
-    ready: boolean
-    refusals: Array<
-      "consent_off" | "airgap" | "no_endpoint" | "content_bearing_event" | "unknown_event" | "empty_signature"
-    >
-    payloadPreview?: {
-      signature: {
-        [key: string]: string | number | boolean
-      }
-      attributes: {
-        [key: string]: string | number | boolean
-      }
-    }
-    disclosure: Array<{
-      field: string
-      class: string
-      meaning: string
-      condition: string
-    }>
-  }
-}
-
-export type V2TelemetryStatusResponse = V2TelemetryStatusResponses[keyof V2TelemetryStatusResponses]

@@ -36,6 +36,7 @@ import { Tools } from "./tools"
 import { makeLocationNode } from "../effect/app-node"
 import { ToolDeadline } from "../tool-deadline"
 import { Token } from "../util/token"
+import { NudgeService } from "../nudge-service"
 
 /** Keep discovery callable while moving large schemas out of the immutable native prefix. */
 export const nativeDefinitions = (definitions: ReadonlyArray<ToolDefinition>, budget?: number): ToolDefinition[] => {
@@ -67,6 +68,7 @@ export type ExecuteInput = {
   readonly model?: ToolContext["model"]
   /** Canonical paths of the user's attachments for this turn; forwarded to every tool's Context. */
   readonly attachmentPaths?: ReadonlySet<string>
+  readonly directory?: string
   /**
    * The assistant turn's remaining image allowance; forwarded to every tool's Context.
    *
@@ -228,6 +230,7 @@ const registryLayer = Layer.effect(
     const external = yield* ExternalToolSource.Service
     const resources = yield* ToolOutputStore.Service
     const policies = yield* ToolPolicyGate.Service
+    const nudges = yield* NudgeService.Service
     type Registration = { readonly identity: object; readonly tool: AnyTool }
     const local = new Map<string, Array<{ readonly token: object; readonly registration: Registration }>>()
 
@@ -303,6 +306,17 @@ const registryLayer = Layer.effect(
         })
       })
       const run = Effect.gen(function* () {
+        if (input.call.name !== "nudge") {
+          const blocked = yield* nudges.beforeTool({
+            sessionID: input.sessionID,
+            agentID: String(input.agent),
+            callID: input.call.id,
+            name: input.call.name,
+            arguments: input.call.input,
+            directory: input.directory,
+          })
+          if (blocked) return yield* new ToolFailure({ message: blocked })
+        }
         const screened = yield* policies.screen({
           sessionID: input.sessionID,
           agent: input.agent,
@@ -726,16 +740,17 @@ export const defaultLayer = layer.pipe(
   Layer.provide(ApplicationTools.layer),
   Layer.provide(ExternalToolSource.layer),
   Layer.provide(ToolOutputStore.defaultLayer),
+  Layer.provide(NudgeService.defaultLayer),
 )
 
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [ApplicationTools.node, ExternalToolSource.node, ToolOutputStore.node, ToolPolicyGate.node],
+  deps: [ApplicationTools.node, ExternalToolSource.node, ToolOutputStore.node, ToolPolicyGate.node, NudgeService.node],
 })
 
 export const toolsNode = makeLocationNode({
   service: Tools.Service,
   layer,
-  deps: [ApplicationTools.node, ExternalToolSource.node, ToolOutputStore.node, ToolPolicyGate.node],
+  deps: [ApplicationTools.node, ExternalToolSource.node, ToolOutputStore.node, ToolPolicyGate.node, NudgeService.node],
 })

@@ -3,14 +3,14 @@ export * as WindowsComputer from "./windows-native"
 import path from "node:path"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { createHash } from "node:crypto"
-import { tmpdir } from "node:os"
+import { Global } from "../global"
 import helperSource from "./windows-helper.ps1" with { type: "text" }
 import { ComputerCoordinates } from "./coordinates"
 import type { ComputerActions } from "./actions"
 import type { ComputerControlTarget } from "./control-target"
 
 const HELPER_DIGEST = createHash("sha256").update(helperSource).digest("hex").slice(0, 16)
-const HELPER_DIR = path.join(tmpdir(), "novaclaw-computer")
+const HELPER_DIR = path.join(Global.Path.tmp, "computer")
 const HELPER_PATH = path.join(HELPER_DIR, `windows-helper-${HELPER_DIGEST}.ps1`)
 
 export const ensureHelper = async (): Promise<string> => {

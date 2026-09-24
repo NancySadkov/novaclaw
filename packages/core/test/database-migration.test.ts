@@ -23,6 +23,8 @@ import jhPlanTimeUpdatedIndexMigration from "@novaclaw/core/database/migration/2
 import sessionDeviceMigration from "@novaclaw/core/database/migration/20260807173556_add_session_device"
 import messengerOwnerMigration from "@novaclaw/core/database/migration/20260923220841_messenger_agent_owner"
 import retireAutoPromptingMigration from "@novaclaw/core/database/migration/20260924120000_retire_auto_prompting"
+import portablePathsMigration from "@novaclaw/core/database/migration/20260924180000_portable_instance_paths"
+import { Global } from "@novaclaw/core/global"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
@@ -73,6 +75,26 @@ const migrationCheckUnavailable = (() => {
 })()
 
 describe("DatabaseMigration", () => {
+  test("existing scratch sessions and config grants become home-relative", async () => {
+    await run(Effect.gen(function* () {
+      const db = yield* makeDb
+      yield* db.run(sql`CREATE TABLE session (directory text)`)
+      for (const table of ["agent_config", "catalog_provider", "command_config", "reference_config"]) {
+        yield* db.run(sql`CREATE TABLE ${sql.identifier(table)} (layers text)`)
+      }
+      for (const table of ["runtime_setting", "catalog_setting", "agent_setting"]) {
+        yield* db.run(sql`CREATE TABLE ${sql.identifier(table)} (value text)`)
+      }
+      const scratch = path.join(Global.Path.data, "scratch", "officer")
+      yield* db.run(sql`INSERT INTO session (directory) VALUES (${scratch})`)
+      yield* db.run(sql`INSERT INTO agent_config (layers) VALUES (${JSON.stringify([{ directory: "C:/Work/project", permissions: [{ resource: `${scratch}/*` }] }])})`)
+      yield* DatabaseMigration.applyOnly(db, [portablePathsMigration])
+      const sessions = yield* db.all<{ directory: string }>(sql`SELECT directory FROM session`)
+      const agents = yield* db.all<{ layers: string }>(sql`SELECT layers FROM agent_config`)
+      expect(sessions[0]?.directory).toBe("novaclaw-home:/data/scratch/officer")
+      expect(JSON.parse(agents[0]!.layers)).toEqual([{ directory: "C:/Work/project", permissions: [{ resource: "novaclaw-home:/data/scratch/officer/*" }] }])
+    }))
+  })
   test("retired auto-prompting roots resume as goal-oriented sessions", async () => {
     await run(
       Effect.gen(function* () {

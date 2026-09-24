@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { mkdirSync } from "node:fs"
-import { homedir, tmpdir } from "node:os"
+import { homedir } from "node:os"
 import { join, resolve } from "node:path"
 import { app } from "electron"
 import { Xdg } from "@novaclaw/core/util/xdg"
@@ -20,8 +20,9 @@ export function prepareInstanceHome(role: "client" | "server" | "launcher" = "cl
   // embedded web UI so another machine can actually use the advertised public endpoint.
   if (!serverEnabled) process.env.NOVACLAW_DISABLE_EMBEDDED_WEB_UI = "true"
   const appId = app.isPackaged ? APP_IDS[CHANNEL] : APP_IDS.dev
-  const testRoot =
-    process.env.NOVACLAW_TEST_ONBOARDING === "1" ? join(tmpdir(), `novaclaw-onboarding-${randomUUID()}`) : undefined
+  const testRoot = process.env.NOVACLAW_TEST_ONBOARDING === "1"
+    ? join(homedir() || app.getPath("home"), ".local", "share", `novaclaw-onboarding-${randomUUID()}`)
+    : undefined
   const selectedHome = Xdg.homeOverride(process.argv, process.env)
   const home = selectedHome ? resolve(selectedHome) : undefined
   if (home) process.env.NOVACLAW_HOME = home
@@ -38,7 +39,7 @@ export function prepareInstanceHome(role: "client" | "server" | "launcher" = "cl
   }
   app.setName(app.isPackaged ? APP_NAMES[CHANNEL] : APP_NAMES.dev)
   app.setAppUserModelId(appId)
-  const emergencyRoot = join(app.getPath("temp"), "novaclaw-home")
+  const emergencyRoot = join(homedir() || app.getPath("home"), ".novaclaw-recovery")
   const selectedRoot =
     testRoot ?? resolveInstanceRoot(process.argv, process.env, homedir() || app.getPath("home"), emergencyRoot)
   const prepared = ensureDesktopProfile(

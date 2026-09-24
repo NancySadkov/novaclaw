@@ -125,11 +125,6 @@ const LEDGER: readonly Entry[] = [
     kind: "fallback",
     why: "detects `/proc` to choose a process-walk strategy; a miss selects the other strategy.",
   },
-  {
-    file: "core/src/virtual-fs.ts",
-    kind: "fallback",
-    why: "writes a README when it is not already there — idempotent, and no sentence is built from the answer.",
-  },
   // ── desktop ───────────────────────────────────────────────────────────────────────────────────
   {
     file: "desktop/src/main/wsl/runtime.ts",

@@ -84,8 +84,8 @@ export const decide = (attempt: Attempt): Decision => {
  * say which one it was.
  *
  * ⚠️ **It is a closed set because the log-event ledger made it one, and the ledger was right.** A
- * prose string is attribute class `text`, which by declaration never egresses — so a diagnostic
- * written as prose is one that crash telemetry can never carry, and it is unmineable besides. The
+ * prose string is attribute class `text`, which is omitted from redacted exports — so a diagnostic
+ * written as prose is unmineable. The
  * cause is genuinely finite here, so it costs nothing to say so and it becomes an `id` that travels.
  */
 export type GiveUpCause = "budget-exhausted" | "not-a-budget-problem"

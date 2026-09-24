@@ -7,6 +7,9 @@ import { useServerSync } from "@/context/server-sync"
 import { useConfirm } from "@/components/dialog-confirm"
 import { RequiresLevel } from "@/context/expertise"
 import { isJSONObject, JSONCParseError, parseJSONC } from "@/utils/jsonc"
+import type { Path } from "@novaclaw/sdk/v2/client"
+
+type InstanceRoots = Pick<Path, "data" | "config" | "cache" | "state" | "tmp">
 
 // Raw whole-config Export/Import — a Developer affordance (uix.md §6.4). Lifted out of the (removed)
 // Providers tab into the merged Models tab so config portability survives the merge. Desktop-only:
@@ -18,9 +21,41 @@ import { isJSONObject, JSONCParseError, parseJSONC } from "@/utils/jsonc"
 // instance re-seeds from. Only derived/transport noise is dropped.
 const EXPORT_DROP_KEYS = new Set(["$schema"])
 
-export function generateConfigTemplate(current: Record<string, unknown>): string {
+function portableConfig(current: Record<string, unknown>, paths: InstanceRoots): Record<string, unknown> {
+  const roots = (["data", "config", "cache", "state", "tmp"] as const)
+    .flatMap((name) => {
+      const value = paths[name]
+      return value ? [{ name, root: value.replaceAll("\\", "/").replace(/\/+$/, "") }] : []
+    })
+    .sort((left, right) => right.root.length - left.root.length)
+  const map = (value: unknown, parents: readonly string[]): unknown => {
+    if (typeof value === "string") {
+      const normalized = value.replaceAll("\\", "/")
+      if (parents.length === 3 && parents[0] === "agents" && parents[2] === "directory") {
+        const data = roots.find((item) => item.name === "data")?.root
+        const scratch = data ? `${data}/scratch/` : undefined
+        if (!scratch || !normalized.toLowerCase().startsWith(scratch.toLowerCase())) return value
+      }
+      for (const { name, root } of roots) {
+        const insensitive = /^[A-Za-z]:\//.test(root)
+        const candidate = insensitive ? normalized.toLowerCase() : normalized
+        const base = insensitive ? root.toLowerCase() : root
+        if (candidate === base || candidate.startsWith(`${base}/`))
+          return `novaclaw-home:/${name}${normalized.slice(root.length)}`
+      }
+      return value
+    }
+    if (Array.isArray(value)) return value.map((item) => map(item, parents))
+    if (value && typeof value === "object")
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, map(item, [...parents, key])]))
+    return value
+  }
+  return map(current, []) as Record<string, unknown>
+}
+
+export function generateConfigTemplate(current: Record<string, unknown>, paths?: InstanceRoots): string {
   const out: Record<string, unknown> = { $schema: "https://novaclaw.app/config.json" }
-  for (const [key, value] of Object.entries(current)) {
+  for (const [key, value] of Object.entries(paths ? portableConfig(current, paths) : current)) {
     if (value === undefined || EXPORT_DROP_KEYS.has(key)) continue
     out[key] = value
   }
@@ -33,7 +68,7 @@ export const ConfigExportImport: Component = () => {
   const confirm = useConfirm()
 
   const exportConfig = async () => {
-    const jsonc = generateConfigTemplate(serverSync().data.config as Record<string, unknown>)
+    const jsonc = generateConfigTemplate(serverSync().data.config as Record<string, unknown>, serverSync().data.path)
     const api = (
       window as unknown as {
         api?: {

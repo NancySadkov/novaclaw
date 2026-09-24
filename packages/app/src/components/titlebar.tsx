@@ -384,13 +384,13 @@ function BrandBadge(props: { onOpenHome: () => void; onOpenOfficers: () => void 
           pointerStart = { x: event.screenX, y: event.screenY }
           dragged = false
           event.currentTarget.setPointerCapture(event.pointerId)
-          window.api.beginWindowDrag(event.screenX, event.screenY, event.clientX, event.clientY)
+          window.api.beginWindowDrag(event.clientX, event.clientY)
         }}
         onPointerMove={(event) => {
           if (!pointerStart) return
           if (!dragged && Math.hypot(event.screenX - pointerStart.x, event.screenY - pointerStart.y) < 4) return
           dragged = true
-          window.api?.moveWindowDrag?.(event.screenX, event.screenY)
+          window.api?.moveWindowDrag?.()
         }}
         onPointerUp={() => {
           if (!pointerStart) return

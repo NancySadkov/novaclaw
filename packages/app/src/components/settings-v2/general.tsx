@@ -11,7 +11,6 @@ import { useExpertise } from "@/context/expertise"
 import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
-import { useServerSDK } from "@/context/server-sdk"
 import { ServerConnection, serverName } from "@/context/server"
 import { useServerManagementController } from "../dialog-select-server"
 import { ConfigExportImport } from "./config-io"
@@ -21,7 +20,6 @@ import { useSettings } from "@/context/settings"
 import { offlineStatus, type OfflineStatus } from "@/utils/fs-api"
 import { Link } from "../link"
 import { DialogExpertise } from "./dialog-expertise"
-import { DialogTelemetryStatus, type TelemetryStatus } from "./dialog-telemetry-status"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { useSettingsConfigWrite } from "./parts/config-write"
@@ -47,7 +45,6 @@ export const SettingsGeneralV2: Component<{
   const dialog = useDialog()
   const serverSync = useServerSync()
   const writeConfig = useSettingsConfigWrite()
-  const serverSdk = useServerSDK()
   const mobile = createMediaQuery("(max-width: 767px)")
 
   const desktop = createMemo(() => platform.platform === "desktop")
@@ -94,7 +91,7 @@ export const SettingsGeneralV2: Component<{
     // caller's `!directory()` check read a different value for the same condition.
     return scopedDirectory(ctx.sync.data.path) || undefined
   })
-  // OFF-C — the N/8 airgap-layer indicator (refetches when offline mode is toggled).
+  // OFF-C — the airgap-layer indicator (refetches when offline mode is toggled).
   const offlineEnabled = createMemo(() => (serverSync().data.config as { offline?: boolean }).offline === true)
   const [offline] = createResource(
     () =>
@@ -103,29 +100,6 @@ export const SettingsGeneralV2: Component<{
         : undefined,
     ({ conn, d }) => offlineStatus(conn.http, { directory: d }).catch(() => undefined),
   )
-  const telemetryConsent = createMemo(
-    () => (serverSync().data.config as { telemetry?: { enabled?: boolean } }).telemetry?.enabled !== false,
-  )
-  const [telemetryStatus] = createResource(
-    () => {
-      const d = instanceRouteDir()
-      return d ? { d, consent: telemetryConsent(), offline: offlineEnabled() } : undefined
-    },
-    () =>
-      serverSdk()
-        .client.v2.telemetry.status()
-        .then((response) => response.data)
-        .catch(() => undefined),
-  )
-  const telemetryStatusCopy = createMemo(() => {
-    const status = telemetryStatus.latest as TelemetryStatus | undefined
-    if (!status) return language.t("settings.general.row.telemetry.statusUnavailable")
-    if (status.gate.airgap) return language.t("settings.general.row.telemetry.statusAirgap")
-    if (!status.gate.consent) return language.t("settings.general.row.telemetry.statusConsentOff")
-    if (!status.endpointConfigured) return language.t("settings.general.row.telemetry.statusNoEndpoint")
-    if (!status.ready) return language.t("settings.general.row.telemetry.statusNotReady")
-    return language.t("settings.general.row.telemetry.statusReady")
-  })
   const offlineLabel = createMemo(() => {
     const status = offline.latest as OfflineStatus | undefined
     if (!status) return ""
@@ -233,60 +207,6 @@ export const SettingsGeneralV2: Component<{
         >
           <div data-action="settings-offline-mode">
             <Switch checked={offlineEnabled()} onChange={(checked) => void writeConfig({ offline: checked })} />
-          </div>
-        </SettingsRowV2>
-
-        <SettingsRowV2
-          minLevel="developer"
-          title={language.t("settings.general.row.virtualFs.title")}
-          description={language.t("settings.general.row.virtualFs.description")}
-        >
-          <div data-action="settings-virtual-fs">
-            <Switch
-              checked={(serverSync().data.config as { virtualFs?: boolean }).virtualFs === true}
-              onChange={(checked) => void writeConfig({ virtualFs: checked })}
-            />
-          </div>
-        </SettingsRowV2>
-
-        {/* The disclosure is ordinary-user UI. It is deliberately a separate row from the
-          Developer-only switch below, because SettingsRowV2 hides its entire subtree at minLevel. */}
-        <SettingsRowV2 title={language.t("settings.general.row.telemetry.title")} description={telemetryStatusCopy()}>
-          <ButtonV2
-            variant="outline"
-            disabled={!telemetryStatus.latest}
-            onClick={() => {
-              const status = telemetryStatus.latest as TelemetryStatus | undefined
-              if (status) dialog.show(() => <DialogTelemetryStatus status={status} />)
-            }}
-          >
-            {language.t("settings.general.row.telemetry.inspect")}
-          </ButtonV2>
-        </SettingsRowV2>
-
-        {/*
-          The disable switch is Developer-gated by design (AGENTS.md design-principle 4: on by
-          default, disableable only in Developer mode — a common user is maintained, not
-          handed a pager).
-
-          ⚠️ Airgap is shown as an OVERRIDE, not as the toggle's value. Rendering `checked={false}`
-          while offline is on would tell the user they withdrew consent when they did not — the two
-          conditions are independent (`core/src/observability/telemetry.ts`), and a surface that
-          collapses them is how the independence gets refactored away later.
-        */}
-        <SettingsRowV2
-          minLevel="developer"
-          title={language.t("settings.general.row.telemetry.controlTitle")}
-          description={`${language.t("settings.general.row.telemetry.controlDescription")}${
-            offlineEnabled() ? ` — ${language.t("settings.general.row.telemetry.forcedOff")}` : ""
-          }`}
-        >
-          <div data-action="settings-telemetry">
-            <Switch
-              checked={telemetryConsent()}
-              disabled={offlineEnabled()}
-              onChange={(checked) => void writeConfig({ telemetry: { enabled: checked } })}
-            />
           </div>
         </SettingsRowV2>
 

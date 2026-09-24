@@ -524,8 +524,7 @@ function DebugAppPage() {
     "debug-action disabled:pointer-events-none disabled:opacity-40"
 
   return (
-    <AppPage class="debug-page flex flex-col overflow-hidden">
-      <AppPageHeader dense glyph="debug" title="Debug" hint="Live diagnostics and recovery" />
+    <AppPage class="debug-page flex flex-col overflow-hidden select-text">
       <div class="debug-scroll min-h-0 flex-1 overflow-y-auto">
         <div class="debug-intro">
           <div>

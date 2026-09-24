@@ -7,7 +7,6 @@ import { Durable } from "./durable-event-manifest"
 import { Event } from "./event"
 import { FileSystem } from "./filesystem"
 import { FileSystemWatcher } from "./filesystem-watcher"
-import { InstallationEvent } from "./installation-event"
 import { InstanceEvent } from "./instance-event"
 import { Integration } from "./integration"
 import { McpEvent } from "./mcp-event"
@@ -65,8 +64,8 @@ const featureDefinitions = Event.inventory(
  *
  * ⚠️ Until 2026-09-03 this was the foundation, the features and three session families, and
  * `Definitions` added ten more families the contract stream then REFUSED (`session.status`,
- * `session.error`, `session.compacted`, `mcp.*`, `installation.*`, `vcs.branch.updated`,
- * `workspace.*`, `worktree.*`): the app's status row, error toast, updater and branch badge were
+ * `session.error`, `session.compacted`, `mcp.*`, `vcs.branch.updated`,
+ * `workspace.*`, `worktree.*`): the app's status row, error toast and branch badge were
  * contract consumers waiting on exactly these, and the session worker had to whitelist
  * `session.status` past this set by hand to reach the host bus at all. The event-stream ledger
  * (`notes/reports/refactor-sweep-2026-08-31/24-contract-surface.md`) said "join" for each; they are joined. `permission.asked/replied` left instead:
@@ -75,7 +74,6 @@ const featureDefinitions = Event.inventory(
 export const ServerDefinitions = Event.inventory(
   ...foundationDefinitions,
   ...recordLiveDefinitions,
-  ...InstallationEvent.Definitions,
   ...InstanceEvent.Definitions,
   ...featureDefinitions,
   ...SessionTodo.Event.Definitions,

@@ -18,12 +18,11 @@ import { makeGlobalNode } from "../effect/app-node"
  *   · talking to a peer reveals this machine's IP ADDRESS to them. That is what "no central server"
  *     means from the other side: connections are direct, so the other end learns where you are.
  *
- * ⚠️ Shaped after `observability/telemetry.ts`'s gate, deliberately: independent conditions read
- * from separate sources, and refusals returned as an ARRAY so one never masks another. A status
+ * Independent conditions are read from separate sources, and refusals returned as an ARRAY so one never masks another. A status
  * surface that said "airgapped" while consent was also missing would send someone to fix the wrong
  * thing.
  *
- * ⚠️ `config` is `unknown` here for the reason telemetry gives: the moment this imports the config
+ * ⚠️ `config` is `unknown` here because the moment this imports the config
  * schema, "consent" and "the switch" become two fields of one object that a later refactor can
  * collapse into a single expression, and the distinction below is exactly what must not be lost.
  */
@@ -32,8 +31,7 @@ export interface Gate {
    * The user has read the warning and accepted it. STICKY — turning the module off does not un-read
    * it, which is why this is not the same question as `enabled`.
    *
-   * Absent means NEVER ASKED, and absent is the default: unlike telemetry, which is on until
-   * refused, this is off until accepted.
+   * Absent means NEVER ASKED, and the module stays off until accepted.
    */
   readonly consented: boolean
   /** The Community app's own on/off switch. Off is a normal, reversible state. */
@@ -51,8 +49,7 @@ export function resolveGate(input: {
 }): Gate {
   const community = (input.config as { community?: { consented?: unknown; enabled?: unknown } } | undefined)?.community
   return {
-    // ⚠️ `=== true`, not `!== false`. Telemetry's default is ON and absence means consent; here
-    // absence means the question has never been put to anyone, and answering it for them is the one
+    // ⚠️ `=== true`, not `!== false`. Absence means the question has never been put to anyone, and answering it for them is the one
     // thing this gate exists to prevent.
     consented: community?.consented === true,
     // Defaults ON once consented: a user who accepted the warning asked to join, and making them

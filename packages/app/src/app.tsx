@@ -376,8 +376,8 @@ declare global {
     api?: {
       setTitlebar?: (theme: { mode: "light" | "dark" }) => Promise<void>
       exportDebugLogs?: (serverDiagnostics?: string) => Promise<string>
-      beginWindowDrag?: (screenX: number, screenY: number, clientX: number, clientY: number) => void
-      moveWindowDrag?: (screenX: number, screenY: number) => void
+      beginWindowDrag?: (clientX: number, clientY: number) => void
+      moveWindowDrag?: () => void
       endWindowDrag?: () => void
     }
   }
