@@ -71,7 +71,11 @@ function check(ok: boolean, name: string, detail: string) {
 
 function treeBytes(directory: string): number {
   return readdirSync(directory, { withFileTypes: true }).reduce(
-    (total, entry) => total + (entry.isDirectory() ? treeBytes(path.join(directory, entry.name)) : statSync(path.join(directory, entry.name)).size),
+    (total, entry) =>
+      total +
+      (entry.isDirectory()
+        ? treeBytes(path.join(directory, entry.name))
+        : statSync(path.join(directory, entry.name)).size),
     0,
   )
 }
@@ -237,8 +241,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 type CdpTarget = { type?: string; url?: string; webSocketDebuggerUrl?: string }
 
-/** Evaluate an expression in a renderer target and return its (JSON-serializable) value. */
-function cdpEvaluate(wsUrl: string, expression: string, timeoutMs: number): Promise<unknown> {
+function cdpCall(wsUrl: string, method: string, params: Record<string, unknown>, timeoutMs: number): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(wsUrl)
     let settled = false
@@ -253,16 +256,10 @@ function cdpEvaluate(wsUrl: string, expression: string, timeoutMs: number): Prom
       }
       fn()
     }
-    const timer = setTimeout(() => finish(() => reject(new Error("CDP evaluate timed out"))), timeoutMs)
+    const timer = setTimeout(() => finish(() => reject(new Error(`CDP ${method} timed out`))), timeoutMs)
     socket.onerror = () => finish(() => reject(new Error(`CDP socket error on ${wsUrl}`)))
     socket.onopen = () => {
-      socket.send(
-        JSON.stringify({
-          id: 1,
-          method: "Runtime.evaluate",
-          params: { expression, awaitPromise: true, returnByValue: true },
-        }),
-      )
+      socket.send(JSON.stringify({ id: 1, method, params }))
     }
     socket.onmessage = (event: MessageEvent) => {
       let message: {
@@ -282,6 +279,11 @@ function cdpEvaluate(wsUrl: string, expression: string, timeoutMs: number): Prom
       finish(() => resolve(message.result?.result?.value))
     }
   })
+}
+
+/** Evaluate an expression in a renderer target and return its (JSON-serializable) value. */
+function cdpEvaluate(wsUrl: string, expression: string, timeoutMs: number, userGesture = false): Promise<unknown> {
+  return cdpCall(wsUrl, "Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true, userGesture }, timeoutMs)
 }
 
 type Credentials = { url: string; username?: string; password?: string }
@@ -328,6 +330,85 @@ async function readRenderer(devtoolsPort: number, deadline: number): Promise<Ren
     await sleep(500)
   }
   throw new Error(`could not read the sidecar credentials from the app: ${lastError}`)
+}
+
+async function readAboutPlayback(wsUrl: string) {
+  await cdpCall(wsUrl, "Page.bringToFront", {}, 10_000)
+  await cdpEvaluate(
+    wsUrl,
+    `(async () => {
+      const deadline = Date.now() + 30000
+      let tile
+      while (!(tile = document.querySelector('button.home-app[aria-label="Settings"]')) && Date.now() < deadline)
+        await new Promise(resolve => setTimeout(resolve, 100))
+      if (!tile) throw new Error('Settings tile did not appear')
+      tile.click()
+      while (!document.querySelector('[data-slot="tabs-v2-trigger"][data-value="about"]') && Date.now() < deadline)
+        await new Promise(resolve => setTimeout(resolve, 100))
+      return true
+    })()`,
+    35_000,
+  )
+  await cdpEvaluate(
+    wsUrl,
+    `(() => { const tab = document.querySelector('[data-slot="tabs-v2-trigger"][data-value="about"]'); if (!tab) throw new Error('About tab missing'); tab.click(); return true })()`,
+    10_000,
+    true,
+  )
+  await sleep(500)
+  const first = (await cdpEvaluate(
+    wsUrl,
+    `(() => ({ time: document.querySelector('.settings-v2-screen audio')?.currentTime, crawl: document.querySelector('.settings-v2-about-crawl')?.style.transform }))()`,
+    10_000,
+  )) as { time?: number; crawl?: string }
+  await sleep(1_500)
+  const second = (await cdpEvaluate(
+    wsUrl,
+    `(async () => { const audio = document.querySelector('.settings-v2-screen audio'); const source = audio?.querySelector('source'); const range = await fetch(source.src, {headers: {Range: 'bytes=0-100'}}); return {time: audio.currentTime, ready: audio.readyState, crawl: document.querySelector('.settings-v2-about-crawl')?.style.transform, rangeStatus: range.status, rangeLength: (await range.arrayBuffer()).byteLength} })()`,
+    10_000,
+  )) as { time?: number; ready?: number; crawl?: string; rangeStatus?: number; rangeLength?: number }
+  await cdpEvaluate(
+    wsUrl,
+    `(() => { window.__smokeAboutAudio = document.querySelector('.settings-v2-screen audio'); document.querySelector('[data-slot="tabs-v2-trigger"][data-value="general"]')?.click(); return true })()`,
+    10_000,
+    true,
+  )
+  const stopped = (await cdpEvaluate(
+    wsUrl,
+    `(() => ({paused: window.__smokeAboutAudio?.paused, time: window.__smokeAboutAudio?.currentTime}))()`,
+    10_000,
+  )) as { paused?: boolean; time?: number }
+  await sleep(200)
+  await cdpEvaluate(
+    wsUrl,
+    `(() => { const tab = document.querySelector('[data-slot="tabs-v2-trigger"][data-value="about"]'); tab?.scrollIntoView({block: 'center', inline: 'center'}); tab?.click(); return true })()`,
+    10_000,
+    true,
+  )
+  await sleep(500)
+  const reopenedFirstCrawl = (await cdpEvaluate(
+    wsUrl,
+    `(() => document.querySelector('.settings-v2-about-crawl')?.style.transform)()`,
+    10_000,
+  )) as string | undefined
+  await sleep(1_300)
+  const reopened = (await cdpEvaluate(
+    wsUrl,
+    `(() => { const audio = document.querySelector('.settings-v2-screen audio'); return { time: audio?.currentTime, paused: audio?.paused, ready: audio?.readyState, about: Boolean(document.querySelector('.settings-v2-about')), crawl: document.querySelector('.settings-v2-about-crawl')?.style.transform, selected: document.querySelector('[data-slot="tabs-v2-trigger"][data-selected]')?.getAttribute('data-value'), hint: document.querySelector('.settings-v2-about-audio-hint')?.textContent } })()`,
+    10_000,
+  )) as { time?: number; paused?: boolean; ready?: number; about?: boolean; crawl?: string; selected?: string; hint?: string }
+  await cdpEvaluate(
+    wsUrl,
+    `(() => { window.__smokeAboutAudio = document.querySelector('.settings-v2-screen audio'); document.querySelector('button.settings-v2-close')?.click(); return true })()`,
+    10_000,
+    true,
+  )
+  const closed = (await cdpEvaluate(
+    wsUrl,
+    `(() => ({ paused: window.__smokeAboutAudio?.paused, time: window.__smokeAboutAudio?.currentTime }))()`,
+    10_000,
+  )) as { paused?: boolean; time?: number }
+  return { first, second, stopped, reopenedFirstCrawl, reopened, closed }
 }
 
 async function readToastSelection(wsUrl: string) {
@@ -682,7 +763,11 @@ async function run() {
 
     const gitRoot = path.join(path.dirname(exe), "resources", "third-party", "portable-git")
     const gitBytes = existsSync(gitRoot) ? treeBytes(gitRoot) : Number.POSITIVE_INFINITY
-    check(gitBytes <= 128 * 1024 * 1024, "mingit-size", `the embedded Git runtime is ${(gitBytes / 1024 / 1024).toFixed(1)} MiB`)
+    check(
+      gitBytes <= 80 * 1024 * 1024,
+      "mingit-size",
+      `the embedded Git runtime is ${(gitBytes / 1024 / 1024).toFixed(1)} MiB`,
+    )
     check(
       !existsSync(path.join(gitRoot, "cmd", "git-gui.exe")) &&
         !existsSync(path.join(gitRoot, "cmd", "gitk.exe")) &&
@@ -696,30 +781,67 @@ async function run() {
     check(existsSync(bash), "mingit-bash", `missing ${bash}`)
     check(existsSync(git), "mingit-git", `missing ${git}`)
     check(existsSync(ssh), "mingit-ssh", `missing ${ssh}`)
+    check(
+      !existsSync(path.join(gitRoot, "mingw64", "bin", "git-credential-manager.exe")) &&
+        !existsSync(path.join(gitRoot, "mingw64", "bin", "Avalonia.OpenGL.dll")) &&
+        !existsSync(path.join(gitRoot, "mingw64", "bin", "git-askpass.exe")) &&
+        !existsSync(path.join(gitRoot, "mingw64", "bin", "git-askyesno.exe")) &&
+        !existsSync(path.join(gitRoot, "mingw64", "libexec", "git-core", "git-credential-wincred.exe")) &&
+        !existsSync(path.join(gitRoot, "mingw64", "share", "git")) &&
+        !/^\s*helper\s*=\s*manager\s*$/m.test(readFileSync(path.join(gitRoot, "etc", "gitconfig"), "utf8")),
+      "mingit-no-credential-manager",
+      "the graphical credential manager or its default helper setting remains",
+    )
     check(existsSync(path.join(gitRoot, "LICENSE.txt")), "mingit-license", "the embedded Git licence is missing")
-    check(existsSync(path.join(gitRoot, "SOURCE-OFFER.txt")), "mingit-source-offer", "the embedded source offer is missing")
+    check(
+      existsSync(path.join(gitRoot, "SOURCE-OFFER.txt")),
+      "mingit-source-offer",
+      "the embedded source offer is missing",
+    )
     const gitEnv = { ...process.env }
     for (const key of Object.keys(gitEnv)) if (key.toLowerCase() === "path") delete gitEnv[key]
-    gitEnv.PATH = ["mingw64/bin", "usr/bin", "cmd"].map((part) => path.join(gitRoot, part)).concat(bin).join(path.delimiter)
+    gitEnv.PATH = ["mingw64/bin", "usr/bin", "cmd"]
+      .map((part) => path.join(gitRoot, part))
+      .concat(bin)
+      .join(path.delimiter)
     gitEnv.HOME = tempHome
-    const gitRun = spawnSync(bash, ["-c", "printf '%s\\n' \"$BASH_VERSION\"; git --version; ssh -V 2>&1; gcc --version | head -n 1"], {
-      cwd: tempHome,
-      encoding: "utf8",
-      env: gitEnv,
-    })
+    const gitRun = spawnSync(
+      bash,
+      ["-c", "printf '%s\\n' \"$BASH_VERSION\"; git --version; ssh -V 2>&1; gcc --version | head -n 1"],
+      {
+        cwd: tempHome,
+        encoding: "utf8",
+        env: gitEnv,
+      },
+    )
     check(
-      gitRun.status === 0 && /^5\.3\./.test(gitRun.stdout) && gitRun.stdout.includes("git version 2.55.0.windows.5") && gitRun.stdout.includes("OpenSSH_10.5") && gitRun.stdout.includes("gcc.exe (GCC)"),
+      gitRun.status === 0 &&
+        /^5\.3\./.test(gitRun.stdout) &&
+        gitRun.stdout.includes("git version 2.55.0.windows.5") &&
+        gitRun.stdout.includes("OpenSSH_10.5") &&
+        gitRun.stdout.includes("gcc.exe (GCC)"),
       "mingit-isolated-bash-git-ssh-gcc",
       `Bash/Git/SSH/GCC exited ${String(gitRun.status)}: ${gitRun.stderr || gitRun.stdout}`,
     )
     const gitProbe = path.join(tempHome, "git-probe")
     await mkdir(gitProbe)
-    const gitCommit = spawnSync(bash, ["-c", "git init -q && git -c user.name=Probe -c user.email=probe@example.invalid commit -q --allow-empty -m smoke && git log -1 --format=%s"], {
-      cwd: gitProbe,
-      encoding: "utf8",
-      env: gitEnv,
-    })
-    check(gitCommit.status === 0 && gitCommit.stdout.trim() === "smoke", "mingit-commit", `Git commit exited ${String(gitCommit.status)}: ${gitCommit.stderr || gitCommit.stdout}`)
+    const gitCommit = spawnSync(
+      bash,
+      [
+        "-c",
+        "git init -q && git -c user.name=Probe -c user.email=probe@example.invalid commit -q --allow-empty -m smoke && git log -1 --format=%s",
+      ],
+      {
+        cwd: gitProbe,
+        encoding: "utf8",
+        env: gitEnv,
+      },
+    )
+    check(
+      gitCommit.status === 0 && gitCommit.stdout.trim() === "smoke",
+      "mingit-commit",
+      `Git commit exited ${String(gitCommit.status)}: ${gitCommit.stderr || gitCommit.stdout}`,
+    )
 
     const source = path.join(tempHome, "packaged-toolchain-smoke.c")
     const program = path.join(tempHome, "packaged-toolchain-smoke.exe")
@@ -834,7 +956,8 @@ async function run() {
   descriptor.exec("CREATE TABLE desktop_service (slot INTEGER PRIMARY KEY CHECK (slot = 1), value TEXT NOT NULL)")
   const descriptorFixture = process.env.NOVACLAW_SMOKE_DESCRIPTOR_FIXTURE
   const invalidDescriptor = descriptorFixture === "invalid" || descriptorFixture === "corrupt"
-  if (descriptorFixture === "invalid") descriptor.query("INSERT INTO desktop_service (slot, value) VALUES (1, ?)").run("invalid json")
+  if (descriptorFixture === "invalid")
+    descriptor.query("INSERT INTO desktop_service (slot, value) VALUES (1, ?)").run("invalid json")
   descriptor.close()
   if (descriptorFixture === "corrupt") await writeFile(descriptorPath, "not a sqlite database")
   console.log(`home     : ${tempHome}`)
@@ -894,6 +1017,44 @@ async function run() {
     )
   } catch (error) {
     check(false, "toast-selection", `could not inspect packaged popup selection: ${String(error)}`)
+  }
+
+  try {
+    const about = await readAboutPlayback(renderer.wsUrl)
+    check(
+      (about.second.ready ?? 0) >= 2 &&
+        (about.second.time ?? 0) > 0.5 &&
+        (about.second.time ?? 0) > (about.first.time ?? 0),
+      "about-music-plays",
+      `About audio did not advance: ${JSON.stringify(about)}`,
+    )
+    check(
+      Boolean(about.first.crawl) && about.first.crawl !== about.second.crawl,
+      "about-scene-moves",
+      `About crawl did not advance: ${JSON.stringify(about)}`,
+    )
+    check(
+      about.second.rangeStatus === 206 && about.second.rangeLength === 101,
+      "about-media-range",
+      `renderer media range was not served: ${JSON.stringify(about)}`,
+    )
+    check(
+      about.stopped.paused === true && about.stopped.time === 0,
+      "about-music-stops",
+      `About audio continued after changing tabs: ${JSON.stringify(about)}`,
+    )
+    check(
+      (about.reopened.time ?? 0) > 0 && about.closed.paused === true && about.closed.time === 0,
+      "about-music-stops-on-close",
+      `About audio continued after closing Settings: ${JSON.stringify(about)}`,
+    )
+    check(
+      Boolean(about.reopenedFirstCrawl) && about.reopened.crawl !== about.reopenedFirstCrawl,
+      "about-scene-reopens",
+      `About scene did not advance after returning to the tab: ${JSON.stringify(about)}`,
+    )
+  } catch (error) {
+    check(false, "about-playback", `could not inspect packaged About playback: ${String(error)}`)
   }
 
   // ── 1. health: the app is up, and it knows what it is ──────────────────────────────────────────

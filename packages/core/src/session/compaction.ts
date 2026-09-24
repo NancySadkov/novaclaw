@@ -450,7 +450,6 @@ export const make = (dependencies: Dependencies) => {
     const characterCeiling = Math.max(4096, input.outputTokens * 16)
     let finish: FinishReason | undefined
     let reportedTokens: number | undefined
-    const deltaTimestamp = yield* DateTime.now
     const guardedStream = (request: LLMRequest) => {
       const source =
         input.guard === undefined
@@ -485,7 +484,7 @@ export const make = (dependencies: Dependencies) => {
             yield* dependencies.events.publish(SessionEvent.Compaction.Delta, {
               sessionID: input.sessionID,
               messageID: input.messageID,
-              timestamp: deltaTimestamp,
+              timestamp: yield* DateTime.now,
               text: event.text,
             })
             const now = Date.now()

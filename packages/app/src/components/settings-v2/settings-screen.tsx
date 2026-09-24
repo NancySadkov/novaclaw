@@ -7,7 +7,6 @@ import { useServer } from "@/context/server"
 import { ServerSDKProvider } from "@/context/server-sdk"
 import { ServerSyncProvider } from "@/context/server-sync"
 import { useExpertise } from "@/context/expertise"
-import { publicAssetUrl } from "@/utils/public-asset"
 import type { ExpertiseLevel } from "@/context/settings"
 import { SettingsGeneralV2 } from "./general"
 import { SettingsAboutV2 } from "./about"
@@ -45,15 +44,6 @@ export const SettingsScreen: Component<{
   const [tab, setTab] = createSignal(initialTab)
   let tabList: HTMLDivElement | undefined
   let revealFrame = 0
-  let aboutAudio!: HTMLAudioElement
-  const selectTab = (value: string) => {
-    if (value === "about") void aboutAudio.play().catch(() => undefined)
-    else {
-      aboutAudio.pause()
-      aboutAudio.currentTime = 0
-    }
-    setTab(value)
-  }
   const revealSelected = () => {
     if (!tabList || desktop()) return
     const selected = tabList.querySelector<HTMLElement>('[data-slot="tabs-v2-trigger"][data-selected]')
@@ -69,7 +59,6 @@ export const SettingsScreen: Component<{
   }
   const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(revealSelected)
   onCleanup(() => {
-    aboutAudio?.pause()
     cancelAnimationFrame(revealFrame)
     observer?.disconnect()
   })
@@ -100,10 +89,6 @@ export const SettingsScreen: Component<{
           />
         </svg>
       </button>
-      <audio ref={aboutAudio} preload="auto" loop aria-hidden="true">
-        <source src={publicAssetUrl("assets/audio/nova.ogg")} type="audio/ogg" />
-        <source src={publicAssetUrl("assets/audio/nova.aac")} type="audio/aac" />
-      </audio>
       <Show when={server.key} keyed>
         <ServerSDKProvider>
           <ServerSyncProvider>
@@ -111,7 +96,7 @@ export const SettingsScreen: Component<{
               orientation={desktop() ? "vertical" : "horizontal"}
               variant="settings"
               value={tab()}
-              onChange={selectTab}
+              onChange={setTab}
               class="settings-v2"
             >
               <TabsV2.List
@@ -218,7 +203,7 @@ export const SettingsScreen: Component<{
               </TabsV2.Content>
               <TabsV2.Content value="about" class="settings-v2-panel">
                 <Show when={tab() === "about"}>
-                  <SettingsAboutV2 audio={aboutAudio} />
+                  <SettingsAboutV2 />
                 </Show>
               </TabsV2.Content>
             </TabsV2>

@@ -4,9 +4,11 @@ NovaClaw Windows distributions embed MinGit 2.55.0.5 (Git for Windows), publishe
 Git for Windows contributors. It supplies Git, OpenSSH and the supporting MSYS2 runtime.
 NovaClaw copies MinGit's `usr/bin/sh.exe` to `usr/bin/bash.exe`; the upstream executable is GNU Bash.
 
-The upstream binary tree, including `LICENSE.txt` and its package metadata, is retained under
-`resources/third-party/portable-git/` in the installed application. The verified upstream archive
-is retained in `supply/MinGit-2.55.0.5-64-bit.zip`; its SHA-256 is pinned in
+The installed tree under `resources/third-party/portable-git/` retains Git, OpenSSH, Bash, their
+native dependencies, `LICENSE.txt`, and package metadata. NovaClaw removes Git Credential Manager,
+its graphical and .NET dependencies, optional GUI wrappers and credential helpers, and its default
+credential-helper setting during staging.
+The verified upstream archive is retained in `supply/MinGit-2.55.0.5-64-bit.zip`; its SHA-256 is pinned in
 `packages/desktop/scripts/prepare-portable-git.ts`.
 
 ## Written source offer

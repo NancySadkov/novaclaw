@@ -74,10 +74,20 @@ export const canonicalPrefixHash = (
     ),
   )
 
+const completionBeforeHash = (row: MessageRow, compactedAt: number): MessageRow => {
+  if (row.time_updated < compactedAt) return row
+  const data = row.data as Record<string, unknown>
+  const time = data.time
+  if (time === null || typeof time !== "object" || !("completed" in time)) return row
+  const { completed: _completed, ...beforeCompletion } = time as Record<string, unknown>
+  return { ...row, data: { ...data, time: beforeCompletion } as MessageRow["data"] }
+}
+
 export const prefixHash = Effect.fn("SessionHistory.prefixHash")(function* (
   db: DatabaseService,
   sessionID: SessionSchema.ID,
   prefixSeq: number,
+  compactedAt?: number,
 ) {
   const rows = yield* db
     .select()
@@ -95,7 +105,9 @@ export const prefixHash = Effect.fn("SessionHistory.prefixHash")(function* (
     .orderBy(asc(SessionMessageTable.seq))
     .all()
     .pipe(Effect.orDie)
-  return canonicalPrefixHash(rows)
+  return canonicalPrefixHash(
+    compactedAt === undefined ? rows : rows.map((row) => completionBeforeHash(row, compactedAt)),
+  )
 })
 
 export const latestCompaction = Effect.fnUntraced(function* (db: DatabaseService, sessionID: SessionSchema.ID) {
@@ -110,6 +122,8 @@ export const latestCompaction = Effect.fnUntraced(function* (db: DatabaseService
   if (!row) return
   const actual = yield* prefixHash(db, sessionID, row.prefix_seq)
   if (actual === row.prefix_hash) return row
+  const beforeCompletion = yield* prefixHash(db, sessionID, row.prefix_seq, row.time_created)
+  if (beforeCompletion === row.prefix_hash) return row
   yield* Log.event("session.compaction.stale.rejected", {
     "session.id": sessionID,
     "session.compaction.id": row.id,

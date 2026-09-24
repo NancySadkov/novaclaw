@@ -91,6 +91,76 @@ test("keeps prefix identity stable across presentation-only tool labels", () => 
   expect(SessionHistory.canonicalPrefixHash([changedInput] as never)).not.toBe(before)
 })
 
+it.effect("accepts late completion of a compacted assistant but rejects changed content", () =>
+  Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    const id = SessionSchema.ID.make("ses_compaction_late_completion")
+    yield* db
+      .insert(SessionTable)
+      .values({ id, slug: "test", directory: "/project", title: "test", version: "test" })
+      .run()
+      .pipe(Effect.orDie)
+    yield* db
+      .insert(SessionMessageTable)
+      .values({
+        id: SessionMessage.ID.make("msg_late_completion"),
+        session_id: id,
+        type: "assistant",
+        seq: 1,
+        time_created: 1,
+        time_updated: 1,
+        data: { time: { created: 1 }, content: [{ type: "text", text: "answer" }] } as never,
+      })
+      .run()
+      .pipe(Effect.orDie)
+    const prefixHash = yield* SessionHistory.prefixHash(db, id, 1)
+    yield* db
+      .insert(SessionCompactionTable)
+      .values({
+        id: SessionMessage.ID.make("msg_late_overlay"),
+        session_id: id,
+        seq: 2,
+        prefix_seq: 1,
+        prefix_hash: prefixHash,
+        reason: "auto",
+        summary: "answer",
+        recent: "",
+        time_created: 2,
+      })
+      .run()
+      .pipe(Effect.orDie)
+    yield* db
+      .update(SessionMessageTable)
+      .set({
+        time_updated: 2,
+        data: { time: { created: 1, completed: 2 }, content: [{ type: "text", text: "answer" }] } as never,
+      })
+      .where(eq(SessionMessageTable.id, SessionMessage.ID.make("msg_late_completion")))
+      .run()
+      .pipe(Effect.orDie)
+    expect((yield* SessionHistory.latestCompaction(db, id))?.prefix_hash).toBe(prefixHash)
+    yield* db
+      .update(SessionMessageTable)
+      .set({
+        time_updated: 3,
+        data: { time: { created: 1, completed: 3 }, content: [{ type: "text", text: "answer" }] } as never,
+      })
+      .where(eq(SessionMessageTable.id, SessionMessage.ID.make("msg_late_completion")))
+      .run()
+      .pipe(Effect.orDie)
+    expect((yield* SessionHistory.latestCompaction(db, id))?.prefix_hash).toBe(prefixHash)
+    yield* db
+      .update(SessionMessageTable)
+      .set({
+        data: { time: { created: 1, completed: 3 }, content: [{ type: "text", text: "changed" }] } as never,
+      })
+      .where(eq(SessionMessageTable.id, SessionMessage.ID.make("msg_late_completion")))
+      .run()
+      .pipe(Effect.orDie)
+    expect(yield* SessionHistory.latestCompaction(db, id)).toBeUndefined()
+  }),
+)
+
 it.effect("keeps transcript source rows and rejects a stale derived compaction prefix", () =>
   Effect.gen(function* () {
     const { db } = yield* Database.Service

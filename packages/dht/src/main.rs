@@ -252,19 +252,21 @@ async fn main() -> Result<()> {
         })?
         .build();
 
-    swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
+    if std::env::var_os("NOVACLAW_DHT_PROBE").is_none() {
+        swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
 
-    // ⚠️ DIALLED, not merely added. `add_address` seeds the table with a peer we have never spoken
-    // to; only a connection proves the address and identify confirms who answered.
-    for addr in bootstrap_list() {
-        if let Ok(ma) = addr.parse::<Multiaddr>() {
-            if let Some(Protocol::P2p(id)) = ma.iter().last() {
-                swarm.behaviour_mut().kad.add_address(&id, ma.clone());
+        // ⚠️ DIALLED, not merely added. `add_address` seeds the table with a peer we have never spoken
+        // to; only a connection proves the address and identify confirms who answered.
+        for addr in bootstrap_list() {
+            if let Ok(ma) = addr.parse::<Multiaddr>() {
+                if let Some(Protocol::P2p(id)) = ma.iter().last() {
+                    swarm.behaviour_mut().kad.add_address(&id, ma.clone());
+                }
+                let _ = swarm.dial(ma);
             }
-            let _ = swarm.dial(ma);
         }
+        let _ = swarm.behaviour_mut().kad.bootstrap();
     }
-    let _ = swarm.behaviour_mut().kad.bootstrap();
 
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
 

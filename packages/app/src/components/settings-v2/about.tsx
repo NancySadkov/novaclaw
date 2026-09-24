@@ -25,13 +25,14 @@ const CREDITS: Credit[] = [
   { name: "ghostty-web", license: "MIT" },
 ]
 
-export const SettingsAboutV2: Component<{ audio: HTMLAudioElement }> = (props) => {
+export const SettingsAboutV2: Component = () => {
   const language = useLanguage()
   const platform = usePlatform()
   const version = () => platform.version ?? InstallationVersion
   const [needsPlay, setNeedsPlay] = createSignal(false)
   const [audioUnavailable, setAudioUnavailable] = createSignal(false)
   let canvas!: HTMLCanvasElement
+  let audio!: HTMLAudioElement
   let stage!: HTMLDivElement
   let crawl!: HTMLDivElement
   let scene: AboutScene | undefined
@@ -39,21 +40,21 @@ export const SettingsAboutV2: Component<{ audio: HTMLAudioElement }> = (props) =
 
   const play = (gesture = false) => {
     if (gesture) void scene?.resumeAudio().catch(() => undefined)
-    void props.audio.play().then(
+    void audio.play().then(
       () => { if (!disposed) setNeedsPlay(false) },
       () => { if (!disposed) setNeedsPlay(true) },
     )
   }
 
   onMount(() => {
-    scene = startAboutScene(canvas, props.audio, stage, crawl)
-    props.audio.addEventListener("error", onAudioError)
+    scene = startAboutScene(canvas, audio, stage, crawl)
+    audio.addEventListener("error", onAudioError)
     play(true)
     onCleanup(() => {
       disposed = true
-      props.audio.pause()
-      props.audio.currentTime = 0
-      props.audio.removeEventListener("error", onAudioError)
+      audio.pause()
+      audio.currentTime = 0
+      audio.removeEventListener("error", onAudioError)
       scene?.stop()
     })
   })
@@ -61,6 +62,10 @@ export const SettingsAboutV2: Component<{ audio: HTMLAudioElement }> = (props) =
 
   return (
     <div class="settings-v2-about" ref={stage}>
+      <audio ref={audio} preload="auto" loop aria-hidden="true">
+        <source src={publicAssetUrl("assets/audio/nova.ogg")} type="audio/ogg" />
+        <source src={publicAssetUrl("assets/audio/nova.aac")} type="audio/aac" />
+      </audio>
       <div class="settings-v2-about-stage" onPointerDown={() => { if (needsPlay()) play(true) }} onKeyDown={(event) => { if (needsPlay() && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); play(true) } }} tabIndex={needsPlay() ? 0 : -1}>
         <canvas ref={canvas} class="settings-v2-about-canvas" aria-hidden="true" />
         <img class="settings-v2-about-eye-art" src={publicAssetUrl("assets/about/eye.png")} alt="" aria-hidden="true" />

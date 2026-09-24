@@ -169,13 +169,18 @@ test("staging verification executes version, announce, and find frames", async (
   const identity = await expectedDhtIdentity(dhtRoot, "9.8.7")
   const directory = await writeArtifact(dhtRoot, identity)
   let input = ""
+  let probeMode = ""
   const status = await verifyDhtArtifactDirectory(directory, {
     required: true,
     root: dhtRoot,
     productVersion: "9.8.7",
-    run: successfulProbe(identity, (options) => (input = options.input)),
+    run: successfulProbe(identity, (options) => {
+      input = options.input
+      probeMode = options.env.NOVACLAW_DHT_PROBE ?? ""
+    }),
   })
   expect(status).toBe("verified")
+  expect(probeMode).toBe("1")
   expect(
     input
       .trim()

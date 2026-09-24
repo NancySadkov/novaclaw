@@ -144,6 +144,7 @@ export function probeDhtExecutable(
     env: {
       ...process.env,
       NOVACLAW_DHT_BOOTSTRAP: "",
+      NOVACLAW_DHT_PROBE: "1",
       NOVACLAW_DHT_WARMUP_SECS: "0",
       NOVACLAW_DHT_FIND_SECS: "0",
     },

@@ -537,6 +537,7 @@ export const node = makeGlobalNode({ service: Service, layer, deps: [] })
  * shutdown path and never part of a request.
  */
 const startNode = (binary: string, bootstrap?: ReadonlyArray<string>): Node | undefined => {
+  if (process.env.NODE_ENV === "test") return undefined
   try {
     /**
      * ⚠️ The override travels as an ENV VAR, and it is only set when the store says something: an

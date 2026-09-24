@@ -4,6 +4,9 @@ import type { DesktopTheme } from "@novaclaw/ui/theme/types"
 import novaThemeJson from "../../../ui/src/theme/themes/nova.json"
 import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol, shell } from "electron"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
+import { createReadStream } from "node:fs"
+import { stat } from "node:fs/promises"
+import { Readable } from "node:stream"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
 import { CSP_HEADER, rendererCsp } from "./csp"
@@ -22,6 +25,7 @@ import { PINCH_ZOOM_ENABLED_KEY } from "./store-keys"
 import { createUnresponsiveSampler } from "./unresponsive"
 import { preloadFailureRecovery } from "./preload-recovery"
 import { mainRuntimeDirectory } from "./runtime-path"
+import { parseRendererByteRange } from "./renderer-byte-range"
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url))
 // This module can be extracted to out/main/chunks when another entry point shares its dependencies.
@@ -63,6 +67,7 @@ protocol.registerSchemesAsPrivileged([
       secure: true,
       standard: true,
       supportFetchAPI: true,
+      stream: true,
     },
   },
 ])
@@ -243,6 +248,21 @@ export function registerRendererProtocol() {
 
     try {
       const response = await net.fetch(pathToFileURL(file).toString())
+      const requestedRange = request.headers.get("range")
+      if (requestedRange && response.ok) {
+        const size = (await stat(file)).size
+        const range = parseRendererByteRange(requestedRange, size)
+        if (!range) return new Response(null, { status: 416, headers: { "content-range": `bytes */${size}` } })
+        await response.body?.cancel()
+        const headers = new Headers(response.headers)
+        headers.set("accept-ranges", "bytes")
+        headers.set("content-range", `bytes ${range.start}-${range.end}/${size}`)
+        headers.set("content-length", String(range.end - range.start + 1))
+        return new Response(Readable.toWeb(createReadStream(file, range)) as unknown as BodyInit, {
+          status: 206,
+          headers,
+        })
+      }
       if (response.status >= 400) {
         writeLog(
           "protocol",
@@ -418,16 +438,14 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
     if (channel === "preload-ready") markPreloadReady()
   })
   preloadWatchdog = setTimeout(() => {
-    reportPreloadFailure(
-      {
-        message: "NovaClaw could not start",
-        detail: [
-          `Window: ${name}`,
-          "The privileged preload bridge did not initialize within 15 seconds.",
-          "Relaunch NovaClaw or export the logs for diagnosis.",
-        ].join("\n"),
-      },
-    )
+    reportPreloadFailure({
+      message: "NovaClaw could not start",
+      detail: [
+        `Window: ${name}`,
+        "The privileged preload bridge did not initialize within 15 seconds.",
+        "Relaunch NovaClaw or export the logs for diagnosis.",
+      ].join("\n"),
+    })
   }, PRELOAD_READY_TIMEOUT_MS)
   win.once("closed", clearPreloadWatchdog)
 }
@@ -456,6 +474,7 @@ function addHtmlDocumentHeaders(response: Response, file: string) {
     // ⚠️ HTML deliberately keeps falling through to the branch below with NO cache-control, because an
     // upgraded app must not serve a cached shell naming chunk files that no longer exist.
     const headers = new Headers(response.headers)
+    headers.set("accept-ranges", "bytes")
     headers.set(
       "cache-control",
       HASHED_ASSET.test(file) ? "public, max-age=31536000, immutable" : "public, max-age=3600",
