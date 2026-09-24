@@ -96,6 +96,7 @@ const VALID: Record<string, unknown> = {
   // All live switches present, so the row exercises the whole block rather than its defaults.
   harness_drives: { children: true, imageShortcut: true },
   offline: true,
+  storage: { max_database_mib: 2048, prune_interval_hours: 3 },
   telemetry: { enabled: false },
   memory: { enabled: true },
   web_search: { timeoutMs: 8000 },

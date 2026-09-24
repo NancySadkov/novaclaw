@@ -78,7 +78,7 @@ describe("the reader found all three declarations", () => {
     // being a tile — the same asymmetry `processes` has — and Notes, Skills and Calendar were retired
     // as tiles. These bounds only guard against a parser that silently returns nothing; the real
     // comparisons are below.
-    expect(tiles!.length).toBeGreaterThanOrEqual(10)
+    expect(tiles!.length).toBeGreaterThanOrEqual(9)
     // `contacts` is the canary: the live tile, so it must appear in all three lists. It was `tasks`
     // until 2026-08-21 and `chats` before that — and the canary MOVED with the tile rather than the
     // assertion being deleted, because a ledger that loses its live-tile case still passes while the

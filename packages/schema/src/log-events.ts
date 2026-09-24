@@ -898,6 +898,13 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/database/database.ts",
   },
+  "instance.database.history.failed": {
+    level: "warn",
+    message: "database history maintenance failed",
+    attributes: { "instance.database.phase": "id", "instance.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/storage/database-history.ts",
+  },
   /** Disposing one instance failed while its HTTP lifecycle was tearing down; the response still returns. */
   "instance.dispose.failed": {
     level: "warn",

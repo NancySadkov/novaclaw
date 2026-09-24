@@ -14,7 +14,7 @@ import { Location } from "@novaclaw/core/location"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { WorkspaceV2 } from "@novaclaw/core/workspace"
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
 
@@ -1077,6 +1077,66 @@ describe("EventV2", () => {
 
       expect(String(exit)).toContain("Replay diverged")
       expect(received).toHaveLength(1)
+    }),
+  )
+
+  it.effect("accepts replay across pruned historical session diffs", () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2.Service
+      const { db } = yield* Database.Service
+      const aggregateID = Session.ID.create()
+      const base = durableEncoded(aggregateID, "history")
+      const fullData = {
+        ...base,
+        info: {
+          ...base.info,
+          summary: {
+            additions: 1,
+            deletions: 0,
+            files: 1,
+            diffs: [{ file: "a.txt", patch: "large historical patch", additions: 1, deletions: 0 }],
+          },
+        },
+      }
+      const event = {
+        id: EventV2.ID.create(),
+        type: EventV2.versionedType(DurableMessage.type, 2),
+        seq: 0,
+        aggregateID,
+        data: fullData,
+      }
+      const compacted = {
+        ...event,
+        data: { ...fullData, info: { ...fullData.info, summary: { additions: 1, deletions: 0, files: 1 } } },
+      }
+
+      yield* events.replay(event)
+      const changedPatch = yield* events.replay({
+        ...event,
+        data: {
+          ...fullData,
+          info: {
+            ...fullData.info,
+            summary: {
+              ...fullData.info.summary,
+              diffs: [{ file: "a.txt", patch: "different patch", additions: 1, deletions: 0 }],
+            },
+          },
+        },
+      }).pipe(Effect.exit)
+      expect(String(changedPatch)).toContain("Replay diverged")
+      yield* events.replay(compacted)
+      yield* db.update(EventTable)
+        .set({ data: sql`json_remove(${EventTable.data}, '$.info.summary.diffs')` })
+        .where(eq(EventTable.id, event.id))
+        .run()
+      yield* events.replay(event)
+
+      const divergent = yield* events.replay({
+        ...compacted,
+        data: { ...compacted.data, info: { ...compacted.data.info, title: "different" } },
+      }).pipe(Effect.exit)
+      expect(String(divergent)).toContain("Replay diverged")
     }),
   )
 

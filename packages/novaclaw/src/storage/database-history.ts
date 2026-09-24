@@ -7,6 +7,7 @@ import { EventTable } from "@novaclaw/core/event/sql"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { DEFAULT_DATABASE_MIB, DEFAULT_PRUNE_HOURS } from "@novaclaw/core/config/storage"
 import { makeGlobalNode } from "@novaclaw/core/effect/app-node"
+import { Log } from "@novaclaw/schema/log"
 
 type Db = Database.Interface["db"]
 
@@ -67,11 +68,17 @@ export const layer = Layer.effectDiscard(Effect.gen(function* () {
     if (now - lastRun >= pruneHours * 60 * 60 * 1000 || bytes > maxDatabaseMiB * 1024 * 1024) {
       const succeeded = yield* prune(db, maxDatabaseMiB).pipe(
         Effect.as(true),
-        Effect.catchCause((cause) => Effect.logWarning(`Database history maintenance failed: ${String(cause)}`).pipe(Effect.as(false))),
+        Effect.catchCause((cause) => Log.event("instance.database.history.failed", {
+          "instance.database.phase": "prune",
+          "instance.cause": Log.fault(cause),
+        }).pipe(Effect.as(false))),
       )
       if (succeeded) lastRun = Date.now()
     }
-  }).pipe(Effect.catchCause((cause) => Effect.logWarning(`Database history check failed: ${String(cause)}`)))
+  }).pipe(Effect.catchCause((cause) => Log.event("instance.database.history.failed", {
+    "instance.database.phase": "check",
+    "instance.cause": Log.fault(cause),
+  })))
   yield* Effect.forkScoped(Effect.forever(Effect.gen(function* () {
     yield* tick
     yield* Effect.sleep(Duration.minutes(15))

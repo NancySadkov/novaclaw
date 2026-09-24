@@ -40,6 +40,28 @@ export type SerializedEvent = {
   readonly data: Record<string, unknown>
 }
 
+const withoutHistoricalDiffs = (data: Record<string, unknown>): Record<string, unknown> => {
+  const info = data.info
+  if (!info || typeof info !== "object") return data
+  const summary = (info as Record<string, unknown>).summary
+  if (!summary || typeof summary !== "object") return data
+  const { diffs: _diffs, ...restSummary } = summary as Record<string, unknown>
+  return { ...data, info: { ...info, summary: restSummary } }
+}
+
+const hasHistoricalDiffs = (data: Record<string, unknown>) => {
+  const info = data.info
+  if (!info || typeof info !== "object") return false
+  const summary = (info as Record<string, unknown>).summary
+  return !!summary && typeof summary === "object" && Object.hasOwn(summary, "diffs")
+}
+
+const matchesStoredEvent = (type: string, stored: Record<string, unknown>, incoming: Record<string, unknown>) =>
+  isDeepStrictEqual(stored, incoming) ||
+  (type === "session.updated.2" &&
+    hasHistoricalDiffs(stored) !== hasHistoricalDiffs(incoming) &&
+    isDeepStrictEqual(withoutHistoricalDiffs(stored), withoutHistoricalDiffs(incoming)))
+
 export class InvalidDurableEventError extends Schema.TaggedErrorClass<InvalidDurableEventError>()(
   "EventV2.InvalidDurableEvent",
   {
@@ -282,7 +304,7 @@ export const layerWith = (options?: LayerOptions) =>
                             if (
                               stored?.id === event.id &&
                               stored.type === versionedType(definition.type, durable.version) &&
-                              isDeepStrictEqual(stored.data, encoded)
+                              matchesStoredEvent(stored.type, stored.data, encoded)
                             ) {
                               if (input.ownerID && row?.ownerID == null) {
                                 yield* db

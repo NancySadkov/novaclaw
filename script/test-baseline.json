@@ -50,6 +50,7 @@
   "countsReconnectStreamStability": "2026-09-23: app:unit 1784->1797 (+13), app:browser 262->263 (+1). Eleven unit tests were added since the prior baseline across connection-banner.test.ts, server-session.test.ts, session-gone.test.ts and session-execution-error.test.ts; the two new reconnect-stream.test.ts cases prove quick successful handshakes retain retry backoff and a stable 30-second stream resets it. The browser case is native-transcript-remount.test.tsx's unfolded-command remount regression. Measured in the app package gate: 1797 unit pass/0 fail (count-only drift before this re-baseline), 263 browser pass/0 fail. Nothing moved down.",
   "countsAgentSchedule": "2026-09-23: Calendar became officer Schedule. Core 7406->7401, app:unit 1801->1784, and app:browser 263->255 reflect deletion of Calendar-only tests alongside new Schedule coverage; server 114->116 adds per-agent schedule routing and recurrence cases. Measured package units: core 7401 with five failures in a low-memory sharded run, each failing file then passed alone after the deferred-tool inventory was fixed; app:unit 1784 pass, app:browser 255 pass, server 116 pass. Protocol stayed at 36, novaclaw:server at 449.",
   "countsCoreContextAndWorkerCapacity": "2026-09-23: core 7401->7419. Five tests added in the worker-capacity slice were omitted from its baseline update: three worker-capacity tests and one each in config-domain-reload and spawn-wakes-child. Splitting the nine-size runner context case into independent cases adds eight. The remaining five correct an undercount recorded from the failing schedule gate; that count was never verified by a green core run, and its raw per-file result is unavailable to identify the five missing registrations. This run measured 7419 pass, 9 skip, 0 fail in two sequential shards. Failed units now withhold their skip and completed-test counts so incomplete registration cannot seed either ledger.",
+  "countsPrunedReplay": "2026-09-24: core 7422->7423 adds one event replay test. A session update whose historical diffs were pruned matches its original event in either direction; an unrelated payload change and two different present patches still diverge. The changed file passed directly (48 pass, 0 fail).",
   "units": {
     "llm": 28,
     "core": 9,
@@ -82,7 +83,7 @@
     "sdk-js": 46,
     "session-ui": 231,
     "ui": 67,
-    "core": 7422,
+    "core": 7423,
     "app:unit": 1793,
     "app:browser": 255,
     "desktop": 250,

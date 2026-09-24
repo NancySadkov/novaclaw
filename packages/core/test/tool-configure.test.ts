@@ -225,6 +225,7 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "provider_presets",
       "resource_pressure",
       "snapshots",
+      "storage",
       "tool_routing",
       "trash",
       "virtualFs",

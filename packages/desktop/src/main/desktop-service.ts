@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto"
 import { spawn } from "node:child_process"
-import { existsSync, unlinkSync } from "node:fs"
+import { unlinkSync } from "node:fs"
 import { createConnection, createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { app } from "electron"
 import { ServerToken } from "@novaclaw/core/server-token"
+import { Presence } from "@novaclaw/core/presence"
 import type { SuperviseStatus } from "@novaclaw/script/supervise"
 import type { ServerReadyData } from "../preload/types"
 import type { DesktopLaunchOptions } from "./desktop-cli"
@@ -34,22 +35,31 @@ export function watchdogStatePath(home: string) {
   return join(home, "desktop-watchdog")
 }
 
+function pathPresent(target: string) {
+  const reading = Presence.read(target)
+  if (reading.answer === "unreadable")
+    throw new Error(`Cannot inspect ${target}: ${reading.code ?? "unknown filesystem error"}`)
+  return reading.answer === "present"
+}
+
 export function readService(home: string): Descriptor | undefined {
-  if (!existsSync(servicePath(home))) return undefined
+  const path = servicePath(home)
+  if (!pathPresent(path)) return undefined
   let database: DatabaseSync | undefined
   try {
-    database = new DatabaseSync(servicePath(home), { readOnly: true })
+    database = new DatabaseSync(path, { readOnly: true })
     const row = database.prepare("SELECT value FROM desktop_service WHERE slot = 1").get() as { value?: string } | undefined
     const value: unknown = row?.value ? JSON.parse(row.value) : undefined
-    if (!value || typeof value !== "object") return undefined
+    if (!value || typeof value !== "object") throw new Error("Service descriptor is invalid")
     const item = value as Partial<Descriptor>
     if (typeof item.id !== "string" || typeof item.hostname !== "string" ||
       !Number.isInteger(item.port) || item.port! < 1 || item.port! > 65535 ||
       typeof item.username !== "string" || typeof item.password !== "string" ||
-      typeof item.pipe !== "string" || !Number.isInteger(item.watchdogPid)) return undefined
+      typeof item.pipe !== "string" || !Number.isInteger(item.watchdogPid))
+      throw new Error("Service descriptor is invalid")
     return item as Descriptor
-  } catch {
-    return undefined
+  } catch (error) {
+    throw new Error(`Cannot read NovaClaw service descriptor at ${path}`, { cause: error })
   } finally {
     database?.close()
   }
@@ -66,7 +76,7 @@ export function writeService(home: string, descriptor: Descriptor) {
 }
 
 export function clearService(home: string, id: string) {
-  if (!existsSync(servicePath(home))) return
+  if (!pathPresent(servicePath(home))) return
   const database = new DatabaseSync(servicePath(home))
   try {
     database.prepare("DELETE FROM desktop_service WHERE slot = 1 AND json_extract(value, '$.id') = ?").run(id)
@@ -104,7 +114,7 @@ function control(descriptor: Descriptor, command: "ping" | "stop"): Promise<bool
 }
 
 export function serveControl(descriptor: Descriptor, stop: () => Promise<void>) {
-  if (process.platform !== "win32" && existsSync(descriptor.pipe)) unlinkSync(descriptor.pipe)
+  if (process.platform !== "win32" && pathPresent(descriptor.pipe)) unlinkSync(descriptor.pipe)
   const server = createServer((socket) => {
     let data = ""
     socket.setTimeout(2000, () => socket.destroy())
@@ -192,7 +202,7 @@ export function createDesktopService(instance: ServiceInstancePaths, options: De
       if (!descriptor || !alive(descriptor.watchdogPid)) {
         const id = randomUUID()
         const binary = watchdogBinary()
-        if (!existsSync(binary)) throw new Error(`NovaClaw watchdog is missing: ${binary}`)
+        if (!pathPresent(binary)) throw new Error(`NovaClaw watchdog is missing: ${binary}`)
         if (stopping) throw new Error("NovaClaw is shutting down")
         descriptor = {
           id,
