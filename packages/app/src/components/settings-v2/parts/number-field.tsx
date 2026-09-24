@@ -8,8 +8,8 @@ import { useLanguage } from "@/context/language"
  * 🔴 **Why it exists as a component rather than as advice.** The class it closes is *a control that
  * writes on every keystroke, coercing the in-progress value* — so the intermediate state a user must
  * pass THROUGH to reach a legal one is clamped away and written back into the box. Measured on the
- * Tunes tab: to set the reminder budget (`min` 64) to 512 you type `5`, `Math.max(64, 5)` writes
- * **64** to the instance config, the echoed store rewrites the box to `64`, and the next keystroke
+ * Context tab: to set the reminder budget (`min` 64) to 512 you type `5`, `Math.max(64, 5)` writes
+ * **64** to the officer config, the echoed store rewrites the box to `64`, and the next keystroke
  * appends — `641`. No keystroke sequence reaches 512, and every character on the way costs a config
  * PATCH, a bootstrap refetch and two global query invalidations. The same class, one file over, made
  * Strict's "Attempts" store `0` when the user typed the `1` its own copy documents.

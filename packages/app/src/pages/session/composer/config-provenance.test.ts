@@ -20,19 +20,22 @@ describe("where a switch's value came from", () => {
     expect(featureOrigins(resolved).safeMode).toEqual({ kind: "session" })
   })
 
-  // 🗑️ Two cases stood here: "a folder-supplied switch names its file" (a `source.kind === "project"`
-  // became `{kind: "project", file}`, so the panel could name the file the user had to edit) and "a
-  // project source with no file is NOT reported as a project" (degrading to "not known" beats
-  // rendering "Set by this folder's project file" with nothing to point at). Both covered the arm of
-  // `featureOrigins` that read the folder layer, which is retired with the `novaclaw.json` mechanism
-  // (owner, 2026-09-16). The surviving arms — chain `origin` first, then the instance default — are the
-  // cases around them; a `project` source can no longer appear on the wire at all.
-
   test("the instance default is reported as such, and an absent field yields nothing", () => {
     const resolved: ResolvedConfigLike = { fields: { quality: { source: { kind: "instance" } } } }
     const origins = featureOrigins(resolved)
     expect(origins.quality).toEqual({ kind: "instance" })
     expect(origins.safeMode, "a field the response omits must not invent an origin").toBeUndefined()
+  })
+
+  test("an officer's default is attributed to the officer", () => {
+    const resolved: ResolvedConfigLike = { fields: { quality: { source: { kind: "agent" } } } }
+    expect(featureOrigins(resolved).quality).toEqual({ kind: "officer" })
+  })
+
+  test("this chat's choice outranks the kernel answer, then the officer baseline", () => {
+    expect(switchStance({ own: false, kernel: true, baseline: true })).toBe(false)
+    expect(switchStance({ own: undefined, kernel: true, baseline: false })).toBe(true)
+    expect(switchStance({ own: undefined, kernel: undefined, baseline: true })).toBe(true)
   })
 
   test("no response at all is an empty map, never a throw", () => {
@@ -50,16 +53,3 @@ describe("where a switch's value came from", () => {
     expect(Object.keys(featureOrigins(resolved))).toEqual([])
   })
 })
-
-/**
- * 🗑️ THE DRAFT HALF of this file stood here: the cases proving that a draft chat's switches read the
- * FOLDER's stance rather than the instance's, measured 2026-08-19 when a draft in a folder declaring
- * `quality: true` rendered "Using Settings default: Off" while the chat the same click would create
- * resolved `true`. The functions they covered — `draftStances`, `draftOrigins`, `draftProjectLayer`,
- * `governing` and `DiscoveredProjectLike` — read `GET /api/project` and are retired with the
- * `novaclaw.json` mechanism (owner, 2026-09-16). A draft has nothing beneath it now, so there is no
- * folder stance to disagree with the instance's and nothing left to pin here.
- *
- * What remains above is the half whose subject survives: where a SESSION's switch value came from, off
- * the resolved config and the `switchStance` order.
- */

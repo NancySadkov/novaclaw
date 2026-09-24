@@ -673,9 +673,6 @@
   outline-offset: 1px;
 }
 
-/* Owner, 2026-09-19: the Context tab (born "Tunes"). The guard owns a card; inside it, one
-   draggable 100% split per session type. The five parts are the kernel's context categories, colour
-   keyed across the legend, the segments, and the drag handles. */
 .settings-v2-context-guard {
   display: flex;
   flex-direction: column;
@@ -735,7 +732,7 @@
 }
 
 .settings-v2-allocation-profile-total,
-.settings-v2-tunes-input {
+.settings-v2-context-input {
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--v2-text-text-muted);
@@ -851,14 +848,14 @@
   background: var(--syntax-constant);
 }
 
-.settings-v2-tunes-input {
+.settings-v2-context-input {
   display: flex;
   width: 88px;
   align-items: center;
   gap: 6px;
 }
 
-.settings-v2-tunes-input [data-component="text-input-v2"] {
+.settings-v2-context-input [data-component="text-input-v2"] {
   width: 64px;
 }
 

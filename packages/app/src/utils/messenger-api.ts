@@ -89,7 +89,7 @@ export interface PairingCode {
  * already bound elsewhere (`messenger_chat_bound`).
  *
  * ⚠️ It is a SUBCLASS of the seam's error rather than a parallel one. Three call sites test
- * `error instanceof MessengerApiError` — `settings-v2/messengers.tsx` (twice) and
+ * `error instanceof MessengerApiError` — `settings-v2/officer-messengers.tsx` (twice) and
  * `session/composer/session-composer-controls.ts` — and every one of them still works, because the
  * class survived the collapse even though its hand-rolled decoder did not. `kind`, `status` and
  * `message` are now inherited fields with exactly the same meanings.
@@ -126,12 +126,8 @@ export function messengerDrivers(server: ServerConnection.HttpBase) {
   return callList<DriverMeta>(server, "api/messenger/driver", "drivers")
 }
 
-export function messengerAccounts(server: ServerConnection.HttpBase, agentID?: string) {
-  return callList<AccountWithStatus>(
-    server,
-    `api/messenger/account${agentID ? `?agentID=${encodeURIComponent(agentID)}` : ""}`,
-    "accounts",
-  )
+export function messengerAccounts(server: ServerConnection.HttpBase, agentID: string) {
+  return callList<AccountWithStatus>(server, `api/messenger/account?agentID=${encodeURIComponent(agentID)}`, "accounts")
 }
 
 export function messengerCreateAccount(
@@ -182,6 +178,7 @@ export interface ChatInfo {
   readonly kind: "dm" | "group" | "channel" | "thread" | "mailbox" | "topic"
   readonly title: string
   readonly lastSeen: number
+  readonly access: { readonly proposed: "unknown" | "public" | "private"; readonly declared?: "unknown" | "public" | "private" }
 }
 
 export interface ChatsResult {
@@ -203,6 +200,21 @@ export interface BindingInfo {
 
 export function messengerAccountChats(server: ServerConnection.HttpBase, accountID: string) {
   return call<ChatsResult>(server, "GET", `api/messenger/account/${accountID}/chats`)
+}
+
+export function messengerDeclareChatSource(
+  server: ServerConnection.HttpBase,
+  agentID: string,
+  accountID: string,
+  chatID: string,
+  access: "public" | "private" | null,
+) {
+  return call<void>(
+    server,
+    "PATCH",
+    `api/messenger/account/${encodeURIComponent(accountID)}/chats/${encodeURIComponent(chatID)}/source?agentID=${encodeURIComponent(agentID)}`,
+    { access },
+  )
 }
 
 export interface BindingRow {

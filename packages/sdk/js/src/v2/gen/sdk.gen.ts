@@ -2931,13 +2931,13 @@ class ApiV2MessengerDriver extends NovaClawApiClient {
 
 class ApiV2MessengerAccount extends NovaClawApiClient {
   /**
-   * List messenger accounts
+   * List an officer's messenger accounts
    *
-   * Retrieve every configured messenger account with its live connection status.
+   * Retrieve an officer's messenger accounts with their live connection status.
    */
   public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      agentID?: string
+    parameters: {
+      agentID: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3104,6 +3104,39 @@ class ApiV2MessengerAccount extends NovaClawApiClient {
       url: "/api/messenger/account/{accountID}/chats",
       ...options,
       path,
+    })
+  }
+}
+
+class ApiV2MessengerChat extends NovaClawApiClient {
+  /**
+   * Set a chat's source access
+   *
+   * Record or clear the officer owner's public or private decision for a seen messenger chat.
+   */
+  public source<ThrowOnError extends boolean = false>(
+    parameters: {
+      accountID: string
+      chatID: string
+      agentID: string
+      access: "public" | "private" | null
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { accountID: parameters?.["accountID"], chatID: parameters?.["chatID"] }
+    const query = { agentID: parameters?.["agentID"] }
+    const body = { access: parameters?.["access"] }
+    return (options?.client ?? this.client).patch<
+      T.V2MessengerChatSourceResponses,
+      T.V2MessengerChatSourceErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/account/{accountID}/chats/{chatID}/source",
+      ...options,
+      path,
+      query,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
     })
   }
 }
@@ -3296,6 +3329,11 @@ class ApiV2Messenger extends NovaClawApiClient {
   private _account?: ApiV2MessengerAccount
   get account(): ApiV2MessengerAccount {
     return (this._account ??= new ApiV2MessengerAccount({ client: this.client }))
+  }
+
+  private _chat?: ApiV2MessengerChat
+  get chat(): ApiV2MessengerChat {
+    return (this._chat ??= new ApiV2MessengerChat({ client: this.client }))
   }
 
   private _binding?: ApiV2MessengerBinding

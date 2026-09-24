@@ -27,13 +27,6 @@ interface QualityConfig {
   commands?: QualityCommands
 }
 
-/**
- * ⚠️ These placeholders are EXAMPLES OF A SHAPE, and until 2026-09-03 they were the only guidance
- * this panel offered. They are right for this repository and arbitrary for a Python or Rust project,
- * whose owner was shown five TypeScript incantations as the model of what to type. "Detect from this
- * project" is the answer to that (principle 12(b)): the product can read the manifests and say what
- * THIS project uses, and it already did so for the model through `quality_provision`.
- */
 const COMMAND_FIELDS: Array<{ key: keyof QualityCommands; placeholder: string }> = [
   { key: "syntax", placeholder: "bun build --no-bundle {file}" },
   { key: "check", placeholder: "eslint {file}" },
@@ -65,7 +58,7 @@ export const OfficerQuality: Component<{
       .catch((error: unknown) => {
         showToast({
           variant: "error",
-          title: language.t("settings.quality.toast.failed"),
+          title: language.t("officer.quality.toast.failed"),
           description: error instanceof Error ? error.message : String(error),
         })
       })
@@ -74,12 +67,6 @@ export const OfficerQuality: Component<{
   const persistCommand = (key: keyof QualityCommands, value: string) =>
     persist({ commands: { ...(current().commands ?? {}), [key]: value.trim() } })
 
-  /**
-   * 🔴 It FILLS, it does not replace. A slot the user already typed into is theirs — the scan is a
-   * proposal, and silently overwriting a hand-written command with a guessed one would make the
-   * button dangerous to press twice. Empty slots take the proposal; the rest are left alone, and the
-   * evidence below says which manifest produced what so a person can check the answer.
-   */
   async function detectFromProject() {
     setDetecting(true)
     try {
@@ -88,7 +75,7 @@ export const OfficerQuality: Component<{
       if (!connection) throw new Error("No instance is connected")
       const response = await global.ensureServerCtx(connection).sdk.client.v2.quality.detect(directory ? { location: { directory } } : {})
       const detected = response.data?.data
-      if (!detected) throw new Error(language.t("settings.quality.detect.empty"))
+      if (!detected) throw new Error(language.t("officer.quality.detect.empty"))
       const existing = current().commands ?? {}
       const merged = { ...existing }
       let filled = 0
@@ -100,15 +87,15 @@ export const OfficerQuality: Component<{
       }
       setEvidence(detected.evidence ?? [])
       if (filled === 0) {
-        showToast({ title: language.t("settings.quality.detect.nothing") })
+        showToast({ title: language.t("officer.quality.detect.nothing") })
         return
       }
       await persist({ commands: merged })
-      showToast({ variant: "success", title: language.plural("settings.quality.detect.filled", filled) })
+      showToast({ variant: "success", title: language.plural("officer.quality.detect.filled", filled) })
     } catch (error: unknown) {
       showToast({
         variant: "error",
-        title: language.t("settings.quality.detect.failed"),
+        title: language.t("officer.quality.detect.failed"),
         description: error instanceof Error ? error.message : String(error),
       })
     } finally {
@@ -122,19 +109,19 @@ export const OfficerQuality: Component<{
         <div class="settings-v2-section">
           <SettingsListV2>
             <SettingsRowV2
-              title={language.t("settings.quality.row.enabled.title")}
+              title={language.t("officer.quality.row.enabled.title")}
             >
               <Switch
                 checked={props.config()?.["quality"] === true || (props.config()?.["quality"] === undefined && current().enabled === true)}
                 onChange={(checked) => void persist({ enabled: checked })}
                 hideLabel
               >
-                {language.t("settings.quality.row.enabled.title")}
+                {language.t("officer.quality.row.enabled.title")}
               </Switch>
             </SettingsRowV2>
 
             <SettingsRowV2
-              title={language.t("settings.quality.row.cadence.title")}
+              title={language.t("officer.quality.row.cadence.title")}
             >
               <SettingsNumberFieldV2
                 class="w-full sm:w-[100px]"
@@ -142,17 +129,15 @@ export const OfficerQuality: Component<{
                 min={1}
                 max={100_000}
                 placeholder="2"
-                ariaLabel={language.t("settings.quality.row.cadence.title")}
+                ariaLabel={language.t("officer.quality.row.cadence.title")}
                 onCommit={(cadence) => void persist({ cadence })}
                 onClear={() => void persist({ cadence: 0 })}
               />
             </SettingsRowV2>
 
             <SettingsRowV2
-              title={language.t("settings.quality.row.testTimeout.title")}
+              title={language.t("officer.quality.row.testTimeout.title")}
             >
-              {/* Minutes in, milliseconds stored. `300000` asked a person to count zeros to say
-                  "five minutes"; the config keeps ms, which is right, and only the box changes. */}
               <SettingsNumberFieldV2
                 class="w-full sm:w-[140px]"
                 value={() => {
@@ -164,7 +149,7 @@ export const OfficerQuality: Component<{
                 step={0.5}
                 allowDecimal
                 placeholder="5"
-                ariaLabel={language.t("settings.quality.row.testTimeout.title")}
+                ariaLabel={language.t("officer.quality.row.testTimeout.title")}
                 onCommit={(minutes) => void persist({ testTimeout: minutes * MINUTE_MS })}
                 onClear={() => void persist({ testTimeout: 0 })}
               />
@@ -173,9 +158,7 @@ export const OfficerQuality: Component<{
         </div>
 
         <div class="settings-v2-section">
-          <h3 class="settings-v2-section-title">{language.t("settings.quality.commands.title")}</h3>
-          {/* 12(b)'s offer, for a list that has to be COMPUTED to be offered. The boxes stay as the
-              override — this fills what is empty and never argues with what a person typed. */}
+          <h3 class="settings-v2-section-title">{language.t("officer.quality.commands.title")}</h3>
           <div class="flex flex-wrap items-center gap-2 pb-2">
             <ButtonV2
               variant="outline"
@@ -185,11 +168,10 @@ export const OfficerQuality: Component<{
               onClick={() => void detectFromProject()}
             >
               {detecting()
-                ? language.t("settings.quality.detect.running")
-                : language.t("settings.quality.detect.action")}
+                ? language.t("officer.quality.detect.running")
+                : language.t("officer.quality.detect.action")}
             </ButtonV2>
           </div>
-          {/* The trail, so the proposal can be checked rather than trusted. */}
           <Show when={evidence().length > 0}>
             <ul class="flex flex-col gap-0.5 pb-2" data-quality-detect-evidence>
               {evidence().map((line) => (
@@ -200,7 +182,7 @@ export const OfficerQuality: Component<{
           <SettingsListV2>
             {COMMAND_FIELDS.map((field) => (
               <SettingsRowV2
-                title={language.t(`settings.quality.command.${field.key}.title`)}
+                title={language.t(`officer.quality.command.${field.key}.title`)}
               >
                 <div class="w-full sm:w-[320px]">
                   <TextInputV2
@@ -211,7 +193,7 @@ export const OfficerQuality: Component<{
                     spellcheck={false}
                     autocomplete="off"
                     onChange={(event) => void persistCommand(field.key, event.currentTarget.value)}
-                    aria-label={language.t(`settings.quality.command.${field.key}.title`)}
+                    aria-label={language.t(`officer.quality.command.${field.key}.title`)}
                   />
                 </div>
               </SettingsRowV2>

@@ -19,9 +19,9 @@ import { stripComments } from "./lib/source-scan"
  * one field could disagree and no test would notice, because a tri-state that nobody sets is the
  * state every test is already in.
  *
- * ⚠️ The four kinds are not interchangeable and the distinction is what makes this checkable:
+ * The fallback kinds are not interchangeable and the distinction is what makes this checkable:
  * `base` is present in the resolved config, `stance` deliberately is NOT (its absence has to survive
- * so the introspection view can say "nobody set this"), and `instance`/`derived` say the answer
+ * so the introspection view can say "nobody set this"), and `instance`/`officer`/`derived` say the answer
  * lives somewhere else entirely.
  */
 
@@ -78,16 +78,14 @@ describe("a default can be read off the descriptor", () => {
   })
 
   test("`stanceOf` REFUSES a field whose answer lives elsewhere", () => {
-    // Returning a literal for `quality` would silently shadow the instance block that decides it —
-    // a wrong answer where the honest one is "ask the setting". Throwing is the point.
-    expect(() => stanceOf("quality", undefined)).toThrow(/instance/)
+    expect(() => stanceOf("quality", undefined)).toThrow(/officer/)
     expect(() => stanceOf("model", undefined)).toThrow(/derived/)
   })
 
-  test("an `instance` fallback names a block, a `derived` one names its resolver", () => {
+  test("a settings fallback names its block, a derived one names its resolver", () => {
     const empty = SESSION_CONFIG_FIELD_KEYS.filter((key) => {
       const fallback = SESSION_CONFIG_FIELDS[key].fallback
-      if (fallback.kind === "instance") return fallback.block.trim().length === 0
+      if (fallback.kind === "instance" || fallback.kind === "officer") return fallback.block.trim().length === 0
       if (fallback.kind === "derived") return fallback.by.trim().length === 0
       return false
     })

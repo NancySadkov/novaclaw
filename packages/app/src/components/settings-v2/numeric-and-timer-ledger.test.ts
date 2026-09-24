@@ -10,7 +10,7 @@ import { stripComments } from "@/utils/strip-comments"
  *
  * **A — a hand-rolled number box.** The class: *a control that writes on every keystroke, coercing
  * the in-progress value*, so the intermediate state a user must pass THROUGH to reach a legal one is
- * clamped or truncated away. It appeared as three per-keystroke clamps on the Tunes tab (typing `512`
+ * clamped or truncated away. It appeared as three per-keystroke clamps on the Context tab (typing `512`
  * into a `min="64"` box persisted **64**, and the echoed store rewrote the box) and as a `parsed > 1`
  * one keystroke away from the `min="1"` printed on the same element in Strict's Attempts row (typing
  * the documented `1` stored `0`). Both were written by copying a neighbour, which is what a ledger
@@ -19,7 +19,7 @@ import { stripComments } from "@/utils/strip-comments"
  * silent clamp.
  *
  * ⚠️ **The remaining entries are not all bugs, and this ledger does not claim they are.** It records
- * what exists so the next one fails the gate. `messengers.tsx`'s pace box is the clearest defensible
+ * what exists so the next one fails the gate. `officer-messengers.tsx`'s pace box is the clearest defensible
  * line: it commits per keystroke into a LOCAL signal inside a dialog and only reaches the server when
  * the dialog is saved, which is exactly the case `parts/preset-field.tsx` documents as the reason its
  * own `commit` default is `"input"`.
@@ -41,7 +41,7 @@ const NUMBER_FIELD = "parts/number-field.tsx"
 
 /** Measured against this directory on 2026-09-02. Every number may only DECREASE. */
 const RAW_NUMBER_BOXES: Record<string, number> = {
-  "messengers.tsx": 1,
+  "officer-messengers.tsx": 1,
 }
 
 /** Timer schedules in a file that never registers an `onCleanup`. Measured the same day. */
@@ -89,7 +89,7 @@ describe("settings panels — the hand-rolled number box", () => {
   })
 
   test("the one raw number box is a local dialog draft and uses the shared refusal parser", () => {
-    const messenger = panels().find((p) => p.name === "messengers.tsx")
+    const messenger = panels().find((p) => p.name === "officer-messengers.tsx")
     expect(messenger).toBeDefined()
     expect(messenger!.text).toContain("parseSettingsNumber(cps(), { min: PACE_MIN, max: PACE_MAX })")
     expect(messenger!.text).toContain('setError(language.t("settings.field.number.range"')

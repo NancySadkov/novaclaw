@@ -1237,8 +1237,7 @@ body[data-new-layout] [data-slot="dialog-container"] {
 .agent-settings-panels[data-active-tab="memory"] [data-settings-tab="memory"],
 .agent-settings-panels[data-active-tab="messengers"] [data-settings-tab="messengers"],
 .agent-settings-panels[data-active-tab="nudges"] [data-settings-tab="nudges"],
-.agent-settings-panels[data-active-tab="schedule"] [data-settings-tab="schedule"],
-.agent-settings-panels[data-active-tab="chat"] [data-settings-tab="chat"] {
+.agent-settings-panels[data-active-tab="schedule"] [data-settings-tab="schedule"] {
   display: block;
 }
 .agent-settings-card {

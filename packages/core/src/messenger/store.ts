@@ -151,8 +151,8 @@ export interface Interface {
    *
    * ⚠️ **Nothing model-facing may reach this.** A declaration is the user's word; if an agent could
    * set it, a prompt-injected message in a chat could relabel that chat public and have itself
-   * quoted into a report. The `messenger` tool therefore has no op for it, and the surface that
-   * should own it is the Settings chat picker, which is not built yet.
+   * quoted into a report. The `messenger` tool therefore has no op for it; Officer Settings owns
+   * the declaration.
    *
    * Answers `false` when the chat is not in the seen-cache — never creates the row.
    */

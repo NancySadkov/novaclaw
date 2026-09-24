@@ -117,7 +117,7 @@ describe("Model Configure — compact capability taxonomy", () => {
   test("puts modalities and limits in Capabilities and has no recovery or tool-channel section", () => {
     // Configure is tabbed (owner, 2026-09-16 — it had become one long disorganized scroll). Each
     // family is a `TabsV2`-free panel, and ALL of them stay mounted with CSS hiding the inactive
-    // ones — the same `data-active-tab`/`data-settings-tab` contract as `AgentConfigScreen`, which is
+    // ones — the same `data-active-tab`/`data-settings-tab` contract as `OfficerSettingsScreen`, which is
     // what keeps a control reachable regardless of the open tab.
     expect(source).toContain('data-settings-tab="identity"')
     expect(source).toContain('data-settings-tab="capabilities"')

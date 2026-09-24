@@ -30,14 +30,14 @@ export const MessengerGroup = HttpApiGroup.make("server.messenger")
   )
   .add(
     HttpApiEndpoint.get("messenger.account.list", "/api/messenger/account", {
-      query: Schema.Struct({ agentID: Schema.optional(Schema.String) }),
+      query: Schema.Struct({ agentID: Schema.String }),
       success: Schema.Array(AccountWithStatus),
       error: InvalidRequestError,
     }).annotateMerge(
       OpenApi.annotations({
         identifier: "v2.messenger.account.list",
-        summary: "List messenger accounts",
-        description: "Retrieve every configured messenger account with its live connection status.",
+        summary: "List an officer's messenger accounts",
+        description: "Retrieve an officer's messenger accounts with their live connection status.",
       }),
     ),
   )
@@ -126,6 +126,21 @@ export const MessengerGroup = HttpApiGroup.make("server.messenger")
         summary: "List an account's chats",
         description:
           "The account's known chats — the live driver list where the platform allows enumeration (seeding the seen-cache), else the seen-cache. `ok:false` carries a plain-words reason (not connected, nothing seen yet).",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.patch("messenger.chat.source", "/api/messenger/account/:accountID/chats/:chatID/source", {
+      params: { accountID: Messenger.AccountID, chatID: Schema.String },
+      query: Schema.Struct({ agentID: Schema.String }),
+      payload: Schema.Struct({ access: Schema.NullOr(Schema.Literals(["public", "private"])) }),
+      success: HttpApiSchema.NoContent,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.messenger.chat.source",
+        summary: "Set a chat's source access",
+        description: "Record or clear the officer owner's public or private decision for a seen messenger chat.",
       }),
     ),
   )

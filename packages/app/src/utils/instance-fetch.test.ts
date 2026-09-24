@@ -10,7 +10,7 @@ import {
   instanceHeaders,
   instanceUrl,
 } from "@/utils/instance-fetch"
-import { MessengerApiError, messengerDrivers, messengerUpdateAccount } from "@/utils/messenger-api"
+import { MessengerApiError, messengerAccounts, messengerDeclareChatSource, messengerDrivers, messengerUpdateAccount } from "@/utils/messenger-api"
 import { createSchedule, listScheduleFires, listSchedules, removeSchedule, updateSchedule } from "@/utils/schedule-api"
 import { adhocDiscard, fsWrite, switchFeature } from "@/utils/fs-api"
 import { discoverInstances } from "@/utils/instance-discovery"
@@ -604,6 +604,18 @@ describe("every collapsed client still puts the same request on the wire", () =>
     expect(sent.url).toBe("http://instance.test:4096/api/messenger/account/acc_1?agentID=nova")
     expect(sent.method).toBe("PATCH")
     expect(sent.body).toBe(JSON.stringify({ enabled: false }))
+  })
+
+  test("messenger-api -> account list names its officer", async () => {
+    const sent = await wire(() => messengerAccounts(server, "officer/2"), { status: 200, body: [] })
+    expect(sent.url).toBe("http://instance.test:4096/api/messenger/account?agentID=officer%2F2")
+  })
+
+  test("messenger-api -> source declaration names the officer and encodes the chat", async () => {
+    const sent = await wire(() => messengerDeclareChatSource(server, "nova", "acc_1", "room/2", "public"))
+    expect(sent.url).toBe("http://instance.test:4096/api/messenger/account/acc_1/chats/room%2F2/source?agentID=nova")
+    expect(sent.method).toBe("PATCH")
+    expect(sent.body).toBe(JSON.stringify({ access: "public" }))
   })
 
   test("messenger-api -> a list route that answers a non-list still shows none rather than crashing", async () => {

@@ -135,13 +135,10 @@ export function createPromptInputController(input: {
         }),
     })
 
-  // The Tuning toggles (introspection · quality · affective · thinkingBudget) — same local-first per
-  // feature: this browser's explicit stance, then the session record, then the global config
-  // block's `enabled`. The control shows the EFFECTIVE state, so a globally-on feature reads ON
-  // here and flipping it writes this chat's explicit off.
   const featureState = () => {
     const record = sessionView.record() as
       | {
+          agent?: string
           introspection?: boolean
           quality?: boolean
           affective?: boolean
@@ -154,40 +151,54 @@ export function createPromptInputController(input: {
           shortChat?: boolean
         }
       | undefined
-    const config = sync().data.config as Partial<Record<SessionFeatureName, { enabled?: boolean }>> & {
-      context?: { enabled?: boolean }
-    }
+    const instanceConfig = sync().data.config as { memory?: { enabled?: boolean } }
+    const officerID = record?.agent ?? local.agent.current()?.name ?? "nova"
+    const officerConfig = (rosterAgents() ?? []).find((agent) => agent.id === officerID)?.config as
+      | {
+          introspection?: boolean | { enabled?: boolean }
+          affective?: boolean | { enabled?: boolean }
+          quality?: boolean
+          qualityConfig?: { enabled?: boolean }
+          contextBudget?: boolean
+          context?: { enabled?: boolean }
+          surgicalEdits?: boolean
+          shortChat?: boolean
+          kind?: string
+        }
+      | undefined
+    const officerEnabled = (value: boolean | { enabled?: boolean } | undefined) =>
+      typeof value === "boolean" ? value : value?.enabled === true
     const draft = local.features.current()
     const override = (feature: SessionFeatureName): boolean | undefined =>
       draft && Object.prototype.hasOwnProperty.call(draft, feature) ? draft[feature] : record?.[feature]
-    // The kernel's answer, when we have it. It outranks the derived baseline below and loses to this
-    // chat's own stance — see `resolvedStances` for what the derivation cannot see.
-    //
-    // ⚠️ For a DRAFT that answer comes from the folder's fold rather than from a session resolution,
-    // and it is the same kind of thing: what the chat this button creates will actually start with.
-    // Without it the switches state the instance's stance under a sentence naming the folder's file.
     const resolvedStance = kernelStances()
-    const derived = (feature: SessionFeatureName) =>
-      // `thinkingBudget` has no global `{ enabled }` block to fall back on — its instance default IS the
-      // model's own budget, which the browser cannot know per-model. Default it ON (enforced) so the
-      // control matches the runner's `config.thinkingBudget ?? true`; flipping it writes this chat's off.
-      feature === "thinkingBudget"
-        ? true
-        : feature === "contextBudget"
-          ? config.context?.enabled !== false
-          : feature === "memory"
-            ? (config as { memory?: { enabled?: boolean } }).memory?.enabled !== false
-            : feature === "shortChat"
-              ? false
-              : config[feature]?.enabled === true
-    // ⚠️ The precedence itself lives in `switchStance`, so the ORDER the panel renders is the same
-    // expression a test can assert — the whole surface exists to agree with the runner, and the
-    // agreement IS the order.
+    const derived = (feature: SessionFeatureName): boolean => {
+      switch (feature) {
+        case "thinkingBudget":
+          return true
+        case "contextBudget":
+          return officerConfig?.contextBudget ?? officerConfig?.context?.enabled ?? true
+        case "quality":
+          return officerConfig?.quality ?? officerConfig?.qualityConfig?.enabled ?? false
+        case "introspection":
+          return officerEnabled(officerConfig?.introspection)
+        case "affective":
+          return officerEnabled(officerConfig?.affective)
+        case "surgicalEdits":
+          return officerConfig?.surgicalEdits === true
+        case "memory":
+          return instanceConfig.memory?.enabled !== false
+        case "shortChat":
+          return officerConfig?.kind === "chat" || officerConfig?.shortChat === true
+        default:
+          return false
+      }
+    }
     const stance = (feature: SessionFeatureName) =>
       ConfigProvenance.switchStance({
         own: override(feature),
         kernel: resolvedStance[feature],
-        instance: derived(feature),
+        baseline: derived(feature),
       })
     const overrides: Record<SessionFeatureName, boolean | undefined> = {
       introspection: override("introspection"),
@@ -217,7 +228,7 @@ export function createPromptInputController(input: {
   }
 
   // The Remote-chat control (messenger-plan §6.2): which messenger chat drives THIS session.
-  // Data mirrors the Settings → Messengers pattern — small truthful lists, refetched on any
+  // Data mirrors the Officer Settings → Messengers pattern — small truthful lists, refetched on any
   // messenger.* bus event (no client-side folding). Live sessions only (edge #15: a draft has no
   // sessionID to bind).
   const serverSDK = useServerSDK()
@@ -273,10 +284,6 @@ export function createPromptInputController(input: {
     },
   )
 
-  // 🗑️ `featureOrigins` used to branch on `isDraft()`, with a `projectLayer` beside it and a
-  // `draftStances` fold for the folder's tune. All three read the retired route and all three
-  // collapse to the same answer now: the kernel's own resolution of THIS session, whose provenance is
-  // the instance's or this chat's.
   const isDraft = () => input.sessionID() === undefined
   const featureOrigins = createMemo(() => ConfigProvenance.featureOrigins(resolvedConfig()))
   /** The kernel's stance per switch — the session's own resolution. */

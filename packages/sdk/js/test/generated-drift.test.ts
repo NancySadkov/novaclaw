@@ -93,6 +93,7 @@ type SchemaDocument = {
  * disappearing on its own means the transform has started eating nulls again.
  */
 const NULLABLE_REQUEST_FIELDS = [
+  "PATCH /api/messenger/account/{accountID}/chats/{chatID}/source access",
   "PATCH /api/session/{sessionID} archived (optional)",
   "PATCH /api/session/{sessionID} device (optional)",
   "POST /api/session/{sessionID}/strict strict",

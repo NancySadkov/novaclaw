@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url"
 // unit can do. If the tab strip moves files, re-point the paths, not the invariant.
 
 const dir = path.dirname(fileURLToPath(import.meta.url))
-const dialog = readFileSync(path.join(dir, "agent-config-dialog.tsx"), "utf8")
+const dialog = readFileSync(path.join(dir, "officer-settings-screen.tsx"), "utf8")
 const css = readFileSync(path.join(dir, "..", "index.css"), "utf8")
 
 /** Tab ids from the rail (`{ id: "work" as const, ... }`). */

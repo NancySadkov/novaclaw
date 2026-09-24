@@ -16227,8 +16227,8 @@ export type V2MessengerDriverListResponse = V2MessengerDriverListResponses[keyof
 export type V2MessengerAccountListData = {
   body?: never
   path?: never
-  query?: {
-    agentID?: string
+  query: {
+    agentID: string
   }
   url: "/api/messenger/account"
 }
@@ -16439,6 +16439,42 @@ export type V2MessengerAccountChatsResponses = {
 }
 
 export type V2MessengerAccountChatsResponse = V2MessengerAccountChatsResponses[keyof V2MessengerAccountChatsResponses]
+
+export type V2MessengerChatSourceData = {
+  body: {
+    access: "public" | "private" | null
+  }
+  path: {
+    accountID: string
+    chatID: string
+  }
+  query: {
+    agentID: string
+  }
+  url: "/api/messenger/account/{accountID}/chats/{chatID}/source"
+}
+
+export type V2MessengerChatSourceErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MessengerChatSourceError = V2MessengerChatSourceErrors[keyof V2MessengerChatSourceErrors]
+
+export type V2MessengerChatSourceResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2MessengerChatSourceResponse = V2MessengerChatSourceResponses[keyof V2MessengerChatSourceResponses]
 
 export type V2MessengerBindingListData = {
   body?: never

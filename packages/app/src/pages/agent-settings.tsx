@@ -1,5 +1,5 @@
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router"
-import { AgentConfigScreen } from "@/components/agent-config-dialog"
+import { OfficerSettingsScreen } from "@/components/officer-settings-screen"
 import { useGlobal } from "@/context/global"
 import { useServer } from "@/context/server"
 import { AppPage } from "@/components/app-page"
@@ -19,7 +19,7 @@ export function AgentSettingsPage() {
     <AppPage class="flex flex-col overflow-hidden">
       <Show when={`${server.key}\n${params.agentID}`} keyed>
         {(_identity) => (
-          <AgentConfigScreen
+          <OfficerSettingsScreen
             agentID={params.agentID}
             onDismiss={dismiss}
             onChanged={() => {

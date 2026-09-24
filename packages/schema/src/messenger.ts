@@ -78,8 +78,8 @@ export type SourceAccess = typeof SourceAccess.Type
  * - `declared` — what the USER said. Absent means **nobody has chosen yet**, which is not the same
  *   as choosing `unknown`.
  *
- * ⚠️ Lines 14-16 of this file already state the module's law — a trust declaration is chosen by the
- * user in the connect dialogue, **never inferred**. `Source.resolve` is that law made mechanical.
+ * A source declaration is chosen by the user in Officer Settings, never inferred from a driver's
+ * proposal. `Source.resolve` keeps that distinction mechanical.
  */
 export interface SourceLabel extends Schema.Schema.Type<typeof SourceLabel> {}
 const SourceLabel = Schema.Struct({

@@ -201,6 +201,115 @@ test("officer tiles keep dimensions across widths and expose actions without clu
   expect(errors).toEqual([])
 })
 
+test("an officer can approve and clear a Messenger chat as a research source", async ({ page }) => {
+  let declared: "public" | "private" | null = null
+  const writes: Array<string | null> = []
+  const officerQueries: string[] = []
+  const headers = { "access-control-allow-origin": "*" }
+  await page.route(/\/api\/messenger\/account\?/, (route) => {
+    officerQueries.push(new URL(route.request().url()).searchParams.get("agentID") ?? "")
+    return route.fulfill({
+      headers,
+      json: [
+        {
+          account: {
+            id: "msa_source",
+            agentID: "officer-1",
+            driverID: "telegram",
+            label: "Research account",
+            enabled: true,
+            settings: {},
+          },
+          status: { state: "connected" },
+        },
+      ],
+    })
+  })
+  await page.route("**/api/messenger/account/msa_source/chats", (route) =>
+    route.fulfill({
+      headers,
+      json: {
+        ok: true,
+        chats: [
+          {
+            accountID: "msa_source",
+            chatID: "room/2",
+            kind: "channel",
+            title: "Release news",
+            lastSeen: 1,
+            access: { proposed: "public", ...(declared === null ? {} : { declared }) },
+          },
+        ],
+      },
+    }),
+  )
+  await page.route(/\/api\/messenger\/account\/msa_source\/chats\/room%2F2\/source\?/, (route) => {
+    const body = route.request().postDataJSON() as { access: "public" | "private" | null }
+    writes.push(body.access)
+    declared = body.access
+    return route.fulfill({ headers, status: 204, body: "" })
+  })
+
+  await page.goto("/tasks")
+  await officerCard(page, cardId(1)).click({ button: "right" })
+  await page.getByRole("menuitem", { name: "Settings" }).click()
+  const settings = page.locator('[data-component="agent-settings"]')
+  await settings.getByRole("tab", { name: "Messengers" }).click()
+  await expect(settings.getByText("Research account")).toBeVisible()
+  await settings.getByRole("button", { name: "Sources" }).click()
+  const dialog = page.getByRole("dialog")
+  const source = dialog.locator('[data-action="messenger-source-access"]')
+  await expect(dialog.getByText("Release news")).toBeVisible()
+  await source.click()
+  await page.getByRole("option", { name: "Public source" }).click()
+  await expect.poll(() => writes).toEqual(["public"])
+  await expect(source).toContainText("Public source")
+  await source.click()
+  await page.getByRole("option", { name: "Not approved" }).click()
+  await expect.poll(() => writes).toEqual(["public", null])
+  await expect(source).toContainText("Not approved")
+  expect(officerQueries.length).toBeGreaterThan(0)
+  expect(officerQueries.every((agentID) => agentID === "officer-1")).toBe(true)
+  await page
+    .locator('[data-slot="titlebar-tabs"]')
+    .locator(`a[href*="${sessions[2]!.id}"]`)
+    .evaluate((link) => (link as HTMLAnchorElement).click())
+  await expect(page).toHaveURL(/officers\/officer-2\/settings/)
+  await expect(dialog).toHaveCount(0)
+})
+
+test("adding a login Messenger account opens its login step", async ({ page }) => {
+  const headers = { "access-control-allow-origin": "*" }
+  const created: Array<{ agentID: string; enabled: boolean }> = []
+  await page.route("**/api/messenger/driver", (route) =>
+    route.fulfill({
+      headers,
+      json: [{ id: "telegram-user", name: "Telegram", icon: "chats", auth: "login", settings: [], loginPrompts: [] }],
+    }),
+  )
+  await page.route(/\/api\/messenger\/account\?/, (route) => route.fulfill({ headers, json: [] }))
+  await page.route("**/api/messenger/account", (route) => {
+    const body = route.request().postDataJSON() as { agentID: string; enabled: boolean }
+    created.push({ agentID: body.agentID, enabled: body.enabled })
+    return route.fulfill({
+      headers,
+      json: { id: "msa_login", agentID: body.agentID, driverID: "telegram-user", label: "Telegram", enabled: false },
+    })
+  })
+
+  await page.goto("/tasks")
+  await officerCard(page, cardId(1)).click({ button: "right" })
+  await page.getByRole("menuitem", { name: "Settings" }).click()
+  const settings = page.locator('[data-component="agent-settings"]')
+  await settings.getByRole("tab", { name: "Messengers" }).click()
+  await settings.getByRole("button", { name: "Add account" }).click()
+  await expect(page.getByRole("dialog").getByRole("heading", { name: "Add account" })).toBeVisible()
+  await page.getByRole("dialog").getByRole("button", { name: "Add & log in" }).click()
+  await expect(page.getByRole("dialog").getByRole("heading", { name: "Log in — Telegram" })).toBeVisible()
+  await expect(page.getByRole("dialog")).toHaveCount(1)
+  expect(created).toEqual([{ agentID: "officer-1", enabled: false }])
+})
+
 test.describe("touch cards", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
   test("holding opens actions without selecting the chat", async ({ page }) => {

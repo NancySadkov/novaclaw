@@ -35,7 +35,6 @@ const SPLIT = [
   "settings.confinement.probe",
   "settings.profile.enabled",
   "settings.storage.logs.level",
-  "settings.tunes.context.enabled",
 ]
 
 /** The model-config dialog uses `.desc` rather than `.description`. */
@@ -87,7 +86,7 @@ describe("settings row copy stays scannable", () => {
     let sites = 0
     for (const f of files) {
       const src = fs.readFileSync(path.join(SETTINGS_SRC, f), "utf8")
-      for (const m of src.matchAll(/language\.t\("(settings\.[^"{}]+|policies\.[^"{}]+)"\)/g)) {
+      for (const m of src.matchAll(/language\.t\("(settings\.[^"{}]+|officer\.[^"{}]+|policies\.[^"{}]+)"\)/g)) {
         sites += 1
         if (typeof t[m[1]!] !== "string") missing.push(`${f}: ${m[1]}`)
       }

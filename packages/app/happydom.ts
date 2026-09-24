@@ -78,7 +78,7 @@ HTMLCanvasElement.prototype.getContext = function (contextType: string, _options
  * Print an element as ONE SHORT LINE, never as its object graph.
  *
  * 🔴 Measured 2026-09-11 on the failure path of `expect(saveButton()).toBeUndefined()` in
- * `test-browser/agent-config-dialog-render.test.tsx`. bun's assertion printer walks the received
+ * `test-browser/officer-settings-screen-render.test.tsx`. bun's assertion printer walks the received
  * value's properties, and a happy-dom element reaches its `ownerDocument` and every sibling, so the
  * rendering grows roughly ×4 per nesting level: 9.9 KB at depth 0, 92 KB at 1, 1.4 MB at 2, 12 MB at
  * 3, 53 MB at 4 — and the printer does not stop at 4. The run allocated **11.38 GB** of commit

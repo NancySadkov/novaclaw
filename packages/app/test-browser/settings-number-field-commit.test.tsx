@@ -7,7 +7,7 @@ import { LanguageContext } from "@/context/language"
 import { PlatformProvider } from "@/context/platform"
 import { ServerSyncContext } from "@/context/server-sync"
 import { SettingsProvider } from "@/context/settings"
-import { OfficerContext } from "@/components/settings-v2/tunes"
+import { OfficerContext } from "@/components/settings-v2/officer-context"
 import { SettingsNumberFieldV2 } from "@/components/settings-v2/parts/number-field"
 import { dict as en } from "@/i18n/en"
 import { languageStub } from "./language-stub"
@@ -16,11 +16,11 @@ import { languageStub } from "./language-stub"
  * **A settings number box must let you TYPE the value it is asking for.**
  *
  * 🔴 The class under test is *a control that writes on every keystroke, coercing the in-progress
- * value*, and it produced a bug in Tunes: the reminder budget's handler clamped to its own `min`
+ * value*, and it produced a bug in Context: the reminder budget's handler clamped to its own `min`
  * before persisting (typing `512` sent `Math.max(64, 5)`). The Strict tab's attempts row had the
  * twin (`parsed > 1` beside a `min="1"`); that tab is gone — officer Strict attempts is a Save-time
  * draft, which cannot coerce mid-typing by construction — and the shared control's remaining
- * live-write surface is Tunes, covered below.
+ * live-write surface is Context, covered below.
  *
  * ⚠️ **The evidence for the first half is a request COUNT, not the final value.** A clamp that writes
  * the wrong number on the way and the right one at the end leaves identical stored state, so an
@@ -132,10 +132,10 @@ const commit = (input: HTMLInputElement, value: string) => {
 
 const refusals = () => [...document.querySelectorAll('[data-slot="settings-v2-number-refused"]')]
 
-const CADENCE = en["settings.tunes.todo.cadence.title"]
-const BUDGET = en["settings.tunes.todo.budget.title"]
+const CADENCE = en["officer.context.todo.cadence.title"]
+const BUDGET = en["officer.context.todo.budget.title"]
 
-describe("Tunes — a value below the field's minimum can be typed", () => {
+describe("Context — a value below the field's minimum can be typed", () => {
   test("typing 512 into a min-64 box writes nothing until it is committed, then writes 512 once", async () => {
     const { counts, config } = mount((officer) => <OfficerContext agentID="nova" config={officer} />, { agents: { nova: { context: {} } } })
     await settle()
@@ -261,7 +261,7 @@ describe("Context tab — the guard card and its splits", () => {
     await settle()
 
     expect(document.querySelector('[data-section="context-guard"]')?.textContent).toContain(
-      en["settings.tunes.context.enabled.title"],
+      en["officer.context.guard.enabled.title"],
     )
 
     const profiles = [...document.querySelectorAll<HTMLElement>("[data-context-profile]")]
@@ -277,7 +277,7 @@ describe("Context tab — the guard card and its splits", () => {
     }
 
     // The threshold row states what is in force even though nothing is stored (default 80).
-    expect(box(en["settings.tunes.compaction.threshold.title"]).value).toBe("80")
+    expect(box(en["officer.context.compaction.threshold.title"]).value).toBe("80")
   })
 
   test("an arrow key transfers one point between neighbours and commits once", async () => {
@@ -301,7 +301,7 @@ describe("Context tab — the guard card and its splits", () => {
     const { counts, config } = mount((officer) => <OfficerContext agentID="nova" config={officer} />, { agents: { nova: { context: {} } } })
     await settle()
 
-    commit(box(en["settings.tunes.compaction.threshold.title"]), "70")
+    commit(box(en["officer.context.compaction.threshold.title"]), "70")
     await settle()
 
     expect(counts.patch).toBe(1)

@@ -25,7 +25,7 @@ import path from "path"
 const submit = fs.readFileSync(path.join(import.meta.dir, "submit.ts"), "utf8")
 const local = fs.readFileSync(path.join(import.meta.dir, "..", "..", "context", "local.tsx"), "utf8")
 const picker = fs.readFileSync(path.join(import.meta.dir, "..", "dialog-select-model.tsx"), "utf8")
-const officerDialog = fs.readFileSync(path.join(import.meta.dir, "..", "agent-config-dialog.tsx"), "utf8")
+const officerDialog = fs.readFileSync(path.join(import.meta.dir, "..", "officer-settings-screen.tsx"), "utf8")
 
 describe("a chat's model is an override the session owns", () => {
   test("🔴 the composer sends what THIS CHAT picked, never what it resolved to", () => {

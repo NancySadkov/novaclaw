@@ -298,12 +298,13 @@ export const dict = {
 
   "prompt.features.popover.title": "Tune this chat",
   "prompt.features.popover.description":
-    "These switches apply to this chat only (chats spawned from it inherit them). Everything else about each helper is configured in Settings.",
-  "prompt.features.source.inherit": "Using Settings default: {{state}}",
+    "These choices apply to this chat and its helpers. Other chats use their officer's settings.",
+  "prompt.features.source.inherit": "Using officer default: {{state}}",
   "prompt.features.source.parent": "Inherited from the chat that started this one: {{state}}",
+  "prompt.features.source.officer": "Officer setting: {{state}}",
 
-  "prompt.features.source.override": "This chat overrides Settings",
-  "prompt.features.useDefault": "Use Settings default",
+  "prompt.features.source.override": "Set for this chat",
+  "prompt.features.useDefault": "Use default",
   "prompt.features.state.on": "On",
   "prompt.features.state.off": "Off",
   "prompt.features.introspection.title": "Stuck detector",
@@ -1032,7 +1033,6 @@ export const dict = {
   "settings.field.number.range": "Enter a whole number between {{min}} and {{max}}",
   "settings.field.number.rangeDecimal": "Enter a number between {{min}} and {{max}}",
 
-  "settings.tunes.title": "Context",
   "settings.nudges.title": "Nudges",
   "settings.nudges.description":
     "Store guidance the officer recalls when a matching event occurs. Choose a built-in event or match text with a regular expression. It stays out of the prompt until needed.",
@@ -1071,53 +1071,36 @@ export const dict = {
   "settings.nudges.resource.either": "Warning or critical",
   "settings.nudges.resource.warning": "Warning only",
   "settings.nudges.resource.floor": "Critical only",
-  "settings.tunes.description":
-    "Decide how a model's context window is divided between instructions, conversation, recalled memory, knowledge, and tool evidence.",
-  "settings.tunes.toast.failed": "Saving context settings failed",
-  "settings.tunes.context.enabled.title": "Context guard",
-  "settings.tunes.context.enabled.description":
-    "Limit specific session events to a percentage of context - cut the overflowing.",
-  "settings.tunes.context.enabled.description.more":
+  "officer.context.toast.failed": "Saving context settings failed",
+  "officer.context.guard.enabled.title": "Context guard",
+  "officer.context.guard.enabled.description.more":
     "System instructions and the original task are always protected. Each session type is split on its own; turn the guard off to let the five parts share the whole window freely.",
-  "settings.tunes.guard.off": "Context guard is off. These splits are not applied.",
-  "settings.tunes.profiles.title": "How each session type splits context",
-  "settings.tunes.profiles.description":
-    "Drag a boundary to move room between two neighbours; the five parts always add up to 100%. Arrow keys work too.",
-  "settings.tunes.profile.interactive": "Interactive chat",
-  "settings.tunes.profile.sub-agent": "Sub-agent",
-  "settings.tunes.profile.auto-prompting": "Auto-prompting",
-  "settings.tunes.profile.goal-oriented": "Goal-oriented",
-  "settings.tunes.profile.total": "{{total}}% allocated",
-  "settings.tunes.boundary.aria": "Resize {{left}} and {{right}}",
-  "settings.tunes.category.system": "Instructions",
-  "settings.tunes.category.system.description": "System guidance and the agent's operating rules.",
-  "settings.tunes.category.messages": "Conversation",
-  "settings.tunes.category.messages.description": "User and assistant messages, including the original task anchor.",
-  "settings.tunes.category.retrieval": "Knowledge retrieval",
-  "settings.tunes.category.retrieval.description": "Results recalled from the durable knowledge base.",
-  "settings.tunes.category.memory": "Memory",
-  "settings.tunes.category.memory.description": "Personal and session memories recalled before the turn.",
-  "settings.tunes.category.tool_output": "Tool output",
-  "settings.tunes.category.tool_output.description": "Evidence returned by files, commands, browsers, and other tools.",
-  "settings.tunes.compaction.title": "Compaction",
-  "settings.tunes.compaction.description":
-    "When a conversation fills the context window, older turns are folded into a summary so the work can continue.",
-  "settings.tunes.compaction.threshold.title": "Compaction threshold",
-  "settings.tunes.compaction.threshold.description":
-    "Fold the conversation once it fills this share of the model's context window.",
-  "settings.tunes.compaction.threshold.description.more":
+  "officer.context.guard.off": "Context guard is off. These splits are not applied.",
+  "officer.context.profiles.title": "How each session type splits context",
+  "officer.context.profile.interactive": "Interactive chat",
+  "officer.context.profile.sub-agent": "Sub-agent",
+  "officer.context.profile.auto-prompting": "Auto-prompting",
+  "officer.context.profile.goal-oriented": "Goal-oriented",
+  "officer.context.profile.total": "{{total}}% allocated",
+  "officer.context.boundary.aria": "Resize {{left}} and {{right}}",
+  "officer.context.category.system": "Instructions",
+  "officer.context.category.system.description": "System guidance and the agent's operating rules.",
+  "officer.context.category.messages": "Conversation",
+  "officer.context.category.messages.description": "User and assistant messages, including the original task anchor.",
+  "officer.context.category.retrieval": "Knowledge retrieval",
+  "officer.context.category.retrieval.description": "Results recalled from the durable knowledge base.",
+  "officer.context.category.memory": "Memory",
+  "officer.context.category.memory.description": "Personal and session memories recalled before the turn.",
+  "officer.context.category.tool_output": "Tool output",
+  "officer.context.category.tool_output.description": "Evidence returned by files, commands, browsers, and other tools.",
+  "officer.context.compaction.title": "Compaction",
+  "officer.context.compaction.threshold.title": "Compaction threshold",
+  "officer.context.compaction.threshold.description.more":
     "Compaction fires at this percentage, or earlier when the response reserve needs the room — never later. 80% leaves a fifth of the window free for the reply and the next tool result.",
-  "settings.tunes.todo.title": "Reminders",
-  "settings.tunes.todo.description":
-    "Put the current task list back in front of the model periodically, so long unattended jobs stay on course.",
-  "settings.tunes.todo.enabled.title": "Checklist reminders",
-  "settings.tunes.todo.enabled.description":
-    "Periodically put the current task list back in front of the model so long jobs stay on course.",
-  "settings.tunes.todo.cadence.title": "Reminder cadence",
-  "settings.tunes.todo.cadence.description": "How many saved chat messages pass between checklist reminders.",
-  "settings.tunes.todo.budget.title": "Reminder budget",
-  "settings.tunes.todo.budget.description":
-    "The most context a reminder may use. Active work is kept first when the checklist is longer.",
+  "officer.context.todo.title": "Reminders",
+  "officer.context.todo.enabled.title": "Checklist reminders",
+  "officer.context.todo.cadence.title": "Reminder cadence",
+  "officer.context.todo.budget.title": "Reminder budget",
 
   // The Storage tab: what the instance costs in RAM/on disk and where its files live.
   "settings.storage.title": "Storage and resources",
@@ -1853,15 +1836,6 @@ export const dict = {
   "settings.models.remove.confirm.action": "Remove",
   "settings.models.remove.toast.failed": "Could not remove {{model}}",
   "settings.messengers.title": "Messengers",
-  "settings.messengers.description":
-    "Connect NovaClaw to your messaging apps — the agent can answer chats while you're away, and you can drive NovaClaw from your phone.",
-  // How the operator actually USES a connected account from their phone. Without this the §0.1.5
-  // address rule is invisible: an unaddressed message is silently ignored (by design — your notes to
-  // self must stay yours), which is indistinguishable from a broken account.
-  "settings.messengers.consoleHint":
-    'To give NovaClaw a task from your phone, message YOURSELF — "Message Yourself" on WhatsApp, "Saved Messages" on Telegram — and start the message with "{{address}}, ". For example: "{{address}}, what\'s on my calendar today?"',
-  "settings.messengers.consoleHintWhy":
-    "Messages there that don't start with that are ignored, so your own notes to self stay private. The first one you send links that chat to a new session automatically.",
   "settings.messengers.add": "Add account",
   "settings.messengers.addThenLogin": "Add & log in",
   "settings.messengers.empty": "No accounts yet.",
@@ -1870,6 +1844,16 @@ export const dict = {
   "settings.messengers.enabled": "Enabled",
   "settings.messengers.login": "Log in",
   "settings.messengers.pair": "Pair",
+  "settings.messengers.chats": "Sources",
+  "settings.messengers.sources.title": "Research sources · {{label}}",
+  "settings.messengers.sources.hint": "Only chats you mark public can be cited outside their conversation.",
+  "settings.messengers.sources.none": "Not approved",
+  "settings.messengers.sources.public": "Public source",
+  "settings.messengers.sources.private": "Private",
+  "settings.messengers.sources.empty": "No chats seen yet.",
+  "settings.messengers.sources.unavailable": "Could not load chats.",
+  "settings.messengers.sources.retry": "Retry",
+  "settings.messengers.sources.control": "Source access for {{label}}",
   "settings.messengers.secret": "Access token",
   "settings.messengers.label": "Name",
   "settings.messengers.pickDriver": "Which messenger?",
@@ -1911,38 +1895,23 @@ export const dict = {
     "A person types around {{default}}/s. Lower is safer; higher is faster but riskier.",
   "settings.messengers.speed.warning":
     "⚠️ This is faster than a human types. Messaging providers watch for bot-like speed and may flag or BAN your account for posting too fast. Only go this high if you accept that risk.",
-  "settings.quality.title": "Quality",
-  "settings.quality.description":
-    "Quality Enforcement: your provisioned checks run automatically at write and turn boundaries; a failure steers the agent to fix it and re-run — a change doesn't count as done until the checks pass.",
-  "settings.quality.toast.failed": "Saving quality settings failed",
-  "settings.quality.row.enabled.title": "Enable quality enforcement",
-  "settings.quality.row.enabled.description": "Run the provisioned checks on every change this server makes",
-  "settings.quality.row.cadence.title": "Typecheck cadence",
-  "settings.quality.row.cadence.description": "Run the whole-module typecheck every N writes",
-  "settings.quality.row.testTimeout.title": "Test timeout (minutes)",
-  "settings.quality.row.testTimeout.description": "Hard limit for the test gate — a hung test counts as a failure",
-  "settings.quality.commands.title": "Provisioned commands",
-  "settings.quality.detect.action": "Detect from this project",
-  "settings.quality.detect.running": "Detecting…",
-  "settings.quality.detect.description":
-    "Reads this project’s own manifests and fills the empty rows below. Nothing is run and nothing you have typed is replaced.",
-  "settings.quality.detect.filled.one": "Filled {{count}} command from this project.",
-  "settings.quality.detect.filled.other": "Filled {{count}} commands from this project.",
-  "settings.quality.detect.nothing": "Nothing new to fill — every command this project declares is already set.",
-  "settings.quality.detect.empty": "The server answered without a proposal.",
-  "settings.quality.detect.failed": "Could not read this project’s manifests",
-  "settings.quality.commands.description":
-    "Empty = the step is skipped. {file} is replaced with the path of the file that was written (quoted). An agent can fill these in for you with the quality_provision tool.",
-  "settings.quality.command.syntax.title": "Syntax check",
-  "settings.quality.command.syntax.description": "Per-file parse on every write",
-  "settings.quality.command.check.title": "Incremental verify",
-  "settings.quality.command.check.description": "Per-file verifier on every write",
-  "settings.quality.command.typecheck.title": "Typecheck",
-  "settings.quality.command.typecheck.description": "Whole-module compile/type check, cadence-gated",
-  "settings.quality.command.test.title": "Test gate",
-  "settings.quality.command.test.description": "Runs once per completed turn that wrote files",
-  "settings.quality.command.lint.title": "Structural pass",
-  "settings.quality.command.lint.description": "Lint/structure check at the same turn-end gate",
+  "officer.quality.toast.failed": "Saving quality settings failed",
+  "officer.quality.row.enabled.title": "Enable quality enforcement",
+  "officer.quality.row.cadence.title": "Typecheck cadence",
+  "officer.quality.row.testTimeout.title": "Test timeout (minutes)",
+  "officer.quality.commands.title": "Provisioned commands",
+  "officer.quality.detect.action": "Detect from this project",
+  "officer.quality.detect.running": "Detecting…",
+  "officer.quality.detect.filled.one": "Filled {{count}} command from this project.",
+  "officer.quality.detect.filled.other": "Filled {{count}} commands from this project.",
+  "officer.quality.detect.nothing": "Nothing new to fill — every command this project declares is already set.",
+  "officer.quality.detect.empty": "The server answered without a proposal.",
+  "officer.quality.detect.failed": "Could not read this project’s manifests",
+  "officer.quality.command.syntax.title": "Syntax check",
+  "officer.quality.command.check.title": "Incremental verify",
+  "officer.quality.command.typecheck.title": "Typecheck",
+  "officer.quality.command.test.title": "Test gate",
+  "officer.quality.command.lint.title": "Structural pass",
   // 🔴 Owner, 2026-09-17: the shared persona editor that stood here is GONE — a global working style
   // composed around every agent contradicted the role of a roleplayer, a chat companion or an artist.
   // Each colleague's Job instructions box is the single source now.
@@ -1976,8 +1945,6 @@ export const dict = {
   // everything Nova knows.
   "settings.about.author": "by Nancy Sadkov",
   "settings.about.credits.title": "Built with open-source software",
-  "settings.about.credits.description":
-    "NovaClaw stands on these projects, used under their respective licenses. Thank you to their authors.",
   "settings.about.more":
     "…and many other open-source packages, each under its own license — see the NOTICE file for the full list.",
   // ⚠️ The visible line keeps "around the model's baseline": a user reading only the short form must
@@ -2326,7 +2293,6 @@ export const dict = {
   "agentConfig.resetTab.description":
     "This officer's {{tab}} tuning will be deleted, and it will follow the shipped defaults again. Its other tabs are untouched.",
   "agentConfig.resetTab.failed": "Could not reset the tab",
-  "agentConfig.thisChat": "How this chat runs",
   // The household row at the foot of the roster — everything every colleague can read. Named for WHO
   // can see it, not for where it is stored: "shared" is the fact a user needs before they write
   // something into it.

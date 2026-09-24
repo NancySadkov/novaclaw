@@ -6,7 +6,7 @@ const source = (relative: string) => readFileSync(path.join(import.meta.dir, rel
 
 describe("pure Chat officers have no project surface", () => {
   test("the officer settings hide the folder section and clear stale assignments on save", () => {
-    const dialog = source("agent-config-dialog.tsx")
+    const dialog = source("officer-settings-screen.tsx")
     // The posture is now the three-way `kind` (owner, 2026-09-17): only `agent` has a project surface.
     const hiddenFolder = dialog.indexOf('<Show when={postureValue() === "agent"}>')
     const folderHeading = dialog.indexOf('language.t("agentConfig.folder")', hiddenFolder)

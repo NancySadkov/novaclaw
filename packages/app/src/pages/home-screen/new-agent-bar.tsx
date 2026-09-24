@@ -150,7 +150,7 @@ export function NewAgentBar() {
 
   const global = useGlobal()
   // ⚠️ The SAME definition of "the current server" as `system-load.ts`, `contacts.tsx` and
-  // `agent-config-dialog.tsx` (review H8). With a bare `server.current` the hero tile beside this
+  // `officer-settings-screen.tsx` (review H8). With a bare `server.current` the hero tile beside this
   // bar happily polled the first server while the bar reported "Still connecting to your
   // workspace" — two answers to one question, on one screen.
   const conn = createMemo(() => server.current ?? global.servers.list()[0])

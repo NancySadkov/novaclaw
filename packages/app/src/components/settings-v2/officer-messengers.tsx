@@ -2,6 +2,7 @@ import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
 import { DividerV2 } from "@novaclaw/ui/v2/divider-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
+import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { type Component, createEffect, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
@@ -15,7 +16,9 @@ import { createSettledResource } from "@/utils/settled-resource"
 import {
   MessengerApiError,
   messengerAccounts,
+  messengerAccountChats,
   messengerCreateAccount,
+  messengerDeclareChatSource,
   messengerDrivers,
   messengerLoginBegin,
   messengerLoginCancel,
@@ -26,6 +29,7 @@ import {
   messengerUpdateAccount,
   type AccountStatus,
   type AccountWithStatus,
+  type ChatInfo,
   type DriverMeta,
   type LoginAttempt,
 } from "@/utils/messenger-api"
@@ -46,7 +50,7 @@ const STATUS_DOT: Record<AccountStatus["state"], string> = {
 const statusMessage = (status: AccountStatus): string | undefined =>
   status.state === "backoff" || status.state === "challenge" || status.state === "error" ? status.message : undefined
 
-export const SettingsMessengersV2: Component<{ agentID: string }> = (props) => {
+export const OfficerMessengers: Component<{ agentID: string }> = (props) => {
   const dialog = useDialog()
   const language = useLanguage()
   const sdk = useServerSDK()
@@ -99,14 +103,14 @@ export const SettingsMessengersV2: Component<{ agentID: string }> = (props) => {
   }
 
   const openAdd = () =>
-    dialog.push(() => (
+    dialog.showScoped(() => (
       <DialogAddMessengerAccount
         agentID={props.agentID}
         drivers={drivers() ?? []}
         onCreated={(account, driver) => {
           void refetch()
           if (driver.auth === "login")
-            dialog.push(() => <DialogMessengerLogin account={account} driver={driver} onDone={() => void refetch()} />)
+            dialog.showScoped(() => <DialogMessengerLogin account={account} driver={driver} onDone={() => void refetch()} />)
         }}
       />
     ))
@@ -114,15 +118,19 @@ export const SettingsMessengersV2: Component<{ agentID: string }> = (props) => {
   const openLogin = (row: AccountWithStatus) => {
     const driver = driverFor(row.account.driverID)
     if (!driver) return
-    dialog.push(() => <DialogMessengerLogin account={row.account} driver={driver} onDone={() => void refetch()} />)
+    dialog.showScoped(() => <DialogMessengerLogin account={row.account} driver={driver} onDone={() => void refetch()} />)
   }
 
   const openPair = (row: AccountWithStatus) => {
-    dialog.push(() => <DialogPairingCode accountID={row.account.id} label={row.account.label} />)
+    dialog.showScoped(() => <DialogPairingCode accountID={row.account.id} label={row.account.label} />)
   }
 
   const openSpeed = (row: AccountWithStatus) => {
-    dialog.push(() => <DialogMessengerSpeed account={row.account} onDone={() => void refetch()} />)
+    dialog.showScoped(() => <DialogMessengerSpeed account={row.account} onDone={() => void refetch()} />)
+  }
+
+  const openChats = (row: AccountWithStatus) => {
+    dialog.showScoped(() => <DialogMessengerSources account={row.account} agentID={props.agentID} />)
   }
 
   return (
@@ -181,6 +189,9 @@ export const SettingsMessengersV2: Component<{ agentID: string }> = (props) => {
                     <ButtonV2 variant="neutral" size="small" onClick={() => openSpeed(row)}>
                       {language.t("settings.messengers.speed")}
                     </ButtonV2>
+                    <ButtonV2 variant="neutral" size="small" onClick={() => openChats(row)}>
+                      {language.t("settings.messengers.chats")}
+                    </ButtonV2>
                     <ButtonV2 variant="neutral" size="small" onClick={() => void remove(row)}>
                       {language.t("settings.messengers.remove.confirm.action")}
                     </ButtonV2>
@@ -199,6 +210,108 @@ export const SettingsMessengersV2: Component<{ agentID: string }> = (props) => {
         </Show>
       </div>
     </>
+  )
+}
+
+const DialogMessengerSources: Component<{
+  account: { id: string; label: string }
+  agentID: string
+}> = (props) => {
+  const dialog = useDialog()
+  const language = useLanguage()
+  const sdk = useServerSDK()
+  const [chats, { refetch }] = createSettledResource(
+    () => [sdk().server.http, props.account.id] as const,
+    ([server, accountID]) => messengerAccountChats(server, accountID),
+  )
+  const [saving, setSaving] = createSignal<string>()
+  const [error, setError] = createSignal<string>()
+  const options = () => [
+    { id: "none", label: language.t("settings.messengers.sources.none") },
+    { id: "public", label: language.t("settings.messengers.sources.public") },
+    { id: "private", label: language.t("settings.messengers.sources.private") },
+  ] as const
+
+  const setAccess = async (chat: ChatInfo, choice: "none" | "public" | "private") => {
+    const previous = chat.access.declared ?? "none"
+    if (choice === previous || saving()) return
+    setSaving(chat.chatID)
+    setError(undefined)
+    try {
+      await messengerDeclareChatSource(
+        sdk().server.http,
+        props.agentID,
+        props.account.id,
+        chat.chatID,
+        choice === "none" ? null : choice,
+      )
+      await refetch()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setSaving(undefined)
+    }
+  }
+
+  return (
+    <Dialog fit class="settings-v2-server-dialog">
+      <DialogHeader hideClose={true}>
+        <DialogTitle>{language.t("settings.messengers.sources.title", { label: props.account.label })}</DialogTitle>
+      </DialogHeader>
+      <DividerV2 />
+      <DialogBody class="flex w-full min-w-0 max-h-[min(72vh,600px)] flex-1 flex-col overflow-y-auto px-4 pt-4 pb-2">
+        <p class="settings-v2-field-description">{language.t("settings.messengers.sources.hint")}</p>
+        <Show when={error()}>{(message) => <p class="settings-v2-server-dialog-error">{message()}</p>}</Show>
+        <Show
+          when={!chats.failed && chats()?.ok && chats()?.chats.length}
+          fallback={
+            <div class="flex items-center justify-between gap-3">
+              <p class="settings-v2-field-description">
+                {chats.failed
+                  ? language.t("settings.messengers.sources.unavailable")
+                  : chats.loading || chats.idle
+                    ? language.t("common.loading")
+                    : chats()?.reason ?? language.t("settings.messengers.sources.empty")}
+              </p>
+              <Show when={!chats.loading && !chats.idle}>
+                <ButtonV2 variant="neutral" size="small" onClick={() => void refetch()}>
+                  {language.t("settings.messengers.sources.retry")}
+                </ButtonV2>
+              </Show>
+            </div>
+          }
+        >
+          <SettingsListV2>
+            <For each={chats()?.chats ?? []}>
+              {(chat) => (
+                <SettingsRowV2 title={chat.title || chat.chatID} description={chat.kind}>
+                  <SelectV2
+                    appearance="inline"
+                    data-action="messenger-source-access"
+                    aria-label={language.t("settings.messengers.sources.control", { label: chat.title || chat.chatID })}
+                    options={options()}
+                    current={options().find((option) => option.id === chat.access.declared) ?? options()[0]}
+                    placement="bottom-end"
+                    gutter={6}
+                    disabled={!!saving()}
+                    value={(option) => option.id}
+                    label={(option) => option.label}
+                    onSelect={(option) => {
+                      if (option) void setAccess(chat, option.id)
+                    }}
+                  />
+                </SettingsRowV2>
+              )}
+            </For>
+          </SettingsListV2>
+        </Show>
+      </DialogBody>
+      <DialogFooter>
+        <ButtonV2 variant="contrast" onClick={() => dialog.close()}>
+          {language.t("common.close")}
+        </ButtonV2>
+      </DialogFooter>
+    </Dialog>
   )
 }
 

@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { createSignal, onMount } from "solid-js"
+import { createSignal } from "solid-js"
 import { render } from "solid-js/web"
 import { MemoryRouter, Route } from "@solidjs/router"
-import { DialogProvider, useDialog } from "@novaclaw/ui/context/dialog"
-import { AgentConfigDialog } from "@/components/agent-config-dialog"
+import { DialogProvider } from "@novaclaw/ui/context/dialog"
+import { OfficerSettingsScreen } from "@/components/officer-settings-screen"
 import { GlobalContext } from "@/context/global"
 import { ServerContext } from "@/context/server"
 import { ServerSyncContext } from "@/context/server-sync"
@@ -32,7 +32,7 @@ import { dict } from "@/i18n/en"
  *   provider catalog's cold start). The symptom is silent: a colleague bound to a specific model
  *   reads "Inherit the instance default".
  *
- *   **D3** — Save was enabled before the dialog had LOADED the fields it writes. `dirty()` needs one
+ *   **D3** — Save was enabled before the screen had loaded the fields it writes. `dirty()` needs one
  *   touched field, and the `*Value()` accessors fall back draft → stored → `""`, so one character
  *   typed into Name before the fetch landed wrote `title` away as an empty string.
  *
@@ -68,17 +68,12 @@ afterEach(() => {
   dispose = undefined
   host?.remove()
   host = undefined
-  // ⚠️ `dispose()` does NOT clear the portal. `Kobalte.Portal` appends the dialog to `document.body`,
-  // outside the mount host, so without this the previous test's dialog is still in the document and
-  // `document.querySelector` returns ITS controls — every later assertion then reads a stale render
-  // and passes or fails for the wrong reason. Caught by dumping the DOM: run alone the save button
-  // was correctly `disabled=true`, run in sequence it was the prior test's enabled one.
   document.body.innerHTML = ""
   window.matchMedia = originalMatchMedia
 })
 
 /**
- * Mount the dialog under stub context values.
+ * Mount the screen under stub context values.
  *
  * `agents` decides what the roster fetch has produced: a list, or `undefined` for "still in flight"
  * — which is the window D3 lives in. `models` likewise, so the D2 race can be driven from either end.
@@ -95,7 +90,7 @@ function mount(options: {
   host = document.createElement("div")
   document.body.appendChild(host)
 
-  // The server context's ONE shared roster (D8's fix) — `agents.list()` is what the dialog reads, and
+  // The server context's ONE shared roster (D8's fix) — `agents.list()` is what the screen reads, and
   // `undefined` from it is the in-flight window D3 lives in.
   const connection = { url: "http://localhost:4096", http: "http://localhost:4096" }
   const agentsCache = {
@@ -132,7 +127,7 @@ function mount(options: {
     setLocale: () => {},
   }
   /**
-   * ⚠️ Added when Clear and Retire started CLOSING the cleared chat's tab (2026-08-28). The dialog
+   * ⚠️ Added when Clear and Retire started CLOSING the cleared chat's tab (2026-08-28). The screen
    * had reached no further than its own server before that, so a context it now depends on was
    * missing here and every render in this file died on `Tabs context must be used within a context
    * provider` — the mount test caught it, which is the whole reason it exists.
@@ -154,7 +149,7 @@ function mount(options: {
                         <ModelsContext.Provider value={modelsStub as never}>
                           <TabsContext.Provider value={tabsStub as never}>
                             <DialogProvider>
-                              <Opener agentID={options.agentID ?? "theron"} />
+                              <OfficerSettingsScreen agentID={options.agentID ?? "theron"} onDismiss={() => {}} />
                             </DialogProvider>
                           </TabsContext.Provider>
                         </ModelsContext.Provider>
@@ -173,28 +168,11 @@ function mount(options: {
   return host
 }
 
-/**
- * Mount the dialog THE WAY THE APP DOES — through the dialog stack, not bare.
- *
- * ⚠️ Not a convenience. `AgentConfigDialog` renders the v2 `Dialog` shell, whose `Kobalte.Content`
- * must sit under a Kobalte root; the stack is what supplies it (`ui/src/context/dialog.tsx` wraps
- * each layer in `<Kobalte modal open={…}>`). Mounting the component directly throws
- * `useDialogContext must be used within a Dialog component` — so a bare mount would be testing a
- * composition the product never builds.
- */
-function Opener(props: { agentID: string }) {
-  const dialog = useDialog()
-  onMount(() => void dialog.show(() => <AgentConfigDialog agentID={props.agentID} onDismiss={() => {}} />))
-  return null
-}
-
 /** Let the roster resource settle. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 /**
- * ⚠️ Queries run against `document`, NOT the mount host. `Kobalte.Portal` moves the dialog out of the
- * host subtree and onto `document.body`, so `host.querySelector` finds nothing and every assertion
- * would pass or fail for the wrong reason. Reading the document is what the user sees.
+ * Queries run against `document` so select menus portalled to the body are included.
  */
 const selects = () => [...document.querySelectorAll<HTMLElement>('[data-component="select-v2"]')]
 const selectText = (select: HTMLElement) =>
@@ -248,19 +226,19 @@ const saveButton = () =>
  */
 const charterControls = () =>
   document.querySelectorAll('input[type="text"], input:not([type]), textarea, [data-component="select-v2"]').length
-const dialogText = () => document.body.textContent ?? ""
+const screenText = () => document.body.textContent ?? ""
 /**
  * How many times one i18n KEY was rendered, counted on the STRING rather than on a node.
  *
  * ⚠️ `\\b` is load-bearing: the translator echoes the key, so a plain `includes` would count
- * `agentConfig.clone` inside `agentConfig.cloneNovaTitle` — a toast this dialog never renders, which
+ * `agentConfig.clone` inside `agentConfig.cloneNovaTitle` — a toast this screen never renders, which
  * would make "Clone is absent" pass for the wrong reason. After a word boundary, `clone` followed by
  * `N` is not a match and `clone` followed by `.` (the bare label) is.
  */
 const labelCount = (key: string) =>
-  (dialogText().match(new RegExp(`${key.replace(/\./g, "\\.")}\\b`, "g")) ?? []).length
+  (screenText().match(new RegExp(`${key.replace(/\./g, "\\.")}\\b`, "g")) ?? []).length
 
-describe("AgentConfigDialog renders", () => {
+describe("Officer Settings screen renders", () => {
   test("settings tabs use horizontal phone keys, then vertical desktop keys without losing selection", async () => {
     let desktop = false
     let media: MediaQueryList | undefined
@@ -311,7 +289,7 @@ describe("AgentConfigDialog renders", () => {
     // read-only projection screen (`data-agent-profile="governing-readonly"`) is GONE; the ordinary
     // editable form is what renders, and the note that replaced the old lock sentence names the three
     // exceptions rather than leaving the user to discover a refusal.
-    expect(dialogText()).toContain("agentConfig.governingNote")
+    expect(screenText()).toContain("agentConfig.governingNote")
     // The form really is editable: text fields and pickers are mounted, not the old two checkboxes.
     // ⚠️ A NUMBER, never the nodes — handing `expect()` an element here is what took 407 s and
     // 11.38 GB to say one sentence; see `happydom.ts`.
@@ -319,7 +297,7 @@ describe("AgentConfigDialog renders", () => {
     // …and exactly three things are absent, because the store refuses them.
     expect(labelCount("agentConfig.clone")).toBe(0)
     expect(labelCount("agentConfig.retire")).toBe(0)
-    expect(dialogText()).toContain("agentConfig.folderGoverning")
+    expect(screenText()).toContain("agentConfig.folderGoverning")
     // The lifecycle actions that still apply ARE present — pausing is not one of the three exceptions,
     // and Save is now unconditional because the profile above it is editable.
     // ⚠️ ONE object comparison rather than two `toBe(true)`s, so a failure NAMES the control that is
@@ -329,10 +307,10 @@ describe("AgentConfigDialog renders", () => {
       save: saveButton() !== undefined,
       clearChat: document.querySelector('[data-action="agent-clear-chat"]') !== null,
     }).toEqual({ pause: true, save: true, clearChat: false })
-    // The claim VR-001 was always about: a Save may exist, but the dialog wrote nothing merely for
+    // The claim VR-001 was always about: a Save may exist, but the screen wrote nothing merely for
     // being opened.
     expect(writes).toEqual([])
-    expect(dialogText()).not.toContain("NOTHING was written")
+    expect(screenText()).not.toContain("NOTHING was written")
   })
 
   test("officer actions share the header and Pause remains immediately reversible", async () => {
@@ -357,7 +335,7 @@ describe("AgentConfigDialog renders", () => {
     mount({ agents: [AGENT] })
     await settle()
     // The guard on the instrument: if this is empty every assertion below is vacuous.
-    expect(dialogText()).not.toContain("agentConfig.who")
+    expect(screenText()).not.toContain("agentConfig.who")
     expect(selects().length).toBeGreaterThan(0)
     expect(document.querySelector('[data-component="control-scope"][data-scope="colleague"]')).not.toBeNull()
     const memoryCard = document.querySelector('[data-section="memory"][data-settings-tab="memory"]')
@@ -475,7 +453,7 @@ describe("AgentConfigDialog renders", () => {
   test("the Quality tab saves Strict attempts without wiping the stored levers", async () => {
     // 🔴 The merge this tab exists for: editing ONE subfield must not drop the rest of the
     // struct. A `{ attempts }`-only write depends on the store patch-merging structs, which this
-    // dialog refuses to assume — so it sends the merged struct and this test reads it back whole.
+    // screen refuses to assume — so it sends the merged struct and this test reads it back whole.
     const writes: unknown[] = []
     mount({
       agents: [{ ...AGENT, config: { strict: { enabled: true, attempts: 3, verification: false } } }],
@@ -564,7 +542,7 @@ describe("AgentConfigDialog renders", () => {
     // Reset confirms (destructive) and then deletes exactly the tab's key — nothing else.
     document.querySelector<HTMLButtonElement>('[data-action="agent-reset-introspection"]')!.click()
     await settle()
-    expect(dialogText()).toContain("agentConfig.resetTab.title")
+    expect(screenText()).toContain("agentConfig.resetTab.title")
     const confirmReset = [...document.querySelectorAll("button")].filter((button) =>
       button.textContent?.includes("agentConfig.resetTab.action"),
     )
@@ -724,8 +702,8 @@ describe("AgentConfigDialog renders", () => {
     expect(input).not.toBeNull()
     expect(input!.classList.contains("sr-only")).toBe(true)
     expect(label?.textContent).toContain("agentConfig.portraitChoose")
-    expect(dialogText()).toContain("agentConfig.portraitNone")
-    expect(dialogText()).not.toContain("agentConfig.portraitRemove")
+    expect(screenText()).toContain("agentConfig.portraitNone")
+    expect(screenText()).not.toContain("agentConfig.portraitRemove")
   })
 
   test("an uploaded portrait can be removed once, then the action disappears", async () => {
@@ -737,7 +715,7 @@ describe("AgentConfigDialog renders", () => {
     expect(remove).toBeDefined()
 
     remove!.click()
-    expect(dialogText()).not.toContain("agentConfig.portraitRemove")
+    expect(screenText()).not.toContain("agentConfig.portraitRemove")
   })
 
   test("the command-caption switch belongs to Model, not How it works", async () => {
@@ -838,7 +816,7 @@ describe("AgentConfigDialog renders", () => {
     const budget = document.querySelector("#agent-reasoning-budget") as HTMLInputElement
     budget.value = "0"
     budget.dispatchEvent(new Event("input", { bubbles: true }))
-    expect(dialogText()).toContain("agentConfig.reasoningBudgetOff")
+    expect(screenText()).toContain("agentConfig.reasoningBudgetOff")
     saveButton()!.click()
     await settle()
     expect((writes[0] as { agents: { theron: Record<string, unknown> } }).agents.theron.reasoningBudget).toBe(0)

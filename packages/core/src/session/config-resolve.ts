@@ -794,33 +794,11 @@ export interface SessionConfigField {
   readonly fallback: SessionConfigFallback
 }
 
-/**
- * What it means for a field to resolve to nothing.
- *
- * 🔴 **Every field HAS a default; the question is who holds it.** Four lived in
- * `EFFECTIVE_CONFIG_DEFAULTS` and the rest lived at the readers in three different idioms —
- * `x === true`, `x ?? true`, `x !== false` — so "what happens if nobody sets this?" could only be
- * answered by finding every reader and reading its expression. Two readers of one field could
- * disagree and nothing would say so; that is how `memory` came to mean *on unless explicitly off*
- * in the runner and the same thing by a different spelling in the `kb` tool, which is fine right up
- * until one of them is edited.
- *
- * The four kinds are not decoration — each has a distinct consumer, and a field cannot be declared
- * without picking one:
- *
- *  · `base` seeds `EFFECTIVE_CONFIG_DEFAULTS`, so the value is PRESENT in every resolved config.
- *  · `stance` does NOT. A tri-state's absence has to survive resolution, or the introspection view
- *    cannot tell "nobody set this" from "someone set it to the default" — the one question that
- *    surface exists to answer. The reader applies it through {@link stanceOf}.
- *  · `instance` says the answer is not here at all: an instance config block decides, and this
- *    field only overrides it. The block is named so a surface can send someone to the right screen.
- *  · `derived` says no SETTING decides it — a resolver does (the model catalog, the agent registry,
- *    the endpoint the model resolves to). Naming the resolver is the whole content.
- */
 export type SessionConfigFallback =
   | { readonly kind: "base"; readonly value: unknown }
   | { readonly kind: "stance"; readonly value: boolean }
   | { readonly kind: "instance"; readonly block: string }
+  | { readonly kind: "officer"; readonly block: string }
   | { readonly kind: "derived"; readonly by: string }
 
 /**
@@ -867,7 +845,7 @@ export const SESSION_CONFIG_FIELDS = {
     // so absent means the shipped default (off) and the officer's stance decides otherwise.
     fallback: { kind: "stance", value: false },
   },
-  quality: { column: "quality", merge: "override", fallback: { kind: "instance", block: "quality" } },
+  quality: { column: "quality", merge: "override", fallback: { kind: "officer", block: "quality" } },
   affective: {
     column: "affective",
     merge: "override",
@@ -884,7 +862,7 @@ export const SESSION_CONFIG_FIELDS = {
   // ⚠️ Its fallback is `false` — unattended commands RUN by default. Changing that literal changes
   // the product's confinement posture; it is not a tidy-up.
   safeMode: { column: "safe_mode", merge: "override", fallback: { kind: "stance", value: false } },
-  contextBudget: { column: "context_budget", merge: "override", fallback: { kind: "instance", block: "context" } },
+  contextBudget: { column: "context_budget", merge: "override", fallback: { kind: "officer", block: "context" } },
   // ⚠️ `stance`, not `instance`: an absent value means ON, and `MemorySetting.memoryEnabled()` is a
   // SEPARATE global gate the readers AND in. Calling this one `instance` would say the setting is
   // the fallback, which would make "no stance" mean "off" the day the setting defaults off.

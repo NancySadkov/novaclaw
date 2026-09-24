@@ -31,7 +31,7 @@ describe("a colleague's workspace is reachable", () => {
   })
 
   test("2. the dialog reads it from the agent, never derives it", () => {
-    const source = read("app", "src", "components", "agent-config-dialog.tsx")
+    const source = read("app", "src", "components", "officer-settings-screen.tsx")
     expect(source).toContain("workspace")
     // 🔴 The client must NOT build this path. The scratch root is under the instance's data
     // directory, which the app does not know — a derived path would link to a folder that is not
@@ -46,7 +46,7 @@ describe("a colleague's workspace is reachable", () => {
   })
 
   test("the link points at the files route with the path encoded", () => {
-    const source = read("app", "src", "components", "agent-config-dialog.tsx")
+    const source = read("app", "src", "components", "officer-settings-screen.tsx")
     // Encoded because a Windows path carries a colon and backslashes; an unencoded href would
     // truncate at the drive letter.
     expect(source).toMatch(/\/files\?path=\$\{encodeURIComponent/)

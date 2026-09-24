@@ -127,9 +127,8 @@ const bodyEffort = (m: unknown): unknown => (m as WithRequestBody | undefined)?.
 const THINKING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const
 
 /**
- * ONE model's configuration, as a full-screen surface — the same shape as the officer's
- * `AgentConfigScreen` (and the file name is the same historical `…-dialog` as that one: it was a
- * pushed dialog until 2026-09-16).
+ * ONE model's configuration, as a full-screen surface — the same shape as
+ * `OfficerSettingsScreen`.
  *
  * ⚠️ It takes the resolved facts as PROPS rather than reaching for `useSDK()`/`useProviders()`: a
  * route page resolves them, and a render harness can supply them directly. That is also why the
@@ -233,7 +232,7 @@ export const ModelConfigScreen: Component<{
   })
 
   /**
-   * The Configure dialog is TABBED, the same shape as the officer's settings screen (`AgentConfigScreen`):
+   * The Configure dialog is TABBED, the same shape as the officer's settings screen (`OfficerSettingsScreen`):
    * a horizontal, scrollable rail on phones and a vertical sidebar from `md` up. This dialog was one
    * long scroll where identity, sampling, limits and capabilities ran together, which is what the
    * owner called disorganized; the tabs give each family a home without hiding the whole surface in
@@ -587,7 +586,7 @@ export const ModelConfigScreen: Component<{
         orientation={desktopSettings() ? "vertical" : "horizontal"}
         class="min-h-0 min-w-0 flex flex-1 flex-col overflow-hidden md:flex-row"
       >
-        {/* Same responsive tab rail as the officer's settings screen (`AgentConfigScreen`): a
+        {/* Same responsive tab rail as the officer's settings screen (`OfficerSettingsScreen`): a
               scrollable strip on phones, a sidebar from `md` up. Configure used to be one long scroll
               with identity, sampling, limits and capabilities interleaved, which is what the owner
               called disorganized. */}

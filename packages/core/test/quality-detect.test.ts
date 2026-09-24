@@ -15,7 +15,7 @@ import { tmpdir } from "./fixture/tmpdir"
  * and hands the scan its inputs.
  *
  * 🔴 That code had exactly one caller (the `quality_provision` tool) and was about to have two, when
- * Settings → Quality gained its "Detect from this project" button. A second copy would have drifted
+ * Officer Settings → Quality gained its "Detect from this project" button. A second copy would have drifted
  * the moment either side gained an ecosystem — silently, because a manifest the loader never reads
  * is indistinguishable from a project that does not declare one. So there is one loader, and this
  * pins the two properties a caller depends on.

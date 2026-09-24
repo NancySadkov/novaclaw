@@ -68,7 +68,7 @@ describe("instance HttpApi", () => {
         ]),
       )
 
-      const accounts = yield* HttpClient.get("/api/messenger/account")
+      const accounts = yield* HttpClient.get("/api/messenger/account?agentID=nova")
       expect(accounts.status).toBe(200)
       expect(yield* accounts.json).toEqual([])
 

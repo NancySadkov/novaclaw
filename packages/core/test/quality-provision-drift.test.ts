@@ -107,7 +107,7 @@ describe("QE-A: the tool description and the manifest table cannot drift", () =>
       "go.mod",
     ])
     // Ordinary prose is not a manifest list.
-    expect(manifestTokens("verify each candidate for typecheck/test/lint and save to Settings → Quality")).toEqual([])
+    expect(manifestTokens("verify each candidate for typecheck/test/lint and save to Officer Settings → Quality")).toEqual([])
   })
 
   test("the description names EXACTLY the table's advertised triggers", () => {

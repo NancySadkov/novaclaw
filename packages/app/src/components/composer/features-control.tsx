@@ -24,39 +24,11 @@ export type ComposerFeature =
   | "shortChat"
 export type ComposerMode = "interactive" | "auto-prompting" | "goal-oriented"
 
-/**
- * Where a switch's value came from when THIS chat did not set it.
- *
- * The panel used to say only "Using Settings default" for every such switch, which is the honest
- * answer for exactly one of the three cases below. A user whose repository ships a `novaclaw.json`
- * saw "Settings default" for a value Settings never chose, and had nothing to read that would tell
- * them otherwise — the shape of question this whole surface exists to answer.
- */
 export type ComposerFeatureOrigin =
-  /**
-   * An ancestor chat declared it, and this chat inherits down the spawn chain.
-   *
-   * ⚠️ Measured 2026-08-13: this arm is CORRECT and currently unreachable from this panel. A session
-   * with a parent renders as a helper ("you can't message it directly") and has no composer, so the
-   * only chats that open this dialog are roots. It is kept rather than dropped because the
-   * distinction is real on the wire — `config-provenance.ts` pins that a chain layer outranks the
-   * default source — and the day a parented chat gets a composer, the wrong answer would be the
-   * silent one.
-   */
   | { kind: "session" }
-  // 🗑️ `| { kind: "project"; file: string }` stood here: the arm that said the folder's
-  // `novaclaw.json` supplied a switch, carrying the path because opening the file was the next move.
-  // The wire cannot produce it any more (owner, 2026-09-16), and an arm nothing can produce is how a
-  // retired mechanism gets read back in by a later `if`.
-  /** Nothing above the instance chose it — the app's own default. */
+  | { kind: "officer" }
   | { kind: "instance" }
 
-/** The project governing this chat's folder, and what its file actually did. */
-// 🗑️ `ComposerProjectLayer` and `ComposerMakeDefaultState` stood here, with `ComposerMakeDefaultReceipt`
-// between them: the composer's view of the folder's `novaclaw.json` and of writing this chat's tune
-// into it. They went with the mechanism on 2026-09-16, and with them the Tuning panel's "Make Default
-// for this Folder" button — there is no folder layer left for a chat to defer to, so the switches
-// have exactly one source (this chat) and one fallback (Settings).
 export type ComposerRemoteTrust = "operator" | "client" | "audience"
 
 export type ComposerRemoteAccount = {
@@ -144,7 +116,7 @@ const COMPOSER_FEATURES: readonly ComposerFeature[] = [
   // `memory` is RETIRED from this list, not from the schema: the per-chat switch duplicated the
   // agent's own "Persistent Agent Memory (RAG)" toggle one level down, and the two could disagree —
   // an agent with memory on, tuned chat-by-chat off, read as "broken memory". The stance lives on
-  // the colleague (agent-config-dialog); a session that stored this feature BEFORE retirement keeps
+  // the colleague (officer-settings-screen); a session that stored this feature BEFORE retirement keeps
   // its stored value silently (same rule as `safeMode` above: no column is ripped out of shipped
   // sessions), and every other chat inherits the agent's stance.
   "introspection",
@@ -551,19 +523,12 @@ function composerTunePanel(props: { state: ComposerFeaturesControlState }) {
  * tall is unusable. A centered dialog scrolls and can be dismissed the ordinary way.
  */
 export function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: () => void; embedded?: boolean }) {
-  /**
-   * The one line under each switch that says WHY it reads the way it does.
-   *
-   * Order matters and is not arbitrary: this chat's own choice outranks everything, so it is checked
-   * first; below that the folder outranks the instance, matching the resolution the kernel actually
-   * runs (`session/effective-config.ts`). Falling back to the instance wording when the origin is
-   * not loaded yet needs no extra label: the switch already states the default value in force.
-   */
   const featureSource = (feature: ComposerFeature) => {
     const state = language.t(`prompt.features.state.${props.state.current[feature] ? "on" : "off"}`)
     if (props.state.override[feature] !== undefined) return language.t("prompt.features.source.override")
     const origin = props.state.origin[feature]
     if (origin?.kind === "session") return language.t("prompt.features.source.parent", { state })
+    if (origin?.kind === "officer") return language.t("prompt.features.source.officer", { state })
     return undefined
   }
 
@@ -679,11 +644,6 @@ export function TuningPanel(props: { state: ComposerFeaturesControlState; onDism
         </div>
       </div>
       <RemoteChatSection remote={props.state.remote} />
-      {/* 🗑️ THE FOLDER'S OWN LAYER stood here, named out loud: the file, what it set, and what it asked
-          for and did not get. `notes/spec` called a `novaclaw.json` a layer BENEATH the chat — supplying
-          what no chat declared and losing to every chat that did — and a list of switches could not show
-          that, so the panel said it. There is no layer beneath the chat any more (owner, 2026-09-16):
-          each switch has this chat's value or Settings'. */}
       {COMPOSER_FEATURES.map((feature) => (
         <div class="flex items-start justify-between gap-3" data-feature={feature}>
           <div class="flex flex-col gap-0.5">

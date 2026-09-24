@@ -90,7 +90,7 @@ const LEDGER: { resources: Record<string, number>; folds: Record<string, number>
     "components/settings-v2/general.tsx": 3,
     "components/settings-v2/identity.tsx": 1,
     "components/settings-v2/instance-resources.tsx": 1,
-    "components/settings-v2/messengers.tsx": 1,
+    "components/settings-v2/officer-messengers.tsx": 1,
     "components/settings-v2/models.tsx": 1,
     "components/settings-v2/nova-health.tsx": 2,
     "components/settings-v2/policies.tsx": 1,

@@ -1,5 +1,5 @@
 import type { ConfigV2Agent } from "@novaclaw/sdk/v2/client"
-import { createMemo, createSignal, For, Show, type JSX } from "solid-js"
+import { createMemo, createSignal, For, Show } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { Tabs as KobalteTabs } from "@kobalte/core/tabs"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
@@ -37,9 +37,9 @@ import { SettingsNudgesV2 } from "@/components/settings-v2/nudges"
 import { SettingsScheduleV2 } from "@/components/settings-v2/schedule"
 import { PresetFieldV2 } from "@/components/settings-v2/parts/preset-field"
 import { OfficerRecipes } from "@/components/officer-recipes"
-import { OfficerContext } from "@/components/settings-v2/tunes"
-import { OfficerQuality } from "@/components/settings-v2/quality"
-import { SettingsMessengersV2 } from "@/components/settings-v2/messengers"
+import { OfficerContext } from "@/components/settings-v2/officer-context"
+import { OfficerQuality } from "@/components/settings-v2/officer-quality"
+import { OfficerMessengers } from "@/components/settings-v2/officer-messengers"
 import { CORE_TOOLS, PERMISSION_MODE_CHOICES, officerCapabilities, withComputerUse, withToolOverride } from "@/apps/officer-capabilities"
 import type { Recipe as AdhocRecipe } from "@/components/settings-v2/tools-draft"
 import { planSettingsCopy } from "@/apps/agent-settings-copy"
@@ -99,15 +99,6 @@ const textTouched = (raw: string | undefined): string | undefined => {
  * the day a catalog endpoint exists, this list becomes discovery.
  */
 
-// ONE addressable officer-settings screen, opened from two places (AGENTS.md → *the structural metaphor*;
-// `notes/named-agents.md`).
-//
-// 🔴 **This is where the composer's Tune button now leads.** Tune used to be a chat-scoped popover
-// under the message box, which said the quiet part: settings belonged to a *conversation*. Under the
-// roster they belong to a *colleague* — its brief, its personality, what it remembers — and the chat
-// only carries how this particular conversation runs. So the button opens the colleague's config,
-// with the chat's own controls as a section inside it rather than the whole of it.
-//
 // ⚠️ **A field the system would discard is not rendered as editable.** What makes a field
 // discardable is the RULE, not the colleague: an agent's own `configure` tool may not rewrite the
 // governing agent's charter, so that arm is closed where writes happen. The operator's surface is a
@@ -116,9 +107,8 @@ const textTouched = (raw: string | undefined): string | undefined => {
 // (owner ruling 2026-09-15). Offering an input whose value goes nowhere is worse than offering
 // nothing: the user does the work, sees no error, and learns not to trust the surface.
 
-export function AgentConfigScreen(props: {
-  /** Which colleague. `undefined` while a chat is still resolving its agent. */
-  agentID: string | undefined
+export function OfficerSettingsScreen(props: {
+  agentID: string
   onDismiss: () => void
   /**
    * Something about the roster CHANGED — a hire, a retirement, a cleared chat, a saved profile.
@@ -128,9 +118,6 @@ export function AgentConfigScreen(props: {
    * until a manual reload. The durable change with the stale view, one more time.
    */
   onChanged?: () => void
-  /** The chat-scoped controls, when this was opened from a conversation. Absent from Contacts: there
-   *  is no chat to tune, and rendering an empty section would imply one. */
-  tuning?: () => JSX.Element
 }) {
   const language = useLanguage()
   const dialogStack = useDialog()
@@ -153,7 +140,7 @@ export function AgentConfigScreen(props: {
     const current = conn()
     return current ? global.ensureServerCtx(current) : undefined
   })
-  // 🔴 The server context's ONE shared roster — this dialog used to fetch `GET /api/agent` again on
+  // 🔴 The server context's ONE shared roster — this screen used to fetch `GET /api/agent` again on
   // EVERY open (review D8), and that in-flight window is what made D3 possible: `agent()` was
   // `undefined` for a moment on a page that had the data on screen a second earlier, so a Save fired
   // in that window wrote the colleague's brief away as `""`. It also carries the `.catch` this call
@@ -165,7 +152,7 @@ export function AgentConfigScreen(props: {
 
   const governing = createMemo(() => props.agentID === GOVERNING_ID)
 
-  const name = createMemo(() => agent()?.name?.trim() || (props.agentID ? displayName(props.agentID) : ""))
+  const name = createMemo(() => agent()?.name?.trim() || displayName(props.agentID))
 
   // Drafts start empty and fall back to the stored value at render, so an edit survives a re-read of
   // the roster while an untouched field keeps tracking the server.
@@ -257,7 +244,6 @@ export function AgentConfigScreen(props: {
     | "schedule"
     | "memory"
     | "messengers"
-    | "chat"
   const [activeTab, setActiveTab] = createSignal<SettingsTab>("work")
   const desktopSettings = createMediaQuery("(min-width: 768px)")
   const settingsTabs = () => [
@@ -271,18 +257,17 @@ export function AgentConfigScreen(props: {
     { id: "messengers" as const, label: "Messengers", icon: "chats" as const },
     { id: "nudges" as const, label: "Nudges", icon: "prompt" as const },
     ...(postureValue() === "agent" ? [{ id: "schedule" as const, label: "Schedule", icon: "calendar" as const }] : []),
-    ...(props.tuning ? [{ id: "chat" as const, label: "This chat", icon: "chats" as const }] : []),
   ]
   /**
    * ⚠️ Through the dialog STACK, not as a nested `<Dialog>`. The first attempt rendered
    * `<AgentHelpDialog>` inside this component's tree and nothing appeared: the shell's content is a
    * Kobalte `Dialog.Content`, which needs the root the stack provides, so a second one mounted inline
-   * has no context to attach to. `showScoped` also binds its life to this component, so closing Tune
+   * has no context to attach to. `showScoped` also binds its life to this component, so leaving the screen
    * cannot leave Help orphaned above an empty screen.
    */
   const openHelp = () => void dialogStack.showScoped(() => <AgentHelpDialog onDismiss={() => dialogStack.close()} />)
 
-  const nameValue = () => renamed() ?? agent()?.name ?? (props.agentID ? displayName(props.agentID) : "")
+  const nameValue = () => renamed() ?? agent()?.name ?? displayName(props.agentID)
   const titleValue = () => title() ?? agent()?.title ?? ""
   // 🔴 The box SHOWS the prompt that will actually run (owner, 2026-09-17). An officer with no stored
   // prompt falls back to `OfficerPrompt.DEFAULT_OFFICER_PROMPT` at runtime, so the box shows that same
@@ -302,7 +287,7 @@ export function AgentConfigScreen(props: {
     return stored ? stored : undefined
   }
   // Each reads the DRAFT first, then the colleague's stored value, then the shipped baseline — the
-  // same "absent means inherit" the config layer itself uses, so the dialog shows what a chat with
+  // same "absent means inherit" the config layer itself uses, so the screen shows what a chat with
   // this colleague would actually start with.
   const postureValue = (): "agent" | "chat" | "human" => {
     const draft = posture()
@@ -320,16 +305,6 @@ export function AgentConfigScreen(props: {
     operationMode() ??
     ((agent()?.config?.["operationMode"] as string | undefined) === "unattended" ? "unattended" : "interactive")
   const goalValue = () => goal() ?? (agent()?.config?.["goal"] as string | undefined) ?? ""
-  // The settings shell can render before the first config snapshot arrives (and the lightweight
-  // browser fixtures deliberately exercise that state). Missing instance config means shipped
-  // defaults, never a reason for the officer screen to crash.
-  const instanceConfig = () => (sync().data.config ?? {}) as Record<string, unknown>
-  const instanceEnabled = (block: string, fallback: boolean) => {
-    const value = instanceConfig()[block]
-    return typeof value === "object" && value !== null && "enabled" in value
-      ? ((value as { enabled?: boolean }).enabled ?? fallback)
-      : fallback
-  }
   const standingValue = (draft: boolean | undefined, key: string, fallback: boolean) =>
     draft ?? (agent()?.config?.[key] as boolean | undefined) ?? fallback
   const surgicalEditsValue = () => standingValue(surgicalEdits(), "surgicalEdits", false)
@@ -352,10 +327,8 @@ export function AgentConfigScreen(props: {
   // `enabled`, then the shipped default. Lever groups below default ON — they are engine
   // defaults the switches override, exactly as the global Strict tab reads them.
   const strictValue = () => strict() ?? (strictStored().enabled as boolean | undefined) ?? false
-  const introspectionValue = () =>
-    introspection() ?? (intrStored().enabled as boolean | undefined) ?? instanceEnabled("introspection", false)
-  const affectiveValue = () =>
-    affective() ?? (affStored().enabled as boolean | undefined) ?? instanceEnabled("affective", false)
+  const introspectionValue = () => introspection() ?? (intrStored().enabled as boolean | undefined) ?? false
+  const affectiveValue = () => affective() ?? (affStored().enabled as boolean | undefined) ?? false
   const strictLever = (draft: boolean | undefined, key: string) =>
     draft ?? (strictStored()[key] as boolean | undefined) ?? true
   const strictVerificationValue = () => strictLever(strictVerification(), "verification")
@@ -420,7 +393,6 @@ export function AgentConfigScreen(props: {
   })
   const writeOfficer = async (patch: Record<string, unknown>) => {
     const target = props.agentID
-    if (target === undefined) return
     try {
       await sync().updateConfig({ agents: { [target]: patch } } as never)
       props.onChanged?.()
@@ -432,7 +404,6 @@ export function AgentConfigScreen(props: {
    *  the tool to the routing table's decision — absent means inherit, as everywhere else. */
   const setHorizonTool = (name: string, enabled: boolean | undefined) => {
     const target = props.agentID
-    if (target === undefined) return
     const next = withToolOverride(officerTools(), name, enabled)
     // An emptied map is deleted rather than stored as `{}`: an officer that never tuned its
     // horizon and one that tuned it back to nothing must read the same, or "reset" is a lie.
@@ -706,13 +677,13 @@ export function AgentConfigScreen(props: {
   }
   const superiorOptions = createMemo(() => [
     { key: "nova", value: "", label: language.t("agentConfig.superiorNova") },
-    ...superiorCandidates(agents() ?? [], props.agentID ?? "").map((candidate) => ({
+    ...superiorCandidates(agents() ?? [], props.agentID).map((candidate) => ({
       key: candidate.id,
       value: candidate.id,
       label: `${candidate.name?.trim() || displayName(candidate.id)} · ${candidate.title ?? language.t("agentConfig.noTitle")}`,
     })),
   ])
-  /** Is the model bound above ALREADY beneath the class chosen here? Shown live, in the dialog where
+  /** Is the model bound above ALREADY beneath the class chosen here? Shown live, on the screen where
    *  both choices are made — the colleague's own notice arrives in its chat, which is the right place
    *  for the model but the wrong place for the person setting this up. */
   const belowFloor = createMemo(() => {
@@ -773,8 +744,7 @@ export function AgentConfigScreen(props: {
   const sdk = () => ctx()?.sdk?.client?.v2
   const [sessionRows, sessionActions] = createSettledResource(sdk, (client) => listSessions(client))
   const [createdSessionID, setCreatedSessionID] = createSignal<string | undefined>()
-  const officerSessionID = () =>
-    createdSessionID() ?? (props.agentID === undefined ? undefined : chatFor(sessionRows() ?? [], props.agentID)?.id)
+  const officerSessionID = () => createdSessionID() ?? chatFor(sessionRows() ?? [], props.agentID)?.id
   // Export the officer's captured INIT prompt: the first request the runner sent for its chat, which
   // ends at the first user message. Absent until that chat has dispatched a turn.
   const exportOfficerPrompt = async () => {
@@ -806,7 +776,7 @@ export function AgentConfigScreen(props: {
     if (current) return current
     const client = sdk()
     const id = props.agentID
-    if (!client || !id) return undefined
+    if (!client) return undefined
     const created = await startChat(client, { agentID: id, title: name() })
     if (created) {
       setCreatedSessionID(created)
@@ -860,7 +830,7 @@ export function AgentConfigScreen(props: {
   const copyTuning = async () => {
     const target = props.agentID
     const prototypeID = copySource()
-    if (target === undefined || prototypeID === undefined) return
+    if (prototypeID === undefined) return
     const source = (agents() ?? []).find((row) => row.id === prototypeID)
     if (source === undefined) return
     const plan = planSettingsCopy({
@@ -956,7 +926,7 @@ export function AgentConfigScreen(props: {
   const clearMemory = async () => {
     const id = props.agentID
     const current = conn()
-    if (id === undefined || current === undefined) return
+    if (current === undefined) return
     if (
       !(await confirm({
         title: language.t("agentConfig.memoryClear.confirm.title", { name: name() }),
@@ -1007,7 +977,6 @@ export function AgentConfigScreen(props: {
     // exceptions are the project folder, cloning and retirement, and `AgentV2`'s own note has always
     // said the user "may still pause or ignore Nova"). It is one reversible boolean, and
     // `permission.ts` already answers a paused agent with deny-`*`-on-`*`.
-    if (id === undefined) return
     setBusy("pause")
     try {
       await sync().updateConfig({ agents: { [id]: { disabled: paused } } } as never)
@@ -1023,7 +992,7 @@ export function AgentConfigScreen(props: {
   const retire = async () => {
     const id = props.agentID
     const client = sdk()
-    if (id === undefined || client === undefined || governing()) return
+    if (client === undefined || governing()) return
     if (
       !(await confirm({
         title: language.t("agentConfig.retire.confirm.title", { name: name() }),
@@ -1066,7 +1035,6 @@ export function AgentConfigScreen(props: {
    */
   const resetTab = async (tab: string, keys: string[], clear: () => void) => {
     const target = props.agentID
-    if (target === undefined) return
     const stored = (agent()?.config ?? {}) as Record<string, unknown>
     const set = keys.filter((key) => stored[key] !== undefined)
     if (set.length === 0) {
@@ -1121,7 +1089,6 @@ export function AgentConfigScreen(props: {
 
   const save = async () => {
     const id = props.agentID
-    if (id === undefined) return
     setSaving(true)
     try {
       // The ordinary config merge — one agent's fragment, layered like any other config write.
@@ -1129,7 +1096,7 @@ export function AgentConfigScreen(props: {
       // orphan the colleague from everything it remembers. A rename moves the NAME only.
       // ⚠️ Every key here is CONDITIONAL, and that is review D3. These five used to be sent
       // unconditionally from a `*Value()` accessor whose fallback chain is draft → stored → empty —
-      // so while the dialog's own roster fetch was still in flight, `agent()` was `undefined` and
+      // so while the screen's own roster fetch was still in flight, `agent()` was `undefined` and
       // `title`/`personality` resolved to `""`. One character typed into Name before the fetch
       // landed, then Save, wrote away the brief the user spent ten minutes on, and the toast said it
       // worked. The guard on the button (`agent() === undefined`) closes the window; sending only
@@ -1167,7 +1134,7 @@ export function AgentConfigScreen(props: {
       // The three harness-detail structs, merged over what is STORED rather than sent as the
       // touched fragment alone: a `{ enabled }`-only write would wipe the levers, budgets and
       // prompts the officer already carries (the store patch-merges per agent, not per struct —
-      // and this dialog refuses to depend on which). Untouched tabs send nothing at all.
+      // and this screen refuses to depend on which). Untouched tabs send nothing at all.
       const strictTouched =
         strict() !== undefined ||
         strictVerification() !== undefined ||
@@ -1385,9 +1352,6 @@ export function AgentConfigScreen(props: {
         data-slot="agent-settings-header"
         class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-v2-border-border-base px-3 py-2 sm:px-4"
       >
-        {/* BACK, not just an X. This panel is opened from a list you were reading a moment ago —
-              the roster, or the chat you were tuning — so the gesture out of it is "return", and
-              labelling it that way is the difference between a dead end and a step. */}
         <button
           type="button"
           data-action="agent-config-back"
@@ -1399,7 +1363,7 @@ export function AgentConfigScreen(props: {
           <Icon name="chevron-left" size="normal" />
         </button>
         <AgentPortrait
-          id={props.agentID ?? ""}
+          id={props.agentID}
           name={name()}
           avatar={agent()?.avatar}
           class="size-9 border border-v2-border-border-strong text-base"
@@ -1485,7 +1449,6 @@ export function AgentConfigScreen(props: {
               Number.isNaN(parsedRuntimeHeartbeatMinutes()) ||
               saving() ||
               busy() !== undefined ||
-              props.agentID === undefined ||
               agent() === undefined
             }
             onClick={() => void save()}
@@ -1653,7 +1616,7 @@ export function AgentConfigScreen(props: {
 
                   ⚠️ NOVA REPORTS TO NOBODY, so the selector is not rendered for it.
                   `resolveSuperior` answers `undefined` for the governing agent by construction, which
-                  makes this field inert for Nova — and the rule this dialog already states is that a
+                  makes this field inert for Nova — and the rule this screen already states is that a
                   field the system would discard is not rendered as editable. */}
               <Show when={!governing()}>
                 <div class="mt-4 border-t border-v2-border-border-muted pt-4">
@@ -1709,12 +1672,9 @@ export function AgentConfigScreen(props: {
                     type="button"
                     data-action="agent-open-memory"
                     class="w-full rounded-md bg-v2-background-bg-layer-03 px-3 py-2 text-xs font-medium text-v2-text-text-accent hover:bg-v2-background-bg-layer-02 disabled:opacity-40 sm:w-auto"
-                    disabled={busy() !== undefined || props.agentID === undefined}
+                    disabled={busy() !== undefined}
                     onClick={() => {
-                      const id = props.agentID
-                      if (id === undefined) return
-                      props.onDismiss()
-                      navigate(ownerRoute(id))
+                      navigate(ownerRoute(props.agentID))
                     }}
                   >
                     {language.t("agentConfig.memoryOpen")}
@@ -1723,7 +1683,7 @@ export function AgentConfigScreen(props: {
                     type="button"
                     data-action="agent-clear-memory"
                     class="w-full rounded-md px-3 py-2 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40 sm:w-auto"
-                    disabled={busy() !== undefined || props.agentID === undefined}
+                    disabled={busy() !== undefined}
                     onClick={() => void clearMemory()}
                   >
                     {busy() === "clear-memory"
@@ -1897,26 +1857,13 @@ export function AgentConfigScreen(props: {
                 case would hide exactly the files the user has no other route to. */}
                 <Show when={workspacePath()}>
                   {(path) => (
-                    /**
-                     * 🔴 **It CLOSES this dialog on the way out, deliberately** (owner, 2026-08-28: the
-                     * browse link "also closes the Tune for some reason").
-                     *
-                     * It was never a modal — it is a link to `/files`, and Files is a ROUTE. So the
-                     * navigation unmounted Tune as a side effect and the dialog appeared to vanish on the
-                     * way back. The vision settles which half to fix: Files is THE file surface, an app in
-                     * the shell (principle 7 — "prefer an app in the shell over a developer surface"), so
-                     * a second file browser living inside this dialog would be the wrong answer to a
-                     * question the launcher already answers.
-                     *
-                     * What was wrong is that leaving happened SILENTLY. Dismissing first makes it a step
-                     * the user takes — Tune, then Files — instead of a dialog that evaporates behind
-                     * them, which is the same rule the Back button in this header exists for: the gesture
-                     * out of a panel is "return", and an unannounced one is a dead end wearing a link.
-                     */
                     <a
                       data-action="browse-workspace"
                       href={`/files?path=${encodeURIComponent(path())}`}
-                      onClick={() => props.onDismiss()}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        navigate(`/files?path=${encodeURIComponent(path())}`)
+                      }}
                       class="mt-2 inline-flex items-center gap-1.5 text-[11px] text-v2-text-text-faint underline hover:text-v2-text-text-base"
                     >
                       <Icon name="folder" class="size-3 shrink-0" />
@@ -2532,13 +2479,9 @@ export function AgentConfigScreen(props: {
               <OfficerRecipes agentID={props.agentID} recipes={officerRecipes} />
             </section>
 
-            <Show when={props.agentID} keyed>
-              {(id) => (
-                <section class="agent-settings-card" data-settings-tab="nudges" data-section="nudges">
-                  <SettingsNudgesV2 fixedAgentID={id} />
-                </section>
-              )}
-            </Show>
+            <section class="agent-settings-card" data-settings-tab="nudges" data-section="nudges">
+              <SettingsNudgesV2 fixedAgentID={props.agentID} />
+            </section>
 
             <Show when={activeTab() === "schedule" && postureValue() === "agent" ? props.agentID : undefined} keyed>
               {(id) => (
@@ -2575,33 +2518,16 @@ export function AgentConfigScreen(props: {
 
             <section class="agent-settings-card" data-settings-tab="messengers" data-section="messengers">
               <Show when={activeTab() === "messengers" ? props.agentID : undefined} keyed>
-                {(id) => <SettingsMessengersV2 agentID={id} />}
+                {(id) => <OfficerMessengers agentID={id} />}
               </Show>
               <div class="mt-4 rounded-xl border border-v2-border-border-muted bg-v2-background-bg-layer-02 p-3 sm:p-4">
-                <Show when={props.agentID} keyed>
-                  {(id) => <AgentRemoteChat agentID={id} sessionID={officerSessionID} ensureSession={ensureOfficerSession} />}
-                </Show>
+                <AgentRemoteChat agentID={props.agentID} sessionID={officerSessionID} ensureSession={ensureOfficerSession} />
               </div>
             </section>
 
-            <Show when={props.tuning}>
-              {(tuning) => (
-                <section class="agent-settings-card" data-settings-tab="chat">
-                  <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">
-                    {language.t("agentConfig.thisChat")}
-                  </h3>
-                  {/* The distinction the two sections exist to teach: above is who this colleague IS
-                    everywhere, below is how this one conversation runs. */}
-                  <div class="mt-2">{tuning()()}</div>
-                </section>
-              )}
-            </Show>
           </div>
         </KobalteTabs.Content>
       </KobalteTabs>
     </div>
   )
 }
-
-/** Transitional source-compatible name; the component itself is now an addressable app screen. */
-export const AgentConfigDialog = AgentConfigScreen

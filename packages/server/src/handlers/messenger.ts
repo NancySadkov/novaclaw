@@ -50,6 +50,34 @@ export const acquireLogin = Effect.gen(function* () {
 const credentialIntegrationID = (driverID: string, accountID: Messenger.AccountID): Integration.ID =>
   `messenger.${driverID}.${accountID}` as Integration.ID
 
+export const declareChatSource = (
+  store: Pick<MessengerStore.Interface, "getAccount" | "declareChatAccess">,
+  input: { accountID: Messenger.AccountID; agentID: string; chatID: string; access: Messenger.SourceAccess | null },
+) =>
+  Effect.gen(function* () {
+    const account = yield* store.getAccount(input.accountID)
+    if (account === undefined)
+      return yield* Effect.fail(
+        new InvalidRequestError({ message: "Unknown messenger account.", kind: "messenger_account_unknown" }),
+      )
+    if (account.agentID !== input.agentID)
+      return yield* Effect.fail(
+        new InvalidRequestError({
+          message: "That account belongs to another officer.",
+          kind: "messenger_account_owner_mismatch",
+        }),
+      )
+    const found = yield* store.declareChatAccess({
+      accountID: account.id,
+      chatID: input.chatID,
+      access: input.access ?? undefined,
+    })
+    if (!found)
+      return yield* Effect.fail(
+        new InvalidRequestError({ message: "Unknown messenger chat.", kind: "messenger_chat_unknown" }),
+      )
+  })
+
 export const MessengerHandler = handlerLayer(
   HttpApiBuilder.group(MessengerApi, "server.messenger", (handlers) =>
     Effect.gen(function* () {
@@ -69,7 +97,7 @@ export const MessengerHandler = handlerLayer(
             const accounts = yield* store.listAccounts().pipe(Effect.orDie)
             const status = yield* gateway.status()
             return accounts
-              .filter((account) => ctx.query.agentID === undefined || account.agentID === ctx.query.agentID)
+              .filter((account) => account.agentID === ctx.query.agentID)
               .map((account) => ({
                 account,
                 status:
@@ -197,6 +225,19 @@ export const MessengerHandler = handlerLayer(
             const gateway = yield* acquireGateway
             const outcome = yield* gateway.chats(ctx.params.accountID)
             return outcome.ok ? { ok: true, chats: outcome.chats } : { ok: false, chats: [], reason: outcome.reason }
+          }),
+        )
+        .handle(
+          "messenger.chat.source",
+          Effect.fn(function* (ctx) {
+            const store = yield* MessengerStore.Service
+            yield* declareChatSource(store, {
+              accountID: ctx.params.accountID,
+              agentID: ctx.query.agentID,
+              chatID: ctx.params.chatID,
+              access: ctx.payload.access,
+            })
+            return HttpApiSchema.NoContent.make()
           }),
         )
         .handle(

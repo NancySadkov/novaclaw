@@ -18564,7 +18564,7 @@
             "schema": {
               "type": "string"
             },
-            "required": false
+            "required": true
           }
         ],
         "security": [],
@@ -18603,8 +18603,8 @@
             }
           }
         },
-        "description": "Retrieve every configured messenger account with its live connection status.",
-        "summary": "List messenger accounts",
+        "description": "Retrieve an officer's messenger accounts with their live connection status.",
+        "summary": "List an officer's messenger accounts",
         "x-codeSamples": [
           {
             "lang": "js",
@@ -18994,6 +18994,98 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.messenger.account.chats({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/messenger/account/{accountID}/chats/{chatID}/source": {
+      "patch": {
+        "tags": ["messenger"],
+        "operationId": "v2.messenger.chat.source",
+        "parameters": [
+          {
+            "name": "accountID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^msa_"
+            },
+            "required": true
+          },
+          {
+            "name": "chatID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "agentID",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Record or clear the officer owner's public or private decision for a seen messenger chat.",
+        "summary": "Set a chat's source access",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "access": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": ["public", "private"]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": ["access"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.messenger.chat.source({\n  ...\n})"
           }
         ]
       }

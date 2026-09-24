@@ -13,6 +13,7 @@ import {
   resolveSessionConfig,
   rootAttendance,
   rootSessionType,
+  SESSION_CONFIG_FIELDS,
   UNATTENDED_CONFINED_RULES,
   unattendedStanceRules,
   type EffectiveConfig,
@@ -38,7 +39,7 @@ describe("resolveConfig — simple fields (undefined = inherit)", () => {
     const eff = resolveConfig(DEFAULTS, [{ model: { providerID: "dgx", id: "qwen" }, affective: true }])
     expect(eff.model).toEqual({ providerID: "dgx", id: "qwen" })
     expect(eff.affective).toBe(true)
-    expect(eff.introspection).toBeUndefined() // no per-session stance — runner falls back to global
+    expect(eff.introspection).toBeUndefined()
     expect(eff.agent).toBeUndefined() // inherited (still unset)
   })
 
@@ -63,7 +64,6 @@ describe("resolveConfig — simple fields (undefined = inherit)", () => {
   })
 
   test("feature toggles (T1): tri-state — child inherits parent's stance, own stance wins, explicit false is real", () => {
-    // No stance anywhere → undefined (the runner falls back to the global config block).
     expect(resolveConfig(DEFAULTS, [{}]).quality).toBeUndefined()
     // A parent's stance flows to a stance-less child.
     expect(resolveConfig(DEFAULTS, [{ quality: true }, {}]).quality).toBe(true)
@@ -82,6 +82,12 @@ describe("resolveConfig — simple fields (undefined = inherit)", () => {
     expect(resolved.quality).toBe(true) // inherited
     expect(resolved.affective).toBe(true) // inherited
     expect(resolved.introspection).toBe(false) // the child's explicit off wins
+  })
+
+  test("quality and context inherit officer settings when the session has no override", () => {
+    expect(SESSION_CONFIG_FIELDS.quality.fallback).toEqual({ kind: "officer", block: "quality" })
+    expect(SESSION_CONFIG_FIELDS.contextBudget.fallback).toEqual({ kind: "officer", block: "context" })
+    expect(SESSION_CONFIG_FIELDS.controlBinding.fallback).toEqual({ kind: "instance", block: "computer" })
   })
 
   // The thinking-budget override (the composer's Tuning switch). Tri-state like the other features, with
@@ -108,7 +114,7 @@ describe("resolveConfig — simple fields (undefined = inherit)", () => {
     expect(walk("loud").thinkingBudget).toBe(true) // the child re-enables its own cap
   })
 
-  test("contextBudget is a sparse Tune: absent inherits and an explicit child stance wins", () => {
+  test("contextBudget is a sparse override: absent inherits and an explicit child stance wins", () => {
     expect(resolveConfig(DEFAULTS, []).contextBudget).toBeUndefined()
     expect(resolveConfig(DEFAULTS, [{ contextBudget: false }, {}]).contextBudget).toBe(false)
     expect(resolveConfig(DEFAULTS, [{ contextBudget: false }, { contextBudget: true }]).contextBudget).toBe(true)
