@@ -67,10 +67,8 @@ const POLICIES: Readonly<Record<string, Policy>> = {
   // `verifyStagedDht` additionally probes the executable and its manifest; this covers the same entry
   // from the ledger's side so the two can never disagree about whether it was checked at all.
   "dht/": { requirement: "release-only" },
-  // Most machines have no cargo toolchain and `prebuild.ts` warns rather than failing. What is lost
-  // is the outermost supervision layer, not the product.
   "watchdog/": {
-    requirement: "optional",
+    requirement: "required",
     binary: (platform) => (platform === "win32" ? "novaclaw-watchdog.exe" : "novaclaw-watchdog"),
   },
   // Downloaded and SHA-256 verified by their `prepare-*.ts` provisioners before every Windows build,

@@ -7,7 +7,7 @@ import { getLogDirectory } from "./logging"
 import { logDirectoryNotice } from "./log-directory"
 
 /** Owns the window reference and links arriving before its renderer is listening. */
-export function createWindowHost(relaunch: () => void) {
+export function createWindowHost(relaunch: () => void, requestClose?: () => void) {
   let current: BrowserWindow | undefined
   const pendingLinks: string[] = []
   const pendingPackages: OpenedRecipePackage[] = []
@@ -16,6 +16,10 @@ export function createWindowHost(relaunch: () => void) {
     open() {
       const window = createMainWindow()
       current = window
+      if (requestClose) window.on("close", (event) => {
+        event.preventDefault()
+        requestClose()
+      })
       window.webContents.on("did-start-loading", () => { packagesConsumed = false })
       window.once("closed", () => {
         if (current === window) current = undefined
@@ -43,6 +47,7 @@ export function createWindowHost(relaunch: () => void) {
       current?.show()
       current?.focus()
     },
+    current: () => current,
     links(urls: string[]) {
       pendingLinks.push(...urls)
       if (current && urls.length) sendDeepLinks(current, urls)

@@ -1,4 +1,7 @@
 import { app } from "electron"
+import { renameSync, writeFileSync } from "node:fs"
+import { join, resolve } from "node:path"
+import { clearService, readService, serveControl, watchdogStatePath } from "./desktop-service"
 import { createDesktopDiagnostics } from "./diagnostics"
 import { prepareInstanceHome } from "./instance-home"
 import { createLocalInstance } from "./local-instance"
@@ -9,7 +12,9 @@ import type { DesktopLaunchOptions } from "./desktop-cli"
 
 /** Run the packaged server without constructing a window or renderer. */
 export async function runHeadlessServer(options: DesktopLaunchOptions) {
-  prepareInstanceHome("server", true)
+  const home = prepareInstanceHome("server", true)
+  const service = options.desktopService ? readService(home.instanceRoot) : undefined
+  if (!service) throw new Error("Desktop service credentials are missing")
   const { logger } = createDesktopDiagnostics()
   prepareProcessEnvironment(logger)
   prepareLocalEnvironment(logger)
@@ -22,18 +27,17 @@ export async function runHeadlessServer(options: DesktopLaunchOptions) {
 
   await app.whenReady()
   const runtime = {
-    username: options.server.username,
+    username: service.username,
     cors: options.server.cors,
     mdns: options.server.mdns,
     mdnsDomain: options.server.mdnsDomain,
   }
   const local = createLocalInstance({
     prepare: () => undefined,
-    requestedPort: options.server.port,
-    hostname: options.server.hostname,
-    username: options.server.username,
-    // Server-only follows `nova-cli serve`: no launch password means stored password, otherwise open.
-    password: options.server.password ?? null,
+    requestedPort: service.port,
+    hostname: service.hostname,
+    username: service.username,
+    password: service.password,
     log: (message, metadata) => logger.log(message, metadata),
     spawn: (port, password, signal, report) => {
       const callbacks = {
@@ -49,9 +53,9 @@ export async function runHeadlessServer(options: DesktopLaunchOptions) {
         },
       }
       if (!options.server.supervise)
-        return spawnLocalServer(options.server.hostname, port, password, callbacks, runtime)
+        return spawnLocalServer(service.hostname, port, password, callbacks, runtime)
       return superviseLocalServer(
-        options.server.hostname,
+        service.hostname,
         port,
         password,
         {
@@ -72,31 +76,55 @@ export async function runHeadlessServer(options: DesktopLaunchOptions) {
   })
 
   let stopping: Promise<void> | undefined
-  const stop = (code: number) => {
+  const stop = (code: number, intentional = false) => {
     if (stopping) return stopping
     stopping = local
       .stop()
       .catch((error) => process.stderr.write(`NovaClaw server shutdown failed: ${String(error)}\n`))
-      .then(() => app.exit(code))
+      .then(() => {
+        if (intentional) {
+          const state = process.env.NOVACLAW_WATCHDOG_STATE
+          if (state && resolve(state) === resolve(watchdogStatePath(home.instanceRoot))) {
+            try {
+              const target = join(state, "exit-intent.json")
+              writeFileSync(`${target}.tmp`, JSON.stringify({ kind: "shutdown" }))
+              renameSync(`${target}.tmp`, target)
+              code = 77
+            } catch (error) {
+              process.stderr.write(`NovaClaw could not record watchdog shutdown: ${String(error)}\n`)
+              code = 1
+            }
+          }
+          if (code !== 1) {
+            try {
+              clearService(home.instanceRoot, service.id)
+            } catch {}
+          }
+        }
+        if (code === 77) setTimeout(() => app.exit(code), 100).unref()
+        else app.exit(code)
+      })
     return stopping
   }
   app.on("before-quit", (event) => {
     if (stopping) return
     event.preventDefault()
-    void stop(0)
+    void stop(0, true)
   })
-  for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => void stop(0))
+  for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => void stop(0, true))
 
   try {
     const started = await local.start(new AbortController().signal)
     await started.healthy
+    await serveControl(service, () => stop(0, true))
+    const current = readService(home.instanceRoot)
+    if (current?.id === service.id && current.closeRequested) {
+      await stop(0, true)
+      return
+    }
     const port = new URL(started.credentials.url).port
-    process.stdout.write(`novaclaw server listening on ${listenUrl(options.server.hostname, port)}\n`)
-    if (!options.server.password)
-      process.stdout.write(
-        "note: no --password given; the stored server.password applies, otherwise this bind is unauthenticated.\n",
-      )
-    if (!isLoopback(options.server.hostname))
+    process.stdout.write(`novaclaw server listening on ${listenUrl(service.hostname, port)}\n`)
+    if (!isLoopback(service.hostname))
       process.stderr.write(
         "warning: this endpoint uses plain HTTP. Keep it on a trusted network or put TLS in front of it before exposing it to the public Internet.\n",
       )

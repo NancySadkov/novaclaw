@@ -7,4 +7,5 @@ import { resolveChannel } from "./utils"
 // unnormalised. One resolver — see @novaclaw/script/channel.
 await $`bun ./scripts/copy-icons.ts ${resolveChannel()}`
 
+await $`bun ../watchdog/build.ts`
 await $`cd ../novaclaw && bun script/build-node.ts`

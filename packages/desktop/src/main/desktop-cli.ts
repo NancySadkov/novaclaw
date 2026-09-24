@@ -4,6 +4,7 @@ export type DesktopMode = "both" | "client" | "server"
 
 export type DesktopLaunchOptions = {
   readonly mode: DesktopMode
+  readonly desktopService?: boolean
   readonly connect?: {
     readonly url: string
     readonly username?: string
@@ -55,6 +56,8 @@ export function parseDesktopInvocation(argv: readonly string[]): DesktopInvocati
   const serverOnly = argv.includes("--server-only")
   if (clientOnly && serverOnly) return error("options '--client-only' and '--server-only' cannot be used together")
   const mode: DesktopMode = clientOnly ? "client" : serverOnly ? "server" : "both"
+  const desktopService = argv.includes("--desktop-service")
+  if (desktopService && mode !== "server") return error("option '--desktop-service' requires '--server-only'")
 
   const values = new Map<string, string[]>()
   for (let i = 0; i < argv.length; i++) {
@@ -104,6 +107,7 @@ export function parseDesktopInvocation(argv: readonly string[]): DesktopInvocati
     action: "launch",
     options: {
       mode,
+      ...(desktopService ? { desktopService: true } : {}),
       ...(connectUrl
         ? {
             connect: {

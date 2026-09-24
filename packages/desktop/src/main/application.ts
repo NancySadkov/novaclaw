@@ -10,10 +10,10 @@ import { prepareInstanceHome } from "./instance-home"
 import { registerIpcHandlers } from "./ipc"
 import { createDesktopLifecycle } from "./lifecycle"
 import { isTitlebarContextMenu } from "./titlebar-context-menu"
-import { createLocalInstance } from "./local-instance"
+import { createDesktopService } from "./desktop-service"
 import { exportDebugLogs, startNetLog, write as writeLog } from "./logging"
-import { prepareLocalEnvironment, prepareProcessEnvironment } from "./process-environment"
-import { getDefaultServerUrl, setDefaultServerUrl, spawnLocalServer, superviseLocalServer } from "./server"
+import { prepareProcessEnvironment } from "./process-environment"
+import { getDefaultServerUrl, setDefaultServerUrl } from "./server"
 import { createWindowHost } from "./window-host"
 import { registerRendererProtocol, setBackgroundColor, setDockIcon, setRelaunchHandler } from "./windows"
 import { createWslInstanceHost } from "./wsl-instance"
@@ -63,60 +63,12 @@ export async function runDesktop(options: DesktopLaunchOptions) {
   const local =
     options.mode === "client"
       ? createConnectedInstance(options.connect!)
-      : createLocalInstance({
-          prepare: () => {
-            mark("sidecar-start")
-            prepareLocalEnvironment(logger)
-          },
-          pinnedPort: options.server.port === undefined ? process.env.NOVACLAW_PORT : undefined,
-          requestedPort: options.server.port,
-          hostname: options.server.hostname,
-          username: options.server.username,
-          password: options.server.password,
-          log: (message, metadata) => logger.log(message, metadata),
-          spawn: (port, password, signal, report) => {
-            const callbacks = {
-              signal,
-              onStdout: (message: string) => writeLog("server", "stdout", { message }),
-              onStderr: (message: string) => writeLog("server", "stderr", { message }, "warn"),
-              onExit: (code: number) => {
-                writeLog("utility", "sidecar exited", { code }, "warn")
-                if (!options.server.supervise) report({ phase: "gave-up", reason: "crash", attempts: 0 })
-              },
-            }
-            const runtime = {
-              username: options.server.username,
-              cors: options.server.cors,
-              mdns: options.server.mdns,
-              mdnsDomain: options.server.mdnsDomain,
-            }
-            if (!options.server.supervise)
-              return spawnLocalServer(options.server.hostname, port, password, callbacks, runtime)
-            return superviseLocalServer(
-              options.server.hostname,
-              port,
-              password,
-              {
-                ...callbacks,
-                onState: (state) => {
-                  writeLog(
-                    "utility",
-                    "supervisor state",
-                    { ...state },
-                    state.phase === "gave-up" ? "error" : "info",
-                  )
-                  report(state)
-                },
-              },
-              runtime,
-            )
-          },
-        })
+      : createDesktopService(home.instanceRoot, options.server)
   // Menu/window callbacks are invoked only after lifecycle construction; unlike the old mutable
   // relaunch callback, they always reach this same owner and the same shutdown promise.
   const window = createWindowHost(() => {
-    void quit(true, 0)
-  })
+    void quit(true, 0, true)
+  }, () => { void requestClose() })
   const lifecycle: ReturnType<typeof createDesktopLifecycle> = createDesktopLifecycle({
     electronReady: async () => {
       await app.whenReady()
@@ -130,7 +82,7 @@ export async function runDesktop(options: DesktopLaunchOptions) {
         supervisorState: local.state,
         subscribeSupervisorState: local.subscribe,
         relaunch: () => {
-          void quit(true, 0)
+          void quit(true, 0, true)
         },
         awaitInitialization: lifecycle.awaitInitialization,
         consumeInitialDeepLinks: window.consumeLinks,
@@ -190,8 +142,39 @@ export async function runDesktop(options: DesktopLaunchOptions) {
     },
   })
   let exiting: Promise<void> | undefined
-  function quit(relaunch: boolean, code: number): Promise<void> {
+  let closePrompt: Promise<void> | undefined
+  function requestClose(): Promise<void> {
     if (exiting) return exiting
+    if (closePrompt) return closePrompt
+    const current = window.current()
+    if (!current) return quit(false, 0)
+    return (closePrompt = dialog.showMessageBox(current, {
+      type: "question",
+      title: "Close NovaClaw",
+      message: "What should NovaClaw do with its server?",
+      detail: "Keeping the server running lets agents continue working while the desktop is closed.",
+      buttons: options.mode === "client" ? ["Cancel", "Close"] : ["Cancel", "Close", "Retain server in background"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    }).then(async ({ response }) => {
+      if (response === 1) return quit(false, 0)
+      if (response === 2) {
+        try {
+          await lifecycle.awaitInitialization()
+          return quit(false, 0, true)
+        } catch (error) {
+          logger.error("cannot retain a server that did not start", { error: String(error) })
+          dialog.showErrorBox("NovaClaw is still starting", "The server is not ready to run in the background.")
+        }
+      }
+    }).catch((error) => {
+      logger.error("close prompt failed", { error: String(error) })
+    }).finally(() => { closePrompt = undefined }))
+  }
+  function quit(relaunch: boolean, code: number, retain = false): Promise<void> {
+    if (exiting) return exiting
+    if (retain && "retain" in local && typeof local.retain === "function") local.retain()
     return (exiting = lifecycle
       .quit()
       .then((result) => {
@@ -207,14 +190,14 @@ export async function runDesktop(options: DesktopLaunchOptions) {
   }
   app.on("before-quit", (event) => {
     event.preventDefault()
-    void quit(false, 0)
+    void requestClose()
   })
   for (const signal of ["SIGINT", "SIGTERM"] as const)
     process.on(signal, () => {
       void quit(false, 0)
     })
   setRelaunchHandler(() => {
-    void quit(true, 0)
+    void quit(true, 0, true)
   })
   app.on("second-instance", (_event, argv) => {
     window.links(argv.filter((arg) => arg.startsWith("novaclaw://")))

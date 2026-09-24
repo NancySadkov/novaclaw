@@ -2,6 +2,16 @@ import { describe, expect, test } from "bun:test"
 import { desktopExecutableName, desktopHelp, desktopOptionError, parseDesktopInvocation } from "./desktop-cli"
 
 describe("desktop command line", () => {
+  test("private desktop service mode only runs as a headless server", () => {
+    expect(parseDesktopInvocation(["NovaClaw.exe", "--desktop-service"])).toEqual({
+      action: "error",
+      message: "option '--desktop-service' requires '--server-only'",
+    })
+    expect(parseDesktopInvocation(["NovaClaw.exe", "--server-only", "--desktop-service"])).toMatchObject({
+      action: "launch",
+      options: { mode: "server", desktopService: true },
+    })
+  })
   test.each(["-h", "--help"])("%s selects help without launching", (flag) => {
     expect(parseDesktopInvocation(["C:\\NovaClaw.exe", flag])).toEqual({ action: "help" })
   })

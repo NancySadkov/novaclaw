@@ -127,31 +127,13 @@ test("🔴 ships the DHT sidecar, which the desktop package did not carry at all
   expect(dhtArtifactRequired("prod")).toBe(true)
 })
 
-test("ships the watchdog, which nothing launches yet — the binary must exist BEFORE it is adopted", async () => {
+test("ships the watchdog used by the desktop service", async () => {
   const module = await import(`./electron-builder.config.ts?watchdog=${Date.now()}`)
   const config = module.default as Configuration
-
-  /**
-   * 🔴 **The same shape as the DHT finding above, caught one step earlier.** That sidecar existed in
-   * the dev tree and in the CLI build and was absent from the product's primary face for as long as
-   * nobody wrote this assertion. The watchdog is at the point the DHT was at then: built, tested,
-   * and packaged by nothing.
-   *
-   * ⚠️ **It degrades more quietly than the DHT does.** A missing DHT shows up the first time an
-   * instance discovers nobody. A missing watchdog shows up only when something crashes — which is
-   * precisely when nobody is watching the build log — so the build log is the only place it can be
-   * caught, and this assertion is the only place the PACKAGE can.
-   *
-   * ⚠️ Nothing SPAWNS it yet, on purpose: adoption puts three supervision layers in a line and is a
-   * decision to take deliberately. Packaging it is not that decision. It costs
-   * 220 KB, and a build step nobody has ever run is the one that fails on the day it is needed.
-   *
-   * ⚠️ `build/`, not `target/release/`: cargo's scratch tree is hundreds of megabytes.
-   */
   expect(config.extraResources).toContainEqual({ from: "../watchdog/build/", to: "watchdog/" })
 })
 
-test("clears watchdog staging before the optional Cargo decision", () => {
+test("clears watchdog staging before requiring Cargo", () => {
   const source = readFileSync(join(import.meta.dir, "..", "watchdog", "build.ts"), "utf8")
   const clearStaging = source.indexOf("rmSync(staging, { recursive: true, force: true })")
   const createStaging = source.indexOf("mkdirSync(staging, { recursive: true })")

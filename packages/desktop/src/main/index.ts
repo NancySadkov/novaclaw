@@ -16,7 +16,9 @@ if (invocation.action === "help") {
 } else {
   const entry =
     invocation.options.mode === "server"
-      ? import("./headless-server").then(({ runHeadlessServer }) => runHeadlessServer(invocation.options))
+      ? invocation.options.desktopService
+        ? import("./headless-server").then(({ runHeadlessServer }) => runHeadlessServer(invocation.options))
+        : import("./server-only-launcher").then(({ runServerOnlyLauncher }) => runServerOnlyLauncher(invocation.options))
       : import("./application").then(({ runDesktop }) => runDesktop(invocation.options))
   void entry
     .catch((error) => {

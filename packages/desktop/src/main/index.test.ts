@@ -8,6 +8,7 @@ test("the desktop entry composes the application without mutable lifecycle state
   expect(entry).toContain('import("./application")')
   expect(entry).toContain("runDesktop(invocation.options)")
   expect(entry).toContain('import("./headless-server")')
+  expect(entry).toContain('import("./server-only-launcher")')
   expect(entry).not.toMatch(/\b(?:let|var)\b/)
   expect(entry).not.toContain("superviseLocalServer")
 })
@@ -25,10 +26,12 @@ test("quit, relaunch, signals and recovery reach the same lifecycle deadline", (
   expect(application).toContain("offerBootRecovery(failure, quit)")
   expect(read("./boot-recovery-host.ts")).not.toMatch(/app\.(?:exit|relaunch)\(/)
 })
-test("sidecar startup and login-shell probes belong to the local owner", () => {
-  expect(application).toMatch(/spawn:[\s\S]{0,1200}superviseLocalServer\(/)
-  expect(application).toMatch(/prepare:[\s\S]{0,150}prepareLocalEnvironment\(/)
-  expect(read("./local-instance.ts")).toContain("signal.throwIfAborted()")
+test("the desktop owns a reconnecting watchdog service and the headless process owns its sidecar", () => {
+  expect(application).toContain("createDesktopService(home.instanceRoot, options.server)")
+  expect(read("./desktop-service.ts")).toContain('"--server-only", "--desktop-service"')
+  expect(read("./headless-server.ts")).toContain("prepareLocalEnvironment(logger)")
+  expect(read("./headless-server.ts")).toContain("superviseLocalServer(")
+  expect(read("./headless-server.ts")).toContain("serveControl(service, () => stop(0, true))")
   expect(application).toContain("subscribeSupervisorState: local.subscribe")
 })
 test("desktop has no maintenance scheduler and crash capture follows home selection", () => {

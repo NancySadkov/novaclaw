@@ -9,7 +9,7 @@ export * as ServerToken from "./server-token"
 // with a short TTL cache so a token set in the UI applies live (~2s) without threading a store
 // service through every auth middleware — the same boot-time sync-read pattern offline.ts uses.
 
-import { readRowsSync } from "#sqlite"
+import { readRowsSync } from "./database/read-rows-sync"
 import { DatabasePath } from "./database/db-path"
 
 const TTL_MS = 2_000

@@ -34,6 +34,10 @@ describe("the desktop profile is part of the instance home", () => {
       sessionData: join(root, "desktop-server", "session"),
     })
     expect(desktopProfilePaths(root, "server").userData).not.toBe(desktopProfilePaths(root, "client").userData)
+    expect(desktopProfilePaths(root, "launcher")).toEqual({
+      userData: join(root, "desktop-launcher"),
+      sessionData: join(root, "desktop-launcher", "session"),
+    })
   })
 
   test("an unavailable OS home degrades inside the supplied emergency home", () => {

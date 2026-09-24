@@ -125,11 +125,9 @@ test("the DHT keeps its development exemption and loses it on a release channel"
   expect(() => verify([DHT], "prod")).toThrow(/dht\/.*REQUIRED/)
 })
 
-test("the watchdog is optional on every channel — most machines have no cargo", () => {
-  expect(verify([WATCHDOG], "prod")).toEqual([{ to: "watchdog/", verdict: "absent" }])
-  expect(warnings.join("\n")).toContain("watchdog/")
+test("the watchdog is required because the desktop service cannot run without it", () => {
+  expect(() => verify([WATCHDOG], "prod")).toThrow(/watchdog\/.*REQUIRED/)
 
-  // Optional does NOT mean unchecked: a binary that is there is still held to the platform rule.
   stage("watchdog/", { "novaclaw-watchdog.exe": ELF })
   expect(() => verify([WATCHDOG], "prod")).toThrow(/not a Windows PE image/)
 
