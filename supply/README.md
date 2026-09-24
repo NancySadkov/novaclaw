@@ -1,7 +1,8 @@
 # Build supply
 
 This directory retains third-party inputs required to reproduce specific NovaClaw builds. Large
-artifacts are stored with Git LFS, and build tooling must verify a pinned digest before using them.
+artifacts use Git LFS; the MinGit ZIP is an ordinary Git binary blob because the current Git remote
+does not serve LFS objects. Build tooling verifies a pinned digest before using each input.
 They belong here rather than in `tmp/` or a release `dist/` directory because both are disposable.
 
 The current Windows baseline contains:
