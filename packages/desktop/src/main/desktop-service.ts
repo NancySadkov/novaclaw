@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto"
 import { spawn } from "node:child_process"
-import { unlinkSync } from "node:fs"
+import { renameSync, unlinkSync } from "node:fs"
 import { createConnection, createServer } from "node:net"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -27,6 +27,10 @@ type Descriptor = {
   closeRequested?: boolean
 }
 
+class InvalidServiceDescriptor extends Error {
+  constructor() { super("Service descriptor is invalid") }
+}
+
 export function servicePath(home: string) {
   return join(home, "desktop-service.sqlite")
 }
@@ -49,19 +53,48 @@ export function readService(home: string): Descriptor | undefined {
   try {
     database = new DatabaseSync(path, { readOnly: true })
     const row = database.prepare("SELECT value FROM desktop_service WHERE slot = 1").get() as { value?: string } | undefined
-    const value: unknown = row?.value ? JSON.parse(row.value) : undefined
-    if (!value || typeof value !== "object") throw new Error("Service descriptor is invalid")
+    if (!row) return undefined
+    const value: unknown = row.value ? JSON.parse(row.value) : undefined
+    if (!value || typeof value !== "object") throw new InvalidServiceDescriptor()
     const item = value as Partial<Descriptor>
     if (typeof item.id !== "string" || typeof item.hostname !== "string" ||
       !Number.isInteger(item.port) || item.port! < 1 || item.port! > 65535 ||
       typeof item.username !== "string" || typeof item.password !== "string" ||
       typeof item.pipe !== "string" || !Number.isInteger(item.watchdogPid))
-      throw new Error("Service descriptor is invalid")
+      throw new InvalidServiceDescriptor()
     return item as Descriptor
   } catch (error) {
     throw new Error(`Cannot read NovaClaw service descriptor at ${path}`, { cause: error })
   } finally {
     database?.close()
+  }
+}
+
+function repairableServiceError(error: unknown) {
+  const cause = error instanceof Error ? error.cause : undefined
+  if (cause instanceof SyntaxError || cause instanceof InvalidServiceDescriptor) return true
+  if (!cause || typeof cause !== "object" || !("errcode" in cause) || typeof cause.errcode !== "number") return false
+  return [1, 11, 26].includes(cause.errcode & 0xff)
+}
+
+function readOrRepairService(home: string): Descriptor | undefined {
+  try {
+    return readService(home)
+  } catch (error) {
+    if (!repairableServiceError(error)) throw error
+    const source = servicePath(home)
+    const moved = `${source}.invalid-${randomUUID()}`
+    for (const suffix of ["", "-wal", "-shm"]) {
+      const file = `${source}${suffix}`
+      const reading = Presence.read(file)
+      if (reading.answer === "absent") continue
+      if (reading.answer === "unreadable" || !reading.isFile)
+        throw new Error(`Cannot repair NovaClaw service descriptor at ${file}: ${reading.code ?? "not a readable file"}`, { cause: error })
+      renameSync(file, `${moved}${suffix}`)
+    }
+    const reason = error instanceof Error && error.cause ? String(error.cause) : String(error)
+    console.warn(`Rebuilt invalid NovaClaw service descriptor; previous metadata saved at ${moved}: ${reason}`)
+    return undefined
   }
 }
 
@@ -187,7 +220,7 @@ export function createDesktopService(instance: ServiceInstancePaths, options: De
     retain: () => { retained = true },
     async start(signal) {
       signal.throwIfAborted()
-      descriptor = readService(home)
+      descriptor = readOrRepairService(home)
       if (descriptor && alive(descriptor.watchdogPid) && descriptor.databaseFile !== databaseFile)
         throw new Error(`A previous NovaClaw server is using a different database. Close that server before opening ${databaseFile}.`)
       if (descriptor?.closeRequested && alive(descriptor.watchdogPid)) {

@@ -78,7 +78,7 @@ const POLICIES: Readonly<Record<string, Policy>> = {
   "third-party/w64devkit/": { requirement: "required" },
   "third-party/portable-git/": {
     requirement: "required",
-    binary: (platform) => platform === "win32" ? ["bin/bash.exe", "cmd/git.exe"] : undefined,
+    binary: (platform) => platform === "win32" ? ["usr/bin/bash.exe", "usr/bin/ssh.exe", "cmd/git.exe"] : undefined,
   },
   "third-party/imagemagick/": { requirement: "required" },
 }

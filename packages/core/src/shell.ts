@@ -234,7 +234,7 @@ let defaultPreferred: string | undefined
 let defaultAgent: string | undefined
 
 /**
- * The agent shell shipped with NovaClaw on Windows. Packaged Windows builds carry PortableGit Bash
+ * The agent shell shipped with NovaClaw on Windows. Packaged Windows builds carry MinGit Bash
  * and w64devkit; a host shell must not change the agent's runtime or its prompt.
  * The human terminal also defaults to the embedded Bash on Windows.
  */
@@ -267,7 +267,7 @@ export interface AgentPlatform {
  *
  * 🔴 Owner, 2026-09-17. The prompt's environment line said `Windows_NT 10.0.26200 / x64` (Node's
  * `os.type/release/arch`), which is the HOST's view and not what the agent's shell reports. The two
- * disagree on the shipped product: Windows embeds PortableGit Bash, whose MSYS view differs from
+ * disagree on the shipped product: Windows embeds MinGit Bash, whose MSYS view differs from
  * Node's Windows view. A colleague reading one box from its prompt and
  * another from its own shell has been told two different things, and the prompt is the one that is
  * supposed to be authoritative.
@@ -276,7 +276,7 @@ export interface AgentPlatform {
  * WSL kernel — wrong box entirely — which is why `agentDefault()` deliberately rejects it. Off Windows,
  * or when no shell answers within the bound, this falls back to Node's `os` rather than inventing one.
  *
- * ⚠️ The resolution this reads is `agentDefault()`: the embedded PortableGit Bash on packaged
+ * ⚠️ The resolution this reads is `agentDefault()`: the embedded MinGit Bash on packaged
  * Windows. The system shell is not a production fallback.
  *
  * ⚠️ Cached per process: the prompt is regenerated only at a session start and after a compaction, and

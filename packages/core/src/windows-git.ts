@@ -24,14 +24,14 @@ export function pathPrepend(): string[] {
   if (!root) return []
   binary()
   bash()
-  return ["mingw64/bin", "usr/bin", "cmd", "bin"].map((relative) => path.join(root, relative))
+  return ["mingw64/bin", "usr/bin", "cmd"].map((relative) => path.join(root, relative))
 }
 
 export function bash(): string | undefined {
   if (process.platform !== "win32") return
   const root = Flag.NOVACLAW_PORTABLE_GIT_PATH
   if (!root) return
-  const executable = path.join(root, "bin", "bash.exe")
+  const executable = path.join(root, "usr", "bin", "bash.exe")
   if (!statSync(executable, { throwIfNoEntry: false })?.isFile())
     throw new Error(`The embedded Bash installation is incomplete: ${executable}`)
   return executable

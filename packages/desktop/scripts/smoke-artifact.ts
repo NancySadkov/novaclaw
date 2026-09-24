@@ -36,6 +36,7 @@
  * Usage:  bun ./scripts/smoke-artifact.ts [path\to\NovaClaw.exe]
  */
 import { spawnSync } from "node:child_process"
+import { Database } from "bun:sqlite"
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
 import { copyFile, cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { createServer } from "node:net"
@@ -66,6 +67,13 @@ function check(ok: boolean, name: string, detail: string) {
   console.log(`  FAIL  ${name} — ${detail}`)
   failures.push(`${name}: ${detail}`)
   return false
+}
+
+function treeBytes(directory: string): number {
+  return readdirSync(directory, { withFileTypes: true }).reduce(
+    (total, entry) => total + (entry.isDirectory() ? treeBytes(path.join(directory, entry.name)) : statSync(path.join(directory, entry.name)).size),
+    0,
+  )
 }
 
 // ── artifact discovery ──────────────────────────────────────────────────────────────────────────
@@ -460,7 +468,7 @@ function exercisePtySocket(url: URL, timeoutMs = 15_000): Promise<{ childPID: nu
     socket.onopen = () => {
       // The marker is octal-escaped so terminal echo cannot satisfy the assertion. `sleep` remains
       // alive as a descendant, letting the remove step prove tree cleanup rather than shell-only exit.
-      const nativeChildPID = process.platform === "win32" ? `$(ps -W -p "$!" | awk 'NR==2 {print $4}')` : "$!"
+      const nativeChildPID = process.platform === "win32" ? `$(cat /proc/"$!"/winpid)` : "$!"
       socket.send(
         `sleep 300 & printf '\\116\\117\\126\\101\\103\\114\\101\\127\\137\\120\\124\\131\\137\\117\\113\\072%s\\n' "${nativeChildPID}"\r`,
       )
@@ -673,25 +681,45 @@ async function run() {
     )
 
     const gitRoot = path.join(path.dirname(exe), "resources", "third-party", "portable-git")
-    const bash = path.join(gitRoot, "bin", "bash.exe")
+    const gitBytes = existsSync(gitRoot) ? treeBytes(gitRoot) : Number.POSITIVE_INFINITY
+    check(gitBytes <= 128 * 1024 * 1024, "mingit-size", `the embedded Git runtime is ${(gitBytes / 1024 / 1024).toFixed(1)} MiB`)
+    check(
+      !existsSync(path.join(gitRoot, "cmd", "git-gui.exe")) &&
+        !existsSync(path.join(gitRoot, "cmd", "gitk.exe")) &&
+        !existsSync(path.join(gitRoot, "mingw64", "bin", "gitk")),
+      "mingit-no-git-gui",
+      "the embedded Git runtime includes graphical Git applications",
+    )
+    const bash = path.join(gitRoot, "usr", "bin", "bash.exe")
     const git = path.join(gitRoot, "cmd", "git.exe")
-    check(existsSync(bash), "portable-git-bash", `missing ${bash}`)
-    check(existsSync(git), "portable-git-binary", `missing ${git}`)
-    check(existsSync(path.join(gitRoot, "LICENSE.txt")), "portable-git-license", "the embedded Git licence is missing")
-    check(existsSync(path.join(gitRoot, "SOURCE-OFFER.txt")), "portable-git-source-offer", "the embedded source offer is missing")
+    const ssh = path.join(gitRoot, "usr", "bin", "ssh.exe")
+    check(existsSync(bash), "mingit-bash", `missing ${bash}`)
+    check(existsSync(git), "mingit-git", `missing ${git}`)
+    check(existsSync(ssh), "mingit-ssh", `missing ${ssh}`)
+    check(existsSync(path.join(gitRoot, "LICENSE.txt")), "mingit-license", "the embedded Git licence is missing")
+    check(existsSync(path.join(gitRoot, "SOURCE-OFFER.txt")), "mingit-source-offer", "the embedded source offer is missing")
     const gitEnv = { ...process.env }
     for (const key of Object.keys(gitEnv)) if (key.toLowerCase() === "path") delete gitEnv[key]
-    gitEnv.PATH = ["mingw64/bin", "usr/bin", "cmd", "bin"].map((part) => path.join(gitRoot, part)).concat(bin).join(path.delimiter)
-    const gitRun = spawnSync(bash, ["-c", "printf '%s\\n' \"$BASH_VERSION\"; git --version; gcc --version | head -n 1"], {
+    gitEnv.PATH = ["mingw64/bin", "usr/bin", "cmd"].map((part) => path.join(gitRoot, part)).concat(bin).join(path.delimiter)
+    gitEnv.HOME = tempHome
+    const gitRun = spawnSync(bash, ["-c", "printf '%s\\n' \"$BASH_VERSION\"; git --version; ssh -V 2>&1; gcc --version | head -n 1"], {
       cwd: tempHome,
       encoding: "utf8",
       env: gitEnv,
     })
     check(
-      gitRun.status === 0 && /^5\.3\./.test(gitRun.stdout) && gitRun.stdout.includes("git version 2.55.0.windows.5") && gitRun.stdout.includes("gcc.exe (GCC)"),
-      "portable-git-isolated-bash-git-gcc",
-      `Bash/Git/GCC exited ${String(gitRun.status)}: ${gitRun.stderr || gitRun.stdout}`,
+      gitRun.status === 0 && /^5\.3\./.test(gitRun.stdout) && gitRun.stdout.includes("git version 2.55.0.windows.5") && gitRun.stdout.includes("OpenSSH_10.5") && gitRun.stdout.includes("gcc.exe (GCC)"),
+      "mingit-isolated-bash-git-ssh-gcc",
+      `Bash/Git/SSH/GCC exited ${String(gitRun.status)}: ${gitRun.stderr || gitRun.stdout}`,
     )
+    const gitProbe = path.join(tempHome, "git-probe")
+    await mkdir(gitProbe)
+    const gitCommit = spawnSync(bash, ["-c", "git init -q && git -c user.name=Probe -c user.email=probe@example.invalid commit -q --allow-empty -m smoke && git log -1 --format=%s"], {
+      cwd: gitProbe,
+      encoding: "utf8",
+      env: gitEnv,
+    })
+    check(gitCommit.status === 0 && gitCommit.stdout.trim() === "smoke", "mingit-commit", `Git commit exited ${String(gitCommit.status)}: ${gitCommit.stderr || gitCommit.stdout}`)
 
     const source = path.join(tempHome, "packaged-toolchain-smoke.c")
     const program = path.join(tempHome, "packaged-toolchain-smoke.exe")
@@ -801,6 +829,14 @@ async function run() {
     console.log("seed     : plaintext auth copied into throwaway home")
   }
   const devtoolsPort = await freePort()
+  const descriptorPath = path.join(tempHome, "desktop-service.sqlite")
+  const descriptor = new Database(descriptorPath)
+  descriptor.exec("CREATE TABLE desktop_service (slot INTEGER PRIMARY KEY CHECK (slot = 1), value TEXT NOT NULL)")
+  const descriptorFixture = process.env.NOVACLAW_SMOKE_DESCRIPTOR_FIXTURE
+  const invalidDescriptor = descriptorFixture === "invalid" || descriptorFixture === "corrupt"
+  if (descriptorFixture === "invalid") descriptor.query("INSERT INTO desktop_service (slot, value) VALUES (1, ?)").run("invalid json")
+  descriptor.close()
+  if (descriptorFixture === "corrupt") await writeFile(descriptorPath, "not a sqlite database")
   console.log(`home     : ${tempHome}`)
   console.log(`devtools : 127.0.0.1:${devtoolsPort}\n`)
 
@@ -826,6 +862,22 @@ async function run() {
   const renderer = await readRenderer(devtoolsPort, deadline)
   const credentials = renderer.credentials
   console.log(`sidecar  : ${credentials.url}\n`)
+  const activeDescriptor = new Database(descriptorPath, { readonly: true })
+  try {
+    check(
+      activeDescriptor.query("SELECT value FROM desktop_service WHERE slot = 1").get() !== null,
+      invalidDescriptor ? "invalid-descriptor-recovery" : "empty-descriptor-recovery",
+      "the app did not replace the service descriptor row on startup",
+    )
+  } finally {
+    activeDescriptor.close()
+  }
+  if (invalidDescriptor)
+    check(
+      readdirSync(tempHome).some((name) => name.startsWith("desktop-service.sqlite.invalid-")),
+      "invalid-descriptor-preserved",
+      "the unusable service descriptor was not saved before repair",
+    )
 
   // The desktop shell is deliberately select-none almost everywhere. Diagnostic popup text is the
   // exception: a user must be able to drag-select the explanation and reference to share it with an

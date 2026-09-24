@@ -28,10 +28,10 @@ test("Windows Git resolves from the packaged tree and precedes host PATH in the 
   const gitRoot = path.join(root, "portable-git")
   const kitRoot = path.join(root, "w64devkit")
   mkdirSync(path.join(gitRoot, "cmd"), { recursive: true })
-  mkdirSync(path.join(gitRoot, "bin"), { recursive: true })
+  mkdirSync(path.join(gitRoot, "usr", "bin"), { recursive: true })
   mkdirSync(path.join(kitRoot, "bin"), { recursive: true })
   writeFileSync(path.join(gitRoot, "cmd", "git.exe"), "stub")
-  writeFileSync(path.join(gitRoot, "bin", "bash.exe"), "stub")
+  writeFileSync(path.join(gitRoot, "usr", "bin", "bash.exe"), "stub")
   writeFileSync(path.join(kitRoot, "bin", "sh.exe"), "stub")
   writeFileSync(path.join(kitRoot, "bin", "gcc.exe"), "stub")
   process.env.NOVACLAW_PORTABLE_GIT_PATH = gitRoot
@@ -40,19 +40,18 @@ test("Windows Git resolves from the packaged tree and precedes host PATH in the 
   Shell.agentDefault.reset()
 
   expect(Git.binary()).toBe(path.join(gitRoot, "cmd", "git.exe"))
-  expect(Shell.agentDefault()).toBe(path.join(gitRoot, "bin", "bash.exe"))
+  expect(Shell.agentDefault()).toBe(path.join(gitRoot, "usr", "bin", "bash.exe"))
   const overlay = Shell.toolchainEnv(path.join(kitRoot, "bin", "sh.exe"), { Path: "C:\\host" })
   expect(overlay?.Path?.split(path.delimiter)).toEqual([
     path.join(kitRoot, "bin"),
     path.join(gitRoot, "cmd"),
     "C:\\host",
   ])
-  const bashOverlay = Shell.toolchainEnv(path.join(gitRoot, "bin", "bash.exe"), { Path: "C:\\host" })
+  const bashOverlay = Shell.toolchainEnv(path.join(gitRoot, "usr", "bin", "bash.exe"), { Path: "C:\\host" })
   expect(bashOverlay?.Path?.split(path.delimiter)).toEqual([
     path.join(gitRoot, "mingw64", "bin"),
     path.join(gitRoot, "usr", "bin"),
     path.join(gitRoot, "cmd"),
-    path.join(gitRoot, "bin"),
     path.join(kitRoot, "bin"),
     "C:\\host",
   ])
