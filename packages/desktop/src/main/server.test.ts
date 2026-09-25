@@ -46,6 +46,7 @@ void mock.module("electron", () => ({
 }))
 void mock.module("./logging", () => ({
   getLogger: () => ({ log: () => {} }),
+  write: () => {},
 }))
 void mock.module("./store", () => ({
   getStore: () => {

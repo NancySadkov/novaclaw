@@ -131,7 +131,7 @@ export async function spawnLocalServer(
   const sidecar = join(mainDirectory, "sidecar.js")
   const child = utilityProcess.fork(sidecar, [], {
     cwd: process.cwd(),
-    env: createSidecarEnv(),
+    env: createLocalServerEnvironment(),
     serviceName: SIDECAR_SERVICE_NAME,
     stdio: "pipe",
     // The sidecar's server bundle uses `node:sqlite` (the Node variant of the core's `#sqlite`).
@@ -558,7 +558,12 @@ export async function checkHealth(url: string, password?: string | null): Promis
   }
 }
 
-function createSidecarEnv(): Record<string, string> {
+/**
+ * The environment every local server owner hands its child — the Electron sidecar today, and the
+ * standalone headless binary when it is staged. One builder so the two owners cannot diverge on the
+ * native tool paths (ripgrep, w64devkit, portable git, magick) or the dev channel guard.
+ */
+export function createLocalServerEnvironment(): Record<string, string> {
   const env = Object.fromEntries(
     Object.entries(process.env).flatMap(([key, value]) => (value === undefined ? [] : [[key, String(value)]])),
   )

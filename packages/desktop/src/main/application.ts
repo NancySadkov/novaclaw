@@ -11,6 +11,7 @@ import { registerIpcHandlers } from "./ipc"
 import { createDesktopLifecycle } from "./lifecycle"
 import { isTitlebarContextMenu } from "./titlebar-context-menu"
 import { createDesktopService } from "./desktop-service"
+import { bundledServerBinary, createStandaloneServer } from "./standalone-server"
 import { exportDebugLogs, startNetLog, write as writeLog } from "./logging"
 import { prepareProcessEnvironment } from "./process-environment"
 import { getDefaultServerUrl, setDefaultServerUrl } from "./server"
@@ -63,7 +64,9 @@ export async function runDesktop(options: DesktopLaunchOptions) {
   const local =
     options.mode === "client"
       ? createConnectedInstance(options.connect!)
-      : createDesktopService(home, options.server)
+      : bundledServerBinary() !== undefined
+        ? createStandaloneServer(home, options.server)
+        : createDesktopService(home, options.server)
   // Menu/window callbacks are invoked only after lifecycle construction; unlike the old mutable
   // relaunch callback, they always reach this same owner and the same shutdown promise.
   const window = createWindowHost(() => {

@@ -34,6 +34,11 @@ test("the desktop owns a reconnecting watchdog service and the headless process 
   expect(read("./headless-server.ts")).toContain("serveControl(service, () => stop(0, true))")
   expect(application).toContain("subscribeSupervisorState: local.subscribe")
 })
+test("a build that stages the standalone server prefers it, and keeps the Electron sidecar as fallback", () => {
+  expect(application).toContain('import { bundledServerBinary, createStandaloneServer } from "./standalone-server"')
+  expect(application).toMatch(/bundledServerBinary\(\) !== undefined[\s\S]{0,120}createStandaloneServer\(home, options\.server\)/)
+  expect(application).toMatch(/createStandaloneServer\(home, options\.server\)[\s\S]{0,120}createDesktopService\(home, options\.server\)/)
+})
 test("desktop has no maintenance scheduler and home selection precedes diagnostics", () => {
   expect(application.indexOf('prepareInstanceHome("client", options.mode === "both")')).toBeLessThan(application.indexOf("createDesktopDiagnostics()"))
   expect(application.indexOf('prepareInstanceHome("client", options.mode === "both")')).toBeLessThan(
