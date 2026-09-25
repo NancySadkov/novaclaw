@@ -8,6 +8,7 @@ import { OwnedRuntimeContext } from "@novaclaw/core/session/owned-runtime-contex
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionExecutionTable, SessionTable } from "@novaclaw/core/session/sql"
 import { WorkerPurpose } from "@novaclaw/core/session/worker-purpose"
+import { Workers } from "@novaclaw/core/session/workers"
 import { SystemContext } from "@novaclaw/core/system-context"
 import { it, testEffect } from "./lib/effect"
 
@@ -44,6 +45,7 @@ describe("OwnedRuntimeContext", () => {
       const root = SessionSchema.ID.make("ses_officer")
       const living = SessionSchema.ID.make("ses_living")
       const stopped = SessionSchema.ID.make("ses_stopped")
+      const finished = SessionSchema.ID.make("ses_finished")
       yield* db
         .insert(SessionTable)
         .values([
@@ -65,6 +67,16 @@ describe("OwnedRuntimeContext", () => {
             title: "Old worker",
             version: "test",
             type: "sub-agent",
+          },
+          {
+            id: finished,
+            parent_id: root,
+            slug: finished,
+            directory: "/project",
+            title: "Finished worker",
+            version: "test",
+            type: "sub-agent",
+            result: "Done",
           },
         ])
         .run()
@@ -94,6 +106,17 @@ describe("OwnedRuntimeContext", () => {
             started_at: 10 * MINUTE,
             time_updated: 12 * MINUTE,
           },
+          {
+            session_id: finished,
+            attempt_id: "exe_finished",
+            generation: 1,
+            owner_id: "host",
+            state: "settled",
+            phase: "drain",
+            heartbeat_at: 12 * MINUTE,
+            started_at: 10 * MINUTE,
+            time_updated: 12 * MINUTE,
+          },
         ])
         .run()
         .pipe(Effect.orDie)
@@ -107,6 +130,7 @@ describe("OwnedRuntimeContext", () => {
       expect(observed.workers).toEqual([
         { id: living, purpose: "Build characters", state: "busy", startedAt: expect.any(Number) },
       ])
+      expect(yield* Workers.list({ db, sessionID: root })).toEqual(observed.workers)
     }),
   )
 

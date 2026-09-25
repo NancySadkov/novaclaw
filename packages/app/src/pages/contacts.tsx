@@ -35,7 +35,6 @@ import {
   type RosterLive,
   type SessionLike,
   type UsageMinute,
-  workersOf,
 } from "@/apps/roster-live"
 import { compactTokens } from "@/pages/home-session-meta"
 import { ServerConnection } from "@/context/server"
@@ -45,6 +44,7 @@ import { useDialog } from "@novaclaw/ui/context/dialog"
 import { sessionExecutions, stopSessionExecution, type SessionExecutionInfo } from "@/utils/session-execution-api"
 import { formatTokensPerSecond } from "@/utils/token-rate"
 import { WorkerListDialog, type WorkerListItem } from "@/components/worker-list-dialog"
+import { useWorkers } from "@/context/workers"
 
 // The Contacts app — the roster of colleagues this instance employs (AGENTS.md → *the structural
 // metaphor*; `notes/named-agents.md`).
@@ -668,20 +668,12 @@ function ContactRow(props: ContactRowProps) {
       : undefined
     return formatTokensPerSecond(tps)
   })
-  const workers = createMemo(() => {
-    const sessionID = live().sessionID
-    return sessionID === undefined
-      ? []
-      : workersOf(props.sessions, sessionID, (workerID) => ({
-          lifecycle: sessionData().session_status[workerID]?.type,
-          execution: props.executions.get(workerID)?.state,
-          failureClass: props.executions.get(workerID)?.failureClass,
-        }))
-  })
+  const workerQuery = useWorkers(() => live().sessionID)
+  const workers = createMemo(() => workerQuery.data ?? [])
   // The dialog's shape: identity plus the age the row shows. `SessionLike.time.created` is the
   // worker's start, which is what "running for" measures.
   const workerItems = createMemo<WorkerListItem[]>(() =>
-    workers().map((worker) => ({ id: worker.id, title: worker.title, startedAt: worker.time.created })),
+    workers().map((worker) => ({ id: worker.id, title: worker.title, startedAt: worker.startedAt })),
   )
   const openWorkers = () => {
     const rows = workerItems()

@@ -177,32 +177,6 @@ export const threadOf = (sessions: readonly SessionLike[], rootID: string): read
   return out
 }
 
-/** Every worker that still belongs in the officer's current worker set, including nested workers. */
-export const workersOf = (
-  sessions: readonly SessionLike[],
-  rootID: string,
-  stateOf?: (sessionID: string) => { readonly lifecycle?: string; readonly execution?: ExecutionState; readonly failureClass?: string },
-): readonly SessionLike[] => {
-  const thread = threadOf(sessions, rootID)
-  const byID = new Map(thread.map((session) => [session.id, session] as const))
-  const terminal = (sessionID: string) => {
-    const state = stateOf?.(sessionID)
-    return (
-      state?.lifecycle === "exited" || (state?.execution === "interrupted" && state?.failureClass === "interrupt")
-    )
-  }
-  return thread.filter((session) => {
-    if (session.id === rootID || session.type !== "sub-agent") return false
-    // A historical child stays in the transcript. Only an exited lifecycle proves it returned.
-    let current: SessionLike | undefined = session
-    while (current !== undefined && current.id !== rootID) {
-      if (terminal(current.id)) return false
-      current = current.parentID ? byID.get(current.parentID) : undefined
-    }
-    return current?.id === rootID
-  })
-}
-
 /** Live generated-token rate for an officer and every worker below that officer's chat. */
 export const threadRate = (
   sessions: readonly SessionLike[],

@@ -39,6 +39,7 @@ import { useSDK } from "@/context/sdk"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
+import { isSessionWorking } from "@/context/session-working"
 import { useTerminal } from "@/context/terminal"
 import {
   retrySessionExecution,
@@ -385,10 +386,28 @@ export default function Page() {
     refetchInterval: 2_000,
   }))
   const executionAttempt = createMemo(() => executionQuery.data?.find((item) => item.sessionID === params.id))
+  const [stopRequest, setStopRequest] = createSignal<string>()
+  const [stopConfirmed, setStopConfirmed] = createSignal<{ sessionID: string; attemptID?: string }>()
+  const [submittedFrom, setSubmittedFrom] = createSignal<{ sessionID: string; attemptID?: string }>()
+  const stopPending = () => stopRequest() === params.id
+  const working = createMemo(() => {
+    const id = params.id
+    if (!id) return false
+    if (stopPending()) return true
+    const attempt = executionAttempt()
+    const submitted = submittedFrom()
+    if (submitted?.sessionID === id && submitted.attemptID === attempt?.attemptID && busy(id)) return true
+    const confirmed = stopConfirmed()
+    if (confirmed?.sessionID === id && confirmed.attemptID === attempt?.attemptID) return false
+    return isSessionWorking(sync().data.session_status[id], attempt)
+  })
   const explicitlyStopped = createMemo(() => {
     const attempt = executionAttempt()
-    return attempt?.state === "interrupted" && attempt.failureClass === "interrupt"
+    return !working() && (attempt?.failureClass === "interrupt" || stopConfirmed()?.sessionID === params.id)
   })
+  const canResume = createMemo(() =>
+    !working() && (explicitlyStopped() || (executionAttempt()?.state === "settled" && info()?.result !== undefined)),
+  )
   const executionOpen = createMemo(() => {
     const attempt = executionAttempt()
     return attempt?.state === "starting" || attempt?.state === "busy"
@@ -422,18 +441,41 @@ export default function Page() {
     layout.fileTree.setTab("changes")
   }
 
+  const stop = async () => {
+    const conn = server.current
+    const id = params.id
+    if (!conn || !id || stopRequest() === id || !working()) return
+    const attemptID = executionAttempt()?.attemptID
+    setStopRequest(id)
+    try {
+      await stopSessionExecution(conn.http, id, sdk().directory)
+      setStopConfirmed({ sessionID: id, attemptID })
+      setSubmittedFrom(undefined)
+      void executionQuery.refetch()
+    } catch (error) {
+      if (shouldSuppressSessionExecutionError(error, id)) return
+      showToast({
+        title: "Could not stop this chat",
+        description: formatServerError(error, language.t),
+        variant: "error",
+      })
+    } finally {
+      if (stopRequest() === id) setStopRequest(undefined)
+    }
+  }
   const executionAction = async (action: "retry" | "stop") => {
+    if (action === "stop") return stop()
     const conn = server.current
     const id = params.id
     if (!conn || !id) return
     try {
-      if (action === "retry") await retrySessionExecution(conn.http, id, sdk().directory)
-      else await stopSessionExecution(conn.http, id, sdk().directory)
+      setStopConfirmed(undefined)
+      await retrySessionExecution(conn.http, id, sdk().directory)
       await executionQuery.refetch()
     } catch (error) {
       if (shouldSuppressSessionExecutionError(error, id)) return
       showToast({
-        title: action === "retry" ? "Could not retry this chat" : "Could not stop this chat",
+        title: "Could not retry this chat",
         description: formatServerError(error, language.t),
         variant: "error",
       })
@@ -621,8 +663,8 @@ export default function Page() {
     composer: () => inputRef,
     childSession: isChildSession,
     dialogActive: () => !!dialog.active || view().reviewPanel.opened(),
-    working: () => (params.id ? busy(params.id) : false),
-    abort: () => executionAction("stop"),
+    working,
+    abort: stop,
     terminalOpen: () => view().terminal.opened(),
     activeTerminal: terminal.active,
   })
@@ -1041,6 +1083,7 @@ export default function Page() {
         promptInput={
           <PromptInput
             controls={inputController()}
+            stop={{ working, pending: stopPending, run: stop }}
             edit={queuedEdit()}
             onEditLoaded={() => setQueuedEdit(undefined)}
             ref={(el) => {
@@ -1048,11 +1091,13 @@ export default function Page() {
             }}
             newSessionWorktree={newSessionWorktree()}
             resume={{
-              available: explicitlyStopped,
+              available: canResume,
               run: () => executionAction("retry"),
             }}
             onNewSessionWorktreeReset={() => setStore("newSessionWorktree", "main")}
             onSubmit={() => {
+              setStopConfirmed(undefined)
+              setSubmittedFrom({ sessionID: params.id ?? "", attemptID: executionAttempt()?.attemptID })
               comments.clear()
               resumeScroll()
             }}

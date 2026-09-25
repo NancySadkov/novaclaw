@@ -355,7 +355,7 @@ type PromptSubmitInput = {
   setMode: (mode: "normal" | "shell") => void
   newSessionWorktree?: Accessor<string | undefined>
   onNewSessionWorktreeReset?: () => void
-  onAbort?: () => void
+  stopSession?: () => Promise<void>
   onSubmit?: () => void
 }
 
@@ -382,8 +382,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     serverSync().session.set("todo", sessionID, [])
 
-    input.onAbort?.()
-
     const key = pendingKey(sessionID)
     const queued = pending.get(key)
     if (queued) {
@@ -392,10 +390,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       pending.delete(key)
       return Promise.resolve()
     }
-    return sdk()
-      .client.v2.session.interrupt({
-        sessionID,
-      })
+    return (input.stopSession
+      ? input.stopSession()
+      : sdk().client.v2.session.interrupt({ sessionID }).then(() => undefined))
       .catch((err) => {
         // Stop is the control a user reaches for when something is already going wrong, so a silent
         // failure here is the worst-placed one in the composer: the agent keeps streaming and the

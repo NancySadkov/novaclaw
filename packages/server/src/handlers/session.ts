@@ -39,6 +39,7 @@ import { SessionEvent } from "@novaclaw/core/session/event"
 import { resolveConfigView } from "./session-config"
 import { BashJobs } from "@novaclaw/core/tool/bash-jobs"
 import { OwnedRuntimeContext } from "@novaclaw/core/session/owned-runtime-context"
+import { Workers } from "@novaclaw/core/session/workers"
 import { PromptCapture } from "@novaclaw/core/session/prompt-capture"
 import { ContextManager } from "@novaclaw/core/session/context-manager"
 import { SessionPortability } from "@novaclaw/core/session/portability"
@@ -1213,13 +1214,9 @@ const SessionObservationHandler = handlerLayer(
             // One durable answer for both the model's owned-work heartbeat and the UI. In
             // particular, never reconstruct this from the browser's bounded session cache: after a
             // restart that cache contains the open chat, not every worker the officer still owns.
-            const observation = yield* OwnedRuntimeContext.observe({
-              db,
-              sessionID: ctx.params.sessionID,
-              heartbeatMinutes: OwnedRuntimeContext.DEFAULT_HEARTBEAT_MINUTES,
-            })
+            const workers = yield* Workers.list({ db, sessionID: ctx.params.sessionID })
             return {
-              data: observation.workers.map((worker) => ({
+              data: workers.map((worker) => ({
                 id: SessionSchema.ID.make(worker.id),
                 title: worker.purpose,
                 state: worker.state,

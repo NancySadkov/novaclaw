@@ -18,7 +18,11 @@ import type { SessionStatus } from "@novaclaw/sdk/v2/client"
  * ⚠️ ONE implementation on purpose. This was two byte-similar copies — `server-session.ts` and
  * `global-sync/child-store.ts` — and the bug above was present in both, which is the argument.
  */
-export function isSessionWorking(status: SessionStatus | undefined): boolean {
+export function isSessionWorking(
+  status: SessionStatus | undefined,
+  execution?: { readonly state: "starting" | "busy" | "recovering" | "paused" | "failed" | "interrupted" | "settled" },
+): boolean {
+  if (execution) return execution.state === "starting" || execution.state === "busy" || execution.state === "recovering"
   const type = status?.type
   return type === "busy" || type === "retry"
 }

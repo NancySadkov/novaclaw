@@ -1,26 +1,19 @@
 export * as OwnedRuntimeContext from "./owned-runtime-context"
 
-import { eq } from "drizzle-orm"
 import { Effect, Schema } from "effect"
 import type { Database } from "../database/database"
 import { SystemContext } from "../system-context"
 import { BashJobs } from "../tool/bash-jobs"
-import { SessionExecutionTable, SessionTable } from "./sql"
+import { SessionTable } from "./sql"
 import type { SessionSchema } from "./schema"
-import { WorkerPurpose } from "./worker-purpose"
+import { Workers } from "./workers"
 
 export const DEFAULT_HEARTBEAT_MINUTES = 60
 
-export const WorkerState = Schema.Literals(["starting", "busy", "recovering", "paused", "queued"])
-export type WorkerState = typeof WorkerState.Type
-
-export const Worker = Schema.Struct({
-  id: Schema.String,
-  purpose: Schema.String,
-  state: WorkerState,
-  startedAt: Schema.Number,
-})
-export type Worker = typeof Worker.Type
+export const WorkerState = Workers.State
+export type WorkerState = Workers.State
+export const Worker = Workers.Item
+export type Worker = Workers.Item
 
 export const Shell = Schema.Struct({
   id: Schema.String,
@@ -103,14 +96,6 @@ export const make = (value: Observation) =>
     removed: () => "All worker sessions and background shells previously listed in your live-work ledger have stopped.",
   })
 
-const livingWorkerState = (
-  state: "starting" | "busy" | "recovering" | "paused" | "failed" | "interrupted" | "settled" | null,
-): WorkerState | undefined => {
-  if (state === null) return "queued"
-  if (state === "settled" || state === "failed" || state === "interrupted") return undefined
-  return state
-}
-
 export const observe = Effect.fn("OwnedRuntimeContext.observe")(function* (input: {
   readonly db: Database.Interface["db"]
   readonly sessionID: SessionSchema.ID
@@ -121,16 +106,8 @@ export const observe = Effect.fn("OwnedRuntimeContext.observe")(function* (input
     .select({
       id: SessionTable.id,
       parentID: SessionTable.parent_id,
-      type: SessionTable.type,
-      title: SessionTable.title,
-      metadata: SessionTable.metadata,
-      result: SessionTable.result,
-      archivedAt: SessionTable.time_archived,
-      createdAt: SessionTable.time_created,
-      state: SessionExecutionTable.state,
     })
     .from(SessionTable)
-    .leftJoin(SessionExecutionTable, eq(SessionExecutionTable.session_id, SessionTable.id))
     .all()
     .pipe(Effect.orDie)
 
@@ -152,20 +129,7 @@ export const observe = Effect.fn("OwnedRuntimeContext.observe")(function* (input
     }
   }
 
-  const workers = (byParent.get(input.sessionID) ?? [])
-    .flatMap((row): Worker[] => {
-      const state = livingWorkerState(row.state)
-      if (row.type !== "sub-agent" || row.archivedAt !== null || row.result !== null || state === undefined) return []
-      return [
-        {
-          id: row.id,
-          purpose: WorkerPurpose.fromMetadata(row.metadata) ?? row.title,
-          state,
-          startedAt: row.createdAt,
-        },
-      ]
-    })
-    .sort((a, b) => a.startedAt - b.startedAt || a.id.localeCompare(b.id))
+  const workers = yield* Workers.list({ db: input.db, sessionID: input.sessionID })
 
   const shells = (yield* BashJobs.listRunning(input.db, descendants))
     .map((job): Shell => ({ ...job }))

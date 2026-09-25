@@ -6,6 +6,7 @@ import { DialogProvider } from "@novaclaw/ui/context/dialog"
 import { OfficerSettingsScreen } from "@/components/officer-settings-screen"
 import { GlobalContext } from "@/context/global"
 import { ServerContext } from "@/context/server"
+import { ServerSDKProvider } from "@/context/server-sdk"
 import { ServerSyncContext } from "@/context/server-sync"
 import { ModelsContext } from "@/context/models"
 import { TabsContext } from "@/context/tabs"
@@ -101,10 +102,14 @@ function mount(options: {
   }
   const globalStub = {
     servers: { list: () => [connection] },
-    ensureServerCtx: () => ({ agents: agentsCache, sync: { data: { path: {} } } }),
+    ensureServerCtx: () => ({
+      agents: agentsCache,
+      sync: { data: { path: {} } },
+      sdk: { server: { http: { url: connection.url } }, event: { listen: () => () => {} } },
+    }),
   }
   const syncStub = () => ({
-    data: { path: { directory: "/tmp/p" } },
+    data: { path: { directory: "/tmp/p" }, config: {} },
     session: { data: { info: {} } },
     updateConfig: async (patch: unknown) => options.write?.(patch),
     removeConfig: async (paths: string[][]) => options.remove?.(paths),
@@ -145,15 +150,17 @@ function mount(options: {
                 <LanguageContext.Provider value={languageStub as never}>
                   <GlobalContext.Provider value={globalStub as never}>
                     <ServerContext.Provider value={{ current: connection } as never}>
-                      <ServerSyncContext.Provider value={syncStub as never}>
-                        <ModelsContext.Provider value={modelsStub as never}>
-                          <TabsContext.Provider value={tabsStub as never}>
-                            <DialogProvider>
-                              <OfficerSettingsScreen agentID={options.agentID ?? "theron"} onDismiss={() => {}} />
-                            </DialogProvider>
-                          </TabsContext.Provider>
-                        </ModelsContext.Provider>
-                      </ServerSyncContext.Provider>
+                      <ServerSDKProvider>
+                        <ServerSyncContext.Provider value={syncStub as never}>
+                          <ModelsContext.Provider value={modelsStub as never}>
+                            <TabsContext.Provider value={tabsStub as never}>
+                              <DialogProvider>
+                                <OfficerSettingsScreen agentID={options.agentID ?? "theron"} onDismiss={() => {}} />
+                              </DialogProvider>
+                            </TabsContext.Provider>
+                          </ModelsContext.Provider>
+                        </ServerSyncContext.Provider>
+                      </ServerSDKProvider>
                     </ServerContext.Provider>
                   </GlobalContext.Provider>
                 </LanguageContext.Provider>
@@ -403,8 +410,7 @@ describe("Officer Settings screen renders", () => {
     expect(document.querySelector('[data-section="introspection"]')?.textContent).toContain("Stuck detector")
 
     expect(document.querySelector('[data-section="nudges"][data-settings-tab="nudges"]')).not.toBeNull()
-    const messengers = document.querySelector('[data-section="messengers"][data-settings-tab="messengers"]')
-    expect([...document.querySelectorAll("nav button")].some((button) => button.textContent?.trim() === "Messengers")).toBe(true)
+    const messengers = document.querySelector('[data-section="messengers"][data-settings-tab="work"]')
     expect(messengers?.querySelector('[data-section="remote-chat"]')).not.toBeNull()
 
     const profile = document.querySelector('[data-section="profile"][data-settings-tab="profile"]')

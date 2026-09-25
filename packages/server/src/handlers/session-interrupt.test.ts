@@ -11,8 +11,8 @@ test("a reasoned worker interruption is durably reported to its direct superior"
   expect(handler).toContain("The user stopped your worker ${target.id}. Reason: ${reason}")
 })
 
-test("the prompt worker list reads the same durable owned-work projection as the officer heartbeat", () => {
+test("the prompt worker list reads the worker component", () => {
   const handler = source.slice(source.indexOf('"session.worker.list"'), source.indexOf('"session.bash.list"'))
-  expect(handler).toContain("OwnedRuntimeContext.observe")
-  expect(handler).toContain("data: observation.workers.map")
+  expect(handler).toContain("Workers.list")
+  expect(handler).toContain("data: workers.map")
 })

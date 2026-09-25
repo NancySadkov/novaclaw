@@ -42,6 +42,13 @@ describe("isSessionWorking", () => {
     expect(isSessionWorking(sample("exited"))).toBe(false)
   })
 
+  test("the durable attempt overrides a stale busy status after accepted exit or Stop", () => {
+    expect(isSessionWorking(sample("busy"), { state: "settled" })).toBe(false)
+    expect(isSessionWorking(sample("retry"), { state: "interrupted" })).toBe(false)
+    expect(isSessionWorking(sample("idle"), { state: "busy" })).toBe(true)
+    expect(isSessionWorking(sample("idle"), { state: "recovering" })).toBe(true)
+  })
+
   test("an unknown or absent status is settled, not working", () => {
     // NEGATIVE CONTROL for the direction of the default. The old predicate defaulted the unknown
     // case to WORKING, which is the state that disables controls — so a status this build has not

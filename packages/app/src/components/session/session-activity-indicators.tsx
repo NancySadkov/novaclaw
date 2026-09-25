@@ -11,6 +11,7 @@ import { useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
 import { sessionHref } from "@/utils/session-route"
 import { stopSessionCommand, stopSessionExecution } from "@/utils/session-execution-api"
+import { useWorkers } from "@/context/workers"
 
 function ActivityButton(props: {
   action: string
@@ -43,14 +44,7 @@ export function SessionActivityIndicators(props: { sessionID: string }) {
   const dialog = useDialog()
   const language = useLanguage()
 
-  const workerQuery = createQuery(() => ({
-    queryKey: ["session-living-workers", server.key, sdk().directory, props.sessionID],
-    queryFn: async () => {
-      const response = await sdk().client.v2.session.worker.list({ sessionID: props.sessionID })
-      return response.data?.data ?? []
-    },
-    refetchInterval: 2_000,
-  }))
+  const workerQuery = useWorkers(() => props.sessionID)
   // The session cache is intentionally bounded and starts nearly empty after a restart. Worker
   // ownership is durable instance state, so this shortcut reads the server projection directly.
   const workers = createMemo(() => workerQuery.data ?? [])

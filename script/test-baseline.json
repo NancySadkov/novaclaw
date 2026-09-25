@@ -53,6 +53,7 @@
   "countsAgentSchedule": "2026-09-23: Calendar became officer Schedule. Core 7406->7401, app:unit 1801->1784, and app:browser 263->255 reflect deletion of Calendar-only tests alongside new Schedule coverage; server 114->116 adds per-agent schedule routing and recurrence cases. Measured package units: core 7401 with five failures in a low-memory sharded run, each failing file then passed alone after the deferred-tool inventory was fixed; app:unit 1784 pass, app:browser 255 pass, server 116 pass. Protocol stayed at 36, novaclaw:server at 449.",
   "countsCoreContextAndWorkerCapacity": "2026-09-23: core 7401->7419. Five tests added in the worker-capacity slice were omitted from its baseline update: three worker-capacity tests and one each in config-domain-reload and spawn-wakes-child. Splitting the nine-size runner context case into independent cases adds eight. The remaining five correct an undercount recorded from the failing schedule gate; that count was never verified by a green core run, and its raw per-file result is unavailable to identify the five missing registrations. This run measured 7419 pass, 9 skip, 0 fail in two sequential shards. Failed units now withhold their skip and completed-test counts so incomplete registration cannot seed either ledger.",
   "countsPrunedReplay": "2026-09-24: core 7422->7423 adds one event replay test. A session update whose historical diffs were pruned matches its original event in either direction; an unrelated payload change and two different present patches still diverge. The changed file passed directly (48 pass, 0 fail).",
+  "countsWorkerAuthorityAndStop": "2026-09-25: app:unit 1794->1796. The prior accepted-exit slice added two roster worker tests without updating the baseline; this slice removes those two tests with the retired browser worker projection and adds two Stop/working-state guards. Measured 1796 pass, 0 fail. app:browser remains 255 after its settings mounts were updated for the merged Work tab.",
   "units": {
     "llm": 28,
     "core": 9,
@@ -86,7 +87,7 @@
     "session-ui": 231,
     "ui": 67,
     "core": 7361,
-    "app:unit": 1794,
+    "app:unit": 1796,
     "app:browser": 255,
     "desktop": 258,
     "server": 119,

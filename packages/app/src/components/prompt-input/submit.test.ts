@@ -35,6 +35,7 @@ let search: { draftId?: string } = {}
 let selected = "/repo/worktree-a"
 let variant: string | undefined
 let interruptError: Error | undefined
+let interruptCalls = 0
 
 const promptValue: Prompt = [{ type: "text", content: "ls", start: 0, end: 2 }]
 const prompt = {
@@ -76,6 +77,7 @@ const clientFor = (directory: string) => {
         }),
         command: async () => ({ data: undefined }),
         interrupt: async () => {
+          interruptCalls++
           if (interruptError) throw interruptError
           return { data: undefined }
         },
@@ -303,6 +305,7 @@ beforeEach(() => {
   selected = "/repo/worktree-a"
   variant = undefined
   interruptError = undefined
+  interruptCalls = 0
   toasts.length = 0
   for (const key of Object.keys(storedSessions)) delete storedSessions[key]
 })
@@ -332,6 +335,31 @@ describe("prompt submit worktree selection", () => {
     await submit.abort()
 
     expect(toasts).toEqual([{ title: "common.requestFailed", description: "interrupt unavailable" }])
+  })
+
+  test("the session page owns one stop request for the button and Escape", async () => {
+    params = { id: "session-1" }
+    let pageStops = 0
+    const submit = createPromptSubmit({
+      prompt,
+      info: () => ({ id: "session-1" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      mode: () => "normal",
+      working: () => true,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      stopSession: async () => { pageStops++ },
+    })
+
+    await submit.abort()
+
+    expect(pageStops).toBe(1)
+    expect(interruptCalls).toBe(0)
   })
 
   // 🔴 : paste a screenshot, type `/review` or a shell command, press Enter — neither `shell`

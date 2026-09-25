@@ -46,7 +46,8 @@ describe("execution recovery attention", () => {
   })
 
   test("an explicit stop is resumed by the empty composer instead of recovery chrome", () => {
-    expect(pageSource).toContain("available: explicitlyStopped")
+    expect(pageSource).toContain("available: canResume")
+    expect(pageSource).toContain("!working() && (explicitlyStopped()")
     expect(pageSource).toContain('run: () => executionAction("retry")')
   })
 })

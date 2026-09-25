@@ -138,7 +138,7 @@ export interface PromptInputProps {
   onNewSessionWorktreeReset?: () => void
   edit?: { id: string; prompt: Prompt; context: FollowupDraft["context"] }
   onEditLoaded?: () => void
-  onAbort?: () => void
+  stop?: { working: () => boolean; pending: () => boolean; run: () => Promise<void> }
   onSubmit?: () => void
   toolbar?: JSX.Element
   /** A stopped durable attempt can resume without manufacturing an empty user message. */
@@ -244,7 +244,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const info = createMemo(() => (props.controls.session.id ? sync().session.get(props.controls.session.id) : undefined))
-  const working = createMemo(() => sync().data.session_working(props.controls.session.id ?? ""))
+  const working = createMemo(() => props.stop?.working() ?? sync().data.session_working(props.controls.session.id ?? ""))
   const imageAttachments = createMemo(() =>
     prompt.current().filter((part): part is ImageAttachmentPart => part.type === "image"),
   )
@@ -555,7 +555,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       setMode: (mode) => setStore("mode", mode),
       newSessionWorktree: () => props.newSessionWorktree,
       onNewSessionWorktreeReset: props.onNewSessionWorktreeReset,
-      onAbort: props.onAbort,
+      stopSession: props.stop?.run,
       onSubmit: props.onSubmit,
     })
 
@@ -746,7 +746,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   <IconButtonV2
                     data-action="prompt-submit"
                     type="submit"
-                    disabled={!working() && blank() && !resuming()}
+                    disabled={(stopping() && !!props.stop?.pending()) || (!working() && blank() && !resuming())}
                     tabIndex={store.mode === "normal" ? undefined : -1}
                     icon={
                       <IconV2

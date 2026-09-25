@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test"
 import { render } from "solid-js/web"
+import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { createStore } from "solid-js/store"
 import { createMemoryHistory, MemoryRouter, Route } from "@solidjs/router"
 import { DialogProvider } from "@novaclaw/ui/context/dialog"
@@ -7,6 +8,7 @@ import { ContactsPage } from "@/pages/contacts"
 import { AgentSettingsPage } from "@/pages/agent-settings"
 import { GlobalContext } from "@/context/global"
 import { ServerContext } from "@/context/server"
+import { ServerSDKProvider } from "@/context/server-sdk"
 import { ServerSyncContext } from "@/context/server-sync"
 import { ModelsContext } from "@/context/models"
 import { TabsContext } from "@/context/tabs"
@@ -67,6 +69,7 @@ test("the addressable settings screen opens the selected colleague and returns t
       },
     },
     server: { http: connection.http },
+    event: { listen: () => () => {} },
   }
   const session = {
     data: { info: {}, session_status: {}, session_live: () => undefined, session_working: () => false },
@@ -80,7 +83,7 @@ test("the addressable settings screen opens the selected colleague and returns t
     }),
   }
   const syncStub = () => ({
-    data: { path: { directory: "/tmp/p", home: "/tmp" } },
+    data: { path: { directory: "/tmp/p", home: "/tmp" }, config: {} },
     session,
     updateConfig: async () => {},
     removeConfig: async () => {},
@@ -109,10 +112,12 @@ test("the addressable settings screen opens the selected colleague and returns t
   dispose = render(
     () => (
       <PlatformProvider value={{ platform: "web" } as never}>
+        <QueryClientProvider client={new QueryClient()}>
         <SettingsProvider>
           <LanguageContext.Provider value={languageStub as never}>
             <GlobalContext.Provider value={globalStub as never}>
               <ServerContext.Provider value={{ current: connection } as never}>
+                <ServerSDKProvider>
                 <ServerSyncContext.Provider value={syncStub as never}>
                   <ModelsContext.Provider value={modelsStub as never}>
                     <TabsContext.Provider value={tabsStub as never}>
@@ -125,10 +130,12 @@ test("the addressable settings screen opens the selected colleague and returns t
                     </TabsContext.Provider>
                   </ModelsContext.Provider>
                 </ServerSyncContext.Provider>
+                </ServerSDKProvider>
               </ServerContext.Provider>
             </GlobalContext.Provider>
           </LanguageContext.Provider>
         </SettingsProvider>
+        </QueryClientProvider>
       </PlatformProvider>
     ),
     host,
@@ -162,14 +169,22 @@ test("officer tiles reorder from the keyboard and open their actions by right cl
     error: () => undefined,
     refetch: () => {},
   }
+  const workerReads: string[] = []
   const sdk = {
     client: {
       v2: {
-        session: { list: async () => ({ data: { data: [] } }) },
+        session: {
+          list: async () => ({ data: { data: [
+            { id: "ses_theron", agent: "theron", type: "interactive", location: { directory: "/tmp/p" }, time: { created: Date.now() } },
+            ...[1, 2, 3, 4].map((index) => ({ id: `ses_finished_${index}`, parentID: "ses_theron", type: "sub-agent", time: { created: Date.now() } })),
+          ] } }),
+          worker: { list: async ({ sessionID }: { sessionID: string }) => { workerReads.push(sessionID); return { data: { data: [] } } } },
+        },
         agent: { usageMany: async () => ({ data: { data: {} } }) },
       },
     },
     server: { http: connection.http },
+    event: { listen: () => () => {} },
   }
   const session = {
     data: {
@@ -222,10 +237,12 @@ test("officer tiles reorder from the keyboard and open their actions by right cl
   dispose = render(
     () => (
       <PlatformProvider value={{ platform: "web" } as never}>
+        <QueryClientProvider client={new QueryClient()}>
         <SettingsProvider>
           <LanguageContext.Provider value={languageStub as never}>
             <GlobalContext.Provider value={globalStub as never}>
               <ServerContext.Provider value={{ current: connection } as never}>
+                <ServerSDKProvider>
                 <ServerSyncContext.Provider value={syncStub as never}>
                   <TabsContext.Provider value={tabsStub as never}>
                     <DialogProvider>
@@ -235,10 +252,12 @@ test("officer tiles reorder from the keyboard and open their actions by right cl
                     </DialogProvider>
                   </TabsContext.Provider>
                 </ServerSyncContext.Provider>
+                </ServerSDKProvider>
               </ServerContext.Provider>
             </GlobalContext.Provider>
           </LanguageContext.Provider>
         </SettingsProvider>
+        </QueryClientProvider>
       </PlatformProvider>
     ),
     host,
@@ -247,6 +266,8 @@ test("officer tiles reorder from the keyboard and open their actions by right cl
 
   const ids = () => [...document.querySelectorAll<HTMLElement>("[data-contact-id]")].map((row) => row.dataset.contactId)
   expect(ids()).toEqual(["nova", "theron", "aris"])
+  expect(workerReads).toContain("ses_theron")
+  expect(document.querySelector('[data-contact-id="theron"] [data-action="contacts-workers"]')).toBeNull()
   expect(document.querySelector('[data-contact-id="nova"] [data-action="contacts-reorder"]')).toBeNull()
 
   let tile = document.querySelector<HTMLElement>('[data-contact-id="theron"]')!

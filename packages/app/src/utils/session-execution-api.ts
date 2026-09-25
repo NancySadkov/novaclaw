@@ -49,6 +49,7 @@ export async function stopSessionExecution(
     method: "POST",
     directory,
     directoryVia: "header",
+    timeoutMs: 15_000,
     ...(reason?.trim() ? { body: { reason: reason.trim() } } : {}),
   })
 }
