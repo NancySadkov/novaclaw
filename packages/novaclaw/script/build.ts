@@ -187,19 +187,55 @@ async function smokeServer(binaryPath: string, expectEmbeddedUI: boolean) {
           ? "Compiled server did not serve the embedded UI"
           : "Compiled server did not serve the API landing page",
       )
-    const memory = await fetch(`${url}/api/world-memory/list`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ limit: 1 }),
-      signal: AbortSignal.timeout(10_000),
-    }).then((response) => response.json())
-    if (!Array.isArray(memory) || memory.length !== 0)
-      throw new Error("Compiled server RAG smoke returned unexpected data")
+    const memory = await probeWorldMemory(url)
+    if (memory.length !== 0) throw new Error("Compiled server RAG smoke returned unexpected data")
   } finally {
     // By TREE (pitfall #8): `serve` can spawn MCP children, and a bare kill leaves them holding GBs.
     await Shell.killTree(server.pid).catch(() => undefined)
-    rmSync(home, { recursive: true, force: true })
+    // A Windows handle (the memory worker's database, a scanner) can outlive the kill by a moment.
+    // A cleanup failure must never REPLACE the smoke's own error with "EBUSY" — which is exactly how
+    // this step spent two release builds reporting the wrong cause. Retry, then leave the temp dir.
+    for (let attempt = 0; attempt < 20; attempt++) {
+      try {
+        rmSync(home, { recursive: true, force: true })
+        break
+      } catch {
+        await Bun.sleep(250)
+      }
+    }
   }
+}
+
+/**
+ * The world-memory route opens the KB graph worker on first use, and that warm-up is the slowest thing
+ * this smoke asks of a just-compiled binary on a loaded machine. Measured 2026-09-26: it answered 400
+ * ("memory worker timed out in list") and failed two release builds, then returned `[]` in ~2 s when
+ * driven directly. A WARM-UP deserves patience; a genuine bundle fault still fails, now naming the
+ * last response instead of a generic sentence.
+ */
+async function probeWorldMemory(url: string): Promise<readonly unknown[]> {
+  let last = "no attempt was made"
+  for (let attempt = 0; attempt < 6; attempt++) {
+    try {
+      const response = await fetch(`${url}/api/world-memory/list`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ limit: 1 }),
+        signal: AbortSignal.timeout(30_000),
+      })
+      if (response.ok) {
+        const body = await response.json()
+        if (Array.isArray(body)) return body
+        last = `non-array body: ${JSON.stringify(body).slice(0, 150)}`
+      } else {
+        last = `${response.status} ${(await response.text()).slice(0, 150)}`
+      }
+    } catch (error) {
+      last = String(error)
+    }
+    await Bun.sleep(5_000)
+  }
+  throw new Error(`Compiled server RAG smoke could not read the memory list: ${last}`)
 }
 
 // Best-effort clean, NOT fatal. On Windows a virus scanner or the search indexer routinely keeps a
