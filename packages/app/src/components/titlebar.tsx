@@ -24,7 +24,12 @@ import {
 import { useGlobal } from "@/context/global"
 import { ServerConnection, useServer } from "@/context/server"
 import { tabKey, useTabs, type Tab } from "@/context/tabs"
-import { officerSettingsDestination, officerSettingsTab, settingsOfficerID } from "./titlebar-officer-settings"
+import {
+  officerSettingsDestination,
+  officerSettingsTab,
+  settingsOfficerID,
+  teamChatOfficerID,
+} from "./titlebar-officer-settings"
 
 const v2TitlebarHeight = 36
 const minTitlebarZoom = 0.25
@@ -199,7 +204,7 @@ export function Titlebar() {
         const collapsesIntoParent = (s: { type?: string | undefined }) => s.type === "sub-agent"
 
         const currentTab = () => {
-          const officer = settingsOfficerID(location.pathname)
+          const officer = settingsOfficerID(location.pathname) ?? teamChatOfficerID(location.pathname)
           if (officer !== undefined) return tabsStore.find((tab) => officerSettingsTab(tab, officer, server.key))
           return matchRoute(layout.route())
         }

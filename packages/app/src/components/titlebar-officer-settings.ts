@@ -1,7 +1,7 @@
 import type { Tab } from "@/context/tabs"
 
-export function settingsOfficerID(pathname: string) {
-  const match = /^\/officers\/([^/]+)\/settings\/?$/.exec(pathname)
+const officerScreenID = (pathname: string, screen: string) => {
+  const match = new RegExp(`^/officers/([^/]+)/${screen}/?$`).exec(pathname)
   if (!match) return undefined
   try {
     return decodeURIComponent(match[1]!)
@@ -9,6 +9,10 @@ export function settingsOfficerID(pathname: string) {
     return undefined
   }
 }
+
+export const settingsOfficerID = (pathname: string) => officerScreenID(pathname, "settings")
+
+export const teamChatOfficerID = (pathname: string) => officerScreenID(pathname, "team")
 
 export function officerSettingsTab(tab: Tab, agentID: string | undefined, server: string) {
   return (

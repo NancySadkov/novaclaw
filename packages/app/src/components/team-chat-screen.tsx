@@ -1,10 +1,10 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
 import { createQuery } from "@tanstack/solid-query"
-import { Dialog, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import type { AgentTeamChatMessage } from "@novaclaw/sdk/v2"
 import { AgentPortrait } from "@/components/agent-portrait"
 import { displayName, type AgentLike } from "@/apps/contacts"
+import { agentColor } from "@/utils/agent"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useServer } from "@/context/server"
@@ -55,32 +55,40 @@ export function TeamChatMessageList(props: {
   const roster = createMemo(() => new Map(props.roster.map((agent) => [agent.id, agent])))
   const agent = (id: string) => roster().get(id)
   const name = (id: string) => agent(id)?.name?.trim() || displayName(id)
+  const accent = (id: string) => agentColor(id, agent(id)?.color)
   const timestamp = (message: AgentTeamChatMessage) =>
     new Intl.DateTimeFormat(language.intl(), { dateStyle: "medium", timeStyle: "short" }).format(message.created)
 
   return (
-    <div class="flex flex-col gap-2.5">
+    <div class="flex flex-col gap-2">
       <For each={props.messages}>
         {(message) => {
           const sender = () => agent(message.sender)
           return (
             <article
               data-team-chat-message={message.id}
-              class="rounded-xl border border-v2-border-border-muted bg-[linear-gradient(145deg,rgba(185,149,92,0.06),rgba(102,69,138,0.08))] px-3 py-2.5 shadow-[inset_0_1px_rgba(255,255,255,0.025)]"
+              style={{ "--team-accent": accent(message.sender) }}
+              class="relative overflow-hidden rounded-[14px] border border-[#cba7651f] bg-[linear-gradient(145deg,rgba(139,101,196,0.10),rgba(185,149,92,0.045))] px-3 py-2.5 shadow-[inset_0_1px_0_#ffffff0d] transition-colors hover:border-[#bd945b52]"
             >
+              <span
+                aria-hidden="true"
+                class="absolute inset-y-2.5 left-0 w-[2px] rounded-r-full bg-[var(--team-accent)] opacity-50"
+              />
               <div class="flex items-start gap-2.5">
                 <AgentPortrait
                   id={message.sender}
                   name={name(message.sender)}
                   avatar={sender()?.avatar}
-                  background={sender()?.color}
-                  class="size-8 ring-1 ring-amber-300/25"
+                  background={`color-mix(in srgb, ${accent(message.sender)} 30%, var(--v2-background-bg-layer-02))`}
+                  class="size-8 ring-1 ring-[#cba76533]"
                 />
                 <div class="min-w-0 flex-1">
-                  <div class="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-                    <span class="truncate text-[12px] font-semibold text-amber-100">{name(message.sender)}</span>
-                    <span class="truncate text-[10px] text-v2-text-text-faint">→ {name(message.recipient)}</span>
-                    <time class="ml-auto shrink-0 text-[10px] tabular-nums text-v2-text-text-faint">
+                  <div class="flex min-w-0 items-baseline gap-x-1.5">
+                    <span class="truncate text-[12.5px] font-semibold text-amber-100">{name(message.sender)}</span>
+                    <span class="shrink-0 truncate text-[11px] text-v2-text-text-muted">
+                      → {name(message.recipient)}
+                    </span>
+                    <time class="ml-auto shrink-0 pl-2 text-[10px] tabular-nums text-v2-text-text-faint">
                       {timestamp(message)}
                     </time>
                   </div>
@@ -97,7 +105,7 @@ export function TeamChatMessageList(props: {
   )
 }
 
-export function TeamChatDialog(props: { agentID: string; roster: readonly AgentLike[] }) {
+export function TeamChatScreen(props: { agentID: string; roster: readonly AgentLike[]; onBack: () => void }) {
   const sdk = useSDK()
   const language = useLanguage()
   const server = useServer()
@@ -133,6 +141,7 @@ export function TeamChatDialog(props: { agentID: string; roster: readonly AgentL
     refetchInterval: 2_000,
   }))
   const roster = createMemo(() => new Map(props.roster.map((agent) => [agent.id, agent])))
+  const officer = createMemo(() => roster().get(props.agentID))
   const name = (id: string) => roster().get(id)?.name?.trim() || displayName(id)
 
   createEffect(() => {
@@ -183,32 +192,48 @@ export function TeamChatDialog(props: { agentID: string; roster: readonly AgentL
   }
 
   return (
-    <Dialog size="normal" fit>
-      <div class="flex h-[min(82dvh,42rem)] max-h-[calc(100dvh-1rem)] min-h-0 w-full flex-col overflow-hidden bg-v2-background-bg-base text-v2-text-text-base sm:w-[34rem]">
-        <header class="relative overflow-hidden border-b border-amber-300/20 bg-[radial-gradient(ellipse_at_top_left,rgba(214,172,78,0.16),transparent_58%),linear-gradient(135deg,rgba(65,37,85,0.94),rgba(18,9,30,0.98))] px-4 py-3 shadow-[inset_0_1px_rgba(255,240,205,0.12)]">
-          <DialogHeader>
-            <div class="relative flex items-center gap-3">
-              <span class="flex size-9 shrink-0 items-center justify-center rounded-xl border border-amber-300/25 bg-amber-200/10 text-amber-200 shadow-[0_0_22px_rgba(210,165,76,0.12)]">
-                <Icon name="chats" class="size-5" />
-              </span>
-              <div class="min-w-0">
-                <DialogTitle>{language.t("teamChat.title")}</DialogTitle>
-                <p class="mt-0.5 truncate text-[11px] text-v2-text-text-muted">
-                  {language.t("teamChat.subtitle", { officer: name(props.agentID) })}
-                </p>
-              </div>
-            </div>
-          </DialogHeader>
-        </header>
-
-        <div
-          ref={scroller}
-          onScroll={(event) => {
-            const target = event.currentTarget
-            pinned = isTeamChatPinned(target.scrollTop, target.clientHeight, target.scrollHeight)
-          }}
-          class="min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(ellipse_at_85%_0%,rgba(116,72,161,0.10),transparent_52%)] px-3 py-3 sm:px-4"
+    <div
+      data-component="team-chat-screen"
+      class="flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden bg-v2-background-bg-base text-v2-text-text-base"
+    >
+      <header class="flex min-w-0 items-center gap-2.5 border-b border-v2-border-border-base px-3 py-2 sm:px-4">
+        <button
+          type="button"
+          data-action="team-chat-back"
+          class="-ml-1 flex size-7 shrink-0 items-center justify-center rounded-md text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
+          aria-label={language.t("agentConfig.back")}
+          title={language.t("agentConfig.back")}
+          onClick={props.onBack}
         >
+          <Icon name="chevron-left" size="normal" />
+        </button>
+        <AgentPortrait
+          id={props.agentID}
+          name={name(props.agentID)}
+          avatar={officer()?.avatar}
+          class="size-9 border border-v2-border-border-strong text-base"
+        />
+        <span class="min-w-0 flex-1">
+          <span class="block truncate text-sm font-semibold">{name(props.agentID)}</span>
+          <span class="block truncate text-[11px] text-v2-text-text-muted">
+            {officer()?.title ?? language.t("agentConfig.noTitle")}
+          </span>
+        </span>
+        <span class="hidden shrink-0 items-center gap-1.5 rounded-full border border-amber-300/20 bg-amber-200/5 px-2.5 py-1 text-[11px] font-medium text-amber-100 sm:flex">
+          <Icon name="chats" class="size-3.5" />
+          {language.t("teamChat.title")}
+        </span>
+      </header>
+
+      <div
+        ref={scroller}
+        onScroll={(event) => {
+          const target = event.currentTarget
+          pinned = isTeamChatPinned(target.scrollTop, target.clientHeight, target.scrollHeight)
+        }}
+        class="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-[radial-gradient(ellipse_at_80%_-10%,rgba(116,72,161,0.10),transparent_55%)]"
+      >
+        <div class="mx-auto flex w-full max-w-3xl flex-col gap-2.5 px-3 py-3 sm:px-4 sm:py-4">
           <Show when={initialQuery.isPending}>
             <div class="flex h-40 items-center justify-center text-xs text-v2-text-text-faint">
               {language.t("teamChat.loading")}
@@ -236,7 +261,7 @@ export function TeamChatDialog(props: { agentID: string; roster: readonly AgentL
             </div>
           </Show>
           <Show when={tailQuery.isError && messages().length > 0}>
-            <div class="sticky top-0 z-10 mb-3 flex items-center justify-between gap-3 rounded-lg border border-v2-border-border-muted bg-v2-background-bg-layer-02 px-3 py-2 text-[11px] text-v2-text-text-muted shadow-sm">
+            <div class="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-lg border border-v2-border-border-muted bg-v2-background-bg-layer-02 px-3 py-2 text-[11px] text-v2-text-text-muted shadow-sm">
               <span>{language.t("teamChat.reconnecting")}</span>
               <button
                 type="button"
@@ -248,7 +273,7 @@ export function TeamChatDialog(props: { agentID: string; roster: readonly AgentL
             </div>
           </Show>
           <Show when={olderCursor()}>
-            <div class="mb-3 flex justify-center">
+            <div class="flex justify-center">
               <button
                 type="button"
                 class="rounded-full border border-amber-300/20 bg-amber-200/5 px-3 py-1.5 text-[11px] font-medium text-amber-100 transition-colors hover:bg-amber-200/10 disabled:opacity-50"
@@ -266,6 +291,6 @@ export function TeamChatDialog(props: { agentID: string; roster: readonly AgentL
           <TeamChatMessageList messages={messages()} roster={props.roster} />
         </div>
       </div>
-    </Dialog>
+    </div>
   )
 }

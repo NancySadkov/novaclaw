@@ -1,16 +1,16 @@
 import { createMemo, Show } from "solid-js"
+import { useLocation, useNavigate } from "@solidjs/router"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
-import { useDialog } from "@novaclaw/ui/context/dialog"
-import { TeamChatDialog } from "@/components/team-chat-dialog"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
 
 export function TeamChatButton(props: { sessionID: string }) {
-  const dialog = useDialog()
+  const navigate = useNavigate()
+  const location = useLocation()
   const global = useGlobal()
   const language = useLanguage()
   const server = useServer()
@@ -34,7 +34,8 @@ export function TeamChatButton(props: { sessionID: string }) {
   const open = () => {
     const current = officer()
     if (!current) return
-    void dialog.showScoped(() => <TeamChatDialog agentID={current.id} roster={roster()} />)
+    const returnTo = `${location.pathname}${location.search}`
+    navigate(`/officers/${encodeURIComponent(current.id)}/team?returnTo=${encodeURIComponent(returnTo)}`)
   }
 
   return (

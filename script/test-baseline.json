@@ -55,6 +55,7 @@
   "countsPrunedReplay": "2026-09-24: core 7422->7423 adds one event replay test. A session update whose historical diffs were pruned matches its original event in either direction; an unrelated payload change and two different present patches still diverge. The changed file passed directly (48 pass, 0 fail).",
   "countsWorkerAuthorityAndStop": "2026-09-25: app:unit 1794->1796. The prior accepted-exit slice added two roster worker tests without updating the baseline; this slice removes those two tests with the retired browser worker projection and adds two Stop/working-state guards. Measured 1796 pass, 0 fail. app:browser remains 255 after its settings mounts were updated for the merged Work tab.",
   "countsOfficerResponseAttention": "2026-09-25: app:unit 1796->1798 adds two guards for named root session response attention and officer badge attribution. Measured app:unit 1798 pass and app:browser 255 pass with no failures; the package command then exited on its post-run RAM admission check. app:browser count is unchanged.",
+  "countsTeamChatFullWindow": "2026-09-25: app:unit 1799->1802 (+3) and app:browser 259->260 (+1), all ADDED and attributed. Team Chat became a full-window route (`/officers/:agentID/team`) instead of a modal sheet: `titlebar-officer-settings.test.ts` gains 'matches and decodes only the officer team route' and 'clicking the officer's tab leaves the team screen for the chat', `session-activity-indicators.test.ts` gains 'Team Chat is a full-window route, not a modal sheet' (the button navigates instead of opening a dialog; the screen is a full-height column, not a dvh-capped Dialog), and `team-chat-screen-render.test.tsx` (new) mounts the real route and proves there is no `[role=dialog]`, the screen is an app page, the officer's name and a team message render, the query is addressed to that officer, and Back returns to the `returnTo` source. Measured 1802 unit and 260 browser pass, 0 fail.",
   "units": {
     "llm": 28,
     "core": 9,
@@ -88,8 +89,8 @@
     "session-ui": 231,
     "ui": 67,
     "core": 7371,
-    "app:unit": 1799,
-    "app:browser": 259,
+    "app:unit": 1802,
+    "app:browser": 260,
     "desktop": 258,
     "server": 119,
     "novaclaw:server": 454,

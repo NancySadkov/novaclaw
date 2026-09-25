@@ -7,7 +7,7 @@ import {
   mergeTeamChatMessages,
   restoreTeamChatScrollAnchor,
   TeamChatMessageList,
-} from "@/components/team-chat-dialog"
+} from "@/components/team-chat-screen"
 import { LanguageContext } from "@/context/language"
 import { ServerContext } from "@/context/server"
 

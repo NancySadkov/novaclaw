@@ -77,6 +77,7 @@ const ContactsPage = lazy(() => import("@/pages/contacts").then(({ ContactsPage 
 const AgentSettingsPage = lazy(() =>
   import("@/pages/agent-settings").then(({ AgentSettingsPage }) => ({ default: AgentSettingsPage })),
 )
+const TeamChatPage = lazy(() => import("@/pages/team-chat").then(({ TeamChatPage }) => ({ default: TeamChatPage })))
 const SettingsPage = lazy(() => import("@/pages/settings").then(({ SettingsPage }) => ({ default: SettingsPage })))
 const MemoryGraphPage = lazy(() =>
   import("@/pages/memory-graph").then(({ MemoryGraphPage }) => ({ default: MemoryGraphPage })),
@@ -845,6 +846,9 @@ function Routes() {
           rather than half-removed. */}
       <Route path="/tasks" component={ContactsPage} />
       <Route path="/officers/:agentID/settings" component={AgentSettingsPage} />
+      {/* Team Chat is a place, not a sheet: the full-window surface a colleague's whole reporting
+          team coordinates in. It rides the officer's tab like the settings screen beside it. */}
+      <Route path="/officers/:agentID/team" component={TeamChatPage} />
       <Route path="/settings" component={SettingsPage} />
       {/* The app was renamed Chats → Tasks on 2026-08-13. A dead address is a dead end, and the
           catch-all below would otherwise try to base64-decode "chats" as a directory. */}

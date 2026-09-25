@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import type { SessionTab, Tab } from "@/context/tabs"
-import { officerSettingsDestination, officerSettingsTab, settingsOfficerID } from "./titlebar-officer-settings"
+import {
+  officerSettingsDestination,
+  officerSettingsTab,
+  settingsOfficerID,
+  teamChatOfficerID,
+} from "./titlebar-officer-settings"
 
 const tab = { type: "session", server: "local", sessionId: "ses_architect", agent: "Chief Architect" } as SessionTab
 
@@ -40,5 +45,27 @@ describe("officer tabs preserve the settings view", () => {
     expect(officerSettingsTab(tab, "nova", "local")).toBe(false)
     expect(officerSettingsTab({ ...tab, worker: true }, "Chief Architect", "local")).toBe(false)
     expect(officerSettingsTab({ ...tab, agent: undefined }, undefined, "local")).toBe(false)
+  })
+})
+
+describe("officer team chat keeps the officer's tab", () => {
+  test("matches and decodes only the officer team route", () => {
+    expect(teamChatOfficerID("/officers/Chief%20Architect/team")).toBe("Chief Architect")
+    expect(teamChatOfficerID("/officers/nova/team/")).toBe("nova")
+    expect(teamChatOfficerID("/officers/%ZZ/team")).toBeUndefined()
+    expect(teamChatOfficerID("/officers/nova/team/other")).toBeUndefined()
+    expect(teamChatOfficerID("/officers/nova/settings")).toBeUndefined()
+    expect(teamChatOfficerID("/tasks")).toBeUndefined()
+  })
+
+  test("clicking the officer's tab leaves the team screen for the chat", () => {
+    const teamTab = {
+      type: "session",
+      server: "local",
+      sessionId: "ses_architect",
+      agent: "Chief Architect",
+    } as SessionTab
+    expect(officerSettingsDestination("/officers/Chief%20Architect/team", "", teamTab)).toBeUndefined()
+    expect(teamChatOfficerID("/officers/Chief%20Architect/team")).toBe("Chief Architect")
   })
 })
