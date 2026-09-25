@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { failureDetail } from "../../src/session-worker/execution"
+import { failureDetail, noTokenTimeoutNotice } from "../../src/session-worker/execution"
 import type * as SessionWorkerSupervisor from "../../src/session-worker/supervisor"
 
 /**
@@ -52,6 +52,10 @@ test("control: the arms that already carried their own detail are unchanged", ()
   expect(failureDetail({ type: "protocol-error", detail: "worker message is not valid JSON" })).toContain(
     "worker message is not valid JSON",
   )
+})
+
+test("the recovery notice reports the active no-token timeout", () => {
+  expect(noTokenTimeoutNotice(800_000)).toContain("800 seconds")
 })
 
 test("no two worker outcomes share a description, and none renders an empty one", () => {

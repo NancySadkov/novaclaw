@@ -528,7 +528,7 @@ describe("authored annotations cannot drift", () => {
         .split("\n")
         .filter((line) => line.trim().startsWith("default:")),
     ).toEqual([
-      "    default: 300000 (from config/provider-connection.ts DEFAULT_STALL_TIMEOUT_MS)",
+      "    default: 800000 (from config/provider-connection.ts DEFAULT_STALL_TIMEOUT_MS)",
       "    default: 5000 (from config/provider-connection.ts DEFAULT_DISCOVERY_TIMEOUT_MS)",
       "    default: 45000 (from config/provider-connection.ts DEFAULT_COMPLETION_TIMEOUT_MS)",
       "    default: 120000 (from config/provider-connection.ts DEFAULT_CAPABILITY_PROBE_TIMEOUT_MS)",

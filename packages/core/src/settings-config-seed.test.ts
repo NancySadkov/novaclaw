@@ -89,7 +89,7 @@ const VALID: Record<string, unknown> = {
   provider_recovery: {
     "spark-holo/holo3.1": { failures: 2, next: 20_000 },
   },
-  provider_connection: { stall_timeout_ms: 300_000 },
+  provider_connection: { stall_timeout_ms: 800_000 },
   permissions: [{ action: "bash", resource: "*", effect: "ask" }],
   user_profile: { enabled: true, name: "Nancy" },
   // All live switches present, so the row exercises the whole block rather than its defaults.

@@ -115,6 +115,10 @@ export const failureDetail = (outcome: SessionWorkerSupervisor.Outcome): string 
   }
 }
 
+export const noTokenTimeoutNotice = (limitMs: number) =>
+  `The model stopped generating tokens for ${Math.ceil(limitMs / 1_000)} seconds. ` +
+  "NovaClaw marked this run as crashed and is recovering the session."
+
 const MIB = 1024 * 1024
 const GIB = 1024 * MIB
 export const defaultMemoryLimitBytes = (totalBytes = os.totalmem()) =>
@@ -628,7 +632,7 @@ export const layer = Layer.effect(
                   messageID: SessionMessage.ID.create(),
                   timestamp: yield* DateTime.now,
                   text: outcome.type === "no-token-timeout"
-                    ? "The model stopped generating tokens for five minutes. NovaClaw marked this run as crashed and is recovering the session."
+                    ? noTokenTimeoutNotice(outcome.limitMs)
                     : "The session stopped before its exit was accepted. NovaClaw is recovering the session.",
                 }, { location }).pipe(Effect.ignore)
               }

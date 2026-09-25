@@ -9,6 +9,7 @@ import type { Readable } from "node:stream"
 import * as ProtocolWrite from "./protocol-write"
 import { SessionWorkerFraming } from "./protocol-framing"
 import { ToolDeadline } from "@novaclaw/core/tool-deadline"
+import { DEFAULT_STALL_TIMEOUT_MS } from "@novaclaw/core/config/provider-connection"
 
 export type Outcome =
   | { readonly type: "settled" }
@@ -115,6 +116,8 @@ export interface Input {
   ) => Promise<Extract<SessionWorkerProtocol.HostMessage, { readonly type: "execution-result" }>>
   readonly onExit?: (outcome: Outcome) => Promise<void>
 }
+
+export const DEFAULT_TOKEN_SILENCE_TIMEOUT_MS = DEFAULT_STALL_TIMEOUT_MS
 
 export interface Handle {
   readonly pid: number
@@ -689,7 +692,7 @@ export function spawn(input: Input): Handle {
 
   const startupTimeoutMs = input.startupTimeoutMs ?? STARTUP_TIMEOUT_MS
   const heartbeatTimeoutMs = input.heartbeatTimeoutMs ?? ToolDeadline.DEFAULT_MAX_TOOL_TIMEOUT_MS
-  const tokenSilenceTimeoutMs = input.tokenSilenceTimeoutMs ?? 300_000
+  const tokenSilenceTimeoutMs = input.tokenSilenceTimeoutMs ?? DEFAULT_TOKEN_SILENCE_TIMEOUT_MS
   const commandLaunchTimeoutMs = input.commandLaunchTimeoutMs ?? ToolDeadline.COMMAND_LAUNCH_TIMEOUT_MS
   monitor = setInterval(
     () => {

@@ -2,7 +2,11 @@ import { expect, test } from "bun:test"
 import path from "node:path"
 import { EventV2 } from "@novaclaw/core/event"
 import { SessionSchema } from "@novaclaw/core/session/schema"
-import { spawn } from "../../src/session-worker/supervisor"
+import { DEFAULT_TOKEN_SILENCE_TIMEOUT_MS, spawn } from "../../src/session-worker/supervisor"
+
+test("the host watchdog shares the configured provider stall default", () => {
+  expect(DEFAULT_TOKEN_SILENCE_TIMEOUT_MS).toBe(800_000)
+})
 
 const fixture = path.resolve(import.meta.dir, "../fixtures/session-worker.ts")
 const lease = {
