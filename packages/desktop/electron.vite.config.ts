@@ -13,6 +13,12 @@ const NOVACLAW_SERVER_DIST = "../novaclaw/dist/node"
 // electron-builder.config.ts's app id, and until this was shared it did not (the "latest" alias).
 const channel = resolveChannel()
 
+/**
+ * `client` builds ship the interface and nothing a server needs: no compiled server, no sidecar, no
+ * agent toolchain. `combined` (the default) is the full app whose local server it launches itself.
+ */
+const role = process.env.NOVACLAW_DESKTOP_ROLE === "client" ? "client" : "combined"
+
 const nodePtyPkg = `@lydell/node-pty-${process.platform}-${process.arch}`
 
 /**
@@ -38,10 +44,14 @@ export default defineConfig({
     define: {
       "import.meta.env.NOVACLAW_CHANNEL": JSON.stringify(channel),
       "import.meta.env.NOVACLAW_THEME_PRELOAD_SHA256": JSON.stringify(themePreloadSha256),
+      "import.meta.env.NOVACLAW_DESKTOP_CLIENT": JSON.stringify(role === "client"),
     },
     build: {
       rollupOptions: {
-        input: { index: "src/main/index.ts", sidecar: "src/main/sidecar.ts" },
+        input: {
+          index: "src/main/index.ts",
+          ...(role === "client" ? {} : { sidecar: "src/main/sidecar.ts" }),
+        },
       },
       // Leave external the deps that must not be inlined into the Electron main bundle:
       //   • node-pty — native .node addon (platform-specific)
@@ -71,6 +81,7 @@ export default defineConfig({
       {
         name: "novaclaw:copy-server-assets",
         async writeBundle() {
+          if (role === "client") return
           const output = "./out/main/server-runtime"
           // The producer owns this directory. Copy the COMPLETE output: Bun file-loader assets sit
           // beside chunks and are just as load-bearing as them. The helper replaces the destination

@@ -33,6 +33,19 @@ enforce("a desktop build", process.argv, { minimumFreeBytes: MINIMUM_FREE_BYTES 
 sweepStrayServers({ reason: "a desktop build" })
 
 const channel = resolveChannel()
+
+/**
+ * A CLIENT build ships no server, so none of the server toolchain is worth building: no ripgrep,
+ * w64devkit, PortableGit or ImageMagick provisioning, no compiled server, no native file-watcher host,
+ * no DHT sidecar, no watchdog. Only the icons and metainfo the interface itself needs are staged.
+ */
+if (process.env.NOVACLAW_DESKTOP_ROLE === "client") {
+  await $`bun ./scripts/copy-icons.ts ${channel}`
+  await $`bun ./scripts/copy-metainfo.ts ${channel}`
+  console.log("client build: the server toolchain is not built")
+  process.exit(0)
+}
+
 await prepareRipgrep()
 await prepareW64devkit()
 await preparePortableGit()

@@ -44,7 +44,7 @@ const SERVER_OPTIONS = new Set([
 ])
 
 /** Parse NovaClaw's public options while leaving Electron/Chromium switches untouched. */
-export function parseDesktopInvocation(argv: readonly string[]): DesktopInvocation {
+export function parseDesktopInvocation(argv: readonly string[], defaultMode: DesktopMode = "both"): DesktopInvocation {
   if (argv.some((arg) => arg === "-h" || arg === "--help")) return { action: "help" }
   if (argv.some((arg) => arg === "--version")) return { action: "version" }
 
@@ -55,7 +55,7 @@ export function parseDesktopInvocation(argv: readonly string[]): DesktopInvocati
   const clientOnly = argv.includes("--client-only")
   const serverOnly = argv.includes("--server-only")
   if (clientOnly && serverOnly) return error("options '--client-only' and '--server-only' cannot be used together")
-  const mode: DesktopMode = clientOnly ? "client" : serverOnly ? "server" : "both"
+  const mode: DesktopMode = clientOnly ? "client" : serverOnly ? "server" : defaultMode
   const desktopService = argv.includes("--desktop-service")
   if (desktopService && mode !== "server") return error("option '--desktop-service' requires '--server-only'")
 
