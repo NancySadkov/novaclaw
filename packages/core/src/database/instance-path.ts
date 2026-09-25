@@ -47,7 +47,8 @@ export function resolve(input: string, home?: Roots): string {
 export const isStored = (input: string): boolean => input.startsWith(PREFIX)
 
 export const preserveProjectDirectory = (key: string, value: unknown): boolean =>
-  key === "directory" && typeof value === "string" && !isStored(value) && !/(?:^|\/)data\/scratch(?:\/|$)/i.test(slash(value))
+  key === "directory" && typeof value === "string" && !isStored(value) &&
+  !/(?:^|\/)data\/scratch(?:\/|$)/i.test(slash(value)) && !store(value).startsWith(`${PREFIX}data/scratch/`)
 
 export function mapValues(
   value: unknown,

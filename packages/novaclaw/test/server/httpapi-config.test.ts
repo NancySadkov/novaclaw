@@ -54,6 +54,18 @@ describe("config HttpApi", () => {
         username: "patched-user",
         formatter: false,
       })
+
+      const scratch = "C:\\Users\\nangl\\.local\\share\\novaclaw\\scratch\\geryon\\*"
+      const grant = { action: "external_directory_read", resource: scratch, effect: "allow" }
+      const agentPatch = yield* Effect.promise(() => Promise.resolve(app().request("/config", {
+        method: "PATCH",
+        headers: { "content-type": "application/json", "x-novaclaw-directory": tmp.path },
+        body: JSON.stringify({ agents: { geryon: { permissions: [grant] } } }),
+      })))
+      expect(agentPatch.status).toBe(200)
+      expect(yield* Effect.promise(() => agentPatch.json())).toMatchObject({
+        agents: { geryon: { permissions: [{ resource: "novaclaw-home:/data/scratch/geryon/*" }] } },
+      })
     }),
   )
 

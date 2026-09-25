@@ -14,6 +14,9 @@ import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { LogSettings } from "@novaclaw/core/observability/log-settings"
 import { Nudge } from "@novaclaw/core/nudge"
+import { Global } from "@novaclaw/core/global"
+import { Scratch } from "@novaclaw/core/scratch"
+import path from "node:path"
 import { testEffect } from "./lib/effect"
 
 // Config→SQLite step 7 gates: the updateConfig patch router (per-store semantics) + the
@@ -334,6 +337,40 @@ describe("ConfigStoreWrite export→import round-trip (step 8)", () => {
 })
 
 describe("ConfigStoreWrite.overlay", () => {
+  it.effect("presents home-owned grants as portable paths while retaining absolute runtime grants and project paths", () =>
+    Effect.gen(function* () {
+      const agents = yield* AgentConfigStore.Service
+      const resources = [
+        path.join(Global.Path.data, "tool-output", "*"),
+        path.join(Global.Path.tmp, "*"),
+        path.join(Scratch.forAgent("geryon"), "*"),
+      ]
+      const project = path.resolve("C:/Work/project")
+      yield* agents.setLayers("geryon", [Schema.decodeUnknownSync(ConfigAgent.Info)({
+        directory: project,
+        permissions: resources.flatMap((resource) => [
+          { action: "external_directory_read", resource, effect: "allow" },
+          { action: "external_directory_write", resource, effect: "allow" },
+        ]),
+      })])
+
+      const runtime = (yield* ConfigStoreWrite.overlay({})) as {
+        agents: Record<string, { directory: string; permissions: { resource: string }[] }>
+      }
+      const settings = (yield* ConfigStoreWrite.overlay({}, "settings")) as typeof runtime
+      const portable = (yield* ConfigStoreWrite.overlay({}, "portable")) as typeof runtime
+      expect(runtime.agents.geryon.permissions.map((rule) => rule.resource)).toEqual(resources.flatMap((resource) => [resource, resource]))
+      for (const view of [settings, portable]) {
+        expect(view.agents.geryon.directory).toBe(project)
+        expect(view.agents.geryon.permissions.map((rule) => rule.resource)).toEqual([
+          "novaclaw-home:/data/tool-output/*", "novaclaw-home:/data/tool-output/*",
+          "novaclaw-home:/data/tmp/*", "novaclaw-home:/data/tmp/*",
+          "novaclaw-home:/data/scratch/geryon/*", "novaclaw-home:/data/scratch/geryon/*",
+        ])
+      }
+    }),
+  )
+
   it.effect("shows officer Nudges in settings without adding them to stored export", () =>
     Effect.gen(function* () {
       const agents = yield* AgentConfigStore.Service

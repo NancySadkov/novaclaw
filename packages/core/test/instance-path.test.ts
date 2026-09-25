@@ -46,4 +46,11 @@ test("old internal paths rebase after moving the home", () => {
   expect(resolve("C:/Work/project", target)).toBe("C:/Work/project")
   expect(resolve("C:/Work/data/scratch/project", target)).toBe("C:/Work/data/scratch/project")
   expect(resolve("C:/Work/novaclaw/data/scratch/project", target)).toBe("C:/Work/novaclaw/data/scratch/project")
+  const oldScratch = "C:/Users/nangl/.local/share/novaclaw/scratch/geryon"
+  expect(mapValues({ directory: oldScratch, permissions: [
+    { resource: `${oldScratch}/*` },
+  ] }, (value) => store(value, source), preserveProjectDirectory)).toEqual({
+    directory: "novaclaw-home:/data/scratch/geryon",
+    permissions: [{ resource: "novaclaw-home:/data/scratch/geryon/*" }],
+  })
 })

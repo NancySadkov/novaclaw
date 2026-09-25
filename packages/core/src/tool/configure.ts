@@ -545,7 +545,7 @@ export const layer = Layer.effectDiscard(
                     const unknown = requested.filter((key) => !known.includes(key))
                     if (unknown.length > 0) return yield* failure(unknownKeyMessage(unknown, known))
                   }
-                  const stored = yield* ConfigStoreWrite.overlay({}).pipe(Effect.provide(stores))
+                  const stored = yield* ConfigStoreWrite.overlay({}, "portable").pipe(Effect.provide(stores))
                   // Redact BEFORE anything can be rendered: `overlay` returns `server.password` and
                   // every peer token verbatim, and a model that has seen one has put it in a
                   // transcript. See the ⚠️ in this file's header.

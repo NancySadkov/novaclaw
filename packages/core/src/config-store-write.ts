@@ -18,6 +18,7 @@ import { ConfigCommand } from "./config/command"
 import { ConfigProvider } from "./config/provider"
 import { ConfigReference } from "./config/reference"
 import { Database } from "./database/database"
+import * as InstancePath from "./database/instance-path"
 import { Watcher } from "./filesystem/watcher"
 import { ModelPrune } from "./catalog/model-prune"
 import { MergePatch } from "./merge-patch"
@@ -1443,7 +1444,7 @@ function foldLayers<A>(layers: Record<string, A[]>, encode: (layer: A) => unknow
  * collapse to one layer (`collapseLayers`), so this fold is normally over a single entry; it still
  * compacts the multi-source SEEDED layers, and any entity last written before that fix.
  */
-export const overlay = (base: Record<string, unknown>, view: "stored" | "settings" = "stored") =>
+export const overlay = (base: Record<string, unknown>, view: "stored" | "settings" | "portable" = "stored") =>
   Effect.gen(function* () {
     const result: Record<string, unknown> = { ...base }
 
@@ -1480,5 +1481,7 @@ export const overlay = (base: Record<string, unknown>, view: "stored" | "setting
       result.references = foldLayers(referenceLayers, Schema.encodeSync(ConfigReference.Entry))
     }
 
-    return result
+    return view === "stored"
+      ? result
+      : InstancePath.mapValues(result, InstancePath.store, InstancePath.preserveProjectDirectory) as Record<string, unknown>
   })
