@@ -16,4 +16,4 @@ The preparation scripts in `packages/desktop/scripts/` own their filenames and S
 Changing a baseline is an explicit source change; builds never discover or auto-update these assets.
 MinGit's source offer is retained in `licenses/mingit-NOTICE.md` and copied into the
 installed resource tree as `SOURCE-OFFER.txt`.
-The earlier PortableGit archive and its notice remain here to support source requests for older builds.
+The earlier PortableGit notice remains in `licenses/` to support source requests for older builds.

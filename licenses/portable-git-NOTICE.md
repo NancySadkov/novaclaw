@@ -5,7 +5,7 @@ by the Git for Windows contributors. It supplied Bash, Git, and their supporting
 
 Those builds retained the complete upstream binary tree, including `LICENSE.txt` and its package
 metadata, under `resources/third-party/portable-git/` in the installed application. The verified upstream
-archive is retained in `supply/PortableGit-2.55.0.5-64-bit.7z.exe`; its SHA-256 is
+archive used by those builds had SHA-256
 `5aa8a20f6e9abb2c755f0e73c91c687701a46b309ad84a0ca6509380fa4ae290`.
 
 ## Written source offer
