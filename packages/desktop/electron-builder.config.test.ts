@@ -161,6 +161,15 @@ test("a client build ships only the interface and none of the server's resources
       expect(config.extraResources, to).not.toContainEqual(expect.objectContaining({ to }))
     expect(config.files).toContain("!out/main/server-runtime/**")
     expect(config.files).toContain("!out/main/sidecar.js")
+    for (const excluded of [
+      "!node_modules/@ladybugdb/**",
+      "!node_modules/@ff-labs/**",
+      "!node_modules/@novaclaw/host/**",
+      "!node_modules/bun-pty/**",
+      "!node_modules/@msgpackr-extract/**",
+    ])
+      expect(config.files, excluded).toContain(excluded)
+    expect(config.files).not.toContain("!node_modules/@lydell/**")
     expect(config.win?.artifactName).toContain("-client-")
   } finally {
     if (previous === undefined) delete process.env.NOVACLAW_DESKTOP_ROLE

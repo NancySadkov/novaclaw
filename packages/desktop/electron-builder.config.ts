@@ -231,7 +231,21 @@ const getBase = (appId: string): Configuration => ({
     "out/**/*",
     "resources/**/*",
     "!resources/third-party/**",
-    ...(role === "client" ? ["!out/main/server-runtime/**", "!out/main/sidecar.js"] : []),
+    ...(role === "client"
+      ? [
+          "!out/main/server-runtime/**",
+          "!out/main/sidecar.js",
+          // Server-only native/integration packages the client's bundled main never references
+          // (checked against out/main/chunks): the KB engine, the fuzzy finder, the file-watcher host
+          // module, the Bun PTY and msgpackr's native accelerator. `@lydell/node-pty` stays — the
+          // client's main does reference it.
+          "!node_modules/@ladybugdb/**",
+          "!node_modules/@ff-labs/**",
+          "!node_modules/@novaclaw/host/**",
+          "!node_modules/bun-pty/**",
+          "!node_modules/@msgpackr-extract/**",
+        ]
+      : []),
   ],
   // The KB graph engine (@ladybugdb/wasm-core) is loaded by the sidecar through a RUNTIME
   // `createRequire(...)("@ladybugdb/wasm-core/nodejs/sync")`, which no bundler can see — so it is
@@ -243,7 +257,7 @@ const getBase = (appId: string): Configuration => ({
   // is reliable against an asar's virtual paths. Without this, `WasmMemory.open` throws, the KB
   // layer degrades to a disabled client by design, and Memory is silently dead in the packaged app
   // while working fine in dev. It shipped that way in v0.0.1.
-  asarUnpack: ["node_modules/@ladybugdb/**"],
+  asarUnpack: role === "client" ? [] : ["node_modules/@ladybugdb/**"],
   extraResources: [...RESOURCES],
   mac: {
     category: "public.app-category.developer-tools",
