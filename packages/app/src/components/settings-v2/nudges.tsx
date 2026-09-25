@@ -37,6 +37,7 @@ const HOOK_KEY: Record<HookType, TranslationKey> = {
   "mcp-call": "settings.nudges.hook.mcp-call",
   "file-read": "settings.nudges.hook.file-read",
   "file-write": "settings.nudges.hook.file-write",
+  javascript: "settings.nudges.hook.javascript",
   "after-compaction": "settings.nudges.hook.after-compaction",
   "resource-pressure": "settings.nudges.hook.resource-pressure",
   "time-of-day": "settings.nudges.hook.time-of-day",
@@ -67,6 +68,8 @@ const hookFor = (type: HookType): ConfigNudge.Hook => {
       return { type, extension: "ts" }
     case "file-write":
       return { type, extension: "ts" }
+    case "javascript":
+      return { type, code: "" }
     case "after-compaction":
       return { type }
     case "resource-pressure":
@@ -133,6 +136,7 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
         "mcp-call",
         "file-read",
         "file-write",
+        "javascript",
         "after-compaction",
         "resource-pressure",
         "time-of-day",
@@ -352,6 +356,17 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
                 spellcheck={false}
                 onInput={(event) => patchHook({ extension: event.currentTarget.value })}
               />
+            </Show>
+            <Show when={draft().hook.type === "javascript"}>
+              <TextareaV2
+                class="settings-v2-textarea"
+                rows={4}
+                value={(draft().hook as { code: string }).code}
+                placeholder={language.t("settings.nudges.field.javascript")}
+                spellcheck={false}
+                onInput={(event) => patchHook({ code: event.currentTarget.value })}
+              />
+              <p class="settings-v2-field-description">{language.t("settings.nudges.javascript.description")}</p>
             </Show>
             <Show when={draft().hook.type === "resource-pressure"}>
               <SelectV2

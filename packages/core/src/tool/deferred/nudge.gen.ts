@@ -345,6 +345,26 @@ definition: new ToolDefinition({
                   "type": {
                     "type": "string",
                     "enum": [
+                      "javascript"
+                    ]
+                  },
+                  "code": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "code"
+                ],
+                "additionalProperties": false,
+                "description": "Evaluate a JavaScript expression against a successful text-file edit. The file variable has absolute path and sizeBytes fields."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
                       "after-compaction"
                     ]
                   }

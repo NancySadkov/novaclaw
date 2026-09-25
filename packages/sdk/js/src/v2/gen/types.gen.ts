@@ -3766,6 +3766,10 @@ export type ConfigV2Nudge = {
         extension: string
       }
     | {
+        type: "javascript"
+        code: string
+      }
+    | {
         type: "after-compaction"
       }
     | {

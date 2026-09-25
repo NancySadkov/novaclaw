@@ -217,7 +217,15 @@ export const layer = Layer.effect(
             ? yield* runScript(scoped.nudge.script, input.directory)
             : undefined
           const dynamic = rendered?.exitCode === 0 && !rendered.timedOut ? rendered.output.trim() : ""
-          const interpolated = yield* renderInline(scoped.nudge.text, input.directory)
+          const filePathToken = "\uFFF0absolute_file_path\uFFF1"
+          const source =
+            input.event.type === "file-edit"
+              ? scoped.nudge.text.replaceAll("$(absolute_file_path)", filePathToken)
+              : scoped.nudge.text
+          const interpolated = (yield* renderInline(source, input.directory)).replaceAll(
+            filePathToken,
+            input.event.type === "file-edit" ? input.event.path.replace(/[\r\n\t]/g, " ") : filePathToken,
+          )
           const text = [
             interpolated,
             hookOutput ? SessionOrigin.externalContentFrame("configured nudge hook output") + hookOutput : "",

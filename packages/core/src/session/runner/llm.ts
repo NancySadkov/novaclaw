@@ -3342,6 +3342,21 @@ export const layer = Layer.effect(
                       },
                       !ShortChat.enabled(config.shortChat),
                     )
+                    if (!ShortChat.enabled(config.shortChat)) {
+                      const edited = yield* Effect.promise(() =>
+                        Nudge.editedFileEvents(
+                          {
+                            type: "tool",
+                            id: event.id,
+                            name: event.name,
+                            input: event.input,
+                            output: modelSettlement.result,
+                          },
+                          location.directory,
+                        ),
+                      )
+                      for (const editedFile of edited) yield* deliverNudges(session.id, String(agent.id), editedFile)
+                    }
                     // A missing file is authoritative negative evidence. If recalled memory led this
                     // exact step to that path, invalidate the claim before the next step recalls again.
                     // Re-stat instead of parsing the generic tool error: permission, binary, size, and

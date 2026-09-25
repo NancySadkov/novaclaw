@@ -1,10 +1,19 @@
 export * as Nudge from "./nudge"
 
 import path from "node:path"
+import fs from "node:fs/promises"
+import vm from "node:vm"
 import type { ConfigNudge } from "./config/nudge"
 import { validPattern } from "./nudge-definition"
 
-export { defaults, JAVASCRIPT_TIME_ID, LOW_RESOURCE_ID, NEW_DAY_ID, validPattern } from "./nudge-definition"
+export {
+  defaults,
+  JAVASCRIPT_TIME_ID,
+  LOW_RESOURCE_ID,
+  NEW_DAY_ID,
+  BLOATED_TODO_ID,
+  validPattern,
+} from "./nudge-definition"
 
 export type Event =
   | {
@@ -16,6 +25,7 @@ export type Event =
       readonly phase?: "before" | "after"
     }
   | { readonly type: "compaction"; readonly id: string }
+  | { readonly type: "file-edit"; readonly id: string; readonly path: string; readonly sizeBytes: number }
   | {
       readonly type: "resource"
       readonly level: "warning" | "floor"
@@ -66,7 +76,38 @@ const extensionMatches = (candidate: string, configured: string) => {
 }
 
 const toolWrites = new Set(["write", "write-hex", "edit", "apply_patch", "patch"])
+const textToolWrites = new Set(["write", "edit", "apply_patch", "patch"])
 const toolReads = new Set(["read", "read-hex", "glob", "grep"])
+
+export const editedPaths = (event: Event, directory: string): ReadonlyArray<string> => {
+  if (event.type !== "tool" || !textToolWrites.has(event.name)) return []
+  if (
+    typeof event.output !== "object" ||
+    event.output === null ||
+    !("type" in event.output) ||
+    event.output.type !== "content"
+  )
+    return []
+  return [...new Set(pathsIn(event.input).map((candidate) => path.resolve(directory, candidate)))]
+}
+
+export const editedFileEvents = async (
+  event: Event,
+  directory: string,
+): Promise<ReadonlyArray<Extract<Event, { type: "file-edit" }>>> => {
+  const result: Array<Extract<Event, { type: "file-edit" }>> = []
+  for (const editedPath of editedPaths(event, directory)) {
+    const file = await fs.stat(editedPath).catch(() => undefined)
+    if (file?.isFile())
+      result.push({
+        type: "file-edit",
+        id: `${event.type === "tool" ? event.id : ""}:${editedPath}`,
+        path: editedPath,
+        sizeBytes: file.size,
+      })
+  }
+  return result
+}
 
 const minutes = (value: string): number | undefined => {
   const match = /^(\d{2}):(\d{2})$/.exec(value.trim())
@@ -113,6 +154,16 @@ export function matches(nudge: ConfigNudge.Info, event: Event): boolean {
         toolWrites.has(event.name) &&
         pathsIn(event.input).some((file) => extensionMatches(file, hook.extension))
       )
+    case "javascript":
+      if (event.type !== "file-edit" || hook.code.trim() === "") return false
+      try {
+        return (
+          vm.runInNewContext(hook.code, { file: { path: event.path, sizeBytes: event.sizeBytes } }, { timeout: 20 }) ===
+          true
+        )
+      } catch {
+        return false
+      }
     case "after-compaction":
       return event.type === "compaction"
     case "resource-pressure":
@@ -135,7 +186,8 @@ export function matches(nudge: ConfigNudge.Info, event: Event): boolean {
 }
 
 export const occurrence = (event: Event): string => {
-  if (event.type === "tool" || event.type === "compaction") return `${event.type}:${event.id}`
+  if (event.type === "tool" || event.type === "compaction" || event.type === "file-edit")
+    return `${event.type}:${event.id}`
   if (event.type === "resource") return `resource:${event.level}:${event.bucket}`
   const year = event.at.getFullYear()
   const month = String(event.at.getMonth() + 1).padStart(2, "0")

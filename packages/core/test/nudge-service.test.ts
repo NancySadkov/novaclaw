@@ -210,6 +210,32 @@ describe("NudgeService", () => {
     }),
   )
 
+  it.effect("delivers the exact bloated-file instruction with the absolute edited path", () =>
+    Effect.gen(function* () {
+      const service = yield* NudgeService.Service
+      const filePath = "C:/work/TODO/plan.txt"
+      const claimed = yield* service.claim({
+        sessionID: "ses_bloated",
+        agentID: "nova",
+        directory: process.cwd(),
+        event: { type: "file-edit", id: "call-1", path: filePath, sizeBytes: 50 * 1024 + 1 },
+      })
+      expect(claimed.map((item) => item.text)).toEqual([
+        `The ${filePath} got bloated - reduce to 30kb, remove completed items and cruft, use simple direct concise language.`,
+      ])
+      expect(
+        (yield* service.claim({
+          sessionID: "ses_bloated",
+          agentID: "nova",
+          directory: process.cwd(),
+          event: { type: "file-edit", id: "call-2", path: "C:/work/notes.md", sizeBytes: 50 * 1024 + 1 },
+        })).map((item) => item.text),
+      ).toEqual([
+        "The C:/work/notes.md got bloated - reduce to 30kb, remove completed items and cruft, use simple direct concise language.",
+      ])
+    }),
+  )
+
   it.effect("new-day establishes a baseline silently and fires only after the local date changes", () =>
     Effect.gen(function* () {
       const service = yield* NudgeService.Service

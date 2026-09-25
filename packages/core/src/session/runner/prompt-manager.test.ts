@@ -26,6 +26,7 @@ describe("PromptManager — the one system prompt", () => {
   test("an agent prompt is one monolithic block with interpolated environment, identity and brief", () => {
     const text = PromptManager.generate(base)
     expect(text).toContain("You're officer agent of a NovaClaw instance")
+    expect(text).toContain("Maintain todo files 50kb capped.")
     expect(text).toContain("This instance runs on Windows_NT 10.0.22631 / x64.")
     expect(text).toContain("Shell: C:/Git/bin/bash.exe")
     expect(text).toContain("Instance owner is nangl.")

@@ -1067,6 +1067,10 @@ export const dict = {
   "settings.nudges.hook.mcp-call": "A tool from an MCP server is called",
   "settings.nudges.hook.file-read": "A file type is read",
   "settings.nudges.hook.file-write": "A file type is written",
+  "settings.nudges.hook.javascript": "JavaScript file edit check",
+  "settings.nudges.field.javascript": "JavaScript expression",
+  "settings.nudges.javascript.description":
+    "Runs after a successful text file edit. Use file.path (absolute) and file.sizeBytes; the expression must evaluate to true to send the nudge.",
   "settings.nudges.hook.after-compaction": "After context compaction",
   "settings.nudges.hook.resource-pressure": "When resources run low",
   "settings.nudges.hook.time-of-day": "During a time of day",

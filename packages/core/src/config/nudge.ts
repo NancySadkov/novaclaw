@@ -13,6 +13,10 @@ export const Hook = Schema.Union([
   Schema.Struct({ type: Schema.Literal("mcp-call"), server: Schema.String }),
   Schema.Struct({ type: Schema.Literal("file-read"), extension: Schema.String }),
   Schema.Struct({ type: Schema.Literal("file-write"), extension: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("javascript"), code: Schema.String }).annotate({
+    description:
+      "Evaluate a JavaScript expression against a successful text-file edit. The file variable has absolute path and sizeBytes fields.",
+  }),
   Schema.Struct({ type: Schema.Literal("after-compaction") }),
   Schema.Struct({ type: Schema.Literal("resource-pressure"), level: Schema.Literals(["warning", "floor", "either"]) }),
   Schema.Struct({ type: Schema.Literal("time-of-day"), after: Schema.String, before: Schema.String }),

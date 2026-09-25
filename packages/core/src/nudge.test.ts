@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import path from "node:path"
+import fs from "node:fs/promises"
+import os from "node:os"
 import type { ConfigNudge } from "./config/nudge"
 import { Nudge } from "./nudge"
 
@@ -11,12 +14,59 @@ const definition = (hook: ConfigNudge.Hook): ConfigNudge.Info => ({
 })
 
 describe("Nudge", () => {
-  test("ships resource, JavaScript time, and new-day guards enabled", () => {
+  test("ships resource, JavaScript time, bloated todo, and new-day guards enabled", () => {
     expect(Nudge.defaults().map((item) => [item.id, item.enabled])).toEqual([
       [Nudge.LOW_RESOURCE_ID, true],
       [Nudge.JAVASCRIPT_TIME_ID, true],
+      [Nudge.BLOATED_TODO_ID, true],
       [Nudge.NEW_DAY_ID, true],
     ])
+  })
+
+  test("the bloated-file JavaScript hook checks the edited path and byte size", () => {
+    const item = Nudge.defaults().find((entry) => entry.id === Nudge.BLOATED_TODO_ID)!
+    const matches = (filePath: string, sizeBytes: number) =>
+      Nudge.matches(item, { type: "file-edit", id: filePath, path: filePath, sizeBytes })
+    expect(matches("C:/work/TODO/plan.txt", 50 * 1024 + 1)).toBe(true)
+    expect(matches("C:/work/notes.md", 50 * 1024 + 1)).toBe(true)
+    expect(matches("C:/work/Todo.txt", 50 * 1024)).toBe(false)
+    expect(matches("C:/work/notes.txt", 50 * 1024 + 1)).toBe(false)
+    expect(Nudge.matches(item, { type: "tool", id: "read", name: "read", input: { path: "TODO.txt" } })).toBe(false)
+  })
+
+  test("file edit events require a successful text writing tool", () => {
+    const directory = "C:/work"
+    const edited = (name: string, input: unknown, output: unknown) =>
+      Nudge.editedPaths({ type: "tool", id: "x", name, input, output }, directory)
+    expect(edited("write", { path: "todo.md" }, { type: "content" })).toEqual([path.resolve(directory, "todo.md")])
+    expect(edited("write", { path: "todo.md" }, { type: "error" })).toEqual([])
+    expect(edited("read", { path: "todo.md" }, { type: "content" })).toEqual([])
+    expect(edited("write-hex", { path: "todo.md" }, { type: "content" })).toEqual([])
+    expect(
+      edited("apply_patch", { patchText: "*** Update File: todo.md\n*** Add File: notes.txt" }, { type: "content" }),
+    ).toHaveLength(2)
+  })
+
+  test("a settled text edit reads the new file size before matching", async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "novaclaw-nudge-"))
+    try {
+      const target = path.join(directory, "todo.md")
+      await fs.writeFile(target, "x".repeat(50 * 1024 + 1))
+      const event = {
+        type: "tool" as const,
+        id: "write-1",
+        name: "write",
+        input: { path: "todo.md" },
+        output: { type: "content" },
+      }
+      const edited = await Nudge.editedFileEvents(event, directory)
+      expect(edited).toEqual([{ type: "file-edit", id: `write-1:${target}`, path: target, sizeBytes: 50 * 1024 + 1 }])
+      const item = Nudge.defaults().find((entry) => entry.id === Nudge.BLOATED_TODO_ID)!
+      expect(Nudge.matches(item, edited[0]!)).toBe(true)
+      expect(await Nudge.editedFileEvents({ ...event, output: { type: "error" } }, directory)).toEqual([])
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true })
+    }
   })
 
   test("the time-safety example catches direct timestamp arithmetic and Date construction", () => {

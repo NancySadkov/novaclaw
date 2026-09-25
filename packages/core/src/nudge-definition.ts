@@ -5,6 +5,7 @@ import type { ConfigNudge } from "./config/nudge"
 export const LOW_RESOURCE_ID = "builtin-low-resources"
 export const JAVASCRIPT_TIME_ID = "builtin-javascript-time-safety"
 export const NEW_DAY_ID = "builtin-new-day"
+export const BLOATED_TODO_ID = "builtin-bloated-todo"
 
 export const defaults = (): ReadonlyArray<ConfigNudge.Info> => [
   {
@@ -35,6 +36,17 @@ export const defaults = (): ReadonlyArray<ConfigNudge.Info> => [
         "(?:[-+]\\s*(?:(?:[\\w$]+\\.)*time\\.(?:created|completed)|createdAt|completedAt|startedAt|endedAt)|(?:(?:[\\w$]+\\.)*time\\.(?:created|completed)|createdAt|completedAt|startedAt|endedAt)\\s*[-+]|new\\s+Date\\([^)]*(?:created|completed|started|ended|timestamp))",
     },
     text: "You are editing JavaScript/TypeScript time code. Before continuing, verify every value's runtime shape at its transport/schema boundary and normalize it before subtraction or formatting. Guard non-finite results so an invalid conversion can never render NaN.",
+  },
+  {
+    id: BLOATED_TODO_ID,
+    name: "Trim bloated todo and Markdown files",
+    enabled: true,
+    hook: {
+      type: "javascript",
+      code: 'file.sizeBytes > 50 * 1024 && (file.path.toLowerCase().includes("todo") || file.path.toLowerCase().endsWith(".md"))',
+    },
+    text: "The $(absolute_file_path) got bloated - reduce to 30kb, remove completed items and cruft, use simple direct concise language.",
+    spammable: true,
   },
   {
     id: NEW_DAY_ID,
