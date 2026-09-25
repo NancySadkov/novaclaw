@@ -14,6 +14,7 @@ import {
 } from "node:fs"
 import path, { join } from "node:path"
 import { Global } from "../global"
+import { bundledModulePath } from "../bundled-tool"
 import { KbChunk } from "./chunk"
 import { KbClaim } from "./claim"
 import { selectSlice, type SliceMeta } from "./graph-slice"
@@ -508,7 +509,10 @@ const loadWasm = (): Promise<any> => {
   if (!initPromise) {
     initPromise = (async () => {
       const require = createRequire(import.meta.url)
-      const lbug = require("@ladybugdb/wasm-core/nodejs/sync")
+      // A standalone server ships this package beside itself; the desktop resolves it through the
+      // unpacked `node_modules` its NODE_PATH names. Prefer the bundled copy when it exists.
+      const bundled = bundledModulePath("@ladybugdb/wasm-core/nodejs/sync")
+      const lbug = require(bundled ?? "@ladybugdb/wasm-core/nodejs/sync")
       await lbug.init()
       lbugModule = lbug
       return lbug

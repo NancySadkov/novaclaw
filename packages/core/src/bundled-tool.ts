@@ -36,3 +36,17 @@ export function bundledToolFile(
   const root = bundledToolRoot(tool, undefined, execPath)
   return root ? join(root, file) : undefined
 }
+
+/**
+ * A node package shipped beside a standalone binary, for the `createRequire` targets a bundler cannot
+ * see (the KB graph engine). The desktop resolves those from its own unpacked `node_modules` through
+ * `NODE_PATH`; a standalone server has no such path, so the package is required by absolute path from
+ * the copy next to it.
+ */
+export function bundledModulePath(specifier: string, execPath: string = process.execPath): string | undefined {
+  const beside = dirname(execPath)
+  for (const candidate of [join(beside, "node_modules", specifier), join(beside, "..", "node_modules", specifier)]) {
+    if (existsSync(candidate)) return candidate
+  }
+  return undefined
+}

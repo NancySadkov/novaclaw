@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { bundledToolFile, bundledToolRoot } from "./bundled-tool"
+import { bundledModulePath, bundledToolFile, bundledToolRoot } from "./bundled-tool"
 
 describe("bundled tool resolution", () => {
   test("an explicit env path is authoritative", () => {
@@ -37,6 +37,19 @@ describe("bundled tool resolution", () => {
       expect(bundledToolFile("ripgrep", "rg.exe", undefined, join(root, "novaclaw.exe"))).toBe(
         join(root, "third-party", "ripgrep", "rg.exe"),
       )
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  test("a runtime-required node package resolves beside the executable", () => {
+    const root = mkdtempSync(join(tmpdir(), "nc-tool-"))
+    try {
+      const specifier = "@ladybugdb/wasm-core/nodejs/sync"
+      const pkg = join(root, "node_modules", "@ladybugdb", "wasm-core", "nodejs", "sync")
+      mkdirSync(pkg, { recursive: true })
+      expect(bundledModulePath(specifier, join(root, "novaclaw.exe"))).toBe(pkg)
+      expect(bundledModulePath(specifier, join(root, "isolated", "deeper", "novaclaw.exe"))).toBeUndefined()
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
