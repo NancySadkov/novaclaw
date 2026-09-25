@@ -4,6 +4,7 @@ import { Context, Effect, Layer } from "effect"
 import { makeGlobalNode } from "../effect/app-node"
 import { FSUtil } from "../fs-util"
 import { Global } from "../global"
+import { bundledToolFile } from "../bundled-tool"
 import { which } from "../util/which"
 
 export namespace RipgrepBinary {
@@ -160,9 +161,14 @@ export namespace RipgrepBinary {
             const pin = PINNED[platformKey]
             if (!pin) throw new Error(`unsupported platform for ripgrep: ${platformKey}`)
 
-            // Desktop packages set this to the verified binary embedded at build time. A supplied
-            // path is authoritative and therefore fails closed instead of falling through silently.
-            const embedded = process.env.NOVACLAW_RIPGREP_PATH
+            // Desktop packages set this to the verified binary embedded at build time; a standalone
+            // server finds the same tree beside itself. A supplied path is authoritative and therefore
+            // fails closed instead of falling through silently.
+            const embedded = bundledToolFile(
+              "ripgrep",
+              process.platform === "win32" ? "rg.exe" : "rg",
+              process.env.NOVACLAW_RIPGREP_PATH,
+            )
             if (embedded) {
               if (!(yield* fs.isFile(embedded).pipe(Effect.orDie)))
                 throw new Error(`the embedded ripgrep binary is missing: ${embedded}`)

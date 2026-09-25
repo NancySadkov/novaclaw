@@ -3,10 +3,13 @@ export * as WindowsGit from "./windows-git"
 import { statSync } from "node:fs"
 import path from "node:path"
 import { Flag } from "./flag/flag"
+import { bundledToolRoot } from "./bundled-tool"
+
+const portableGitRoot = () => bundledToolRoot("portable-git", Flag.NOVACLAW_PORTABLE_GIT_PATH)
 
 export function binary(): string | undefined {
   if (process.platform !== "win32") return
-  const root = Flag.NOVACLAW_PORTABLE_GIT_PATH
+  const root = portableGitRoot()
   if (!root) return
   const executable = path.join(root, "cmd", "git.exe")
   if (!statSync(executable, { throwIfNoEntry: false })?.isFile())
@@ -20,7 +23,7 @@ export function commandDirectory(): string | undefined {
 }
 
 export function pathPrepend(): string[] {
-  const root = Flag.NOVACLAW_PORTABLE_GIT_PATH
+  const root = portableGitRoot()
   if (!root) return []
   binary()
   bash()
@@ -29,7 +32,7 @@ export function pathPrepend(): string[] {
 
 export function bash(): string | undefined {
   if (process.platform !== "win32") return
-  const root = Flag.NOVACLAW_PORTABLE_GIT_PATH
+  const root = portableGitRoot()
   if (!root) return
   const executable = path.join(root, "usr", "bin", "bash.exe")
   if (!statSync(executable, { throwIfNoEntry: false })?.isFile())

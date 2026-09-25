@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process"
 import { readFileSync, statSync } from "fs"
 import * as osModule from "node:os"
 import { Flag } from "./flag/flag"
+import { bundledToolRoot } from "./bundled-tool"
 import { FSUtil } from "./fs-util"
 import { WindowsGit } from "./windows-git"
 import { which } from "./util/which"
@@ -87,7 +88,7 @@ function select(file: string | undefined) {
 /** The Windows distribution's embedded POSIX shell and compiler toolchain. */
 export function w64devkitRoot() {
   if (process.platform !== "win32") return
-  const root = Flag.NOVACLAW_W64DEVKIT_PATH
+  const root = bundledToolRoot("w64devkit", Flag.NOVACLAW_W64DEVKIT_PATH)
   if (!root) return
   const shell = path.join(root, "bin", "sh.exe")
   const gcc = path.join(root, "bin", "gcc.exe")
@@ -112,7 +113,7 @@ export function w64devkitShell() {
  * mid-task rather than as a missing capability up front. Same test `w64devkitRoot` does above.
  */
 export function imagemagickRoot() {
-  const root = Flag.NOVACLAW_IMAGEMAGICK_PATH
+  const root = bundledToolRoot("imagemagick", Flag.NOVACLAW_IMAGEMAGICK_PATH)
   if (!root) return
   const binary = path.join(root, process.platform === "win32" ? "magick.exe" : "magick")
   if (stat(binary)?.isFile()) return root
