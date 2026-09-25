@@ -19,6 +19,11 @@ const rootDir = path.resolve(packageDir, "../..")
 // install location and the channel picks the DB filename, so the two halves of one build disagreed.
 const channel = resolveChannel()
 
+/** The bun-compiled standalone server directory name written by `packages/novaclaw/script/build.ts`. */
+function serverDistributionName() {
+  return `novaclaw-${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`
+}
+
 /**
  * Everything staged beside the app, checked BEFORE electron-builder copies it and AFTER it has.
  *
@@ -123,6 +128,21 @@ const EXTRA_RESOURCES: readonly StagedResource[] = [
     //
     from: "../watchdog/build/",
     to: "watchdog/",
+  },
+  {
+    // The compiled headless server, built by `scripts/prebuild.ts` for every channel but `dev` and
+    // launched by `standalone-server.ts` as the default local instance. Staged as a whole `bin/`
+    // directory because the binary resolves `host.dll` and the DHT sidecar from beside itself.
+    from: `../novaclaw/dist/${serverDistributionName()}/bin/`,
+    to: "server/",
+  },
+  {
+    // The KB graph engine, loaded by the server through a RUNTIME `createRequire(...)` no bundler can
+    // see. The Electron sidecar finds it in the app's own `node_modules`; the standalone binary has
+    // none, so its RAG layer answers 400 without this copy and `NODE_PATH` (see
+    // `createLocalServerEnvironment`).
+    from: "node_modules/@ladybugdb/",
+    to: "server/node_modules/@ladybugdb/",
   },
   ...(process.platform === "win32"
     ? [

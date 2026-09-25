@@ -133,6 +133,13 @@ test("ships the watchdog used by the desktop service", async () => {
   expect(config.extraResources).toContainEqual({ from: "../watchdog/build/", to: "watchdog/" })
 })
 
+test("stages the compiled headless server, which the default launch runs instead of Electron", async () => {
+  const module = await import(`./electron-builder.config.ts?server=${Date.now()}`)
+  const config = module.default as Configuration
+  const distribution = `novaclaw-${process.platform === "win32" ? "windows" : process.platform}-${process.arch}`
+  expect(config.extraResources).toContainEqual({ from: `../novaclaw/dist/${distribution}/bin/`, to: "server/" })
+})
+
 test("clears watchdog staging before requiring Cargo", () => {
   const source = readFileSync(join(import.meta.dir, "..", "watchdog", "build.ts"), "utf8")
   const clearStaging = source.indexOf("rmSync(staging, { recursive: true, force: true })")

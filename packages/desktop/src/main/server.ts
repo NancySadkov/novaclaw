@@ -570,6 +570,14 @@ export function createLocalServerEnvironment(): Record<string, string> {
   delete env.DEBUG
   if (process.platform === "linux") delete env.LD_PRELOAD
   if (!app.isPackaged) env.NOVACLAW_DISABLE_CHANNEL_DB = "1"
+  if (app.isPackaged) {
+    // The KB graph engine is loaded through a RUNTIME `createRequire("@ladybugdb/wasm-core/nodejs/sync")`
+    // that no bundler can see. The Electron sidecar resolves it from the app's own `node_modules`, but
+    // the staged standalone binary has none, so its `createRequire` is rooted at Bun's virtual
+    // `~BUN/root` and fails — RAG answers 400. The staged copy beside the server binary plus this
+    // resolution path is what makes the standalone server a complete server.
+    env.NODE_PATH = join(process.resourcesPath, "server", "node_modules")
+  }
   if (process.platform === "win32" && app.isPackaged) {
     env.NOVACLAW_RIPGREP_PATH = join(process.resourcesPath, "third-party", "ripgrep", "rg.exe")
     env.NOVACLAW_W64DEVKIT_PATH = join(process.resourcesPath, "third-party", "w64devkit")

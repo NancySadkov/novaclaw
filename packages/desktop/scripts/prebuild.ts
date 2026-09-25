@@ -92,4 +92,15 @@ await $`bun ../dht/build.ts ${dhtBuildArguments(channel)}`
 
 await $`bun ../watchdog/build.ts`
 
+/**
+ * The standalone headless server, for every channel but `dev`.
+ *
+ * It is what a packaged desktop launches as its local instance, so its absence on a release channel
+ * is not a degradation — `verifyStagedResources` refuses the package by name. `--single` builds only
+ * the host target; cross-target binaries belong to the CLI release, not to this desktop package.
+ * ⚠️ This must run BEFORE `build-node.ts`: `build.ts` recreates `dist/` wholesale, and build-node
+ * owns only `dist/node` under it.
+ */
+if (channel !== "dev") await $`cd ../novaclaw && bun script/build.ts --single --skip-install`
+
 await $`cd ../novaclaw && bun script/build-node.ts`

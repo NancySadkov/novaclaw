@@ -163,7 +163,15 @@ async function smokeServer(binaryPath: string, expectEmbeddedUI: boolean) {
   probe.stop(true)
   const home = mkdtempSync(path.join(tmpdir(), "novaclaw-build-smoke-"))
   const server = Bun.spawn([binaryPath, "serve", "--no-supervise", "--port", String(port)], {
-    env: { ...process.env, NOVACLAW_HOME: home, NOVACLAW_OFFLINE: "1" },
+    // The KB engine is a RUNTIME `createRequire` target the compiled binary cannot bundle; without a
+    // resolvable copy the RAG routes answer 400 and this smoke's world-memory probe fails. The
+    // monorepo's installed copy is the same one the desktop stages beside the binary.
+    env: {
+      ...process.env,
+      NOVACLAW_HOME: home,
+      NOVACLAW_OFFLINE: "1",
+      NODE_PATH: path.resolve(dir, "../desktop/node_modules"),
+    },
     stdout: "ignore",
     stderr: "ignore",
   })

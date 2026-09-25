@@ -81,6 +81,17 @@ const POLICIES: Readonly<Record<string, Policy>> = {
     binary: (platform) => platform === "win32" ? ["usr/bin/bash.exe", "usr/bin/ssh.exe", "cmd/git.exe"] : undefined,
   },
   "third-party/imagemagick/": { requirement: "required" },
+  // The compiled headless server, staged so a packaged desktop launches it instead of the Electron
+  // `--server-only` process. `packages/novaclaw/script/build.ts --single` writes it, host and DHT
+  // beside it. Release-only: the non-publishable development channel keeps the Electron sidecar
+  // (which rebuilds from source in seconds) and tolerates its absence.
+  "server/": {
+    requirement: "release-only",
+    binary: (platform) => (platform === "win32" ? "novaclaw.exe" : "novaclaw"),
+  },
+  // The KB graph engine's runtime require target, staged beside the standalone server. Release-only
+  // with the server it belongs to; a directory of files, so the first-file check is the right one.
+  "server/node_modules/@ladybugdb/": { requirement: "release-only" },
 }
 
 /** The platform's object-file magic, so a Linux `.so` staged into a Windows pack is caught here

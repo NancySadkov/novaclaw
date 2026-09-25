@@ -162,7 +162,7 @@ test("every entry the packager actually copies is classified", async () => {
   for (const entry of resources) {
     // Everything is staged so nothing can fail for absence — the only failure available here is the
     // unclassified arm, which is what this case is about.
-    stage(entry.to, { "host.dll": PE, "novaclaw-watchdog.exe": PE, "usr/bin/bash.exe": PE, "usr/bin/ssh.exe": PE, "cmd/git.exe": PE, "placeholder.bin": PE })
+    stage(entry.to, { "host.dll": PE, "novaclaw-watchdog.exe": PE, "novaclaw.exe": PE, "usr/bin/bash.exe": PE, "usr/bin/ssh.exe": PE, "cmd/git.exe": PE, "placeholder.bin": PE })
     expect(() => verify([entry])).not.toThrow()
   }
 })
