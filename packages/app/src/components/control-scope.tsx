@@ -1,7 +1,7 @@
 import type { Component } from "solid-js"
 import { useLanguage } from "@/context/language"
 
-export type ControlScopeKind = "instance" | "device" | "chat" | "draft" | "colleague" | "window"
+export type ControlScopeKind = "instance" | "device" | "chat" | "draft" | "window"
 
 /** A compact, shared answer to “where will this choice still apply?” */
 export const ControlScope: Component<{ kind: ControlScopeKind; class?: string }> = (props) => {

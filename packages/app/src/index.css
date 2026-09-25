@@ -1284,6 +1284,53 @@ body[data-new-layout] [data-slot="dialog-container"] {
   color: #211628;
 }
 
+/* The first unsaved edit glints the Save button for one second: a gold pulse plus a specular sweep, so
+   the destination of an edit reads without a sentence beside it. */
+[data-component="agent-settings"] [data-action="agent-config-save"][data-sparkle="true"] {
+  position: relative;
+  overflow: hidden;
+  animation: agent-save-sparkle 1s ease-out;
+}
+
+[data-component="agent-settings"] [data-action="agent-config-save"][data-sparkle="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 30%, rgba(255, 249, 224, 0.85) 48%, transparent 64%);
+  animation: agent-save-sheen 1s ease-out;
+}
+
+@keyframes agent-save-sparkle {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 219, 141, 0);
+  }
+  35% {
+    box-shadow:
+      0 0 0 3px rgba(245, 219, 141, 0.5),
+      0 0 18px 5px rgba(245, 219, 141, 0.45);
+  }
+}
+
+@keyframes agent-save-sheen {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(120%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-component="agent-settings"] [data-action="agent-config-save"][data-sparkle="true"] {
+    animation: none;
+  }
+  [data-component="agent-settings"] [data-action="agent-config-save"][data-sparkle="true"]::after {
+    content: none;
+  }
+}
+
 [data-component="agent-settings"] [data-slot="agent-settings-nav"] [data-active="true"] {
   border-color: color-mix(in srgb, #d7b36d 58%, transparent);
   background: linear-gradient(105deg, color-mix(in srgb, #806394 24%, var(--v2-background-bg-layer-03)), var(--v2-background-bg-layer-02));

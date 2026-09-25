@@ -344,7 +344,7 @@ describe("Officer Settings screen renders", () => {
     // The guard on the instrument: if this is empty every assertion below is vacuous.
     expect(screenText()).not.toContain("agentConfig.who")
     expect(selects().length).toBeGreaterThan(0)
-    expect(document.querySelector('[data-component="control-scope"][data-scope="colleague"]')).not.toBeNull()
+    expect(document.querySelector('[data-slot="agent-settings-header"]')).not.toBeNull()
     const memoryCard = document.querySelector('[data-section="memory"][data-settings-tab="memory"]')
     const clear = document.querySelector('[data-action="agent-clear-memory"]')
     const open = document.querySelector('[data-action="agent-open-memory"]')
@@ -805,6 +805,21 @@ describe("Officer Settings screen renders", () => {
     name.value = "Theron the Second"
     name.dispatchEvent(new Event("input", { bubbles: true }))
     expect(saveButton()!.disabled).toBe(false)
+  })
+
+  test("the first unsaved edit glints Save for a second, then it settles", async () => {
+    mount({ agents: [AGENT] })
+    await settle()
+    const save = saveButton()!
+    expect(save.getAttribute("data-sparkle")).toBeNull()
+
+    const name = document.querySelector("input") as HTMLInputElement
+    name.value = "Theron the Second"
+    name.dispatchEvent(new Event("input", { bubbles: true }))
+    expect(save.getAttribute("data-sparkle")).toBe("true")
+
+    await new Promise((resolve) => setTimeout(resolve, 1100))
+    expect(save.getAttribute("data-sparkle")).toBeNull()
   })
 
   test("an officer can set zero as a real reasoning override", async () => {

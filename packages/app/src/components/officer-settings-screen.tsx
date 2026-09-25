@@ -1,11 +1,10 @@
 import type { ConfigV2Agent } from "@novaclaw/sdk/v2/client"
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { Tabs as KobalteTabs } from "@kobalte/core/tabs"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { Switch as SwitchToggle } from "@novaclaw/ui/v2/switch-v2"
-import { ControlScope } from "@/components/control-scope"
 import { useConfirm } from "@/components/dialog-confirm"
 import { useDirectoryPicker } from "@/components/directory-picker"
 import { displayName as folderDisplayName } from "@/pages/layout/helpers"
@@ -754,6 +753,22 @@ export function OfficerSettingsScreen(props: {
 
   const [busy, setBusy] = createSignal<"clone" | "clear-memory" | "retire" | "pause" | "copy" | undefined>()
 
+  // A one-second gold glint on Save the moment the first unsaved edit lands: the label that used to sit
+  // here is gone, and a person who changes a field should still be told, without words, where it goes.
+  const [saveSparkle, setSaveSparkle] = createSignal(false)
+  let wasDirty = false
+  let sparkleTimer: ReturnType<typeof setTimeout> | undefined
+  createEffect(() => {
+    const isDirty = dirty()
+    if (isDirty && !wasDirty) {
+      setSaveSparkle(true)
+      clearTimeout(sparkleTimer)
+      sparkleTimer = setTimeout(() => setSaveSparkle(false), 1000)
+    }
+    wasDirty = isDirty
+  })
+  onCleanup(() => clearTimeout(sparkleTimer))
+
   // The shared roster is also used by render/offline states that deliberately have no SDK yet.
   // Treat that as "not connected", not as a component crash during construction.
   const sdk = () => ctx()?.sdk?.client?.v2
@@ -1389,9 +1404,6 @@ export function OfficerSettingsScreen(props: {
             {agent()?.title ?? language.t("agentConfig.noTitle")}
           </span>
         </span>
-        <span class="hidden sm:block">
-          <ControlScope kind="colleague" />
-        </span>
         <button
           type="button"
           class="shrink-0 rounded-md p-1.5 text-v2-text-text-faint hover:bg-v2-background-bg-layer-03 hover:text-v2-text-text-base"
@@ -1448,6 +1460,7 @@ export function OfficerSettingsScreen(props: {
           <button
             type="button"
             data-action="agent-config-save"
+            data-sparkle={saveSparkle() ? "true" : undefined}
             class="rounded-md border border-v2-border-border-strong bg-v2-background-bg-layer-03 px-3 py-1.5 text-xs font-semibold text-v2-text-text-base shadow-sm hover:brightness-110 disabled:opacity-40"
             disabled={
               !dirty() ||
@@ -1757,7 +1770,6 @@ export function OfficerSettingsScreen(props: {
                 label={(option) => option.label}
                 onSelect={(option) => option && setReasoningModel(option.value)}
               />
-              <p class="mt-1 text-[11px] text-v2-text-text-faint">Optional model for private reasoning.</p>
               <label class="mt-3 flex items-start gap-2 text-xs">
                 <input
                   type="checkbox"

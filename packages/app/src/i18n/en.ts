@@ -241,7 +241,6 @@ export const dict = {
   "control.scope.device": "This device",
   "control.scope.chat": "This chat",
   "control.scope.draft": "Draft — saved when you confirm",
-  "control.scope.colleague": "This colleague — saved when you press Save",
   "control.scope.window": "This window — returns to the default next launch",
 
   "prompt.placeholder.shell": "Enter shell command... {{example}}",
