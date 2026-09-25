@@ -1254,7 +1254,6 @@ body[data-new-layout] [data-slot="dialog-container"] {
 .agent-settings-panels[data-active-tab="context"] [data-settings-tab="context"],
 .agent-settings-panels[data-active-tab="quality"] [data-settings-tab="quality"],
 .agent-settings-panels[data-active-tab="memory"] [data-settings-tab="memory"],
-.agent-settings-panels[data-active-tab="messengers"] [data-settings-tab="messengers"],
 .agent-settings-panels[data-active-tab="nudges"] [data-settings-tab="nudges"],
 .agent-settings-panels[data-active-tab="schedule"] [data-settings-tab="schedule"] {
   display: block;

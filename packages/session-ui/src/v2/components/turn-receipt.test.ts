@@ -146,8 +146,8 @@ describe("durable turn activity", () => {
   test("a recovered turn stays open while live status reconnects", () => {
     expect(turnIsRunning(undefined, true)).toBe(true)
     expect(turnIsRunning("idle", true)).toBe(true)
-    expect(turnIsRunning("busy", false)).toBe(true)
-    expect(turnIsRunning("retry", false)).toBe(true)
+    expect(turnIsRunning("busy", false)).toBe(false)
+    expect(turnIsRunning("retry", false)).toBe(false)
     expect(turnIsRunning("idle", false)).toBe(false)
   })
 })

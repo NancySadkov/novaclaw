@@ -169,7 +169,7 @@ export const attemptLabel = (attempt: ProviderAttemptTiming) => {
 
 /** Live status is ephemeral; durable execution keeps a recovered turn open across process boot. */
 export const turnIsRunning = (status: string | undefined, executionOpen: boolean | undefined): boolean =>
-  executionOpen === true || status === "busy" || status === "retry"
+  executionOpen ?? (status === "busy" || status === "retry")
 
 /**
  * What stands in for the ANSWER when an accepted exit produced no trailing prose.

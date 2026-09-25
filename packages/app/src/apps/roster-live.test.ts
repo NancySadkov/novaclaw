@@ -213,14 +213,16 @@ describe("an officer's live worker tree", () => {
     expect(workersOf(sessions, "root").map((row) => row.id)).toEqual(["worker", "nested"])
   })
 
-  test("removes settled, exited, failed, and interrupted branches from the current worker set", () => {
+  test("accepted exit or explicit Stop removes a worker branch from the current set", () => {
     const state = new Map([["worker", { execution: "interrupted" as const }]])
-    expect(workersOf(sessions, "root", (id) => state.get(id) ?? {}).map((row) => row.id)).toEqual([])
+    expect(workersOf(sessions, "root", (id) => state.get(id) ?? {}).map((row) => row.id)).toEqual(["worker", "nested"])
+    expect(workersOf(sessions, "root", (id) => id === "worker" ? { execution: "interrupted", failureClass: "interrupt" } : {}).map((row) => row.id)).toEqual([])
     expect(
       workersOf(sessions, "root", (id) => (id === "nested" ? { execution: "settled" as const } : {})).map(
         (row) => row.id,
       ),
-    ).toEqual(["worker"])
+    ).toEqual(["worker", "nested"])
+    expect(workersOf(sessions, "root", (id) => id === "worker" ? { lifecycle: "exited" } : {}).map((row) => row.id)).toEqual([])
     expect(
       workersOf(sessions, "root", (id) =>
         id === "worker" ? { execution: "paused" as const } : { lifecycle: "idle" },
@@ -353,7 +355,7 @@ describe("rosterTask", () => {
   })
 })
 
-describe("rosterState — the scheduler's answer, not a phase inspector", () => {
+describe("rosterState — durable execution outranks stale live status", () => {
   test("running means Working", () => {
     expect(rosterState({ status: { type: "busy" }, working: true })).toBe("working")
   })
@@ -361,6 +363,11 @@ describe("rosterState — the scheduler's answer, not a phase inspector", () => 
   test("not running means Idle", () => {
     expect(rosterState({ status: { type: "idle" }, working: false })).toBe("idle")
     expect(rosterState({ status: undefined, working: false })).toBe("idle")
+  })
+
+  test("durable execution overrides a stale Working status", () => {
+    expect(rosterState({ status: { type: "busy" }, working: true, execution: { state: "settled" } })).toBe("idle")
+    expect(rosterState({ status: { type: "busy" }, working: true, execution: { state: "recovering" } })).toBe("error")
   })
 
   test("a retrying provider is an ERROR, not an idle colleague", () => {
@@ -375,20 +382,23 @@ describe("rosterState — the scheduler's answer, not a phase inspector", () => 
     }
   })
 
-  test("a new live run outranks the previous attempt's paused outcome", () => {
-    expect(rosterState({ status: { type: "busy" }, working: true, execution: { state: "paused" } })).toBe("working")
+  test("a paused attempt does not display Working from a stale status", () => {
+    expect(rosterState({ status: { type: "busy" }, working: true, execution: { state: "paused" } })).toBe("paused")
   })
 })
 
 describe("terminal attention", () => {
-  test("a settled idle root produces one completion indication", () => {
-    expect(terminalAttention({ lifecycle: "idle", execution: "settled" })).toBe("complete")
+  test("a settled idle root without an exit result has no completion indication", () => {
+    expect(terminalAttention({ lifecycle: "idle", execution: "settled" })).toBeUndefined()
   })
 
   test("paused, failed, and interrupted roots produce recovery attention", () => {
     for (const execution of ["paused", "failed", "interrupted"] as const) {
       expect(terminalAttention({ lifecycle: "idle", execution })).toBe("recovery")
     }
+  })
+  test("an explicit Stop does not ask for recovery attention", () => {
+    expect(terminalAttention({ lifecycle: "idle", execution: "interrupted", failureClass: "interrupt" })).toBeUndefined()
   })
 
   test("an early idle does not claim a busy/recovering lease completed", () => {

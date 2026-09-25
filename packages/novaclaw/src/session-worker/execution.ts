@@ -55,6 +55,7 @@ import { SessionWorkerLocation } from "./location"
 import { WorkerRegistry } from "@/storage/worker-registry"
 import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
 import { ToolDeadline } from "@novaclaw/core/tool-deadline"
+import { ShortChat } from "@novaclaw/core/session/runner/short-chat"
 
 /**
  * Render ONE worker outcome as the sentence a person reads under *"Technical detail:"*.
@@ -93,6 +94,8 @@ export const failureDetail = (outcome: SessionWorkerSupervisor.Outcome): string 
         `session worker stopped responding for ${Math.ceil(outcome.silenceMs / 1_000)} seconds ` +
         `(maximum ${Math.ceil(outcome.limitMs / 1_000)} seconds); its event loop was wedged or blocked`
       )
+    case "no-token-timeout":
+      return `the model generated no tokens for ${Math.ceil(outcome.silenceMs / 1_000)} seconds while the session was working`
     case "command-launch-timeout":
       return (
         `command ${outcome.callID} failed to confirm launch within ${Math.ceil(outcome.limitMs / 1_000)} seconds; ` +
@@ -320,6 +323,7 @@ export const layer = Layer.effect(
               yield* publishStatus({ type: latest?.result === undefined ? "idle" : "exited" })
             })
 
+            let resumeForced = force
             for (;;) {
               const lease = yield* attempts.start(sessionID, ownerID)
               const maxToolTimeoutMs =
@@ -330,7 +334,7 @@ export const layer = Layer.effect(
                 lease,
                 directory: session.location.directory,
                 workspaceID: session.location.workspaceID,
-                force,
+                force: resumeForced,
                 // Outside the worker process on purpose: a synchronous parser/adapter loop blocks
                 // every timer inside that process. Heartbeat silence lets the host enforce the same
                 // officer ceiling even when the worker's event loop cannot enforce its own deadline.
@@ -567,7 +571,10 @@ export const layer = Layer.effect(
               }
 
               if (outcome.type === "settled") {
-                const settlement = yield* attempts.settle(lease)
+                const completionMode = ShortChat.enabled((yield* effectiveConfig.resolve(sessionID)).shortChat)
+                  ? "chat-reply"
+                  : "accepted-exit"
+                const settlement = yield* attempts.settle(lease, completionMode)
                 if (settlement === "recovery-pending") {
                   yield* Log.event("session.settlement.refused.recovery", { "session.id": sessionID })
                   // Settlement is a compare-and-transition operation: a durable provider obligation
@@ -576,8 +583,15 @@ export const layer = Layer.effect(
                   continue
                 }
                 if (settlement === "superseded") return
-                yield* publishSettledStatus
-                return
+                if (settlement === "committed") {
+                  yield* publishSettledStatus
+                  return
+                }
+                outcome = {
+                  type: "failed",
+                  classification: "unfinished-settlement",
+                  detail: "The session worker returned without an accepted exit while work remained open",
+                }
               }
               if (outcome.type === "interrupted") {
                 const current = yield* attempts.get(sessionID)
@@ -606,6 +620,18 @@ export const layer = Layer.effect(
                 detail,
               })
               if (!decision) return
+              resumeForced = true
+              if (outcome.type === "no-token-timeout" ||
+                  (outcome.type === "failed" && outcome.classification === "unfinished-settlement")) {
+                yield* events.publish(SessionEvent.Synthetic, {
+                  sessionID,
+                  messageID: SessionMessage.ID.create(),
+                  timestamp: yield* DateTime.now,
+                  text: outcome.type === "no-token-timeout"
+                    ? "The model stopped generating tokens for five minutes. NovaClaw marked this run as crashed and is recovering the session."
+                    : "The session stopped before its exit was accepted. NovaClaw is recovering the session.",
+                }, { location }).pipe(Effect.ignore)
+              }
               const info = yield* attempts.get(sessionID)
               const failureCount = info?.failureCount ?? 1
               const retryDelay = workerRetryDelayMs(failureCount)

@@ -13,7 +13,6 @@ export interface Context {
   readonly force: boolean
   readonly signal: AbortSignal
   readonly capabilities: SessionWorkerCapabilities.Capabilities
-  readonly phase: (phase: (typeof SessionWorkerProtocol.Heartbeat.Type)["phase"]) => void
   /** Register the worker-local handler that stops one command while leaving this drain alive. The
    *  handle is a durable job id (`job_…`) or an in-flight tool-call id. */
   readonly registerCommandStop: (handler: (commandID: string, reason: string) => Promise<void>) => () => void
@@ -50,7 +49,6 @@ export async function run(input: Input): Promise<"settled" | "interrupted" | "fa
   const start = decoded.message
   const lease = { ...identityOf(start), ownerID: `worker_${process.pid}` }
   const abort = new AbortController()
-  let phase: (typeof SessionWorkerProtocol.Heartbeat.Type)["phase"] = "drain"
   let rejectProtocol!: (error: Error) => void
   const protocolFailure = new Promise<never>((_resolve, reject) => {
     rejectProtocol = reject
@@ -100,7 +98,7 @@ export async function run(input: Input): Promise<"settled" | "interrupted" | "fa
 
   emit({ ...identityOf(start), type: "ready", workerPID: process.pid })
   const heartbeat = setInterval(
-    () => emit({ ...identityOf(start), type: "heartbeat", phase, at: Date.now(), rssBytes: process.memoryUsage.rss() }),
+    () => emit({ ...identityOf(start), type: "heartbeat", at: Date.now(), rssBytes: process.memoryUsage.rss() }),
     input.heartbeatIntervalMs ?? 1_000,
   )
   heartbeat.unref?.()
@@ -113,9 +111,6 @@ export async function run(input: Input): Promise<"settled" | "interrupted" | "fa
         force: start.force,
         signal: abort.signal,
         capabilities,
-        phase: (next) => {
-          phase = next
-        },
         registerCommandStop: (handler) => {
           commandStop = handler
           return () => {

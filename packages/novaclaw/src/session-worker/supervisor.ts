@@ -15,6 +15,7 @@ export type Outcome =
   | { readonly type: "failed"; readonly classification: string; readonly detail?: string }
   | { readonly type: "start-timeout" }
   | { readonly type: "heartbeat-timeout"; readonly silenceMs: number; readonly limitMs: number }
+  | { readonly type: "no-token-timeout"; readonly silenceMs: number; readonly limitMs: number }
   | { readonly type: "command-launch-timeout"; readonly callID: string; readonly limitMs: number }
   | { readonly type: "memory-limit"; readonly rssBytes: number; readonly limitBytes: number }
   | { readonly type: "protocol-error"; readonly detail: string }
@@ -33,6 +34,7 @@ export interface Input {
   readonly startupTimeoutMs?: number
   /** Host-side event-loop liveness deadline. Defaults to the officer's ten-minute tool ceiling. */
   readonly heartbeatTimeoutMs?: number
+  readonly tokenSilenceTimeoutMs?: number
   /** Short host-side backstop from bash dispatch until the worker proves its loop is still alive. */
   readonly commandLaunchTimeoutMs?: number
   readonly interruptGraceMs?: number
@@ -281,6 +283,8 @@ export function spawn(input: Input): Handle {
   const startedAt = Date.now()
   let ready = false
   let lastHeartbeatAt = startedAt
+  let providerActive = false
+  let lastTokenAt = startedAt
   const commandLaunchPending = new Map<string, number>()
   let done = false
   let interruptRequested = false
@@ -426,7 +430,15 @@ export function spawn(input: Input): Handle {
         // Ordered: one promise chain is the transcript ordering gate, so even when a publication
         // awaits disk the next one cannot overtake it and receive an earlier durable sequence. See
         // `ORDERED_RPC` for why nothing that can block on a human shares that chain any more.
-        dispatchRPC(message, () => publish(message, lifetime.signal))
+        dispatchRPC(message, async () => {
+          const reply = await publish(message, lifetime.signal)
+          if (reply.type === "event-published" && (
+            message.eventType === "session.next.text.delta" ||
+            message.eventType === "session.next.reasoning.delta" ||
+            message.eventType === "session.next.tool.input.delta"
+          )) lastTokenAt = Date.now()
+          return reply
+        })
         return
       }
       case "device-admit":
@@ -635,7 +647,16 @@ export function spawn(input: Input): Handle {
         if (message.type === "execution-tool-dispatched" && message.name === "bash")
           commandLaunchPending.set(message.callID, Date.now())
         if (message.type === "execution-tool-settled") commandLaunchPending.delete(message.callID)
-        dispatchRPC(message, () => request(message, lifetime.signal))
+        dispatchRPC(message, async () => {
+          const reply = await request(message, lifetime.signal)
+          if (reply.outcome === "applied") {
+            if (message.type === "execution-provider-started") {
+              providerActive = true
+              lastTokenAt = Date.now()
+            } else if (message.type === "execution-provider-settled") providerActive = false
+          }
+          return reply
+        })
         return
       }
     }
@@ -668,6 +689,7 @@ export function spawn(input: Input): Handle {
 
   const startupTimeoutMs = input.startupTimeoutMs ?? STARTUP_TIMEOUT_MS
   const heartbeatTimeoutMs = input.heartbeatTimeoutMs ?? ToolDeadline.DEFAULT_MAX_TOOL_TIMEOUT_MS
+  const tokenSilenceTimeoutMs = input.tokenSilenceTimeoutMs ?? 300_000
   const commandLaunchTimeoutMs = input.commandLaunchTimeoutMs ?? ToolDeadline.COMMAND_LAUNCH_TIMEOUT_MS
   monitor = setInterval(
     () => {
@@ -680,6 +702,8 @@ export function spawn(input: Input): Handle {
       if (!ready && now - startedAt > startupTimeoutMs) finish({ type: "start-timeout" })
       if (ready && now - lastHeartbeatAt > heartbeatTimeoutMs)
         finish({ type: "heartbeat-timeout", silenceMs: now - lastHeartbeatAt, limitMs: heartbeatTimeoutMs })
+      if (ready && providerActive && now - lastTokenAt > tokenSilenceTimeoutMs)
+        finish({ type: "no-token-timeout", silenceMs: now - lastTokenAt, limitMs: tokenSilenceTimeoutMs })
       for (const [callID, dispatchedAt] of commandLaunchPending) {
         // A valid long-running command keeps the worker's event loop responsive and therefore keeps
         // heartbeating. Require BOTH clocks to be stale: a heartbeat can race between the durable

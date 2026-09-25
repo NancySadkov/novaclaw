@@ -4808,7 +4808,13 @@ export const layer = Layer.effect(
                 result: exitRequest.result,
               })
               const completionTarget = yield* store.get(input.sessionID).pipe(Effect.orElseSucceed(() => undefined))
-              if (completionTarget?.type === "goal-oriented") {
+              const completionOfficer = completionTarget?.agent === undefined
+                ? undefined
+                : yield* agents.get(AgentV2.ID.make(completionTarget.agent))
+              if (SessionDrive.unattendedMode({
+                operationMode: AgentV2.operationModeOf(completionOfficer),
+                sessionType: completionTarget?.type,
+              })) {
                 acceptedGoalExit = true
                 needsContinuation = false
                 break
@@ -5488,30 +5494,14 @@ export const layer = Layer.effect(
           }
         }
       }
-      // 🔴 The turn is OVER at this line, and the status has to say so BEFORE the housekeeping.
-      // `postRun` is the changes summary, the auto-title and memory extraction — and two of those
-      // three are model calls, so on a local endpoint it routinely runs for tens of seconds. It used
-      // to run while the session was still `busy`, which is what made the composer's "Working…" hang
-      // around after the answer was complete, pointing at a phase list from a turn that had already
-      // ended: nothing the user asked for was still running, and the spinner said otherwise. Its own
-      // doc comment says the title is generated "while the user reads the response" — that intent
-      // only holds if the user is not being shown a spinner for it.
-      //
-      // Idle FIRST, then the housekeeping, still inside the drain and under the same lease (so
-      // nothing about lifetime, interruption or ordering changes — only what the UI is told).
-      // `execution/local.ts` publishes idle again in its `ensuring`; a repeat is a no-op.
-      // Derive the terminal lifecycle from the durable row and ALWAYS publish it. The previous
-      // `if result is absent, publish idle; otherwise publish nothing` relied on exit's tool fiber
-      // having won an event-ordering race against later snapshot timing. On a real long turn the
-      // snapshot's final `busy` landed after `exited`, and every outer finalizer skipped its chance
-      // to repair the lie for exactly the same reason.
       const settled = yield* store.get(input.sessionID).pipe(Effect.orElseSucceed(() => undefined))
-      yield* events
-        .publish(SessionStatusEvent.Status, {
-          sessionID: input.sessionID,
-          status: { type: settled?.result === undefined ? "idle" : "exited" },
-        })
-        .pipe(Effect.ignore)
+      if (settled?.result !== undefined || ShortChat.enabled((yield* effective.resolve(input.sessionID)).shortChat))
+        yield* events
+          .publish(SessionStatusEvent.Status, {
+            sessionID: input.sessionID,
+            status: { type: settled?.result === undefined ? "idle" : "exited" },
+          })
+          .pipe(Effect.ignore)
       yield* maintenance.postRun(input.sessionID)
     })
 

@@ -80,7 +80,7 @@ describe("SessionExecutionAttempt", () => {
       expect(checkpointed).toMatchObject({ phase: "provider" })
       expect(checkpointed?.checkpointAt).toBeNumber()
 
-      yield* attempts.settle(first)
+      yield* attempts.settle(first, "chat-reply")
       expect((yield* attempts.get(sessionID))?.state).toBe("busy")
       yield* attempts.recoverFailure(second, { classification: "runner-failure", detail: "boom" })
       expect(yield* attempts.get(sessionID)).toMatchObject({
@@ -97,6 +97,24 @@ describe("SessionExecutionAttempt", () => {
         failureCount: 0,
       })
       expect(authorized?.failureClass).toBeUndefined()
+    }),
+  )
+
+  it.effect("a non-Chat attempt cannot settle without an accepted exit", () =>
+    Effect.gen(function* () {
+      const sessionID = SessionSchema.ID.make("ses_exit_required")
+      yield* makeSession(sessionID)
+      const attempts = yield* SessionExecutionAttempt.Service
+      const { db } = yield* Database.Service
+      const lease = yield* attempts.start(sessionID, "host")
+      yield* attempts.advance(lease, "provider", "mark")
+      yield* attempts.heartbeat(lease)
+      expect(yield* attempts.get(sessionID)).toMatchObject({ phase: "provider" })
+      expect(yield* attempts.settle(lease, "accepted-exit")).toBe("unfinished")
+      expect((yield* attempts.get(sessionID))?.state).toBe("busy")
+      yield* db.update(SessionTable).set({ result: { result: "done" } }).where(eq(SessionTable.id, sessionID)).run().pipe(Effect.orDie)
+      expect(yield* attempts.settle(lease, "accepted-exit")).toBe("committed")
+      expect((yield* attempts.get(sessionID))?.state).toBe("settled")
     }),
   )
 
@@ -128,7 +146,7 @@ describe("SessionExecutionAttempt", () => {
       })
 
       const recovered = yield* attempts.start(sessionID, "new-host")
-      yield* attempts.settle(recovered)
+      yield* attempts.settle(recovered, "chat-reply")
       expect(yield* attempts.get(sessionID)).toMatchObject({ state: "settled", failureCount: 0 })
     }),
   )
@@ -182,7 +200,7 @@ describe("SessionExecutionAttempt", () => {
       expect(yield* attempts.providerRecovery(first)).toEqual({ ...recovery, toolProtocol: true })
 
       const replacement = yield* attempts.start(sessionID, "host-b")
-      expect(yield* attempts.settle(replacement)).toBe("recovery-pending")
+      expect(yield* attempts.settle(replacement, "accepted-exit")).toBe("recovery-pending")
       const pending = yield* attempts.get(sessionID)
       expect(pending).toMatchObject({ state: "busy" })
       expect(pending?.failureClass).toBeUndefined()
@@ -190,7 +208,7 @@ describe("SessionExecutionAttempt", () => {
       expect(yield* attempts.providerRecovery(replacement)).toEqual({ ...recovery, toolProtocol: true })
       yield* attempts.providerSettled(replacement, recovery.attemptID)
       expect(yield* attempts.providerRecovery(replacement)).toBeUndefined()
-      expect(yield* attempts.settle(replacement)).toBe("committed")
+      expect(yield* attempts.settle(replacement, "chat-reply")).toBe("committed")
       expect(yield* attempts.get(sessionID)).toMatchObject({ state: "settled" })
     }),
   )

@@ -23,11 +23,9 @@ describe("a sub-agent runs until explicit exit", () => {
     expect(SessionDrive.decide({ type: "sub-agent", result: "" }, fresh(), now)).toEqual({ kind: "terminated" })
   })
 
-  test("an INTERACTIVE session is never settled — nobody is joining it", () => {
-    // ⚠️ The negative that matters most. Settling a session a human is talking to would mark their
-    // chat "exited" the moment it went quiet, and `wait` has no claim on it.
-    expect(SessionDrive.decide({ type: "interactive" }, fresh(), now)).toEqual({ kind: "idle" })
-    expect(SessionDrive.decide({}, fresh(), now)).toEqual({ kind: "idle" })
+  test("an interactive agent keeps working until accepted exit", () => {
+    expect(SessionDrive.decide({ type: "interactive" }, fresh(), now).kind).toBe("continue")
+    expect(SessionDrive.decide({}, fresh(), now).kind).toBe("continue")
     expect(SessionDrive.decide(undefined, fresh(), now)).toEqual({ kind: "idle" })
   })
 
@@ -47,10 +45,8 @@ describe("a sub-agent runs until explicit exit", () => {
     expect(decision).toMatchObject({ kind: "sleep", milliseconds: SessionDrive.UNATTENDED_SLEEP_MS })
   })
 
-  test("an unknown thread type is stopped, not settled", () => {
-    // Only `sub-agent` has a parent that might be blocked. A future type must opt in deliberately
-    // rather than inherit completion semantics by falling through.
-    expect(SessionDrive.decide({ type: "fork" }, fresh(), now)).toEqual({ kind: "idle" })
+  test("an unknown agent type cannot silently become idle", () => {
+    expect(SessionDrive.decide({ type: "fork" }, fresh(), now).kind).toBe("continue")
   })
 })
 

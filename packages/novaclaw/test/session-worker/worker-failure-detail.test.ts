@@ -18,6 +18,7 @@ const outcomes: readonly SessionWorkerSupervisor.Outcome[] = [
   { type: "settled" },
   { type: "failed", classification: "worker-start", detail: "spawn ENOENT" },
   { type: "start-timeout" },
+  { type: "no-token-timeout", silenceMs: 300_001, limitMs: 300_000 },
   { type: "memory-limit", rssBytes: 3000 * 1024 * 1024, limitBytes: 2048 * 1024 * 1024 },
   { type: "protocol-error", detail: "worker message is not valid JSON" },
   { type: "stale-message" },

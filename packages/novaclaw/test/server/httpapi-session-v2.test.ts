@@ -1,11 +1,10 @@
 // F1b integration coverage: promptAsync routes EVERY session to the V2 native
 // engine (the F0-era experimentalNativeSession flag + the zero-legacy-rows
-// eligibility gate are deleted — there is ONE engine), wrapped in a
-// SessionStatus busy/idle bracket. Clients render the turn from the RAW
+// eligibility gate are deleted — there is ONE engine). Clients render the turn from the RAW
 // `session.next.*` stream + the native message endpoint (the S7 vocabulary).
 // It exercises:
 //   (a) fresh session + a prompt WITH a model -> runs on V2 (session.next.*
-//       on the stream; zero legacy rows; busy→idle bracket; native ops OK).
+//       on the stream; zero legacy rows; explicit Stop; native ops OK).
 //   (b) a session with pre-existing LEGACY rows ALSO routes V2 — its new turns
 //       write only session_message (the pre-F0 history lapses from the native
 //       fetch, owner decision ①).
@@ -102,26 +101,21 @@ afterEach(async () => {
 })
 
 describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
-  // Case (a): fresh session + a prompt WITH a model -> routes to V2, wrapped in
-  // the busy/idle bracket. We assert the OBSERVABLE V2-routing contract over the
-  // instance /event stream (which carries the raw V2 `session.next.*` events plus
-  // the handler's SessionStatus busy/idle):
+  // Case (a): fresh session + a prompt WITH a model -> routes to V2. We assert the
+  // observable contract over the instance /event stream:
   //   1. `session.next.prompt.admitted` reaches the stream -> the prompt went through
   //      sessionV2.prompt (the legacy runner never emits session.next.* events).
-  //   2. busy is published BEFORE the fork, then idle ALWAYS settles the turn —
-  //      even when the V2 turn errors — because the handler's `ensuring(idle)` is
-  //      the SOLE turn-terminal on the V2 path. A missing idle hangs the client.
+  //   2. busy is published before the fork; only an explicit Stop can idle unfinished work.
   //   3. zero legacy `message` rows: a V2 turn writes only `session_message`.
   //
   // NOTE on model fidelity: the V2 runner resolves models from the V2 Catalog,
   // not the legacy `provider.*` config that `testProviderConfig` populates, so
-  // `test/test-model` is unavailable to the V2 runner here and the turn settles
-  // via the error path. That is actually a STRONGER assertion for the bracket:
-  // idle fires on error too. Render correctness of the native vocabulary is
+  // `test/test-model` is unavailable to the V2 runner here and it retries.
+  // Render correctness of the native vocabulary is
   // covered by the app's message-fold tests (session-ui v2/message-fold) — the
   // S7 delete removed the V1 translator this note used to reference.
   it.live(
-    "fresh session + model routes promptAsync to V2 (prompted on stream, busy→idle bracket, zero legacy rows)",
+    "fresh session + model routes promptAsync to V2 and stays live until Stop",
     () =>
       withFakeLlm(({ sdk, directory, llm }) =>
         Effect.gen(function* () {
@@ -135,7 +129,7 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
           )
           const sessionID = String(record(record(session.data).data).id)
 
-          // Subscribe BEFORE prompting so the busy/idle bracket cannot be missed.
+          // Subscribe before prompting so the status transitions cannot be missed.
           const controller = new AbortController()
           yield* Effect.addFinalizer(() => Effect.sync(() => controller.abort()))
           // The contract stream (`/api/event`); the legacy `/event` this subscribed to left on 2026-09-03.
@@ -196,13 +190,14 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
             "session.next.prompt.admitted not seen — not routed to V2",
             "10 seconds",
           )
-          // 2. idle ALWAYS settles the turn (here via the error path).
-          yield* awaitWithTimeout(Deferred.await(sawIdle), "no idle (spinner would hang forever)", "15 seconds")
-
-          // A SECOND prompt on the (now row-bearing) V2 session runs V2 too.
+          // A second prompt on the same working session routes through V2 too.
           const second = yield* Effect.promise(() => sdk.v2.session.prompt({ sessionID, prompt: { text: "v2 again" } }))
           expect(second.response.status).toBe(200)
           yield* awaitWithTimeout(Deferred.await(sawPromptedAgain), "second prompt did not route to V2", "10 seconds")
+          expect((yield* Deferred.poll(sawIdle))._tag).toBe("None")
+          const stopped = yield* Effect.promise(() => sdk.v2.session.interrupt({ sessionID }))
+          expect(stopped.response.status).toBe(204)
+          yield* awaitWithTimeout(Deferred.await(sawIdle), "explicit Stop did not settle status", "10 seconds")
 
           // S7: the client-facing NATIVE endpoint (GET /api/session/:id/message) serves the
           // V2 transcript — a reload renders from it (the app's native store bootstrap).

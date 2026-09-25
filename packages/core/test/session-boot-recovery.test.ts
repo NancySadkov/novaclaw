@@ -25,7 +25,7 @@ import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionRunner } from "@novaclaw/core/session/runner"
 import * as SessionRunnerLLM from "@novaclaw/core/session/runner/llm"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
-import { SessionExecutionTable } from "@novaclaw/core/session/sql"
+import { SessionExecutionTable, SessionTable } from "@novaclaw/core/session/sql"
 import type { SessionStore } from "@novaclaw/core/session/store"
 import { SessionStore as SessionStoreService } from "@novaclaw/core/session/store"
 import { it as bare, testEffect } from "./lib/effect"
@@ -309,6 +309,32 @@ describe("which sessions the sweep hands back", () => {
       const { woken, wake } = record()
       yield* SessionBootRecovery.wakeAbandonedInput({ db, store, adopt: wake })
       expect(woken).not.toContain(promoted.id)
+    }),
+  )
+
+  it.live("adopts a legacy settled officer with no accepted exit", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+      const store = yield* SessionStoreService.Service
+      const unfinished = yield* session.create({ location, agent: rootAgent })
+      yield* db.update(SessionTable).set({ type: "interactive" }).where(eq(SessionTable.id, unfinished.id)).run().pipe(Effect.orDie)
+      yield* db.insert(SessionExecutionTable).values({
+        session_id: unfinished.id,
+        attempt_id: "old-settlement",
+        generation: 1,
+        owner_id: "old-host",
+        state: "settled",
+        phase: "drain",
+        failure_count: 0,
+        heartbeat_at: 1234,
+        started_at: 1234,
+        time_updated: 1234,
+      }).run().pipe(Effect.orDie)
+      const { woken, wake } = record()
+      yield* SessionBootRecovery.wakeAbandonedInput({ db, store, adopt: wake })
+      expect(woken).toContain(unfinished.id)
     }),
   )
 

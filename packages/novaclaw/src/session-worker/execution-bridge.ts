@@ -90,5 +90,5 @@ export const heartbeat = Effect.fn("SessionWorkerExecutionBridge.heartbeat")(fun
 }) {
   if (!SessionWorkerProtocol.owns(input.lease, input.message) || !(yield* input.attempts.owns(input.lease)))
     return yield* Effect.fail(new Error("execution ownership changed"))
-  yield* input.attempts.heartbeat(input.lease, input.message.phase)
+  yield* input.attempts.heartbeat(input.lease)
 })

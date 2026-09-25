@@ -157,7 +157,7 @@ describe("session tool", () => {
             kind: "observation",
           })
           expect(textOf(observation)).toContain('"stale":false')
-          yield* attempts.settle(lease)
+          yield* attempts.settle(lease, "chat-reply")
           const settledObservation = yield* call(registry, sessionID, {
             op: "read",
             sessionID: targetID,

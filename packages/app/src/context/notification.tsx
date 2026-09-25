@@ -419,7 +419,7 @@ function createServerNotificationState(input: {
       const executions = await sessionExecutions(serverSDK().server.http, sessionID).catch(() => [])
       if (meta.disposed) return
       const execution = executions.find((item) => item.sessionID === sessionID)
-      const attention = terminalAttention({ lifecycle, execution: execution?.state })
+      const attention = terminalAttention({ lifecycle, execution: execution?.state, failureClass: execution?.failureClass })
       if (attention === undefined) return
       // The runner's early idle and the host's post-settlement idle can race this async lookup. If
       // the ledger settles between event receipt and this read, BOTH handlers see the same terminal

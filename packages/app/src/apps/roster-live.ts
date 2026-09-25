@@ -181,24 +181,19 @@ export const threadOf = (sessions: readonly SessionLike[], rootID: string): read
 export const workersOf = (
   sessions: readonly SessionLike[],
   rootID: string,
-  stateOf?: (sessionID: string) => { readonly lifecycle?: string; readonly execution?: ExecutionState },
+  stateOf?: (sessionID: string) => { readonly lifecycle?: string; readonly execution?: ExecutionState; readonly failureClass?: string },
 ): readonly SessionLike[] => {
   const thread = threadOf(sessions, rootID)
   const byID = new Map(thread.map((session) => [session.id, session] as const))
   const terminal = (sessionID: string) => {
     const state = stateOf?.(sessionID)
     return (
-      state?.lifecycle === "exited" ||
-      state?.execution === "settled" ||
-      state?.execution === "failed" ||
-      state?.execution === "interrupted"
+      state?.lifecycle === "exited" || (state?.execution === "interrupted" && state?.failureClass === "interrupt")
     )
   }
   return thread.filter((session) => {
     if (session.id === rootID || session.type !== "sub-agent") return false
-    // A historical child stays in the transcript, but not in the CURRENT worker set. Interrupted
-    // and failed attempts cannot move without replacement; a settled/exited child has returned.
-    // Prune descendants with their terminal ancestor too, so a dead branch cannot leave orphans.
+    // A historical child stays in the transcript. Only an exited lifecycle proves it returned.
     let current: SessionLike | undefined = session
     while (current !== undefined && current.id !== rootID) {
       if (terminal(current.id)) return false
@@ -353,10 +348,11 @@ export const isRecoveryExecutionState = (state: ExecutionState | undefined): boo
 export const terminalAttention = (input: {
   readonly lifecycle: string | undefined
   readonly execution: ExecutionState | undefined
+  readonly failureClass?: string | undefined
 }): TerminalAttention | undefined => {
   if (input.lifecycle === "exited") return "complete"
   if (input.lifecycle !== "idle") return undefined
-  if (input.execution === "settled") return "complete"
+  if (input.execution === "interrupted" && input.failureClass === "interrupt") return undefined
   if (isRecoveryExecutionState(input.execution)) return "recovery"
   return undefined
 }
@@ -368,8 +364,12 @@ export const rosterState = (input: {
   readonly working: boolean
   readonly execution?: { readonly state: ExecutionState } | undefined
 }): RosterState => {
+  const execution = input.execution?.state
+  if (execution === "settled") return "idle"
+  if (isRecoveryExecutionState(execution)) return "paused"
+  if (execution === "recovering") return "error"
+  if (execution === "starting" || execution === "busy") return "working"
   if (input.status?.type === "retry") return "error"
   if (input.working) return "working"
-  if (isRecoveryExecutionState(input.execution?.state)) return "paused"
   return "idle"
 }

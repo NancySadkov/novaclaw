@@ -14,6 +14,8 @@ import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { SessionRecoveryDecision } from "@novaclaw/core/session/recovery-decision"
 import { SessionExecutionLocal } from "@novaclaw/core/session/execution/local"
+import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
+import { EFFECTIVE_CONFIG_DEFAULTS } from "@novaclaw/core/session/config-resolve"
 import { SessionRunner } from "@novaclaw/core/session/runner/index"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionTable } from "@novaclaw/core/session/sql"
@@ -98,6 +100,10 @@ const harness = (input: {
       Layer.provide(storeLayer),
       Layer.provide(mapLayer),
       Layer.provide(attemptLayer),
+      Layer.provide(Layer.succeed(SessionEffectiveConfig.Service, SessionEffectiveConfig.Service.of({
+        resolve: () => Effect.succeed(EFFECTIVE_CONFIG_DEFAULTS),
+        resolution: () => Effect.die("unused"),
+      }))),
       Layer.provide(Layer.succeed(EventV2.Service, events)),
     )
     const ctx = yield* Layer.build(execLayer)

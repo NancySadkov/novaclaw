@@ -11,8 +11,10 @@ import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
 import { SessionExecution } from "../execution"
 import { SessionExecutionAttempt } from "../execution-attempt"
+import { SessionEffectiveConfig } from "../effective-config"
 import { Log } from "@novaclaw/schema/log"
 import { ProviderRetry } from "../runner/provider-retry"
+import { ShortChat } from "../runner/short-chat"
 
 const HEARTBEAT_INTERVAL = Duration.seconds(5)
 
@@ -24,6 +26,7 @@ export const layer = Layer.effect(
     const locations = yield* LocationServiceMap.Service
     const events = yield* EventV2.Service
     const attempts = yield* SessionExecutionAttempt.Service
+    const effectiveConfig = yield* SessionEffectiveConfig.Service
     const ownerID = `host_${crypto.randomUUID()}`
     // ⚠️ The stale-lease sweep used to be forked HERE, and that is exactly why it never ran in
     // production: this layer has no production caller (the server binds `SessionExecutionWorker`
@@ -66,7 +69,7 @@ export const layer = Layer.effect(
             const lease = yield* attempts.start(sessionID, ownerID)
             yield* publishStatus({ type: "busy" })
             yield* attempts
-              .heartbeat(lease, "drain")
+              .heartbeat(lease)
               .pipe(Effect.repeat(Schedule.spaced(HEARTBEAT_INTERVAL)), Effect.forkScoped)
             const currentAttempt = {
               fence: { attemptID: lease.attemptID, generation: lease.generation },
@@ -79,8 +82,9 @@ export const layer = Layer.effect(
               providerRecovery: () => attempts.providerRecovery(lease),
               servedBy: (fingerprint) => attempts.servedBy(lease, fingerprint),
             } satisfies SessionExecutionAttempt.CurrentInterface
+            let resumeForced = force
             const runOnce = () =>
-              SessionRunner.Service.use((runner) => runner.run({ sessionID, force })).pipe(
+              SessionRunner.Service.use((runner) => runner.run({ sessionID, force: resumeForced })).pipe(
                 Effect.provideService(SessionExecutionAttempt.Current, currentAttempt),
                 Effect.provide(located),
                 Effect.tapCause((cause) =>
@@ -99,6 +103,7 @@ export const layer = Layer.effect(
                       detail: Cause.pretty(cause),
                     })
                     if (!decision) return
+                    resumeForced = true
                     const failureCount = (yield* attempts.get(sessionID))?.failureCount ?? 1
                     const retryDelay = ProviderRetry.retryDelayMs(failureCount)
                     yield* publishStatus({
@@ -116,15 +121,35 @@ export const layer = Layer.effect(
               recoveringRun().pipe(
                 Effect.onExit((exit) =>
                   Exit.isSuccess(exit)
-                    ? attempts
-                        .settle(lease)
+                    ? effectiveConfig.resolve(sessionID).pipe(Effect.flatMap((config) =>
+                        attempts.settle(lease, ShortChat.enabled(config.shortChat) ? "chat-reply" : "accepted-exit"),
+                      ))
                         .pipe(
                           Effect.flatMap((settlement) =>
                             settlement === "recovery-pending"
                               ? Log.event("session.settlement.refused.recovery", { "session.id": sessionID }).pipe(
                                   Effect.andThen(drain()),
                                 )
-                              : Effect.void,
+                              : settlement === "unfinished"
+                                ? Effect.gen(function* () {
+                                    const decision = yield* attempts.recoverFailure(lease, {
+                                      classification: "unfinished-settlement",
+                                      detail: "The runner returned without an accepted exit while work remained open",
+                                    })
+                                    if (!decision) return
+                                    resumeForced = true
+                                    const failureCount = (yield* attempts.get(sessionID))?.failureCount ?? 1
+                                    const retryDelay = ProviderRetry.retryDelayMs(failureCount)
+                                    yield* publishStatus({
+                                      type: "retry",
+                                      attempt: failureCount,
+                                      next: Date.now() + retryDelay,
+                                      message: "The session stopped before exit was accepted. Continuing automatically…",
+                                    })
+                                    yield* Effect.sleep(Duration.millis(retryDelay))
+                                    return yield* drain()
+                                  })
+                                : Effect.void,
                           ),
                         )
                     : Cause.hasInterruptsOnly(exit.cause)
@@ -197,7 +222,7 @@ export const defaultLayer = layer.pipe(
 export const node = makeGlobalNode({
   service: SessionExecution.Service,
   layer,
-  deps: [SessionStore.node, SessionExecutionAttempt.node, LocationServiceMap.node, EventV2.node],
+  deps: [SessionStore.node, SessionExecutionAttempt.node, SessionEffectiveConfig.node, LocationServiceMap.node, EventV2.node],
 })
 
 export * as SessionExecutionLocal from "./local"

@@ -2211,7 +2211,7 @@ export const dict = {
   "agentConfig.work": "Work style",
   "agentConfig.posture": "Mode",
   "agentConfig.mode.interactive": "Interactive",
-  "agentConfig.mode.agent": "Agent",
+  "agentConfig.mode.agent": "Unattended",
   "agentConfig.strict": "Strict — verify each step, and retry a step that fails",
   "agentConfig.toolLabels": "Caption each command",
   "agentConfig.computerUse": "Computer Use — see the screen and drive the mouse and keyboard",

@@ -16,8 +16,10 @@
 // judge's replies here are scripted; no real provider was involved.
 
 import { describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Fiber, Stream } from "effect"
 import { LLMEvent } from "@novaclaw/llm"
+import { EventV2 } from "@novaclaw/core/event"
+import { SessionEvent } from "@novaclaw/core/session/event"
 import { FinishAudit } from "@novaclaw/core/session/runner/finish-audit"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
@@ -56,7 +58,19 @@ const runAudit = async (judgeReplies: string[]) => {
         prompt: Prompt.make({ text: "Do the work, then exit." }),
         resume: false,
       })
-      yield* session.resume(HARNESS_SESSION)
+      if (judgeReplies.at(-1) === "YES") yield* session.resume(HARNESS_SESSION)
+      else {
+        const events = yield* EventV2.Service
+        const continued = yield* events.subscribe(SessionEvent.Text.Ended).pipe(
+          Stream.filter((event) => event.data.sessionID === HARNESS_SESSION && event.data.text.includes("Continued after rejection")),
+          Stream.take(1), Stream.runHead, Effect.forkScoped,
+        )
+        yield* Effect.yieldNow
+        const running = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+        yield* Fiber.join(continued)
+        yield* session.interrupt(HARNESS_SESSION)
+        yield* Fiber.await(running)
+      }
       transcript = (yield* session.context(HARNESS_SESSION)) as typeof transcript
       result = (yield* session.get(HARNESS_SESSION)).result
     }),

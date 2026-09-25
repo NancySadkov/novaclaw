@@ -9,7 +9,7 @@ import type { SessionExecution } from "./execution"
 import type { SessionExecutionAttempt } from "./execution-attempt"
 import { SessionInput } from "./input"
 import { SessionSchema } from "./schema"
-import { SessionExecutionTable } from "./sql"
+import { SessionExecutionTable, SessionTable } from "./sql"
 import type { SessionStore } from "./store"
 
 /**
@@ -276,18 +276,23 @@ export const wakeAbandonedInput = Effect.fn("SessionBootRecovery.wakeAbandonedIn
   let woken = 0
   let handedOff = 0
   for (const sessionID of sessions) {
-    const responder = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, sessionID, (id) =>
+    const config = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, sessionID, (id) =>
       input.store.get(id as SessionSchema.ID),
     ).pipe(
-      Effect.map((config) => config.responder),
       // ⚠️ `catchCause`, not `orElseSucceed`: `SessionStore.get` is `orDie`, so its error channel is
       // `never` and a real walk failure arrives as a DEFECT. Handling only the typed error would
       // leave this arm dead in production and take the whole sweep down with the first bad row.
       Effect.catchCause(() => Effect.succeed(undefined)),
     )
-    if (responder === "operator") {
+    if (config?.responder === "operator") {
       handedOff++
       continue
+    }
+    if (config?.shortChat) {
+      const pendingQueue = yield* SessionInput.hasPending(input.db, sessionID, "queue")
+      const recovery = yield* input.db.select({ recovery: SessionExecutionTable.provider_recovery })
+        .from(SessionExecutionTable).where(eq(SessionExecutionTable.session_id, sessionID)).get().pipe(Effect.orDie)
+      if (!pendingQueue && recovery?.recovery == null) continue
     }
     // This is the sibling boot-time fan-out source. Pending prompts are durable, so joining each
     // drain bounds adoption without losing work.
@@ -336,11 +341,25 @@ export const abandonedSessionIDs = Effect.fn("SessionBootRecovery.abandonedSessi
     )
     .all()
     .pipe(Effect.orDie)
+  const strandedUnfinished = yield* input.db
+    .select({ sessionID: SessionExecutionTable.session_id })
+    .from(SessionExecutionTable)
+    .innerJoin(SessionTable, eq(SessionTable.id, SessionExecutionTable.session_id))
+    .where(and(
+      eq(SessionExecutionTable.state, "settled"),
+      isNull(SessionTable.result),
+      isNull(SessionTable.time_archived),
+      inArray(SessionTable.type, ["interactive", "sub-agent", "goal-oriented"]),
+      or(isNull(SessionTable.short_chat), eq(SessionTable.short_chat, false)),
+    ))
+    .all()
+    .pipe(Effect.orDie)
   return [
     ...new Set([
       ...pending,
       ...strandedRecovery.map((row) => SessionSchema.ID.make(row.sessionID)),
       ...strandedInterrupted.map((row) => SessionSchema.ID.make(row.sessionID)),
+      ...strandedUnfinished.map((row) => SessionSchema.ID.make(row.sessionID)),
     ]),
   ]
 })

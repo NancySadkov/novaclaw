@@ -48,7 +48,7 @@ const sectionTabs = () => {
 describe("every officer tab is visible when selected", () => {
   test("the rail offers tabs, so the check is not vacuous", () => {
     expect(tabIds().length).toBeGreaterThan(5)
-    for (const tab of ["work", "capabilities", "profile", "mind", "context", "quality", "messengers", "nudges"])
+    for (const tab of ["work", "capabilities", "profile", "mind", "context", "quality", "nudges"])
       expect(tabIds()).toContain(tab)
   })
 

@@ -521,7 +521,7 @@ export function NativeTimeline(props: {
             directory={props.directory}
             liveGeneratedTokens={serverSync().session.data.session_live(props.sessionID)?.approxTokens}
             maxToolTimeoutMs={props.maxToolTimeoutMs}
-            executionOpen={props.executionOpen || reconciling()}
+            executionOpen={props.executionOpen ?? (reconciling() ? true : undefined)}
             waitLabel={waitLabel()}
             reasoningFold={reasoningFold()}
             toolFold={toolFold()}

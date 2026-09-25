@@ -1119,7 +1119,7 @@ function TurnProfiling(props: {
       <ol data-slot="native-turn-phases">
         <For each={props.timing.phases}>
           {(phase) => (
-            <li data-current={phase.completedAt === undefined ? "" : undefined}>
+            <li data-current={props.live && phase.completedAt === undefined ? "" : undefined}>
               <div data-slot="native-turn-phase">
                 <span>{phaseLabel(phase.phase)}</span>
                 <ElapsedTime startedAt={phase.startedAt} completedAt={phase.completedAt} live={props.live} />

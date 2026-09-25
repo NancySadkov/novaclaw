@@ -675,6 +675,7 @@ function ContactRow(props: ContactRowProps) {
       : workersOf(props.sessions, sessionID, (workerID) => ({
           lifecycle: sessionData().session_status[workerID]?.type,
           execution: props.executions.get(workerID)?.state,
+          failureClass: props.executions.get(workerID)?.failureClass,
         }))
   })
   // The dialog's shape: identity plus the age the row shows. `SessionLike.time.created` is the

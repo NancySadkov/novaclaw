@@ -38,7 +38,19 @@ const runAudit = async (answer: "YES" | "NO") => {
         prompt: Prompt.make({ text: "Do the work, then exit." }),
         resume: false,
       })
-      yield* session.resume(HARNESS_SESSION)
+      if (answer === "YES") yield* session.resume(HARNESS_SESSION)
+      else {
+        const events = yield* EventV2.Service
+        const continued = yield* events.subscribe(SessionEvent.Text.Ended).pipe(
+          Stream.filter((event) => event.data.sessionID === HARNESS_SESSION && event.data.text.includes("Continued after rejection")),
+          Stream.take(1), Stream.runHead, Effect.forkScoped,
+        )
+        yield* Effect.yieldNow
+        const running = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+        yield* Fiber.join(continued)
+        yield* session.interrupt(HARNESS_SESSION)
+        yield* Fiber.await(running)
+      }
       transcript = (yield* session.context(HARNESS_SESSION)) as typeof transcript
       result = (yield* session.get(HARNESS_SESSION)).result
     }),
@@ -174,7 +186,16 @@ describe("exit requests are reviewed before completion", () => {
           })
           .run()
           .pipe(Effect.orDie)
-        yield* session.resume(HARNESS_SESSION)
+        const events = yield* EventV2.Service
+        const continued = yield* events.subscribe(SessionEvent.Text.Ended).pipe(
+          Stream.filter((event) => event.data.sessionID === HARNESS_SESSION && event.data.text.includes("I will settle the background job first.")),
+          Stream.take(1), Stream.runHead, Effect.forkScoped,
+        )
+        yield* Effect.yieldNow
+        const running = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+        yield* Fiber.join(continued)
+        yield* session.interrupt(HARNESS_SESSION)
+        yield* Fiber.await(running)
         transcript = (yield* session.context(HARNESS_SESSION)) as typeof transcript
         result = (yield* session.get(HARNESS_SESSION)).result
       }),
@@ -207,7 +228,16 @@ describe("exit requests are reviewed before completion", () => {
           prompt: Prompt.make({ text: "Begin the work." }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        const events = yield* EventV2.Service
+        const continued = yield* events.subscribe(SessionEvent.Text.Ended).pipe(
+          Stream.filter((event) => event.data.sessionID === HARNESS_SESSION && event.data.text.includes("Work is still in progress")),
+          Stream.take(1), Stream.runHead, Effect.forkScoped,
+        )
+        yield* Effect.yieldNow
+        const running = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+        yield* Fiber.join(continued)
+        yield* session.interrupt(HARNESS_SESSION)
+        yield* Fiber.await(running)
         transcript = (yield* session.context(HARNESS_SESSION)) as typeof transcript
       }),
       "healthy turn without completion audit",

@@ -315,7 +315,6 @@ export const Ready = Schema.Struct({
 export const Heartbeat = Schema.Struct({
   ...Identity,
   type: Schema.Literal("heartbeat"),
-  phase: Schema.Literals(["drain", "provider", "tool", "maintenance"]),
   at: Schema.Finite,
   rssBytes: NonNegativeInt.pipe(Schema.optional),
 }).annotate({ identifier: "SessionWorker.Heartbeat" })

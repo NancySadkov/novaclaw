@@ -85,7 +85,7 @@ import { presenceHandoffNotice, presenceView } from "./session/session-presence"
 import { createSessionPresence } from "./session/session-presence-controller"
 import { createReviewController, resolveReviewSource, type ChangeMode } from "./session/review-source"
 import { visibleProviderRecovery } from "./session/composer/session-provider-recovery"
-import { executionKeepsTurnOpen, visibleExecutionAttention } from "./session/session-execution-attention"
+import { visibleExecutionAttention } from "./session/session-execution-attention"
 
 type VcsMode = "git" | "branch"
 
@@ -389,7 +389,10 @@ export default function Page() {
     const attempt = executionAttempt()
     return attempt?.state === "interrupted" && attempt.failureClass === "interrupt"
   })
-  const executionOpen = createMemo(() => executionKeepsTurnOpen(executionAttempt()))
+  const executionOpen = createMemo(() => {
+    const attempt = executionAttempt()
+    return attempt?.state === "starting" || attempt?.state === "busy"
+  })
   /** Wording lives in `session-recovery-note.ts` so its branches are provable — the zero-and-
    *  incomplete case in particular must never read as "nothing happened". */
   const recoveryChanges = createMemo(() => recoveryChangesNote(info()?.summary))

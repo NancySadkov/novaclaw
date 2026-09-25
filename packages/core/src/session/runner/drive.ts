@@ -55,6 +55,11 @@ const SUB_AGENT_CONTINUE =
   "so this worker is not complete. Continue the assigned task, or if it is genuinely finished call the `exit` " +
   "tool with a short result summary."
 
+const INTERACTIVE_CONTINUE =
+  "Your current request is still open because you have not called `exit` and had its result accepted. " +
+  "If work remains, take the next concrete action now; a progress report alone does not finish it. " +
+  "When the request is complete, give the user the answer and call `exit` with a concise result for review."
+
 // 🔴 **"Declare the durable `goal` component" was a harness steer that told an agent to author its own
 // objective, and it is GONE (owner, 2026-09-16: *"The goal is something user or agent's Superior officer
 // sets. Agent can't set its own goal (i.e. no set your durable goal nudges)"*). Two things were wrong
@@ -149,9 +154,8 @@ export interface DriveAttendance {
 }
 
 /**
- * One drive decision at drain-end (queue empty). `continue` keeps an autonomous worker alive;
- * `idle` means an ordinary interactive turn has drained without terminating the session;
- * `terminated` means a terminal result already exists on the session row. A goal-oriented accepted
+ * One drive decision at drain-end (queue empty). `continue` keeps an officer working;
+ * `idle` applies only when no session exists; `terminated` means a terminal result exists. A goal-oriented accepted
  * exit never writes that result. Keeping those states distinct prevents a missing live signal from
  * being relabelled as an agent ending.
  */
@@ -190,7 +194,8 @@ export const decide = (
   if (session !== undefined && session.result !== undefined && effective !== "goal-oriented")
     return { kind: "terminated" }
   if (session?.type === "sub-agent") return { kind: "continue", message: SUB_AGENT_CONTINUE }
-  if (effective === undefined) return { kind: "idle" }
+  if (session === undefined) return { kind: "idle" }
+  if (effective === undefined) return { kind: "continue", message: INTERACTIVE_CONTINUE }
   if (effective === "goal-oriented") {
     if (context?.acceptedExit === true)
       return {

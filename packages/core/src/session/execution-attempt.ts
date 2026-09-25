@@ -9,6 +9,7 @@ import {
   decodeServingIdentities,
   encodeServingIdentities,
   SessionExecutionTable,
+  SessionTable,
   TodoSnapshotTable,
   TodoTable,
 } from "./sql"
@@ -49,11 +50,11 @@ export interface Recovered {
   readonly decision: SessionRecoveryDecision.Decision
 }
 
-export type Settlement = "committed" | "recovery-pending" | "superseded"
+export type Settlement = "committed" | "recovery-pending" | "unfinished" | "superseded"
 
 export interface Interface {
   readonly start: (sessionID: SessionSchema.ID, ownerID: string) => Effect.Effect<Lease>
-  readonly heartbeat: (lease: Lease, phase?: Phase) => Effect.Effect<void>
+  readonly heartbeat: (lease: Lease) => Effect.Effect<void>
   readonly advance: (lease: Lease, phase: Phase, checkpoint: "clear" | "mark" | "keep") => Effect.Effect<void>
   readonly toolDispatched: (
     lease: Lease,
@@ -76,7 +77,7 @@ export interface Interface {
    */
   readonly servedBy: (lease: Lease, fingerprint: string) => Effect.Effect<void>
   /** Completes one successful drain. Failure and stop states are deliberately separate APIs. */
-  readonly settle: (lease: Lease) => Effect.Effect<Settlement>
+  readonly settle: (lease: Lease, completion: "chat-reply" | "accepted-exit") => Effect.Effect<Settlement>
   /** Records the only non-successful terminal transition before the process fiber is interrupted.
    * Process shutdown never calls this, so it remains distinguishable and recoverable. */
   readonly requestInterrupt: (sessionID: SessionSchema.ID) => Effect.Effect<void>
@@ -343,11 +344,11 @@ export const layer = Layer.effect(
           )
           .pipe(Effect.orDie)
       }),
-      heartbeat: Effect.fn("SessionExecutionAttempt.heartbeat")(function* (lease, phase) {
+      heartbeat: Effect.fn("SessionExecutionAttempt.heartbeat")(function* (lease) {
         const now = Date.now()
         yield* db
           .update(SessionExecutionTable)
-          .set({ heartbeat_at: now, time_updated: now, ...(phase === undefined ? {} : { phase }) })
+          .set({ heartbeat_at: now, time_updated: now })
           .where(
             and(
               eq(SessionExecutionTable.session_id, lease.sessionID),
@@ -571,16 +572,32 @@ export const layer = Layer.effect(
           .pipe(Effect.orDie)
         return row?.recovery ? { ...row.recovery, startedAt: DateTime.makeUnsafe(row.recovery.startedAt) } : undefined
       }),
-      settle: Effect.fn("SessionExecutionAttempt.settle")(function* (lease) {
+      settle: Effect.fn("SessionExecutionAttempt.settle")(function* (lease, completion) {
         const now = Date.now()
         const fence = and(
           eq(SessionExecutionTable.session_id, lease.sessionID),
           eq(SessionExecutionTable.attempt_id, lease.attemptID),
           eq(SessionExecutionTable.generation, lease.generation),
+          inArray(SessionExecutionTable.state, ["starting", "busy"]),
         )
         return yield* db
           .transaction((tx) =>
             Effect.gen(function* () {
+              if (completion === "accepted-exit") {
+                const session = yield* tx
+                  .select({ result: SessionTable.result })
+                  .from(SessionTable)
+                  .where(eq(SessionTable.id, lease.sessionID))
+                  .get()
+                if (session?.result == null) {
+                  const unfinished = yield* tx
+                    .select({ sessionID: SessionExecutionTable.session_id })
+                    .from(SessionExecutionTable)
+                    .where(and(fence, isNull(SessionExecutionTable.provider_recovery)))
+                    .get()
+                  if (unfinished) return "unfinished" as const
+                }
+              }
               const values = {
                 state: "settled" as const,
                 heartbeat_at: now,
@@ -608,6 +625,7 @@ export const layer = Layer.effect(
                 .get()
               return pending ? ("recovery-pending" as const) : ("superseded" as const)
             }),
+            { behavior: "immediate" },
           )
           .pipe(Effect.orDie)
       }),
@@ -669,6 +687,7 @@ export const layer = Layer.effect(
               Effect.gen(function* () {
                 const row = yield* tx
                   .select({
+                    state: SessionExecutionTable.state,
                     phase: SessionExecutionTable.phase,
                     checkpointAt: SessionExecutionTable.checkpoint_at,
                     failureCount: SessionExecutionTable.failure_count,
@@ -684,7 +703,7 @@ export const layer = Layer.effect(
                     ),
                   )
                   .get()
-                if (!row) return undefined
+                if (!row || !["starting", "busy", "recovering"].includes(row.state)) return undefined
                 const failureCount = row.failureCount + 1
                 const decision = SessionRecoveryDecision.decide({
                   phase: row.phase,
@@ -709,6 +728,7 @@ export const layer = Layer.effect(
                       eq(SessionExecutionTable.session_id, lease.sessionID),
                       eq(SessionExecutionTable.attempt_id, lease.attemptID),
                       eq(SessionExecutionTable.generation, lease.generation),
+                      inArray(SessionExecutionTable.state, ["starting", "busy", "recovering"]),
                     ),
                   )
                   .returning({ sessionID: SessionExecutionTable.session_id })

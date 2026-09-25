@@ -9,9 +9,9 @@ describe("SessionDrive.decide", () => {
   test("drives self-declared autonomous sessions and delegated workers", () => {
     const state = SessionDrive.initialState(t0)
     expect(SessionDrive.decide({ type: "goal-oriented" }, state, t0).kind).toBe("continue")
-    expect(SessionDrive.decide({ type: "interactive" }, state, t0).kind).toBe("idle")
+    expect(SessionDrive.decide({ type: "interactive" }, state, t0).kind).toBe("continue")
     expect(SessionDrive.decide({ type: "sub-agent" }, state, t0).kind).toBe("continue")
-    expect(SessionDrive.decide({}, state, t0).kind).toBe("idle") // undefined type = interactive default
+    expect(SessionDrive.decide({}, state, t0).kind).toBe("continue") // undefined type = interactive default
     expect(SessionDrive.decide(undefined, state, t0).kind).toBe("idle") // missing row = never drive
   })
 
@@ -110,14 +110,14 @@ describe("SessionDrive.decide", () => {
     )
     expect(
       SessionDrive.decide({ type: "goal-oriented" }, state, t0, undefined, { operationMode: "interactive" }).kind,
-    ).toBe("idle")
+    ).toBe("continue")
     // A role that declares nothing leaves the chat's own classification in charge.
     expect(
       SessionDrive.decide({ type: "goal-oriented" }, state, t0, undefined, { operationMode: undefined }).kind,
     ).toBe("continue")
     expect(
       SessionDrive.decide({ type: "interactive" }, state, t0, undefined, { operationMode: undefined }).kind,
-    ).toBe("idle")
+    ).toBe("continue")
   })
 
   test("accepted plan evidence asks the agent to exit instead of completing on its behalf", () => {
@@ -146,6 +146,6 @@ describe("SessionDrive.decide", () => {
       milliseconds: 600_000,
       message: expect.stringContaining("Re-check the environment"),
     })
-    expect(SessionDrive.decide({ type: "interactive" }, state, t0).kind).toBe("idle")
+    expect(SessionDrive.decide({ type: "interactive" }, state, t0).kind).toBe("continue")
   })
 })

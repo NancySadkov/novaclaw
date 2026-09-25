@@ -41,6 +41,35 @@ input.on("line", (line) => {
       return
     }
     emit({ ...identity, type: "ready", workerPID: process.pid })
+    if (mode === "silent-provider" || mode === "token-provider" || mode === "settled-provider") {
+      emit({
+        ...identity,
+        type: "execution-provider-started",
+        requestID: "rpc_provider_start",
+        recovery: {
+          attemptID: "evt_fixture_provider" as never,
+          assistantMessageID: "msg_fixture_provider" as never,
+          model: { id: "fixture" as never, providerID: "fixture" as never },
+          startedAt: Date.now(),
+          toolProtocol: false,
+        },
+      })
+      const heartbeat = setInterval(() => {
+        emit({ ...identity!, type: "heartbeat", at: Date.now() })
+        emit({ ...identity!, type: "publish-event", requestID: `rpc_noise_${Date.now()}`, eventType: "session.next.synthetic", data: {} })
+      }, 40)
+      if (mode === "token-provider") setTimeout(() => emit({
+        ...identity!, type: "publish-event", requestID: "rpc_token", eventType: "session.next.text.delta", data: {},
+      }), 170)
+      if (mode === "settled-provider") setTimeout(() => emit({
+        ...identity!, type: "execution-provider-settled", requestID: "rpc_provider_settled", providerAttemptID: "evt_fixture_provider",
+      }), 120)
+      if (mode !== "silent-provider") setTimeout(() => {
+        clearInterval(heartbeat)
+        emit({ ...identity!, type: "settled" })
+      }, 420)
+      return
+    }
     if (mode === "settle") {
       emit({ ...identity, type: "settled" })
       return
@@ -56,7 +85,7 @@ input.on("line", (line) => {
       return
     }
     if (mode === "late-stale") {
-      emit({ ...identity, attemptID: `${identity.attemptID}_old`, type: "heartbeat", phase: "drain", at: Date.now() })
+      emit({ ...identity, attemptID: `${identity.attemptID}_old`, type: "heartbeat", at: Date.now() })
       return
     }
     if (mode === "busy") {
@@ -86,7 +115,7 @@ input.on("line", (line) => {
         name: "bash",
         sideEffect: "external-unknown",
       })
-      const heartbeat = setInterval(() => emit({ ...identity!, type: "heartbeat", phase: "tool", at: Date.now() }), 50)
+      const heartbeat = setInterval(() => emit({ ...identity!, type: "heartbeat", at: Date.now() }), 50)
       setTimeout(() => {
         clearInterval(heartbeat)
         emit({
@@ -100,7 +129,7 @@ input.on("line", (line) => {
       return
     }
     if (mode === "memory") {
-      emit({ ...identity, type: "heartbeat", phase: "drain", at: Date.now(), rssBytes: 2_000_000 })
+      emit({ ...identity, type: "heartbeat", at: Date.now(), rssBytes: 2_000_000 })
       return
     }
     if (mode === "child") {
@@ -191,7 +220,7 @@ input.on("line", (line) => {
     if (blockingPermissionAnswered && blockingPublishAnswered) emit({ ...identity, type: "settled" })
     return
   }
-  if (message.type === "event-published") {
+  if (mode === "publish" && message.type === "event-published") {
     acknowledgements++
     if (acknowledgements === 2) emit({ ...identity, type: "settled" })
   }

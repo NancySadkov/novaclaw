@@ -32,7 +32,7 @@ export const layer = Layer.effectDiscard(
         [name]: Tool.make({
           description:
             "Request completion and submit this session's result for review. Use it when an autonomous " +
-            "or delegated task is genuinely finished. The session ends only when the completion reviewer accepts it.",
+            "or delegated task, or an interactive request, is genuinely finished. The session ends only when the completion reviewer accepts it.",
           input: Input,
           output: Output,
           structured: StructuredOutput,

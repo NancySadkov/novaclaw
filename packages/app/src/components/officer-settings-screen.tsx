@@ -244,9 +244,8 @@ export function OfficerSettingsScreen(props: {
     | "nudges"
     | "schedule"
     | "memory"
-    | "messengers"
   const [activeTab, setActiveTab] = createSignal<SettingsTab>(
-    new URLSearchParams(location.search).get("tab") === "messengers" ? "messengers" : "work",
+    "work",
   )
   const desktopSettings = createMediaQuery("(min-width: 768px)")
   let tabList: HTMLElement | undefined
@@ -264,7 +263,6 @@ export function OfficerSettingsScreen(props: {
     { id: "context" as const, label: "Context", icon: "archive" as const },
     { id: "quality" as const, label: "Quality", icon: "checklist" as const },
     { id: "memory" as const, label: "Memory", icon: "archive" as const },
-    { id: "messengers" as const, label: "Messengers", icon: "chats" as const },
     { id: "nudges" as const, label: "Nudges", icon: "prompt" as const },
     ...(postureValue() === "agent" ? [{ id: "schedule" as const, label: "Schedule", icon: "calendar" as const }] : []),
   ]
@@ -2012,6 +2010,15 @@ export function OfficerSettingsScreen(props: {
               </div>
             </section>
 
+            <section class="agent-settings-card" data-settings-tab="work" data-section="messengers">
+              <Show when={activeTab() === "work" ? props.agentID : undefined} keyed>
+                {(id) => <OfficerMessengers agentID={id} />}
+              </Show>
+              <div class="mt-4 rounded-xl border border-v2-border-border-muted bg-v2-background-bg-layer-02 p-3 sm:p-4">
+                <AgentRemoteChat agentID={props.agentID} sessionID={officerSessionID} ensureSession={ensureOfficerSession} />
+              </div>
+            </section>
+
             <section class="agent-settings-card" data-section="context" data-settings-tab="context">
               <Show when={activeTab() === "context" ? props.agentID : undefined} keyed>
                 {(id) => <OfficerContext agentID={id} config={() => agent()?.config as Record<string, unknown> | undefined} onChanged={props.onChanged} />}
@@ -2512,15 +2519,6 @@ export function OfficerSettingsScreen(props: {
                     would be a promise this colleague cannot make. */}
                   <p class="text-[11px] text-v2-text-text-faint">{language.t("agentConfig.archiveThrowaway")}</p>
                 </Show>
-              </div>
-            </section>
-
-            <section class="agent-settings-card" data-settings-tab="messengers" data-section="messengers">
-              <Show when={activeTab() === "messengers" ? props.agentID : undefined} keyed>
-                {(id) => <OfficerMessengers agentID={id} />}
-              </Show>
-              <div class="mt-4 rounded-xl border border-v2-border-border-muted bg-v2-background-bg-layer-02 p-3 sm:p-4">
-                <AgentRemoteChat agentID={props.agentID} sessionID={officerSessionID} ensureSession={ensureOfficerSession} />
               </div>
             </section>
 
