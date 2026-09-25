@@ -89,9 +89,6 @@ const POLICIES: Readonly<Record<string, Policy>> = {
     requirement: "release-only",
     binary: (platform) => (platform === "win32" ? "novaclaw.exe" : "novaclaw"),
   },
-  // The KB graph engine's runtime require target, staged beside the standalone server. Release-only
-  // with the server it belongs to; a directory of files, so the first-file check is the right one.
-  "server/node_modules/@ladybugdb/": { requirement: "release-only" },
 }
 
 /** The platform's object-file magic, so a Linux `.so` staged into a Windows pack is caught here

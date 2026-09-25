@@ -136,14 +136,6 @@ const EXTRA_RESOURCES: readonly StagedResource[] = [
     from: `../novaclaw/dist/${serverDistributionName()}/bin/`,
     to: "server/",
   },
-  {
-    // The KB graph engine, loaded by the server through a RUNTIME `createRequire(...)` no bundler can
-    // see. The Electron sidecar finds it in the app's own `node_modules`; the standalone binary has
-    // none, so its RAG layer answers 400 without this copy and `NODE_PATH` (see
-    // `createLocalServerEnvironment`).
-    from: "node_modules/@ladybugdb/",
-    to: "server/node_modules/@ladybugdb/",
-  },
   ...(process.platform === "win32"
     ? [
         {
