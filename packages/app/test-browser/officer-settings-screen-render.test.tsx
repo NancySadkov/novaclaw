@@ -807,18 +807,29 @@ describe("Officer Settings screen renders", () => {
     expect(saveButton()!.disabled).toBe(false)
   })
 
-  test("the first unsaved edit glints Save for a second, then it settles", async () => {
+  test("the first unsaved edit glints Save once per visit, then never again", async () => {
     mount({ agents: [AGENT] })
     await settle()
     const save = saveButton()!
+    const mood = document.querySelector('[data-section="affective"] input[type="checkbox"]') as HTMLInputElement
     expect(save.getAttribute("data-sparkle")).toBeNull()
 
-    const name = document.querySelector("input") as HTMLInputElement
-    name.value = "Theron the Second"
-    name.dispatchEvent(new Event("input", { bubbles: true }))
+    mood.checked = true
+    mood.dispatchEvent(new Event("change", { bubbles: true }))
     expect(save.getAttribute("data-sparkle")).toBe("true")
 
     await new Promise((resolve) => setTimeout(resolve, 1100))
+    expect(save.getAttribute("data-sparkle")).toBeNull()
+
+    // Clear the edit — no stored config, so the reset is immediate — then edit again. The second edit
+    // makes the screen dirty again but must NOT glint, because one visit gets one glint.
+    document.querySelector<HTMLButtonElement>('[data-action="agent-reset-affective"]')!.click()
+    await settle()
+    expect(save.disabled).toBe(true)
+
+    mood.checked = false
+    mood.dispatchEvent(new Event("change", { bubbles: true }))
+    expect(save.disabled).toBe(false)
     expect(save.getAttribute("data-sparkle")).toBeNull()
   })
 

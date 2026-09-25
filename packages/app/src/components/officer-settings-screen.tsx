@@ -755,17 +755,17 @@ export function OfficerSettingsScreen(props: {
 
   // A one-second gold glint on Save the moment the first unsaved edit lands: the label that used to sit
   // here is gone, and a person who changes a field should still be told, without words, where it goes.
+  // Once per visit — the screen is remounted for each visit, and within one it never glints twice.
   const [saveSparkle, setSaveSparkle] = createSignal(false)
-  let wasDirty = false
+  let sparkleShown = false
   let sparkleTimer: ReturnType<typeof setTimeout> | undefined
   createEffect(() => {
-    const isDirty = dirty()
-    if (isDirty && !wasDirty) {
+    if (dirty() && !sparkleShown) {
+      sparkleShown = true
       setSaveSparkle(true)
       clearTimeout(sparkleTimer)
       sparkleTimer = setTimeout(() => setSaveSparkle(false), 1000)
     }
-    wasDirty = isDirty
   })
   onCleanup(() => clearTimeout(sparkleTimer))
 
