@@ -1,5 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
+import path from "node:path"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Database } from "@novaclaw/core/database/database"
@@ -213,16 +214,19 @@ describe("NudgeService", () => {
   it.effect("delivers the exact bloated-file instruction with the absolute edited path", () =>
     Effect.gen(function* () {
       const service = yield* NudgeService.Service
-      const filePath = "C:/work/TODO/plan.txt"
+      const filePath = "TODO/plan.txt"
+      const absoluteFilePath = path.resolve(process.cwd(), filePath)
+      const event = { type: "file-edit" as const, id: "call-1", path: filePath, sizeBytes: 50 * 1024 + 1 }
       const claimed = yield* service.claim({
         sessionID: "ses_bloated",
         agentID: "nova",
         directory: process.cwd(),
-        event: { type: "file-edit", id: "call-1", path: filePath, sizeBytes: 50 * 1024 + 1 },
+        event,
       })
       expect(claimed.map((item) => item.text)).toEqual([
-        `The ${filePath} got bloated - reduce to 30kb, remove completed items and cruft, use simple direct concise language.`,
+        `The ${absoluteFilePath} got bloated - reduce to 30kb, remove completed items and cruft, use simple direct concise language.`,
       ])
+      expect(Nudge.prompt(claimed[0]!, event)).toContain(`The ${absoluteFilePath} got bloated`)
       expect(
         (yield* service.claim({
           sessionID: "ses_bloated",

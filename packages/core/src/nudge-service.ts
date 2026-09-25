@@ -3,6 +3,7 @@ export * as NudgeService from "./nudge-service"
 import { and, desc, eq, ne } from "drizzle-orm"
 import { Context, Effect, Layer } from "effect"
 import { createHash } from "node:crypto"
+import path from "node:path"
 import { Log } from "@novaclaw/schema/log"
 import { AgentConfigStore } from "./agent-config-store"
 import { Database } from "./database/database"
@@ -60,13 +61,22 @@ export const layer = Layer.effect(
         }),
     })
     const runScript = (command: string, directory: string) => runner.run({ command, cwd: directory, timeoutMs: 5_000 })
-    const renderInline = Effect.fn("NudgeService.renderInline")(function* (source: string, directory: string) {
+    const renderInline = Effect.fn("NudgeService.renderInline")(function* (
+      source: string,
+      directory: string,
+      absoluteFilePath?: string,
+    ) {
       let text = source.trim()
       let count = 0
       for (const match of source.matchAll(/\$\(([^()\r\n]+)\)/g)) {
         count++
         if (count > 4 || match[1]!.length > 512) {
           text = text.replace(match[0], "[inline command omitted: limit reached]")
+          continue
+        }
+        if (match[1]!.trim() === "absolute_file_path") {
+          const filePath = absoluteFilePath?.replace(/[\r\n\t]/g, " ") ?? "[path available after a file edit]"
+          text = text.replace(match[0], filePath)
           continue
         }
         const result = yield* runScript(match[1]!, directory)
@@ -217,15 +227,13 @@ export const layer = Layer.effect(
             ? yield* runScript(scoped.nudge.script, input.directory)
             : undefined
           const dynamic = rendered?.exitCode === 0 && !rendered.timedOut ? rendered.output.trim() : ""
-          const filePathToken = "\uFFF0absolute_file_path\uFFF1"
-          const source =
-            input.event.type === "file-edit"
-              ? scoped.nudge.text.replaceAll("$(absolute_file_path)", filePathToken)
-              : scoped.nudge.text
-          const interpolated = (yield* renderInline(source, input.directory)).replaceAll(
-            filePathToken,
-            input.event.type === "file-edit" ? input.event.path.replace(/[\r\n\t]/g, " ") : filePathToken,
-          )
+          const absoluteFilePath =
+            input.event.type !== "file-edit"
+              ? undefined
+              : path.isAbsolute(input.event.path)
+                ? input.event.path
+                : path.resolve(input.directory, input.event.path)
+          const interpolated = yield* renderInline(scoped.nudge.text, input.directory, absoluteFilePath)
           const text = [
             interpolated,
             hookOutput ? SessionOrigin.externalContentFrame("configured nudge hook output") + hookOutput : "",
