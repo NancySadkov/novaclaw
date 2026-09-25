@@ -358,7 +358,7 @@ const GENERATE_TIMEOUT_MS = 60_000
  * additions. Before that, the `novaclaw.json` retirement removed `GET`/`POST /api/project`, 479
  * deletions and zero additions.
  */
-const SCHEMA_NAME_FINGERPRINT = "de0caa81d61d85bd2d0dec44c8530fae8f7560a3a25c5763c252622fedf54b00"
+const SCHEMA_NAME_FINGERPRINT = "e6defb3c3050cf306e384e1accb95ae51cb146e2051907f8961917e256730c52"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

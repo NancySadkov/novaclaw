@@ -11,6 +11,7 @@ import { SessionSchema } from "../session/schema"
 import * as MemoryAccess from "../kb-graph/memory-access"
 import { AgentUsage } from "./usage"
 import { GraphRegistry } from "./graph-registry"
+import { AgentRetirement } from "./retirement"
 
 // What it MEANS to retire a colleague — in one place, because there are two doors.
 //
@@ -188,4 +189,5 @@ export const everything = (input: {
     for (const name of CLEANERS)
       if (!wired.has(name))
         yield* Log.event("agent.retire.cleaner.missing", { "agent.id": input.agent, "agent.cleaner": name })
+    yield* AgentRetirement.record(input.db, input.agent, Date.now())
   })

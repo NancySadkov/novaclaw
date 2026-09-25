@@ -66,5 +66,6 @@ test("a worker's read-only dock keeps a clickable context gauge", () => {
 
 test("the real worker chat supplies the session context control", () => {
   const sessionPage = readFileSync(new URL("../src/pages/session.tsx", import.meta.url), "utf8")
-  expect(sessionPage).toContain('childContextUsage={<SessionContextUsage buttonAppearance="v2" placement="top" />}')
+  expect(sessionPage).toContain('<SessionContextUsage buttonAppearance="v2" placement="top" />')
+  expect(sessionPage).toContain("<TeamChatButton sessionID={sessionID()} />")
 })

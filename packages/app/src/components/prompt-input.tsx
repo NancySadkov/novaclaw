@@ -29,6 +29,7 @@ import { createSettledResource } from "@/utils/settled-resource"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { SessionContextUsage } from "@/components/session-context-usage"
+import { TeamChatButton } from "@/components/team-chat-button"
 import { SessionActivityIndicators } from "@/components/session/session-activity-indicators"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
@@ -839,6 +840,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               <Show when={props.controls.session?.id}>
                 <SessionContextUsage buttonAppearance="v2" placement="top" />
               </Show>
+              <Show when={props.controls.session?.id}>{(sessionID) => <TeamChatButton sessionID={sessionID()} />}</Show>
               <Show when={props.controls.session?.id}>
                 {(sessionID) => <SessionActivityIndicators sessionID={sessionID()} />}
               </Show>

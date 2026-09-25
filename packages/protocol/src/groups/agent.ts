@@ -21,6 +21,33 @@ export const AgentGroup = HttpApiGroup.make("server.agent")
       ),
   )
   .add(
+    HttpApiEndpoint.get("agent.teamChat", "/api/agent/:agentID/team-chat", {
+      params: { agentID: Agent.ID },
+      query: Schema.Struct({
+        ...LocationQuery.fields,
+        limit: Schema.optional(
+          Schema.NumberFromString.check(
+            Schema.isInt(),
+            Schema.isGreaterThanOrEqualTo(1),
+            Schema.isLessThanOrEqualTo(100),
+          ),
+        ),
+        before: Schema.optional(Schema.String),
+        after: Schema.optional(Schema.String),
+      }),
+      success: Location.response(Agent.TeamChatPage),
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.agent.teamChat",
+          summary: "Read an officer team's colleague chat",
+          description:
+            "Lists durable colleague-tool messages exchanged inside one officer's reporting tree, including messages between subordinates. Pages are bounded; use before to load older messages and after to follow the live tail.",
+        }),
+      ),
+  )
+  .add(
     /**
      * The portrait bytes owned by the instance. This is a raw endpoint because an image must remain
      * bytes all the way to the browser; putting it in the roster JSON would make every refresh carry

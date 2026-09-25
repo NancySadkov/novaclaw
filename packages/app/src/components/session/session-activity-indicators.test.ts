@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs"
 
 const activity = readFileSync(new URL("./session-activity-indicators.tsx", import.meta.url), "utf8")
 const composer = readFileSync(new URL("../prompt-input.tsx", import.meta.url), "utf8")
+const teamChat = readFileSync(new URL("../team-chat-button.tsx", import.meta.url), "utf8")
+const teamChatDialog = readFileSync(new URL("../team-chat-dialog.tsx", import.meta.url), "utf8")
 const workerDialog = readFileSync(new URL("../worker-list-dialog.tsx", import.meta.url), "utf8")
 const shellDialog = readFileSync(new URL("../shell-list-dialog.tsx", import.meta.url), "utf8")
 
@@ -51,7 +53,31 @@ test("activity shortcuts sit after the context gauge", () => {
   const controls = composer.indexOf("<ComposerControlsRow")
   const activityIndicators = composer.indexOf("<SessionActivityIndicators")
   const contextGauge = composer.lastIndexOf("<SessionContextUsage")
+  const teamChatButton = composer.indexOf("<TeamChatButton")
   expect(controls).toBeGreaterThan(-1)
+  expect(teamChatButton).toBeGreaterThan(contextGauge)
+  expect(activityIndicators).toBeGreaterThan(teamChatButton)
   expect(activityIndicators).toBeGreaterThan(controls)
   expect(activityIndicators).toBeGreaterThan(contextGauge)
+})
+
+test("Team Chat is officer-only and reads the live durable team projection", () => {
+  expect(teamChat).toContain("if (!info?.agent || info.parentID) return")
+  expect(teamChat).toContain('kind === "chat" || kind === "human"')
+  expect(teamChat).toContain('data-action="team-chat"')
+  expect(teamChatDialog).toContain("client.v2.agent.teamChat")
+  expect(teamChatDialog).toContain("refetchInterval: 2_000")
+  expect(teamChatDialog).toContain("<AgentPortrait")
+  expect(teamChatDialog).toContain('limit: "50", before')
+  expect(teamChatDialog).toContain("after: latestCursor()")
+  expect(teamChatDialog).toContain("setOlderFailed(true)")
+  expect(teamChatDialog).toContain("tailQuery.isError && messages().length > 0")
+  expect(teamChatDialog).toContain("captureTeamChatScrollAnchor(scroller)")
+  expect(teamChatDialog).toContain("restoreTeamChatScrollAnchor(scroller, anchor)")
+  const tailEffect = teamChatDialog.slice(teamChatDialog.indexOf("const page = tailQuery.data"))
+  expect(tailEffect.indexOf("setLatestCursor(page.cursor.latest)")).toBeLessThan(
+    tailEffect.indexOf("page.data.length === 0"),
+  )
+  expect(teamChatDialog).toContain("h-[min(82dvh,42rem)]")
+  expect(teamChatDialog).not.toContain("min-h-[24rem]")
 })

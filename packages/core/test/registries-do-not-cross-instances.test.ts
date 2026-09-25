@@ -44,7 +44,19 @@ const inside = (graph: object) => Effect.provideService(Database.Service, { db: 
 /** A `db` that answers the built-in retirement steps' chains and returns nothing. */
 const stubDb = (identity: object) => {
   const chain = identity as Record<string, unknown>
-  for (const method of ["delete", "where", "update", "set", "select", "from", "orderBy", "limit"])
+  for (const method of [
+    "delete",
+    "where",
+    "update",
+    "set",
+    "select",
+    "from",
+    "orderBy",
+    "limit",
+    "insert",
+    "values",
+    "onConflictDoNothing",
+  ])
     chain[method] = () => chain
   chain["run"] = () => Effect.void
   chain["all"] = () => Effect.succeed([])

@@ -24,6 +24,7 @@ import { SessionMessageTable, SessionTable } from "./session/sql"
 import { SessionSchema } from "./session/schema"
 import { AbsolutePath, PositiveInt, RelativePath } from "./schema"
 import { AgentV2 } from "./agent"
+import { AgentRetirement } from "./agent/retirement"
 import { AgentStatus } from "./agent-status"
 import { AgentStatusEvent } from "@novaclaw/schema/agent-status-event"
 import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
@@ -727,7 +728,10 @@ export const createSessionRecord = (
       }
     }
     const project = yield* projects.resolve(input.location.directory)
-    const now = Date.now()
+    const now =
+      colleagueRoot && input.agent !== undefined
+        ? yield* AgentRetirement.nextCreatedAt(db, input.agent, Date.now())
+        : Date.now()
     const subpath = path.relative(project.directory, input.location.directory).replaceAll("\\", "/")
     const info = SessionSchema.Info.make({
       id: sessionID,

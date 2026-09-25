@@ -52,6 +52,7 @@ import { shouldSuppressSessionExecutionError } from "@/utils/session-execution-e
 import { recoveryChangesNote } from "./session-recovery-note"
 import { PromptInput } from "@/components/prompt-input"
 import { SessionContextUsage } from "@/components/session-context-usage"
+import { TeamChatButton } from "@/components/team-chat-button"
 import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
 import {
   createPromptInputController,
@@ -1079,7 +1080,12 @@ export default function Page() {
     return (
       <SessionComposerRegion
         controller={controller}
-        childContextUsage={<SessionContextUsage buttonAppearance="v2" placement="top" />}
+        childContextUsage={
+          <>
+            <SessionContextUsage buttonAppearance="v2" placement="top" />
+            <Show when={params.id}>{(sessionID) => <TeamChatButton sessionID={sessionID()} />}</Show>
+          </>
+        }
         promptInput={
           <PromptInput
             controls={inputController()}

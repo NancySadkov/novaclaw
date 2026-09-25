@@ -278,6 +278,16 @@ export const dict = {
   "session.activity.shells.stopReason": "Why are you stopping this command?",
   "session.activity.shells.stopReasonPlaceholder":
     "For example: the model provider is down and this task is no longer useful",
+  "teamChat.open": "Open Team Chat",
+  "teamChat.title": "Team Chat",
+  "teamChat.subtitle": "{{officer}} and their reporting team",
+  "teamChat.loading": "Gathering the team's conversation…",
+  "teamChat.loadOlder": "Load earlier messages",
+  "teamChat.reconnecting": "Updates paused — reconnecting…",
+  "teamChat.unavailable": "Team Chat is temporarily unavailable.",
+  "teamChat.retry": "Try again",
+  "teamChat.empty": "No team messages yet",
+  "teamChat.emptyHint": "Colleague-tool coordination will appear here as the team works.",
 
   "prompt.permissionMode.title": "Permission mode",
   // One word each — these render inside a narrow listbox (and on a phone). The explanations live in

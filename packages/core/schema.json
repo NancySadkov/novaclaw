@@ -1,11 +1,15 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "5b3864ee-b9de-4ed0-8327-27a6aef4dfaf",
+  "id": "78a43bfd-e6b7-4ff0-a862-d0be5fd6936a",
   "prevIds": [
-    "2ef66f84-2281-4280-a6fa-b8da480c563b"
+    "5b3864ee-b9de-4ed0-8327-27a6aef4dfaf"
   ],
   "ddl": [
+    {
+      "name": "agent_retirement",
+      "entityType": "tables"
+    },
     {
       "name": "agent_token_minute",
       "entityType": "tables"
@@ -253,6 +257,36 @@
     {
       "name": "tool_catalogue",
       "entityType": "tables"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": true,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "agent_retirement"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "agent",
+      "entityType": "columns",
+      "table": "agent_retirement"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "retired_at",
+      "entityType": "columns",
+      "table": "agent_retirement"
     },
     {
       "type": "text",
@@ -5038,6 +5072,15 @@
     },
     {
       "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "agent_retirement_pk",
+      "table": "agent_retirement",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
         "name"
       ],
       "nameExplicit": false,
@@ -5476,6 +5519,24 @@
       "name": "runtime_setting_pk",
       "table": "runtime_setting",
       "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "agent",
+          "isExpression": false
+        },
+        {
+          "value": "retired_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "agent_retirement_agent_at_idx",
+      "entityType": "indexes",
+      "table": "agent_retirement"
     },
     {
       "columns": [

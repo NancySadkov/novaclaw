@@ -6,6 +6,7 @@ import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { Scratch } from "@novaclaw/core/scratch"
 import { AgentRetire } from "@novaclaw/core/agent/retire"
 import { AgentUsage } from "@novaclaw/core/agent/usage"
+import { AgentTeamChat } from "@novaclaw/core/agent/team-chat"
 import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { Database } from "@novaclaw/core/database/database"
 import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
@@ -161,6 +162,19 @@ export const AgentHandler = handlerLayer(
             const { db } = yield* Database.Service
             const since = AgentUsage.minuteOf(Date.now()) - 24 * 60
             return yield* AgentUsage.sinceMany(db, { agents: ctx.payload.agentIDs, minute: since })
+          }),
+        ),
+      )
+      .handle("agent.teamChat", (ctx) =>
+        response(
+          Effect.gen(function* () {
+            const { db } = yield* Database.Service
+            const roster = yield* AgentV2.Service.use((agent) => agent.all())
+            return yield* AgentTeamChat.list(db, roster, String(ctx.params.agentID), {
+              limit: ctx.query.limit,
+              before: ctx.query.before,
+              after: ctx.query.after,
+            })
           }),
         ),
       )

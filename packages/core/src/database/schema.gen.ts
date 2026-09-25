@@ -5,6 +5,13 @@ export default {
   up(tx) {
     return Effect.gen(function* () {
       yield* tx.run(`
+        CREATE TABLE \`agent_retirement\` (
+          \`id\` integer PRIMARY KEY AUTOINCREMENT,
+          \`agent\` text NOT NULL,
+          \`retired_at\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`agent_token_minute\` (
           \`agent\` text NOT NULL,
           \`minute\` integer NOT NULL,
@@ -724,6 +731,9 @@ export default {
           CONSTRAINT \`tool_catalogue_pk\` PRIMARY KEY(\`scope\`, \`name\`)
         );
       `)
+      yield* tx.run(
+        `CREATE INDEX \`agent_retirement_agent_at_idx\` ON \`agent_retirement\` (\`agent\`,\`retired_at\`);`,
+      )
       yield* tx.run(
         `CREATE INDEX \`community_message_channel_idx\` ON \`community_message\` (\`channel\`,\`received_at\`);`,
       )

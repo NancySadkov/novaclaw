@@ -201,3 +201,22 @@ export const UsageMinute = Schema.Struct({
   /** Tokens GENERATED in that minute: output + reasoning, what the model actually produced. */
   generated: Schema.Int,
 }).annotate({ identifier: "Agent.UsageMinute" })
+
+export interface TeamChatMessage extends Schema.Schema.Type<typeof TeamChatMessage> {}
+export const TeamChatMessage = Schema.Struct({
+  id: Schema.String,
+  sender: ID,
+  recipient: ID,
+  turn: Schema.Literals(["ask", "answer", "announce"]),
+  text: Schema.String,
+  created: Schema.Finite,
+}).annotate({ identifier: "Agent.TeamChatMessage" })
+
+export interface TeamChatPage extends Schema.Schema.Type<typeof TeamChatPage> {}
+export const TeamChatPage = Schema.Struct({
+  data: Schema.Array(TeamChatMessage),
+  cursor: Schema.Struct({
+    older: Schema.optional(Schema.String),
+    latest: Schema.optional(Schema.String),
+  }),
+}).annotate({ identifier: "Agent.TeamChatPage" })

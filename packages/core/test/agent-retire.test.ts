@@ -1,15 +1,20 @@
 import * as MemoryAccess from "@novaclaw/core/kb-graph/memory-access"
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
+import { eq } from "drizzle-orm"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { AgentRetire } from "@novaclaw/core/agent/retire"
+import { AgentRetirementTable } from "@novaclaw/core/agent/retirement.sql"
+import { AgentTeamChat } from "@novaclaw/core/agent/team-chat"
+import { AgentV2 } from "@novaclaw/core/agent"
 import { AgentRemoval } from "@novaclaw/core/agent/removal"
 import { RosterChat } from "@novaclaw/core/session/roster-chat"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionSchema } from "@novaclaw/core/session/schema"
-import { SessionTable } from "@novaclaw/core/session/sql"
+import { SessionMessage } from "@novaclaw/core/session/message"
+import { SessionMessageTable, SessionTable } from "@novaclaw/core/session/sql"
 import { AgentUsage } from "@novaclaw/core/agent/usage"
 import { Database } from "@novaclaw/core/database/database"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
@@ -153,6 +158,85 @@ describe("retiring a colleague", () => {
       const rows = yield* db.select().from(SessionTable).all().pipe(Effect.orDie)
       expect(rows.length).toBe(1)
       expect(rows[0]!.time_archived).toBeGreaterThan(0)
+      const retirements = yield* db.select().from(AgentRetirementTable).all().pipe(Effect.orDie)
+      expect(retirements).toHaveLength(1)
+      expect(retirements[0]!.agent).toBe("ghost")
+      expect(retirements[0]!.retired_at).toBeGreaterThan(AT)
+    }),
+  )
+
+  it.effect("an all-archived retirement still fences stale messages after the ID is reused", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const id = SessionSchema.ID.make("ses_ghost_archived")
+      yield* openChat(db, { id, agent: "ghost" })
+      yield* openChat(db, { id: SessionSchema.ID.make("ses_theron_stable"), agent: "theron" })
+      yield* db.update(SessionTable).set({ time_archived: AT }).where(eq(SessionTable.id, id)).run().pipe(Effect.orDie)
+      yield* db
+        .insert(SessionMessageTable)
+        .values([
+          {
+            id: "msg_old_recipient",
+            session_id: id,
+            type: "colleague",
+            seq: 1,
+            time_created: AT + 1,
+            data: { sender: "theron", turn: "ask", text: "old recipient" },
+          },
+          {
+            id: "msg_late_sender",
+            session_id: SessionSchema.ID.make("ses_theron_stable"),
+            type: "colleague",
+            seq: 1,
+            time_created: AT + 1,
+            data: { sender: "ghost", turn: "answer", text: "late predecessor output" },
+          },
+        ] as never)
+        .run()
+        .pipe(Effect.orDie)
+
+      yield* AgentRetire.everything({ db, events: yield* events, memory: MemoryClient.stub(), agent: "ghost", at: AT })
+
+      const retirements = yield* db.select().from(AgentRetirementTable).all().pipe(Effect.orDie)
+      expect(retirements).toHaveLength(1)
+      const cutoff = retirements[0]!.retired_at
+      expect(cutoff).toBeGreaterThan(AT + 1)
+      yield* db
+        .insert(SessionTable)
+        .values({
+          id: SessionSchema.ID.make("ses_ghost_reused"),
+          slug: "ghost-reused",
+          directory: process.cwd(),
+          title: "Reused Ghost",
+          version: "test",
+          agent: "ghost",
+          time_created: cutoff + 1,
+          time_updated: cutoff + 1,
+        })
+        .run()
+        .pipe(Effect.orDie)
+      yield* db
+        .insert(SessionMessageTable)
+        .values({
+          id: "msg_current",
+          session_id: SessionSchema.ID.make("ses_ghost_reused"),
+          type: "colleague",
+          seq: 1,
+          time_created: cutoff + 1,
+          data: { sender: "theron", turn: "ask", text: "current identity" },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+      const roster = [
+        AgentV2.Info.empty(AgentV2.ID.make("nova")),
+        AgentV2.Info.empty(AgentV2.ID.make("theron")),
+        AgentV2.Info.make({
+          ...AgentV2.Info.empty(AgentV2.ID.make("ghost")),
+          superior: AgentV2.ID.make("theron"),
+        }),
+      ]
+      const page = yield* AgentTeamChat.list(db, roster, "theron")
+      expect(page.data.map((message) => message.id)).toEqual([SessionMessage.ID.make("msg_current")])
     }),
   )
 

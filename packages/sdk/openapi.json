@@ -11561,6 +11561,116 @@
         ]
       }
     },
+    "/api/agent/{agentID}/team-chat": {
+      "get": {
+        "tags": ["agents"],
+        "operationId": "v2.agent.teamChat",
+        "parameters": [
+          {
+            "name": "agentID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "$ref": "#/components/schemas/LocationInfo"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AgentTeamChatPage"
+                    }
+                  },
+                  "required": ["location", "data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Lists durable colleague-tool messages exchanged inside one officer's reporting tree, including messages between subordinates. Pages are bounded; use before to load older messages and after to follow the live tail.",
+        "summary": "Read an officer team's colleague chat",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.agent.teamChat({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/agent/{agentID}/avatar": {
       "get": {
         "tags": ["agents"],
@@ -38890,6 +39000,57 @@
           }
         },
         "required": ["id", "request", "mode", "hidden", "permissions"],
+        "additionalProperties": false
+      },
+      "AgentTeamChatMessage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "sender": {
+            "type": "string"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "turn": {
+            "type": "string",
+            "enum": ["ask", "answer", "announce"]
+          },
+          "text": {
+            "type": "string"
+          },
+          "created": {
+            "type": "number"
+          }
+        },
+        "required": ["id", "sender", "recipient", "turn", "text", "created"],
+        "additionalProperties": false
+      },
+      "AgentTeamChatPage": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentTeamChatMessage"
+            }
+          },
+          "cursor": {
+            "type": "object",
+            "properties": {
+              "older": {
+                "type": "string"
+              },
+              "latest": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": ["data", "cursor"],
         "additionalProperties": false
       },
       "AgentUsageMinute": {

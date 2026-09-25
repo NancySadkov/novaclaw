@@ -4703,6 +4703,23 @@ export type AgentV2Info = {
   permissions: PermissionV2Ruleset
 }
 
+export type AgentTeamChatMessage = {
+  id: string
+  sender: string
+  recipient: string
+  turn: "ask" | "answer" | "announce"
+  text: string
+  created: number
+}
+
+export type AgentTeamChatPage = {
+  data: Array<AgentTeamChatMessage>
+  cursor: {
+    older?: string
+    latest?: string
+  }
+}
+
 export type AgentUsageMinute = {
   minute: number
   generated: number
@@ -13069,6 +13086,48 @@ export type V2AgentListResponses = {
 }
 
 export type V2AgentListResponse = V2AgentListResponses[keyof V2AgentListResponses]
+
+export type V2AgentTeamChatData = {
+  body?: never
+  path: {
+    agentID: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+    limit?: string
+    before?: string
+    after?: string
+  }
+  url: "/api/agent/{agentID}/team-chat"
+}
+
+export type V2AgentTeamChatErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2AgentTeamChatError = V2AgentTeamChatErrors[keyof V2AgentTeamChatErrors]
+
+export type V2AgentTeamChatResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: AgentTeamChatPage
+  }
+}
+
+export type V2AgentTeamChatResponse = V2AgentTeamChatResponses[keyof V2AgentTeamChatResponses]
 
 export type V2AgentAvatarGetData = {
   body?: never
