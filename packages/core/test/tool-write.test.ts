@@ -167,6 +167,29 @@ const call = (input: typeof WriteTool.Input.Type, id = "call-write") => ({
 const it = testEffect(Layer.empty)
 
 describe("WriteTool", () => {
+  it.live("writes a Bash drive path into its Windows project without external approval", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        denyAction = "external_directory_write"
+        return withTool(tmp.path, (registry) =>
+          Effect.gen(function* () {
+            if (process.platform !== "win32") return
+            const nativePath = path.join(tmp.path, "bash-alias.txt")
+            const normalized = nativePath.replaceAll("\\", "/")
+            const bashPath = `/${normalized[0]!.toLowerCase()}${normalized.slice(2)}`
+            const result = yield* executeTool(registry, call({ path: bashPath, content: "right file" }))
+            expect(result).toEqual({ type: "text", value: "Created file successfully: bash-alias.txt" })
+            expect(assertions.map((input) => input.action)).toEqual(["create"])
+            expect(yield* Effect.promise(() => fs.readFile(nativePath, "utf8"))).toBe("right file")
+          }),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
   it.live("registers and creates a relative file through FileMutation once", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),

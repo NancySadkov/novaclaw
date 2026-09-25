@@ -1,6 +1,7 @@
 export * as ShellApproval from "./shell-approval"
 
 import path from "path"
+import { fromBashDrive } from "../util/host-path"
 
 export interface Redirect {
   readonly target: string
@@ -36,10 +37,7 @@ const familyOf = (shell: string): Family => {
  * Bash), where `/c/...` means `C:/...`; Node's win32 resolver instead reads it as `C:/c/...`.
  */
 export function hostPath(value: string, shell: string, platform: NodeJS.Platform = process.platform): string {
-  if (platform !== "win32" || familyOf(shell) !== "posix") return value
-  const match = /^\/([A-Za-z])(?:\/(.*))?$/.exec(value)
-  if (!match) return value
-  return `${match[1]!.toUpperCase()}:/${match[2] ?? ""}`
+  return familyOf(shell) === "posix" ? fromBashDrive(value, platform) : value
 }
 
 const unquote = (value: string) => {

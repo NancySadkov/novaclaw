@@ -126,6 +126,29 @@ const exists = (target: string) =>
 const it = testEffect(Layer.empty)
 
 describe("ApplyPatchTool", () => {
+  it.live("applies a Bash drive target inside the Windows project without external approval", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        denyAction = "external_directory_write"
+        return withTool(tmp.path, (registry) =>
+          Effect.gen(function* () {
+            if (process.platform !== "win32") return
+            const nativePath = path.join(tmp.path, "bash-alias.txt")
+            const normalized = nativePath.replaceAll("\\", "/")
+            const bashPath = `/${normalized[0]!.toLowerCase()}${normalized.slice(2)}`
+            const result = yield* executeTool(registry, call(`*** Begin Patch\n*** Add File: ${bashPath}\n+right file\n*** End Patch`))
+            expect(result).toEqual({ type: "text", value: "Applied patch sequentially:\nA bash-alias.txt" })
+            expect(assertions.map((input) => input.action)).toEqual(["edit"])
+            expect(yield* Effect.promise(() => fs.readFile(nativePath, "utf8"))).toBe("right file\n")
+          }),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
   it.live("registers and sequentially applies add, update, and delete hunks", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),

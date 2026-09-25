@@ -29,6 +29,29 @@ function withTmp<A, E, R>(f: (directory: string) => Effect.Effect<A, E, R>) {
 }
 
 describe("LocationMutation", () => {
+  it.live("resolves a Bash drive path to the same in-project Windows file", () =>
+    withTmp((directory) =>
+      Effect.gen(function* () {
+        if (process.platform !== "win32") return
+        const nativePath = path.join(directory, "bash-alias.txt")
+        const normalized = nativePath.replaceAll("\\", "/")
+        const bashPath = `/${normalized[0]!.toLowerCase()}${normalized.slice(2)}`
+        const target = yield* (yield* LocationMutation.Service).resolve({ path: bashPath })
+        expect(target).toMatchObject({
+          canonical: path.join(yield* Effect.promise(() => fs.realpath(directory)), "bash-alias.txt"),
+          resource: "bash-alias.txt",
+        })
+        expect(target.externalDirectory).toBeUndefined()
+
+        const outside = path.join(path.dirname(directory), "outside-alias.txt").replaceAll("\\", "/")
+        const outsideBash = `/${outside[0]!.toLowerCase()}${outside.slice(2)}`
+        const external = yield* (yield* LocationMutation.Service).resolve({ path: outsideBash })
+        expect(external.canonical.replaceAll("\\", "/")).toBe(outside)
+        expect(external.externalDirectory).toBeDefined()
+      }).pipe(provide(directory)),
+    ),
+  )
+
   it.live("resolves an active relative existing file target", () =>
     withTmp((directory) =>
       Effect.gen(function* () {
