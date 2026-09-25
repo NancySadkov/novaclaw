@@ -20,6 +20,7 @@ import { requireServerKey } from "@/utils/session-route"
 import type { ServerScope } from "@/utils/server-scope"
 import { sessionExecutions } from "@/utils/session-execution-api"
 import { terminalAttention } from "@/apps/roster-live"
+import { isNamedAgentSession } from "@/apps/attention-ids"
 import { withTransientOwner } from "@/utils/transient-owner"
 import { flushToastHistory, subscribeToastHistory, type ToastHistoryEntry } from "@/utils/toast-history"
 
@@ -411,10 +412,7 @@ function createServerNotificationState(input: {
     // terminal idle again after it has durably settled/paused the attempt.
     void lookup(directory, sessionID).then(async (session) => {
       if (meta.disposed) return
-      if (!session) return
-      // A child completes as part of its visible root's work. The root's own terminal transition
-      // will carry the one notification; a child must never appear as a second colleague.
-      if (session.parentID) return
+      if (!isNamedAgentSession(session)) return
 
       const executions = await sessionExecutions(serverSDK().server.http, sessionID).catch(() => [])
       if (meta.disposed) return

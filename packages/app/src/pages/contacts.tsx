@@ -45,6 +45,8 @@ import { sessionExecutions, stopSessionExecution, type SessionExecutionInfo } fr
 import { formatTokensPerSecond } from "@/utils/token-rate"
 import { WorkerListDialog, type WorkerListItem } from "@/components/worker-list-dialog"
 import { useWorkers } from "@/context/workers"
+import { useChatsAttention } from "@/apps/chats-attention"
+import { unseenOfficerSessions } from "@/apps/attention-ids"
 
 // The Contacts app — the roster of colleagues this instance employs (AGENTS.md → *the structural
 // metaphor*; `notes/named-agents.md`).
@@ -110,6 +112,7 @@ export function ContactsPage() {
   const language = useLanguage()
   const confirm = useConfirm()
   const tabs = useTabs()
+  const unseen = useChatsAttention()
   const [menuOpen, setMenuOpen] = createSignal(false)
   const [acting, setActing] = createSignal(false)
   let cancelledDrag = false
@@ -502,6 +505,9 @@ ${copy.detail}`
                         get sessions() {
                           return liveSessions()
                         },
+                        get unseenSessionIDs() {
+                          return unseen()
+                        },
                         get starting() {
                           return starting() === view.id
                         },
@@ -559,6 +565,7 @@ type ContactRowProps = {
    *  to a GETTER — so each of this component's six reads re-ran `liveFor`, which allocates two
    *  fresh `Map`s over every session in the instance (review D6). One memo, one pass. */
   sessions: readonly SessionLike[]
+  unseenSessionIDs: readonly string[]
   usage: readonly UsageMinute[]
   executions: ReadonlyMap<string, SessionExecutionInfo>
   starting: boolean
@@ -618,6 +625,7 @@ function ContactRow(props: ContactRowProps) {
   const dialog = useDialog()
   const rowSync = useServerSync()
   const live = createMemo<RosterLive>(() => liveFor(props.sessions, props.view.id))
+  const unseenRoots = createMemo(() => unseenOfficerSessions(props.sessions, props.view.id, props.unseenSessionIDs))
   // ⚠️ `now` is a SIGNAL, not a literal read (review D5). `Date.now()` inside the memo is untracked,
   // so the badge froze on the ten-minute window that ended when the page painted and went on
   // presenting it as a live rate. The ticker below is the only thing that makes "per minute" true.
@@ -696,7 +704,7 @@ function ContactRow(props: ContactRowProps) {
   // interpolating the raw key produced `/server/http://localhost:4096/session/…` — a link that looks
   // right in the DOM and cannot resolve. Caught by reading the rendered hrefs, not by the typecheck.
   const chatHref = createMemo(() => {
-    const sessionID = live().sessionID
+    const sessionID = unseenRoots()[0]?.id ?? live().sessionID
     return sessionID && props.serverKey ? sessionHref(props.serverKey, sessionID) : undefined
   })
   let tile: HTMLDivElement | undefined
@@ -742,6 +750,14 @@ function ContactRow(props: ContactRowProps) {
         }}
       >
         <div class="officer-card-art">
+          <Show when={unseenRoots().length > 0}>
+            <span
+              data-slot="officer-response-badge"
+              title={language.plural("contacts.attention.count", unseenRoots().length)}
+            >
+              {unseenRoots().length > 9 ? "9+" : unseenRoots().length}
+            </span>
+          </Show>
           <AgentPortrait
             id={props.view.id}
             name={props.view.name}

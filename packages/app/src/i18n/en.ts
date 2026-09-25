@@ -2282,6 +2282,8 @@ export const dict = {
   "contacts.order.failed": "Could not save officer order",
   "contacts.workers.count.one": "{{count}} worker",
   "contacts.workers.count.other": "{{count}} workers",
+  "contacts.attention.count.one": "{{count}} chat from this officer needs attention",
+  "contacts.attention.count.other": "{{count}} chats from this officer need attention",
   "contacts.workers.title": "{{name}}'s workers",
   "contacts.workers.open": "Open worker chat",
   "contacts.workers.stop": "Stop",

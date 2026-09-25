@@ -9,6 +9,7 @@ import { AgentSettingsPage } from "@/pages/agent-settings"
 import { GlobalContext } from "@/context/global"
 import { ServerContext } from "@/context/server"
 import { ServerSDKProvider } from "@/context/server-sdk"
+import { NotificationContext } from "@/context/notification"
 import { ServerSyncContext } from "@/context/server-sync"
 import { ModelsContext } from "@/context/models"
 import { TabsContext } from "@/context/tabs"
@@ -96,6 +97,7 @@ test("the addressable settings screen opens the selected colleague and returns t
   }
   const modelsStub = { list: () => [], connected: () => true, enabled: () => true }
   const tabsStub = { closeSessionTab: () => {}, store: [] as never[] }
+  const notificationStub = { session: { unseenSessionIds: () => [] } }
 
   const originalFetch = globalThis.fetch
   ;(globalThis as { fetch: typeof fetch }).fetch = (async () =>
@@ -118,6 +120,7 @@ test("the addressable settings screen opens the selected colleague and returns t
             <GlobalContext.Provider value={globalStub as never}>
               <ServerContext.Provider value={{ current: connection } as never}>
                 <ServerSDKProvider>
+                <NotificationContext.Provider value={notificationStub as never}>
                 <ServerSyncContext.Provider value={syncStub as never}>
                   <ModelsContext.Provider value={modelsStub as never}>
                     <TabsContext.Provider value={tabsStub as never}>
@@ -130,6 +133,7 @@ test("the addressable settings screen opens the selected colleague and returns t
                     </TabsContext.Provider>
                   </ModelsContext.Provider>
                 </ServerSyncContext.Provider>
+                </NotificationContext.Provider>
                 </ServerSDKProvider>
               </ServerContext.Provider>
             </GlobalContext.Provider>
@@ -221,6 +225,7 @@ test("officer tiles reorder from the keyboard and open their actions by right cl
     setLocale: () => {},
   }
   const tabsStub = { closeSessionTab: () => {}, store: [] as never[] }
+  const notificationStub = { session: { unseenSessionIds: () => ["ses_theron", "ses_finished_1"] } }
 
   const originalFetch = globalThis.fetch
   ;(globalThis as { fetch: typeof fetch }).fetch = (async () =>
@@ -243,6 +248,7 @@ test("officer tiles reorder from the keyboard and open their actions by right cl
             <GlobalContext.Provider value={globalStub as never}>
               <ServerContext.Provider value={{ current: connection } as never}>
                 <ServerSDKProvider>
+                <NotificationContext.Provider value={notificationStub as never}>
                 <ServerSyncContext.Provider value={syncStub as never}>
                   <TabsContext.Provider value={tabsStub as never}>
                     <DialogProvider>
@@ -252,6 +258,7 @@ test("officer tiles reorder from the keyboard and open their actions by right cl
                     </DialogProvider>
                   </TabsContext.Provider>
                 </ServerSyncContext.Provider>
+                </NotificationContext.Provider>
                 </ServerSDKProvider>
               </ServerContext.Provider>
             </GlobalContext.Provider>
@@ -268,6 +275,8 @@ test("officer tiles reorder from the keyboard and open their actions by right cl
   expect(ids()).toEqual(["nova", "theron", "aris"])
   expect(workerReads).toContain("ses_theron")
   expect(document.querySelector('[data-contact-id="theron"] [data-action="contacts-workers"]')).toBeNull()
+  expect(document.querySelector('[data-contact-id="theron"] [data-slot="officer-response-badge"]')?.textContent).toBe("1")
+  expect(document.querySelector('[data-contact-id="aris"] [data-slot="officer-response-badge"]')).toBeNull()
   expect(document.querySelector('[data-contact-id="nova"] [data-action="contacts-reorder"]')).toBeNull()
 
   let tile = document.querySelector<HTMLElement>('[data-contact-id="theron"]')!

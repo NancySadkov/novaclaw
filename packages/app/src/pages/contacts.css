@@ -77,6 +77,25 @@
   border-radius: 50%;
   box-shadow: 0 0 0 4px #b9955c08;
 }
+.officer-card-art [data-slot="officer-response-badge"] {
+  position: absolute;
+  left: 5px;
+  top: 4px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding-inline: 4px;
+  border-radius: 6px;
+  background: var(--v2-state-bg-info);
+  color: var(--v2-state-fg-info);
+  font-size: 10px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px var(--v2-background-bg-base);
+  pointer-events: none;
+}
 .officer-card .officer-card-portrait {
   width: 90px;
   height: 90px;

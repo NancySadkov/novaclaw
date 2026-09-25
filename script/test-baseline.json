@@ -54,6 +54,7 @@
   "countsCoreContextAndWorkerCapacity": "2026-09-23: core 7401->7419. Five tests added in the worker-capacity slice were omitted from its baseline update: three worker-capacity tests and one each in config-domain-reload and spawn-wakes-child. Splitting the nine-size runner context case into independent cases adds eight. The remaining five correct an undercount recorded from the failing schedule gate; that count was never verified by a green core run, and its raw per-file result is unavailable to identify the five missing registrations. This run measured 7419 pass, 9 skip, 0 fail in two sequential shards. Failed units now withhold their skip and completed-test counts so incomplete registration cannot seed either ledger.",
   "countsPrunedReplay": "2026-09-24: core 7422->7423 adds one event replay test. A session update whose historical diffs were pruned matches its original event in either direction; an unrelated payload change and two different present patches still diverge. The changed file passed directly (48 pass, 0 fail).",
   "countsWorkerAuthorityAndStop": "2026-09-25: app:unit 1794->1796. The prior accepted-exit slice added two roster worker tests without updating the baseline; this slice removes those two tests with the retired browser worker projection and adds two Stop/working-state guards. Measured 1796 pass, 0 fail. app:browser remains 255 after its settings mounts were updated for the merged Work tab.",
+  "countsOfficerResponseAttention": "2026-09-25: app:unit 1796->1798 adds two guards for named root session response attention and officer badge attribution. Measured app:unit 1798 pass and app:browser 255 pass with no failures; the package command then exited on its post-run RAM admission check. app:browser count is unchanged.",
   "units": {
     "llm": 28,
     "core": 9,
@@ -87,7 +88,7 @@
     "session-ui": 231,
     "ui": 67,
     "core": 7361,
-    "app:unit": 1796,
+    "app:unit": 1798,
     "app:browser": 255,
     "desktop": 258,
     "server": 119,
