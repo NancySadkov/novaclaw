@@ -48,6 +48,12 @@ const graph = (input: {
           const configured = typeof input.services === "function" ? input.services() : input.services
           return { capability_services: configured ?? { parser: input.info ?? declaration() } }
         }),
+      get: (key) =>
+        Effect.sync(() => {
+          if (key !== "capability_services") return undefined
+          const configured = typeof input.services === "function" ? input.services() : input.services
+          return configured ?? { parser: input.info ?? declaration() }
+        }),
       serverPassword: () => Effect.succeed(undefined),
       set: () => Effect.void,
       update: () => Effect.void,

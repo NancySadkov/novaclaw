@@ -20,6 +20,7 @@ export const settingsStub = (state: SettingsState = { current: {} }) =>
     SettingsConfigStore.Service,
     SettingsConfigStore.Service.of({
       all: () => Effect.sync(() => state.current),
+      get: (key) => Effect.sync(() => state.current[key]),
       serverPassword: () =>
         Effect.sync(() => {
           const password = (state.current.server as { password?: unknown } | undefined)?.password

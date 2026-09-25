@@ -13,6 +13,7 @@ describe("EndpointURL — the lay-user shapes", () => {
     expect(canonicalOf("example.com/path/")).toBe("https://example.com/path/v1/")
     expect(canonicalOf("https://example.com/path/")).toBe("https://example.com/path/v1/")
     expect(canonicalOf("example.com")).toBe("https://example.com/v1/")
+    expect(canonicalOf("https://api.deepseek.com")).toBe("https://api.deepseek.com/v1/")
   })
 
   it("recovers the base from a pasted completion endpoint", () => {

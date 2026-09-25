@@ -57,6 +57,7 @@ const suspendingSettings = (values: Record<string, unknown>) =>
     SettingsConfigStore.Service,
     SettingsConfigStore.Service.of({
       all: () => Effect.yieldNow.pipe(Effect.as({ ...values })),
+      get: (setting) => Effect.yieldNow.pipe(Effect.as(values[setting])),
       set: (setting, value) => Effect.sync(() => void (values[setting] = value)),
       update: (setting, change) => Effect.sync(() => void (values[setting] = change(values[setting]))),
       remove: (setting) => Effect.sync(() => void delete values[setting]),

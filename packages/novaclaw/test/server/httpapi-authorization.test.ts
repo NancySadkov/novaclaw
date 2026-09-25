@@ -74,6 +74,7 @@ const noStoredTokenLayer = Layer.succeed(
   SettingsConfigStore.Service,
   SettingsConfigStore.Service.of({
     all: () => Effect.succeed({}),
+    get: () => Effect.succeed(undefined),
     serverPassword: () => Effect.succeed(undefined),
     set: () => Effect.void,
     update: () => Effect.void,

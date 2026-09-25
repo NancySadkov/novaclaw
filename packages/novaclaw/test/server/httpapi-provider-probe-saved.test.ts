@@ -1,6 +1,8 @@
 import { describe, expect } from "bun:test"
+import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Effect, Layer } from "effect"
+import { ProviderRecovery } from "@novaclaw/core/session/runner/provider-recovery"
 import { resetDatabase } from "../fixture/db"
 import { testEffectShared } from "../lib/effect"
 import { httpApiLayer, request } from "./httpapi-layer"
@@ -82,6 +84,66 @@ describe("probing a SAVED provider", () => {
   )
 
   it.instance(
+    "persists the base URL that completed a generation for a saved provider",
+    Effect.gen(function* () {
+      const upstream = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch(request) {
+          const path = new URL(request.url).pathname
+          if (path === "/v1/models")
+            return Response.json({ data: [{ id: "fixture-model" }] })
+          if (path === "/v1/chat/completions")
+            return Response.json({ choices: [{ message: { role: "assistant", content: "OK" } }] })
+          return new Response("missing", { status: 404 })
+        },
+      })
+      try {
+        const failedModel = { providerID: PROVIDER, id: "fixture-model" }
+        const saved = yield* request(
+          "/config",
+          json({
+            provider_recovery: {
+              [ProviderRecovery.key(failedModel)]: { failures: 7, next: Date.now() + 30 * 60_000 },
+            },
+            providers: {
+              [PROVIDER]: {
+                name: "Probe fixture",
+                api: {
+                  type: "aisdk",
+                  package: "@ai-sdk/openai-compatible",
+                  url: `http://127.0.0.1:${upstream.port}`,
+                },
+                models: { "fixture-model": { name: "fixture-model" } },
+              },
+            },
+          }),
+        )
+        expect(saved.status).toBe(200)
+        expect(
+          ((yield* saved.json) as { provider_recovery?: ProviderRecovery.State }).provider_recovery?.[
+            ProviderRecovery.key(failedModel)
+          ]?.failures,
+        ).toBe(7)
+
+        const response = yield* probe({ modelID: "fixture-model" })
+        expect(response.status).toBe(200)
+        expect(yield* response.json).toMatchObject({ status: "ok", baseURL: `http://127.0.0.1:${upstream.port}/v1/` })
+
+        const config = yield* request("/config")
+        const body = (yield* config.json) as unknown as {
+          provider_recovery?: ProviderRecovery.State
+          providers: Record<string, { api?: { url?: string } }>
+        }
+        expect(body.providers[PROVIDER]?.api?.url).toBe(`http://127.0.0.1:${upstream.port}/v1/`)
+        expect(body.provider_recovery?.[ProviderRecovery.key(failedModel)]).toBeUndefined()
+      } finally {
+        upstream.stop(true)
+      }
+    }),
+  )
+
+  it.instance(
     "still answers no-url when the provider genuinely has no address",
     Effect.gen(function* () {
       // The control. Without it this file would pass on a probe that never reports no-url at all,
@@ -102,6 +164,60 @@ describe("probing a SAVED provider", () => {
       // And it tells the user what to do about it, in their terms — this string is rendered verbatim
       // in Settings, so a regression to internal prose fails here.
       expect(result.detail ?? "").toContain("Add the server address")
+    }),
+  )
+
+  it.instance(
+    "keeps recovery blocked when the canonical URL cannot be reloaded",
+    Effect.gen(function* () {
+      const upstream = Bun.serve({
+        hostname: "127.0.0.1",
+        port: 0,
+        fetch(request) {
+          const path = new URL(request.url).pathname
+          if (path === "/v1/models") return Response.json({ data: [{ id: "fixture-model" }] })
+          if (path === "/v1/chat/completions")
+            return Response.json({ choices: [{ message: { role: "assistant", content: "OK" } }] })
+          return new Response("missing", { status: 404 })
+        },
+      })
+      try {
+        const failedModel = { providerID: PROVIDER, id: "fixture-model" }
+        const saved = yield* request(
+          "/config",
+          json({
+            provider_recovery: {
+              [ProviderRecovery.key(failedModel)]: { failures: 7, next: Date.now() + 30 * 60_000 },
+            },
+            providers: {
+              [PROVIDER]: {
+                name: "Probe fixture",
+                api: {
+                  type: "aisdk",
+                  package: "@ai-sdk/openai-compatible",
+                  url: `http://127.0.0.1:${upstream.port}`,
+                },
+                models: { "fixture-model": { name: "fixture-model" } },
+              },
+            },
+          }),
+        )
+        expect(saved.status).toBe(200)
+
+        yield* ConfigStoreWrite.registerReload("catalog", () => Effect.die(new Error("reload refused")))
+        const response = yield* probe({ modelID: "fixture-model" })
+        expect(response.status).toBe(500)
+
+        const config = yield* request("/config")
+        const body = (yield* config.json) as unknown as {
+          provider_recovery?: ProviderRecovery.State
+          providers: Record<string, { api?: { url?: string } }>
+        }
+        expect(body.providers[PROVIDER]?.api?.url).toBe(`http://127.0.0.1:${upstream.port}/v1/`)
+        expect(body.provider_recovery?.[ProviderRecovery.key(failedModel)]?.failures).toBe(7)
+      } finally {
+        upstream.stop(true)
+      }
     }),
   )
 })

@@ -28,6 +28,7 @@ const memorySettings = (values: Record<string, unknown>) =>
     SettingsConfigStore.Service,
     SettingsConfigStore.Service.of({
       all: () => Effect.succeed({ ...values }),
+      get: (key) => Effect.succeed(values[key]),
       serverPassword: () =>
         Effect.succeed(
           typeof (values.server as { password?: unknown } | undefined)?.password === "string"

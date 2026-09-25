@@ -13,6 +13,7 @@ import { TrashSettings } from "./trash-settings"
 export interface Interface {
   readonly unreadable: () => Effect.Effect<ReadonlyArray<{ readonly path: string }>>
   readonly all: () => Effect.Effect<Record<string, unknown>>
+  readonly get: (key: string) => Effect.Effect<unknown>
   /** Read the committed incoming API token; undefined means use the launcher default. */
   readonly serverPassword: () => Effect.Effect<string | undefined>
   readonly set: (key: string, value: unknown) => Effect.Effect<void>
@@ -70,6 +71,10 @@ export const layer = Layer.effect(
         LogSettings.apply(result.log)
         TrashSettings.apply(result.trash)
         return result
+      }),
+      get: Effect.fn("SettingsConfigStore.get")(function* (key) {
+        const stored = yield* settings.get(key)
+        return stored === undefined ? undefined : mapSecrets(key, stored, readSecret)
       }),
       serverPassword: Effect.fn("SettingsConfigStore.serverPassword")(function* () {
         // Read through SQLite so a rolled-back config write cannot change the live auth policy.

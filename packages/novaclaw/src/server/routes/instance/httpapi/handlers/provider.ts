@@ -24,6 +24,7 @@ import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { ProviderCapability } from "@novaclaw/core/provider-capability"
 import { ProviderCapabilityStore } from "@novaclaw/core/provider-capability-store"
 import { ProviderSession } from "@novaclaw/core/session/runner/provider-session"
+import { ProviderRecovery } from "@novaclaw/core/session/runner/provider-recovery"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { ProviderV2 } from "@novaclaw/core/provider"
 
@@ -1096,6 +1097,42 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
                 }
               : {}),
           }
+        if (ctx.payload.baseURL === undefined && entry?.api !== undefined && baseURL !== requestedURL) {
+          const refused = yield* ConfigStoreWrite.apply(
+            Schema.decodeUnknownSync(ConfigV2.Info)({
+              providers: {
+                [ctx.params.providerID]: {
+                  api: { ...entry.api, url: baseURL },
+                },
+              },
+            }),
+            { writer: "instance" },
+          ).pipe(
+            Effect.as(undefined),
+            Effect.catchTag("ConfigStoreWrite.ConfigWriteRefused", (error) => Effect.succeed(error)),
+          )
+          if (refused !== undefined)
+            return {
+              status: "error" as const,
+              latencyMs: Date.now() - started,
+              baseURL,
+              discoveryLatencyMs: latencyMs,
+              completionLatencyMs,
+              completionAttempts,
+              completed: true,
+              models,
+              ...(Object.keys(limits).length === 0 ? {} : { limits }),
+              ...(window === undefined ? {} : { window }),
+              detail: `Model generation is healthy, but NovaClaw could not save its corrected server address: ${refused.message}`,
+            }
+        }
+        if (ctx.payload.baseURL === undefined)
+          yield* settings.update("provider_recovery", (current) =>
+            ProviderRecovery.succeeded(ProviderRecovery.decode(current), {
+              providerID: ctx.params.providerID,
+              id: ctx.payload.modelID!,
+            }),
+          )
         // The endpoint answered a plain completion. Now ask the SAME no-thinking question the runner
         // will ask on a zero-budget turn or a compaction, and learn the floor from the refusal
         // before such a turn can fail on it. Only a SAVED model has a row to carry the answer.

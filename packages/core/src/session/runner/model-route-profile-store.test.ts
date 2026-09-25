@@ -17,6 +17,7 @@ const memorySettings = (values: Record<string, unknown>) =>
     SettingsConfigStore.Service,
     SettingsConfigStore.Service.of({
       all: () => Effect.succeed({ ...values }),
+      get: (setting) => Effect.succeed(values[setting]),
       set: (setting, value) => Effect.sync(() => void (values[setting] = value)),
       update: (setting, change) => Effect.sync(() => void (values[setting] = change(values[setting]))),
       remove: (setting) => Effect.sync(() => void delete values[setting]),

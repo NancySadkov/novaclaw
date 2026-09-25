@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { DateTime, Effect, Schema } from "effect"
+import { DateTime, Deferred, Effect, Fiber, Schema } from "effect"
 import { Catalog } from "@novaclaw/core/catalog"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { ConfigProvider } from "@novaclaw/core/config/provider"
@@ -72,7 +72,7 @@ const ECHO = ProviderV2.ID.make("echo")
 const CLOSE = ModelV2.ID.make("close")
 
 /** The health tracker's key for the model this session is configured on. */
-const SICK = { providerID: String(SEER), id: String(VISION) }
+const SICK = { providerID: SEER, id: VISION }
 
 const screenshot = SessionMessage.User.make({
   id: SessionMessage.ID.make("msg_shot"),
@@ -175,7 +175,7 @@ const seedCatalog = (catalog: Catalog.Interface) =>
   })
 
 describe("SessionRunnerModel — the per-turn facts follow the fallback", () => {
-  it.live("a health demotion moves capabilities, class, retry, image cap and ref onto the substitute", () =>
+  it.live("a health demotion moves every turn fact, then the first eligible probe returns to the assignment", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),
       (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
@@ -237,6 +237,66 @@ describe("SessionRunnerModel — the per-turn facts follow the fallback", () => 
             expect(yield* models.retryAttempts(session)).toBe(2)
             expect(yield* models.imageLimit(session)).toBe(3)
             expect((yield* models.device(session))?.key).toBe(demoted.device.key)
+
+            yield* settings.set("provider_recovery", {
+              [ProviderRecovery.key(SICK)]: { failures: 1, next: Date.now() - 1 },
+            })
+            const recovered = yield* models.resolveWithDevice(session)
+            expect(named(recovered.ran)).toBe("seer/vision")
+            expect(recovered.substituted).toBeUndefined()
+            yield* models.providerSucceeded(SICK)
+            expect(ProviderRecovery.decode((yield* settings.all())["provider_recovery"])).toEqual({})
+          }).pipe(
+            Effect.scoped,
+            Effect.provide(LocationServiceMap.Service.get(location)),
+            Effect.ensuring(Effect.sync(() => ModelHealth.reset())),
+          )
+        }),
+      ),
+    ),
+  )
+
+  it.live("an external successful probe releases a future recovery wait and returns to the assignment", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((dir) =>
+        Effect.gen(function* () {
+          const location = Location.Ref.make({ directory: AbsolutePath.make(dir.path) })
+          const session = sessionOn(location)
+
+          yield* Effect.gen(function* () {
+            yield* Reference.Service
+            const catalog = yield* Catalog.Service
+            const models = yield* SessionRunnerModel.Service
+            const settings = yield* SettingsConfigStore.Service
+            yield* seedCatalog(catalog)
+
+            const future = Date.now() + 30 * 60_000
+            yield* settings.set("provider_recovery", {
+              [ProviderRecovery.key(SICK)]: { failures: 7, next: future },
+              [ProviderRecovery.key({ providerID: SCRIBE, id: TEXT })]: { failures: 7, next: future },
+            })
+
+            const waiting = yield* Deferred.make<void>()
+            const resolution = yield* models
+              .resolveWithDevice(session, {
+                recoveryWait: {
+                  started: () => Deferred.succeed(waiting, undefined),
+                  ended: () => Effect.void,
+                },
+              })
+              .pipe(Effect.forkScoped)
+            yield* Deferred.await(waiting)
+            yield* Effect.sleep("100 millis")
+            yield* settings.update("provider_recovery", (current) =>
+              ProviderRecovery.succeeded(ProviderRecovery.decode(current), SICK),
+            )
+
+            const recovered = yield* Fiber.join(resolution).pipe(Effect.timeout("2 seconds"))
+            expect(named(recovered.ran)).toBe("seer/vision")
+            expect(recovered.substituted).toBeUndefined()
           }).pipe(
             Effect.scoped,
             Effect.provide(LocationServiceMap.Service.get(location)),

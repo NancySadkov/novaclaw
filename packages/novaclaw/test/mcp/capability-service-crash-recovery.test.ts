@@ -29,6 +29,7 @@ const graph = (fixture: string) => {
     SettingsConfigStore.Service,
     SettingsConfigStore.Service.of({
       all: () => Effect.succeed({ capability_services: { parser: info } }),
+      get: (key) => Effect.succeed(key === "capability_services" ? { parser: info } : undefined),
       serverPassword: () => Effect.succeed(undefined),
       set: () => Effect.void,
       update: () => Effect.void,

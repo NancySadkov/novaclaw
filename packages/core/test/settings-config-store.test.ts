@@ -42,8 +42,11 @@ describe("SettingsConfigStore", () => {
         snapshots: false,
         memory: { enabled: true },
       })
+      expect(yield* store.get("memory")).toEqual({ enabled: true })
+      expect(yield* store.get("missing")).toBeUndefined()
 
       yield* store.set("username", "edited")
+      expect(yield* store.get("username")).toBe("edited")
       expect((yield* store.all()).username).toBe("edited")
 
       yield* store.remove("username")
@@ -212,6 +215,7 @@ describe("Config layer settings overlay (8c: jsonc is not a runtime source)", ()
       SettingsConfigStore.Service,
       SettingsConfigStore.Service.of({
         all: () => Effect.succeed({ ...values }),
+        get: (key) => Effect.succeed(values[key]),
         serverPassword: () =>
           Effect.succeed(
             typeof (values.server as { password?: unknown } | undefined)?.password === "string"

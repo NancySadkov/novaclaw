@@ -197,6 +197,8 @@ export interface ResolveOptions {
   }
 }
 
+const RECOVERY_RECHECK_MS = 1_000
+
 export interface Interface {
   /**
    * @param requested — the user NAMED this model (a `--model` flag, a switch, a per-turn override),
@@ -1750,11 +1752,27 @@ export const locationLayer = Layer.effect(
             if (probe === undefined || selectedRecovery === undefined)
               return yield* new ModelUnavailableError({ providerID: selected.providerID, modelID: selected.id })
             const delayMs = Math.max(0, probe.next - at)
+            const waitingFor = selected
             yield* options?.recoveryWait?.started(delayMs) ?? Effect.void
-            yield* Effect.sleep(Duration.millis(delayMs)).pipe(
+            selected = yield* Effect.gen(function* () {
+              for (;;) {
+                const checkedAt = yield* Clock.currentTimeMillis
+                const latest = ProviderRecovery.decode(yield* settings.get("provider_recovery"))
+                if (latest[ProviderRecovery.key(waitingFor)] === undefined) {
+                  ModelHealth.succeeded(waitingFor)
+                  return waitingFor
+                }
+                if (!ProviderRecovery.unavailable(latest, waitingFor, checkedAt)) return waitingFor
+                const latestProbe = ProviderRecovery.earliest(latest, compatible)
+                if (latestProbe === undefined) return waitingFor
+                if (!ProviderRecovery.unavailable(latest, latestProbe.model, checkedAt)) return latestProbe.model
+                yield* Effect.sleep(
+                  Duration.millis(Math.min(RECOVERY_RECHECK_MS, Math.max(1, latestProbe.next - checkedAt))),
+                )
+              }
+            }).pipe(
               Effect.ensuring(options?.recoveryWait?.ended() ?? Effect.void),
             )
-            selected = probe.model
           }
         }
       }
