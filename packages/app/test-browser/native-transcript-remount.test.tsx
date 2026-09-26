@@ -436,4 +436,23 @@ describe("native transcript remount", () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(host.querySelectorAll('[data-slot="native-todo"]')).toHaveLength(2)
   })
+
+  test("🔴 a stall notice is FOLDED — the instance is reporting silence, not the user speaking", async () => {
+    const noticeMessages = [
+      {
+        id: "msg_stall_aris_theron_1",
+        type: "user",
+        text: "The message to theron you sent 31 minutes ago is still unanswered.",
+        time: { created: 1 },
+      },
+    ] as unknown as SessionMessage[]
+    const host = mount(undefined, { messages: noticeMessages, status: { type: "idle" } })
+    // Folded: no user bubble, a collapsible notice whose body is hidden by default.
+    expect(host.querySelector('[data-slot="native-user"]')).toBeNull()
+    const details = host.querySelector('[data-slot="native-notice"]') as HTMLDetailsElement | null
+    expect(details).not.toBeNull()
+    expect(details!.open).toBe(false)
+    expect(details!.textContent).toContain("Automated nudge")
+    expect(details!.textContent).toContain("still unanswered")
+  })
 })

@@ -30,6 +30,7 @@ import type {
   SessionStatus,
 } from "@novaclaw/sdk/v2"
 import { isSteerText, stripSteerProvenance, stripAutomatedEcho } from "@novaclaw/core/session/steer-provenance"
+import { isNotice } from "@novaclaw/core/session/notice"
 import { SessionOrigin } from "@novaclaw/core/session/origin"
 import { Token } from "@novaclaw/core/util/token"
 import { isInFlightAssistant, isOptimistic, unqueuedPending } from "../message-fold"
@@ -667,10 +668,23 @@ function NativeMessage(props: { message: SessionMessage; developer?: boolean; li
       <Match when={props.message.type === "user" && props.message}>
         {(m) => (
           <Show
-            when={!isSteerText(m().text)}
-            fallback={<SteerMessage text={stripSteerProvenance(m().text)} cacheKey={`${m().id}:steer`} />}
+            when={!isNotice(m().id)}
+            fallback={
+              /**
+               * 🔴 A stall notice is the INSTANCE reporting silence, not the user speaking (owner,
+               * 2026-09-26: *"ensure such no-response nudges are folded … of little interest to the
+               * user"*). Folded like a steer, for the same reason: a user bubble would make the app
+               * look like it was barking at its own operator.
+               */
+              <SteerMessage text={m().text} cacheKey={m().id} />
+            }
           >
-            <UserMessage message={m()} />
+            <Show
+              when={!isSteerText(m().text)}
+              fallback={<SteerMessage text={stripSteerProvenance(m().text)} cacheKey={`${m().id}:steer`} />}
+            >
+              <UserMessage message={m()} />
+            </Show>
           </Show>
         )}
       </Match>
