@@ -64,7 +64,7 @@ import { isSessionNotFoundError } from "./utils/server-errors"
 import { forgetGoneSession, revalidateSessionTabs } from "./context/session-gone"
 import { officerTabAgent } from "./context/tab-agent"
 import { SessionScopeProvider } from "./context/session-scope"
-import { resolveOfficerChat } from "./apps/agent-list"
+import { resolveOfficerChat, cachedOfficerChat, rememberOfficerChat } from "./apps/agent-list"
 import { showToast } from "@/utils/toast"
 
 import { HomeScreen } from "@/pages/home-screen/home-screen"
@@ -168,13 +168,17 @@ const TargetSessionRoute = () => {
   )
 }
 
-/** The calm state while an officer tab follows its colleague to the chat it holds now — never the
- *  "deleted or expired" card, which is architecturally unreachable for a colleague. */
+/**
+ * The QUIET state while an officer's chat resolves.
+ *
+ * 🔴 Deliberately carries NO copy. It used to show `app.connection.reconnecting` — "Connection lost —
+ * reconnecting…" — which reads as a dropped connection while the page is merely resolving a chat id
+ * (owner, 2026-09-26). A resolve is not a disconnection, and a brief blank is the calm truth.
+ */
 function OfficerChatRecovering() {
-  const language = useLanguage()
   return (
-    <div class="flex h-full items-center justify-center p-8 text-center">
-      <span class="text-sm text-v2-text-text-muted">{language.t("app.connection.reconnecting")}</span>
+    <div class="flex h-full items-center justify-center p-8" aria-busy="true" data-slot="officer-resolving">
+      <span class="size-2 animate-pulse rounded-full bg-v2-text-text-muted" />
     </div>
   )
 }
@@ -382,17 +386,25 @@ function TargetAgentRoute() {
   // view data). `revision` re-runs it when Clear Chat asks the page to follow the colleague.
   createEffect(() => {
     const agent = params.agentID
-    serverKey()
+    const key = serverKey()
     revision()
     const mine = ++run
+    const known = cachedOfficerChat(key, agent)
     setFailure(undefined)
-    void resolveOfficerChat(serverSDK().client.v2, { agentID: agent })
+    if (known !== undefined) {
+      // INSTANT: render the chat we already know, and take its directory from the store if we have it.
+      setChat(known)
+      setDirectory(sync().session.peek(known)?.location?.directory)
+    } else {
+      setChat(undefined)
+      setDirectory(undefined)
+    }
+    void resolveOfficerChat(serverSDK().client.v2, { agentID: agent, create: false, serverKey: key })
       .then(async (id) => {
         if (mine !== run) return
-        if (id === undefined) {
-          setFailure(new Error(`${agent} has no chat to open`))
-          return
-        }
+        // No live chat: opening a colleague must NOT create one as a side effect of navigation. Stay
+        // quiet; the roster's own "open to start one" gesture is what makes a chat.
+        if (id === undefined) return
         setChat(id)
         const lineage = await sync()
           .session.lineage.resolve(id)
@@ -401,7 +413,8 @@ function TargetAgentRoute() {
         setDirectory(lineage?.session.location.directory)
       })
       .catch((error) => {
-        if (mine === run) setFailure(error)
+        // A failed refresh must not tear down a page we already rendered from cache.
+        if (mine === run && known === undefined) setFailure(error)
       })
   })
   const sessionID = () => chat()

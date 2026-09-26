@@ -243,11 +243,43 @@ export const startChat = async (
  * ⚠️ Only for colleague tabs. An anonymous or worker chat has no entity to follow, so a missing id
  * there is genuinely gone and the caller keeps the existing retirement policy.
  */
+/**
+ * The last chat known for a colleague, keyed `server\nagent` — a CACHE, never identity. The tab holds
+ * only the agent; this only spares a full session list on every open. Seeded the moment a chat is
+ * created or resolved, so opening a colleague is instant (owner, 2026-09-26: a tab click should not
+ * feel like a signal from Mars).
+ */
+const officerChatCache = new Map<string, string>()
+
+const cacheKey = (serverKey: string, agentID: string) => `${serverKey}\n${agentID}`
+
+export const rememberOfficerChat = (serverKey: string, agentID: string, sessionID: string): void => {
+  officerChatCache.set(cacheKey(serverKey, agentID), sessionID)
+}
+
+export const cachedOfficerChat = (serverKey: string, agentID: string): string | undefined =>
+  officerChatCache.get(cacheKey(serverKey, agentID))
+
 export const resolveOfficerChat = async (
   sdk: Parameters<typeof listSessions>[0] & Parameters<typeof startChat>[0],
-  input: { readonly agentID: string; readonly title?: string | undefined },
+  input: {
+    readonly agentID: string
+    readonly title?: string | undefined
+    readonly create?: boolean | undefined
+    readonly serverKey?: string | undefined
+  },
 ): Promise<string | undefined> => {
   const live = chatFor(await listSessions(sdk), input.agentID)
-  if (live !== undefined) return live.id
-  return startChat(sdk, { agentID: input.agentID, title: input.title ?? input.agentID })
+  if (live !== undefined) {
+    if (input.serverKey !== undefined) rememberOfficerChat(input.serverKey, input.agentID, live.id)
+    return live.id
+  }
+  // ⚠️ A route that merely OPENS a colleague must not CREATE a chat as a side effect of navigation
+  // (owner, 2026-09-26). `create: false` returns nothing and the caller shows a quiet state; creating
+  // is what the roster's own "open to start one" gesture does, deliberately.
+  if (input.create === false) return undefined
+  const created = await startChat(sdk, { agentID: input.agentID, title: input.title ?? input.agentID })
+  if (created !== undefined && input.serverKey !== undefined)
+    rememberOfficerChat(input.serverKey, input.agentID, created)
+  return created
 }

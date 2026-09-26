@@ -19,7 +19,7 @@ import { useLanguage } from "@/context/language"
 import { AppPage } from "@/components/app-page"
 import { agentColor } from "@/utils/agent"
 import { moveOfficerOrder, roster, searchRoster, type ContactView } from "@/apps/contacts"
-import { listSessions, listUsage, startChat } from "@/apps/agent-list"
+import { listSessions, listUsage, rememberOfficerChat, startChat } from "@/apps/agent-list"
 import { planHire } from "@/apps/agent-hire"
 import { cloneAgent, isNovaCloneRefusal } from "@/apps/agent-clone"
 import { useServerSync } from "@/context/server-sync"
@@ -294,7 +294,9 @@ export function ContactsPage() {
       const id = await startChat(current.sdk.client.v2 as never, { agentID, title: name })
       if (id === undefined) throw new Error("no session id came back")
       // 🔴 Open the COLLEAGUE, not the session id it just got (AGENTS.md). The agent route resolves
-      // whatever chat the colleague holds, so Clear Chat can never invalidate where this lands.
+      // whatever chat the colleague holds, so Clear Chat can never invalidate where this lands — and
+      // priming its cache means we do not even have to look it up again.
+      rememberOfficerChat(key, agentID, id)
       navigate(agentHref(key, agentID))
     } catch (error) {
       // Said, never swallowed: a row that quietly refuses to open reads as a broken product.
@@ -711,6 +713,10 @@ function ContactRow(props: ContactRowProps) {
   let tile: HTMLDivElement | undefined
   const openChat = () => {
     if (props.suppressOpen() || props.starting) return
+    // Prime the colleague's chat cache from what the roster ALREADY knows, so the agent route renders
+    // its session immediately instead of re-listing every chat on the instance (owner, 2026-09-26).
+    const liveSession = live().sessionID
+    if (props.serverKey && liveSession) rememberOfficerChat(props.serverKey, props.view.id, liveSession)
     const href = chatHref()
     if (href) navigate(href)
     else props.onStart()
