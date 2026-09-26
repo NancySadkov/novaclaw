@@ -747,7 +747,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   <IconButtonV2
                     data-action="prompt-submit"
                     type="submit"
-                    disabled={(stopping() && !!props.stop?.pending()) || (!working() && blank() && !resuming())}
+                    // 🔴 NOT disabled while an interrupt is in flight, and the click runs the SAME
+                    // path as Esc. The button submits the form; Esc calls `abort()` directly. When a
+                    // stop did not settle, the button's `pending()` stayed true and the control was
+                    // disabled for ever — clicks ignored, no feedback — while Esc kept working
+                    // (owner, 2026-09-26). Now a click while stopping calls `abort()` itself, and
+                    // `stop()`'s own guard dedupes a second attempt.
+                    disabled={!working() && blank() && !resuming()}
+                    onClick={(event) => {
+                      if (!stopping()) return
+                      event.preventDefault()
+                      void abort()
+                    }}
                     tabIndex={store.mode === "normal" ? undefined : -1}
                     icon={
                       <IconV2
