@@ -549,7 +549,7 @@ const startNode = (binary: string, bootstrap?: ReadonlyArray<string>): Node | un
       bootstrap === undefined || bootstrap.length === 0
         ? process.env
         : { ...process.env, NOVACLAW_DHT_BOOTSTRAP: bootstrap.join(" ") }
-    const child = spawn(binary, [], { stdio: ["pipe", "pipe", "ignore"], env })
+    const child = spawn(binary, [], { stdio: ["pipe", "pipe", "ignore"], env, windowsHide: true })
     const releaseOwned = OwnedProcesses.register(child)
     const state = { buffer: "" }
     let onLine: ((line: string) => void) | undefined
