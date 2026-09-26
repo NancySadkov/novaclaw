@@ -58,10 +58,12 @@ import { join } from "node:path"
 
 import * as Arguments from "./lib/arguments"
 import { writeDiagnostic } from "./lib/diagnostic"
-import { check, hostCommitPct, memoryHeadroom, topConsumers, type MemoryHeadroom } from "./lib/heavy-guard"
+import { check, commitLimitMb, hostCommitPct, memoryHeadroom, topConsumers, type MemoryHeadroom } from "./lib/heavy-guard"
 import { sweepStrayServers } from "./lib/stray-servers"
 import * as LedgerDrift from "./lib/ledger-drift"
 import * as CommitPressure from "./lib/commit-pressure"
+import * as CommitCap from "./lib/commit-cap"
+import * as MemWatch from "./lib/mem-watch"
 import * as ChildExit from "./lib/child-exit"
 import * as MemoryPlan from "./lib/memory-plan"
 import * as PeakSampler from "./lib/peak-sampler"
@@ -549,6 +551,23 @@ function killTree(child: ChildProcess) {
 const KILL_DEADLINE_MS = 10_000
 
 /**
+ * How often a running unit's own tree commit is compared against its kill cap.
+ *
+ * 5 s is coarse on purpose: the blow-ups this guards against develop over minutes (2026-09-26
+ * took hours to reach 31 GB), and each poll is a timeline-file read plus pure attribution. A
+ * 200 ms cadence would buy nothing and spend the sampler's own reader on every tick.
+ */
+const MEM_WATCH_INTERVAL_MS = 5_000
+
+/** The kill line for one spawn: the cap and the profile it was derived from, for the note. */
+export interface MemKill {
+  readonly capMb: number
+  readonly profileMb: number
+  /** A forced cap is not derived from the profile — the note must say so, never print false arithmetic. */
+  readonly forced: boolean
+}
+
+/**
  * Accumulate a child's output with a CEILING, and say so rather than dying at it.
  *
  * ⚠️ This replaces `spawnSync`'s `maxBuffer`, and the replacement is strictly better in the way that
@@ -578,7 +597,14 @@ function collector(limit: number) {
 }
 
 /** One spawn of one command, with its peak sampled. The unit-level orchestration is in `run`. */
-async function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], wallclockMs: number) {
+async function spawnOnce(
+  name: string,
+  kind: Kind,
+  dir: string,
+  argv: string[],
+  wallclockMs: number,
+  memKill?: MemKill,
+) {
   const start = Date.now()
   const out = collector(CAPTURE_MAX_BYTES)
   const err = collector(CAPTURE_MAX_BYTES)
@@ -591,6 +617,23 @@ async function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], 
   liveChildren.add(child)
   child.stdout?.on("data", out.push)
   child.stderr?.on("data", err.push)
+  // 🔴 THE MEMORY KILL (owner, 2026-09-26: a `core` gate committed ~31 GB on a 32 GB box and the
+  // machine rebooted). Same shape as the wall-clock kill beside it: the sampler the gate already
+  // runs attributes the unit's OWN tree every few seconds, and a breach tree-kills exactly like a
+  // timeout does — `killTree` + `reapOrphans` below, no new machinery. Test-kind only: the
+  // sampler reports zeros for anything else, so there is nothing to compare. An inert sampler
+  // (probe unavailable) also reports zeros, which degrades to the pre-kill behaviour — a unit
+  // running on bare — rather than to a false kill.
+  const watch =
+    kind === "test" && memKill !== undefined
+      ? MemWatch.watchMemoryKill({
+          sample: () => sampler.window(start, Date.now()).treeMb,
+          capMb: memKill.capMb,
+          onBreach: () => killTree(child),
+          sleepMs: (ms) => Bun.sleep(ms),
+          intervalMs: MEM_WATCH_INTERVAL_MS,
+        })
+      : undefined
   // Our own timer rather than spawn's `timeout` option: the kill has to be OURS anyway (it must be
   // a TREE kill — a bun test parent/child pair survives a signal aimed at the parent), and an
   // explicit timer is the one thing here that can be reasoned about without trusting node compat.
@@ -608,6 +651,7 @@ async function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], 
   // which hung the gate for 36 minutes — is the whole subject of `lib/child-exit.ts`.
   const exit = await Promise.race([ChildExit.awaitChildExit(child), abandoned])
   clearTimeout(timer)
+  watch?.settle()
   liveChildren.delete(child)
   const status = exit.status
   spawnErrno = exit.errno
@@ -620,6 +664,13 @@ async function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], 
   const captured = kind === "test" ? err.text() : `${stdoutText}${err.text()}`
   const errno = spawnErrno
   const ok = !timedOut && errno === undefined && status === 0
+
+  // A breach that fired while the child was already exiting cleanly is NOT a kill — the unit
+  // finished, and its (large but real) peak belongs to the ordinary measurement path, which may
+  // legitimately raise the profile. Claiming a kill there would both misdescribe the run and hide
+  // the number that justifies the higher cap.
+  const memoryKillPeak = watch?.peakMb
+  const memoryKilled = memoryKillPeak !== undefined && status !== 0
 
   // A killed or crashed child can leave its own child alive holding gigabytes. Reap before the next
   // unit starts, or the leak makes THAT unit slower and the failure cascades. See reapOrphans above.
@@ -662,6 +713,10 @@ async function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], 
   // One vocabulary across the gate and the app, so a breach here reads the same as a breach there.
   // Enable a kill only after these lines have been observed across several full gates — a ceiling
   // justified by one run inherits that run's expiry date.
+  // 🔴 ENABLED 2026-09-26 (`lib/commit-cap.ts` + the watch in `spawnOnce`): the observations are
+  // in — the 2026-07-20 OOM that took the laptop down, and a `core` gate that committed ~31 GB on
+  // a 32 GB box and rebooted the machine. The kill is anchored to twice the unit's own worst
+  // healthy run, so a ceiling justified by one hot run cannot false-kill a normal one.
   // The judgement — which readings deserve a line — lives in `lib/commit-pressure.ts`, where it is
   // pure and tested. A unit that legitimately runs hot carries its own line in the baseline.
   const pressure = CommitPressure.pressureLine(
@@ -692,6 +747,18 @@ async function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], 
     note = `WALL-CLOCK KILL at ${wallclockMs / 1000}s${pressure} (a SIGKILLed bun child often flushes no stderr)`
   } else if (errno) {
     note = `could not run bun: ${errno}`
+  } else if (memoryKilled && memKill !== undefined) {
+    // 🔴 Named as what it is — a kill by THIS gate on a number it measured itself — never as a
+    // crash, a hang, or an OOM the child reported. The cap arithmetic travels with the note so a
+    // future reader can tell a too-tight cap (peak far above 2× profile) from a real balloon
+    // without re-deriving anything. A forced cap says forced: printing "= 2× profile" over an
+    // override would be false arithmetic on the summary row.
+    note =
+      `MEMORY KILL at ${memoryKillPeak} MB ` +
+      (memKill.forced
+        ? `(forced cap ${memKill.capMb} MB; profile ${memKill.profileMb} MB unused)`
+        : `(cap ${memKill.capMb} MB = 2× profile ${memKill.profileMb} MB)`) +
+      ` — tree-killed like a wall-clock kill (a SIGKILLed bun child often flushes no stderr)`
   } else if (!ok) {
     const excerpt = failureExcerpt(captured)
     note = `exit ${status}${excerpt ? ` · ${excerpt}` : ""}`
@@ -725,7 +792,15 @@ async function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], 
   // 16 758 MB read as "not measured"; the reading is reported as `sampledMb` whatever the verdict,
   // and only `peakMb` is withheld.
   const peakStatus: PeakStatus =
-    sample.treeMb === undefined ? "unsampled" : sample.treeMb > IMPLAUSIBLE_PEAK_MB ? "discarded" : "measured"
+    // A capped peak is the ceiling, not the unit — withheld from `peakMb` like every other null.
+    // See the SIXTH null in `lib/peak-series.ts`.
+    memoryKilled
+      ? "capped"
+      : sample.treeMb === undefined
+        ? "unsampled"
+        : sample.treeMb > IMPLAUSIBLE_PEAK_MB
+          ? "discarded"
+          : "measured"
   return {
     ok,
     ms,
@@ -759,14 +834,21 @@ async function spawnOnce(name: string, kind: Kind, dir: string, argv: string[], 
  * ⚠️ Exactly one retry. If the crash is no longer intermittent the gate must go red and say so,
  * rather than looping until it gets the answer it wants.
  */
-async function spawnWithUpstreamRetry(name: string, kind: Kind, dir: string, argv: string[], wallclockMs: number) {
-  const first = await spawnOnce(name, kind, dir, argv, wallclockMs)
+async function spawnWithUpstreamRetry(
+  name: string,
+  kind: Kind,
+  dir: string,
+  argv: string[],
+  wallclockMs: number,
+  memKill?: MemKill,
+) {
+  const first = await spawnOnce(name, kind, dir, argv, wallclockMs, memKill)
   if (!first.upstreamCrash) return first
   process.stderr.write(
     `\n\x1b[33m── ${name}: upstream Bun watcher segfault (exit 3, watcher.node, no failing assertions)\n` +
       `   — this is not your change; retrying ONCE. See todo.md's header.\x1b[0m\n`,
   )
-  const second = await spawnOnce(name, kind, dir, argv, wallclockMs)
+  const second = await spawnOnce(name, kind, dir, argv, wallclockMs, memKill)
   return {
     ...second,
     note: second.ok
@@ -863,6 +945,26 @@ async function run(job: Job, sharded: number | undefined, overlapped: () => bool
   // sharded rung exists to lower a unit's memory demand; running its shards at once would restore
   // exactly the demand it was reached for. Concurrency is between INDEPENDENT units, which is where
   // the budget can actually account for it.
+  // 🔴 THE MEMORY KILL's anchor (owner, 2026-09-26). One cap per UNIT, enforced per SPAWN: shards
+  // run sequentially, so each shard gets the same ceiling — a single shard crossing twice the
+  // unit's worst healthy run IS the balloon by definition. Unprofiled units get no cap; enforcement
+  // follows measurement, never precedes it (`lib/commit-cap.ts`).
+  const profileMb = peakProfiles.commit[name]
+  // A forcing knob, same shape as NOVACLAW_TEST_FORCE_COMMIT_PCT: a kill line nobody has crossed
+  // is a line nobody has seen work. Set it and the next test unit dies at that many MB of its own
+  // tree commit — that is how the MEMORY KILL path is exercised at all, and how a future allocator
+  // hunt caps a suspect without waiting for the box to notice.
+  const forcedCap = Number(process.env.NOVACLAW_TEST_FORCE_MEM_CAP_MB)
+  const forcedValid = Number.isFinite(forcedCap) && forcedCap > 0
+  const capMb =
+    forcedValid && forcedCap > 0
+      ? Math.floor(forcedCap)
+      : kind === "test"
+        ? CommitCap.killCapMb(profileMb, commitLimitMb())
+        : undefined
+  const profile = profileMb ?? (forcedValid ? 0 : undefined)
+  const memKill =
+    capMb !== undefined && profile !== undefined ? { capMb, profileMb: profile, forced: forcedValid } : undefined
   const runs: Awaited<ReturnType<typeof spawnWithUpstreamRetry>>[] = []
   if (sharded)
     for (let i = 0; i < sharded; i++)
@@ -873,9 +975,10 @@ async function run(job: Job, sharded: number | undefined, overlapped: () => bool
           dir,
           [...argv, `--shard=${i + 1}/${sharded}`],
           wallclockMs,
+          memKill,
         ),
       )
-  else runs.push(await spawnWithUpstreamRetry(name, kind, dir, argv, wallclockMs))
+  else runs.push(await spawnWithUpstreamRetry(name, kind, dir, argv, wallclockMs, memKill))
 
   const captured = runs.map((r) => r.captured).join("\n")
   const complete = runs.every((r) => r.ok)
@@ -901,8 +1004,9 @@ async function run(job: Job, sharded: number | undefined, overlapped: () => bool
   // same unit. `treeMb` is maxed for the opposite reason — a peak is not additive across windows.
   const ownTicks = runs.reduce((a, r) => a + (r.ownTicks ?? 0), 0)
   const ticks = runs.reduce((a, r) => a + (r.ticks ?? 0), 0)
-  // A discard remains the strongest fact. Otherwise fewer than three owning ticks can establish only
-  // a lower bound, so withhold it even when a child happened to land in one or two heartbeats.
+  // A kill remains the strongest fact — it is the run's own verdict on itself. Otherwise fewer
+  // than three owning ticks can establish only a lower bound, so withhold it even when a child
+  // happened to land in one or two heartbeats.
   const peakStatus: PeakStatus = PeakSeries.classifyPeak(
     ownTicks,
     peaks.length > 0,
@@ -915,6 +1019,8 @@ async function run(job: Job, sharded: number | undefined, overlapped: () => bool
     // this unit's demand — see `PeakSeries.PeakStatus`. Declaring it here is what keeps the number
     // out of `peakMb` below, and therefore out of the ratchet and out of anybody's `peaks` entry.
     sharded,
+    // 🔴 A gate-killed run's peak is the ceiling it died on, not the unit — same withholding.
+    runs.some((r) => r.peakStatus === "capped"),
   )
 
   // Only a bun test run has a skip count or a parseable failure list. Reading tsgo's output with either
@@ -1442,7 +1548,15 @@ if (unmeasured.length) {
   process.stdout.write(`\n\x1b[1m── peak NOT recorded ──\x1b[0m\n`)
   for (const r of unmeasured)
     process.stdout.write(
-      // 🔴 The FOURTH null, and the one that is a DESIGN DECISION rather than an instrument problem.
+      // 🔴 The SIXTH null: the gate tree-killed this unit for crossing its commit cap
+      // (`lib/commit-cap.ts`). The ceiling is not the unit's demand, so the peak is withheld like
+      // every other null — and unlike every other null, the kill itself is the red. Fix the leak,
+      // not the cap: the cap is twice the unit's own worst healthy run.
+      r.peakStatus === "capped"
+        ? `  ${r.name.padEnd(30)} \x1b[33mCAPPED\x1b[0m  tree-killed at ${r.sampledMb ?? "?"} MB over its commit cap —\n` +
+          `  ${" ".repeat(30)} see its MEMORY KILL note above for the cap arithmetic. The peak is\n` +
+          `  ${" ".repeat(30)} withheld, so it can neither fail the ratchet nor be promoted into "peaks".\n`
+        : // 🔴 The FOURTH null, and the one that is a DESIGN DECISION rather than an instrument problem.
       // Attribution is by process birth time, so a neighbour's `bun` lands inside this unit's window
       // too and the reading is the pool's. Withholding it is what keeps a neighbour's memory out of
       // `test-baseline.json`'s `peaks`, which is the input to the sharding ladder.

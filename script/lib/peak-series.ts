@@ -112,8 +112,15 @@ export interface Observation {
  * the planner shard the unit forever, the loop the 2026-08-13 re-baseline closed by hand. The rule
  * was already written down in three places ({@link Row.shards}, `test-baseline.json`'s `peaksNote`,
  * `test.ts`'s printed *"do not promote it"*); it just was not mechanical anywhere.
+ *
+ * ─── the SIXTH null: capped ───────────────────────────────────────────────────────────────────
+ *
+ * A unit the gate itself tree-killed for crossing its commit cap (`lib/commit-cap.ts`). The peak
+ * at the kill is a ceiling artifact, not the unit's demand — promoting it would derive the next
+ * cap from this kill and ratchet every hot unit down onto its own ceiling. Same treatment as the
+ * fourth and fifth nulls: keep `sampledMb`, withhold `peakMb`, say so on the row.
  */
-export type PeakStatus = "measured" | "discarded" | "unsampled" | "concurrent" | "sharded"
+export type PeakStatus = "measured" | "discarded" | "unsampled" | "concurrent" | "sharded" | "capped"
 
 /** Fewer observations can only establish a lower bound, never the unit's peak. */
 export const MIN_RECORDED_OWN_TICKS = 3
@@ -126,12 +133,17 @@ export function classifyPeak(
   overlapped = false,
   /** How many shards the unit was split into. 1 (or undefined) is a whole run. */
   shards: number | undefined = 1,
+  /** The gate tree-killed this unit for crossing its commit cap — see {@link PeakStatus}. */
+  capped = false,
 ): PeakStatus {
-  // FIRST, and ahead of `discarded`: a pool of two units easily sums past the 32 GB implausibility
+  // FIRST: the kill is the fact everything else explains. A capped window's peak is the ceiling,
+  // not the unit, so no other reading may promote it — not even a concurrent one.
+  if (capped) return "capped"
+  // SECOND, and ahead of `discarded`: a pool of two units easily sums past the 32 GB implausibility
   // ceiling, and reporting that as `discarded` would describe a known-unattributable reading as a
   // suspicious one — a finding invented out of a design decision.
   if (overlapped) return "concurrent"
-  // SECOND, and also ahead of `discarded`, for the same reason one rung down: a split run's reading
+  // THIRD, and also ahead of `discarded`, for the same reason one rung down: a split run's reading
   // carries the previous shard's unreclaimed memory and has been measured up to 17,833 MB against a
   // 10,822 MB whole-run maximum, which clears the implausibility ceiling on its own. Calling that
   // `discarded` would report a KNOWN inflation as a suspicious reading and send the reader hunting.
@@ -257,7 +269,10 @@ export function buildRow(
   // field the ratchet fires on and the field a reader promotes into `peaks`.
   const shards = observation.shards ?? 1
   const sharded = shards > 1 || observation.peakStatus === "sharded"
-  const peakMb = thinSample || concurrent || sharded ? null : observedPeakMb
+  // 🔴 A capped window measured the CEILING, not the unit — same withholding, same reason. Read
+  // off `peakStatus` (only the killer can know it killed), like `concurrent` beside it.
+  const capped = observation.peakStatus === "capped"
+  const peakMb = thinSample || concurrent || sharded || capped ? null : observedPeakMb
   const fromProfile = profile[observation.name]
   // A zero or negative profile entry is not a baseline, it is a typo — treat it as absent rather than
   // dividing by it. `readPeaks()` already filters these out; this holds if that ever stops being true.
@@ -268,13 +283,15 @@ export function buildRow(
   // Derived, never guessed: a caller that predates the field still gets a row that is TRUE, because
   // "there is a peak" does imply it was measured. Only the two no-peak cases need telling apart, and
   // a caller who cannot tell them apart says `unsampled` — the weaker, non-alarming claim.
-  const peakStatus: PeakStatus = concurrent
-    ? "concurrent"
-    : sharded
-      ? "sharded"
-      : thinSample
-        ? "unsampled"
-        : (observation.peakStatus ?? (peakMb !== null ? "measured" : "unsampled"))
+  const peakStatus: PeakStatus = capped
+    ? "capped"
+    : concurrent
+      ? "concurrent"
+      : sharded
+        ? "sharded"
+        : thinSample
+          ? "unsampled"
+          : (observation.peakStatus ?? (peakMb !== null ? "measured" : "unsampled"))
   return {
     run,
     scope,

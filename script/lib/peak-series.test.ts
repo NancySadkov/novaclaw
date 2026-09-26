@@ -372,3 +372,56 @@ describe("a sharded window measures the unit PLUS the previous shard", () => {
     expect(classifyPeak(500, true, false)).toBe("measured")
   })
 })
+
+/**
+ * ─── the SIXTH null: a run the gate itself killed for crossing its commit cap ────────────────
+ *
+ * Added after 2026-09-26, when a `core` gate committed ~31 GB on a 32 GB box and the machine
+ * rebooted out from under the run. The peak at the kill is the CEILING, not the unit — promoting
+ * it would derive the next cap from this kill and ratchet every hot unit down onto its own
+ * ceiling. Same withholding as the fourth and fifth nulls; the kill itself is the red, and the
+ * row must not invent a second one beside it (no ratio, no regressed verdict).
+ */
+describe("a capped window measures the CEILING, not the unit", () => {
+  test("🔴 the kill outranks every other reading — including `concurrent`", () => {
+    // The kill decision is made on the unit's own attributed tree, so pool overlap changes
+    // nothing about what the number is. Reporting `concurrent` would bury the kill that is the
+    // whole point of the row.
+    expect(classifyPeak(500, true, false, true, 1, true)).toBe("capped")
+    expect(classifyPeak(500, false, true, false, 4, true)).toBe("capped")
+    expect(classifyPeak(500, true, false, false, 1, true)).toBe("capped")
+    // …and absent the kill the ordinary path is untouched.
+    expect(classifyPeak(500, true, false, false, 1, false)).toBe("measured")
+    expect(classifyPeak(500, true, false)).toBe("measured")
+  })
+
+  test("🔴 a capped row withholds `peakMb` but keeps the reading", () => {
+    const row = buildRow(
+      RUN,
+      "default",
+      unit({ peakMb: 21_000, sampledMb: 21_000, peakStatus: "capped", ownTicks: 500 }),
+      { core: 10_822 },
+    )
+    expect(row.peakStatus).toBe("capped")
+    expect(row.peakMb).toBeNull()
+    expect(row.sampledMb).toBe(21_000)
+    // …and the ratchet cannot fire on a ceiling: no ratio, no verdict.
+    expect(row.ratio).toBeNull()
+    expect(row.regressed).toBeNull()
+    expect(regressionVerdict(row).verdict).toBe("clean")
+  })
+
+  test("NEGATIVE CONTROL — the identical reading UNKILLED still fires", () => {
+    // Without this the test above would pass against a ratchet that had simply been disarmed.
+    const row = buildRow(
+      RUN,
+      "default",
+      unit({ peakMb: 21_000, sampledMb: 21_000, peakStatus: "measured", ownTicks: 500 }),
+      { core: 10_822 },
+    )
+    expect(row.peakStatus).toBe("measured")
+    expect(row.peakMb).toBe(21_000)
+    expect(row.regressed).toBe(true)
+    expect(regressionVerdict(row).verdict).toBe("regressed")
+  })
+})

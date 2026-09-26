@@ -102,6 +102,17 @@ export function hostCommitPct(): number | undefined {
   return Math.round((commit.usedGb / commit.limitGb) * 100)
 }
 
+/**
+ * The machine's commit limit in MB — the wall a memory-kill cap is clamped against
+ * (`lib/commit-cap.ts`). Same cached probe as `hostCommitPct`, so per-spawn reads are free.
+ */
+export function commitLimitMb(): number | undefined {
+  if (process.platform !== "win32") return undefined
+  const commit = windowsCommit()
+  if (!commit || commit.limitGb <= 0) return undefined
+  return Math.floor(commit.limitGb * 1024)
+}
+
 /** Measure the two independent memory walls without collapsing unlike quantities through `min()`. */
 export function memoryHeadroom(): MemoryHeadroom | undefined {
   const free = os.freemem()
