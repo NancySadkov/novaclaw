@@ -1665,21 +1665,24 @@ export const layer = Layer.effect(
           yield* Effect.uninterruptible(execution.interrupt(input.sessionID))
           yield* scheduler.evict(input.sessionID)
           /**
-           * 🔴 **CLEARING A CHAT DROPS THE STALL NOTICES IT HAS NOT READ** (owner, 2026-09-26).
+           * 🔴 **AN ARCHIVED CHAT DROPS THE STALL NOTICES IT HAS NOT READ** (owner, 2026-09-26).
            *
            * A stall notice is a queued input aimed at a promise the asker made in THIS conversation.
-           * Clear chat throws the conversation away, so the notice is about a transcript that no longer
-           * exists — and the owner was told such notices again and again, each one freshly minted into
-           * the replacement chat by the 30 s sweep, naming a wait that had been reset along with the
-           * context. Read from the instance: a chat created at 19:40 was told about a message sent at
-           * 20:13 the previous day.
+           * An archive throws the conversation away and KEEPS its rows, so without this the archive
+           * carries a queued input nobody can ever read, still holding the id that suppresses a future
+           * notice for that pair.
            *
-           * ⚠️ Pending only, and it is the same cleanup the archive already does for workers and
+           * ⚠️ **THE PRODUCT'S "CLEAR CHAT" IS NOT THIS DOOR** — `clearOfficerChat` calls
+           * `session.remove`, and the notice dies with the chat by the schema's cascade. What actually
+           * went wrong for the owner there was the sweep minting a FRESH copy into the successor 30 s
+           * later, about a promise made in the conversation that had just been removed; that is
+           * prevented by `stalled`'s generation rule (an ask older than the asker's current chat is not
+           * outstanding in it), and both halves are pinned in `colleague-stall-sweep.test.ts`.
+           *
+           * ⚠️ Pending only, and it is the same cleanup this branch already does for workers and
            * shells: residue of the session, removed with it. A notice the agent already read is the
            * asker's history and stays — deleting that is what re-arms the pair, and the owner ruled
-           * that out ("once sent, it will no longer be sent again"). `stalled`'s generation rule is
-           * the other half: an ask older than the asker's current chat is not outstanding in it, so
-           * nothing is minted into the replacement either.
+           * that out ("once sent, it will no longer be sent again").
            */
           yield* Effect.uninterruptible(ColleagueStall.clearPending(db, input.sessionID))
         }

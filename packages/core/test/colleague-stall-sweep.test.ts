@@ -140,7 +140,7 @@ describe("the stall sweep", () => {
   )
 
   it.effect(
-    "🔴 a CLEARED chat drops the notice it never read, and the replacement is told nothing",
+    "🔴 CLEAR CHAT (the product's own path) takes the notice with the chat, and tells the successor nothing",
     Effect.gen(function* () {
       const { db, events } = yield* twoChats
       const now = 10 * HOUR
@@ -148,18 +148,22 @@ describe("the stall sweep", () => {
       expect(yield* ColleagueStall.sweep(db, events, now)).toBe(1)
       expect((yield* noticesIn(db, ARIS)).length).toBe(1)
 
-      // Clear chat: aris's chat is archived and a fresh one takes its place — created AFTER the ask
-      // this notice is about. The ask, its promise and its wait all belonged to the archived
-      // conversation, so nothing is outstanding in the new one. This is the notice the owner actually
-      // received (2026-09-26: a chat created at 19:40 was told about a message sent at 20:13 the day
-      // before).
-      expect(yield* ColleagueStall.clearPending(db, ARIS)).toBe(1)
-      yield* db
-        .update(SessionTable)
-        .set({ time_archived: now })
-        .where(eq(SessionTable.id, ARIS))
-        .run()
+      // ⚠️ WHAT "CLEAR CHAT" ACTUALLY IS, because it is not an archive: `clearOfficerChat` calls
+      // `session.remove` on every root it takes and then opens a successor. The ask, its promise and
+      // its wait all belonged to the removed conversation, and the successor is born AFTER the ask —
+      // which is the owner's case exactly (a chat created at 19:40 was told about a message sent at
+      // 20:13 the day before).
+      yield* db.delete(SessionTable).where(eq(SessionTable.id, ARIS)).run().pipe(Effect.orDie)
+      // The row went with the chat, by the schema's own cascade — asserted here because the fix does
+      // NOT depend on it: the defect was the sweep minting a FRESH copy into the successor 30 s later.
+      const orphans = yield* db
+        .select({ id: SessionInputTable.id })
+        .from(SessionInputTable)
+        .where(eq(SessionInputTable.session_id, ARIS))
+        .all()
         .pipe(Effect.orDie)
+      expect(orphans.length).toBe(0)
+
       const FRESH = "ses_aris_2" as SessionSchema.ID
       yield* db
         .insert(SessionTable)
@@ -176,16 +180,32 @@ describe("the stall sweep", () => {
         .run()
         .pipe(Effect.orDie)
 
-      // Nothing is minted into the replacement, and nothing is left behind to be read.
+      // Nothing is minted into the successor. This is the whole of the owner's first rule as it bears
+      // on the sweep: the ask predates the chat, so it cannot still be outstanding in it.
       expect(yield* ColleagueStall.sweep(db, events, now + 2 * HOUR)).toBe(0)
-      expect((yield* noticesIn(db, ARIS)).length).toBe(0)
       expect((yield* noticesIn(db, FRESH)).length).toBe(0)
 
-      // And a genuinely NEW ask in the new generation is told once, because this pair's notice was
-      // never read — it was cleared, not delivered.
+      // And a genuinely NEW ask in the new generation is told once.
       yield* landed(db, THERON, "aris", now + 3 * HOUR)
       expect(yield* ColleagueStall.sweep(db, events, now + 4 * HOUR)).toBe(1)
       expect((yield* noticesIn(db, FRESH)).length).toBe(1)
+    }),
+  )
+
+  it.effect(
+    "🔴 an ARCHIVED chat drops the notice it never read — the other door, which keeps its rows",
+    Effect.gen(function* () {
+      const { db, events } = yield* twoChats
+      const now = 10 * HOUR
+      yield* landed(db, THERON, "aris", now - 2 * HOUR)
+      expect(yield* ColleagueStall.sweep(db, events, now)).toBe(1)
+      expect((yield* noticesIn(db, ARIS)).length).toBe(1)
+
+      // Filing an officer's chat archives it, and an archive KEEPS its input rows — so without this the
+      // archive carries a queued input nobody can ever read, still holding the id. `clearPending` is
+      // called from `setArchived`, beside the workers and shells a clear already evicts.
+      expect(yield* ColleagueStall.clearPending(db, ARIS)).toBe(1)
+      expect((yield* noticesIn(db, ARIS)).length).toBe(0)
     }),
   )
 

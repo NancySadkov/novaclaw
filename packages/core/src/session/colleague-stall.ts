@@ -106,6 +106,13 @@ export const noticeID = (input: Stalled): string => `${NOTICE_PREFIX}${input.ask
  * deleting it would free the id and let the same fact be told again, which is the drip the owner ruled
  * out. A notice still sitting in the queue was never read, so clearing it costs the asker nothing and
  * leaves the pair free to be told once about a genuinely new ask.
+ *
+ * ⚠️ **CLEAR CHAT IS NOT THIS DOOR, and the difference matters.** `clearOfficerChat` calls
+ * `session.remove` on every root it takes, and an ARCHIVE keeps its rows. So on the product's own
+ * gesture the notice dies with the chat by the schema's cascade (`PRAGMA foreign_keys = ON`), and what
+ * actually went wrong for the owner was the sweep minting a FRESH copy into the successor 30 s later —
+ * which is what the generation rule in {@link stalled} prevents. This function covers the other door,
+ * where rows survive and a queued input would otherwise sit in an archive unreadable for ever.
  */
 export const clearPending = (
   db: Database.Interface["db"],
