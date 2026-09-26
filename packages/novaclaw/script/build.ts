@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { $ } from "bun"
-import { existsSync, mkdtempSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "path"
 import { fileURLToPath } from "url"
@@ -292,6 +292,40 @@ const dhtBuilt = path.resolve(dir, "../dht/build", dhtBinary)
 await $`bun ${path.resolve(dir, "../dht/build.ts")}`.catch((error) => {
   console.warn(`WARNING: could not build the DHT sidecar — ${error?.stderr?.toString().trim() || error}`)
 })
+/**
+ * Make a compiled Windows binary a GUI-subsystem executable, so it never opens a console window.
+ *
+ * 🔴 A compiled Bun binary is a CONSOLE-subsystem executable by DEFAULT, so the headless server — the
+ * `--server-only` child the desktop launches, its supervised re-exec, and the memory worker — each
+ * opened its own Command Prompt beside the app. Measured 2026-09-26: `conhost.exe` sat parented to the
+ * re-exec'd child.
+ *
+ * ⚠️ Two things that look like the fix and are NOT. Bun 1.3.14's `--windows-hide-console` and
+ * `compile.windows.hideConsole` leave the subsystem at 3 (verified for both the CLI flag and the JS
+ * option), and `Bun.spawn`'s `windowsHide` does not suppress it either. The subsystem is the root.
+ *
+ * ⚠️ Flipping it does NOT cost stdout: a GUI process still writes to whatever standard handles its
+ * launcher handed it, and everything here reads the server through a PIPE (the supervisor's readiness
+ * line, the desktop's log, every test). Verified with a GUI-subsystem binary whose stdout and stderr
+ * both arrived intact over pipes. The cost is an INTERACTIVE `novaclaw ...` in a terminal losing its
+ * console attach — acceptable for a CLI AGENTS.md calls vestigial and headless-only.
+ */
+function makeWindowsSubsystemGui(executable: string) {
+  const bytes = readFileSync(executable)
+  const optionalHeader = bytes.readInt32LE(0x3c) + 24
+  const subsystemOffset = optionalHeader + 68
+  const subsystem = bytes.readUInt16LE(subsystemOffset)
+  if (subsystem === 2) return // IMAGE_SUBSYSTEM_WINDOWS_GUI — already done
+  if (subsystem !== 3)
+    throw new Error(`${executable}: unexpected PE subsystem ${subsystem}; refusing to guess at its layout`)
+  bytes.writeUInt16LE(2, subsystemOffset)
+  writeFileSync(executable, bytes)
+  // Read back what landed on disk, so a silent write failure fails the BUILD rather than shipping a
+  // binary whose console window nobody sees until a user does.
+  const written = readFileSync(executable).readUInt16LE(subsystemOffset)
+  if (written !== 2) throw new Error(`${executable}: subsystem is ${written} after patching, expected 2`)
+}
+
 for (const item of targets) {
   const name = [
     pkg.name,
@@ -341,13 +375,6 @@ for (const item of targets) {
               version: Script.version,
               description: "NovaClaw — a local-first AI agent OS",
               copyright: `© 2025-2026 Nancy Sadkov`,
-              // A compiled Bun binary is a CONSOLE-subsystem executable by default, so every process
-              // in the server's tree opened its own Command Prompt when the desktop (a GUI process)
-              // launched it — the supervisor's re-exec'd child, measured 2026-09-26. `Bun.spawn`'s
-              // `windowsHide` did NOT suppress it (also measured); the subsystem is the root, so it
-              // is set here and covers the top-level server, its supervisor child and the memory
-              // worker at once.
-              hideConsole: true,
             }
           : {},
     },
@@ -366,6 +393,8 @@ for (const item of targets) {
       NOVACLAW_STANDALONE_BINARY: "true",
     },
   })
+
+  if (item.os === "win32") makeWindowsSubsystemGui(`dist/${name}/bin/novaclaw.exe`)
 
   // The host library, beside the binary. Named when absent rather than skipped quietly — see above.
   if (item.os === process.platform && item.arch === process.arch && existsSync(hostBuilt)) {

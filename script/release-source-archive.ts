@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// Rewrite `git archive`'s tar into the published `.7z` source drop — with the archiver RESOLVED and
+// Rewrite `git archive`'s tar into the published `.zip` source drop — with the archiver RESOLVED and
 // PROBED rather than named.
 //
 // 🔴 This step is where cutting 0.1.66 died, at the LAST command of the release, on
@@ -29,10 +29,10 @@ function fail(message: string): never {
 }
 
 const [tarFile, outFile] = process.argv.slice(2)
-if (!tarFile || !outFile) fail("usage: release-source-archive.ts <source.tar> <source.7z>")
+if (!tarFile || !outFile) fail("usage: release-source-archive.ts <source.tar> <source.zip>")
 if (!fs.existsSync(tarFile)) fail(`input tar does not exist: ${tarFile}`)
-// Refused rather than overwritten: a stale 7z beside a fresh tar is how a release publishes source
-// that does not match its binary, and that is the exact failure the dirty-tree check above it
+// Refused rather than overwritten: a stale archive beside a fresh tar is how a release publishes
+// source that does not match its binary, and that is the exact failure the dirty-tree check above it
 // exists to prevent.
 if (fs.existsSync(outFile)) fail(`output already exists, refusing to overwrite: ${outFile}`)
 
@@ -43,7 +43,7 @@ for (const item of archiver.considered) console.log(`  ${item.ok ? "ok  " : "no 
 
 const result = spawnSync(
   archiver.path,
-  ["-a", "-c", "--options", "7zip:compression=lzma2", "-f", outFile, `@${tarFile}`],
+  ["-a", "-c", "-f", outFile, `@${tarFile}`],
   { encoding: "utf8", windowsHide: true },
 )
 if (result.status !== 0) {
@@ -79,7 +79,7 @@ if (listed.status !== 0) {
     `${archiver.path} could not list the archive it just wrote (exit ${listed.status ?? "null"}):\n${listed.stdout ?? ""}${listed.stderr ?? ""}`,
   )
 }
-const audit = auditSourceListing(listed.stdout ?? "", path.basename(outFile, ".7z"))
+const audit = auditSourceListing(listed.stdout ?? "", path.basename(outFile, ".zip"))
 if (!audit.ok) refuse(`the source drop is not releasable:\n${audit.problems.map((p) => `  - ${p}`).join("\n")}`)
 console.log(`audited ${audit.entries} entries: obligations present, no node_modules, no .git, no tmp`)
 

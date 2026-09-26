@@ -130,12 +130,13 @@ export function resolveTool(input: {
 }
 
 /**
- * The archiver that can rewrite a `.tar` into a `.7z` — i.e. a libarchive `tar` whose `--options`
- * understands the 7zip writer.
+ * The libarchive `tar` — the one archiver that reads and writes every format the release needs: it
+ * extracts the `.7z` supply drops (`prepare-imagemagick`) and rewrites a `git archive` tar into the
+ * published source drop (`.zip` today, `.7z` when size mattered).
  *
- * ⚠️ **w64devkit's `tar` cannot do this and is expected to fail the probe.** It is busybox tar: no
- * `--options`, no 7z writer. That is not a reason to skip the preference order — the order is what
- * makes the fallback a MEASURED last resort instead of an assumption — but it does mean this
+ * ⚠️ **w64devkit's `tar` cannot be this and is expected to fail the probe.** It is busybox tar: no
+ * `--options`, no non-tar writers. That is not a reason to skip the preference order — the order is
+ * what makes the fallback a MEASURED last resort instead of an assumption — but it does mean this
  * particular capability lands on Windows' own bsdtar, and saying so here is cheaper than someone
  * rediscovering it during a release.
  */

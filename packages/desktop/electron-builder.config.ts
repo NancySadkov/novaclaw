@@ -239,15 +239,12 @@ const getBase = (appId: string): Configuration => ({
   win: {
     icon: `resources/icons/icon.ico`,
     // What Windows actually ships is the PORTABLE app — a folder you unpack anywhere and run, no
-    // installer and no admin rights (README) — so the default target is the ARCHIVE, and the archive
-    // is 7z rather than zip: same tree, LZMA2-solid at `-mx=9` instead of deflate, which is a much
-    // smaller download for a ~1.15 GB unpacked app. The release script used to build `dir` and then
-    // zip it by hand with bsdtar; electron-builder packs the same directory itself, so the format
-    // now lives HERE, in one place the test below pins, instead of in a batch file nothing checks.
-    // `nsis` was the default before this and its options block below is untouched — an explicit
-    // `electron-builder --win nsis` still produces the one-click installer. Only the default moved.
+    // installer and no admin rights (README) — so the default target is the ARCHIVE. It is `zip`
+    // rather than `7z` on purpose right now: LZMA2-solid at `-mx=9` over a ~1.5 GB tree took several
+    // minutes per candidate, and a plain deflate archive is a small fraction of that. Trade a larger
+    // download for a fast inner loop; `7z` remains a one-line target change if the size matters again.
     artifactName: "NovaClaw-${version}-windows-${arch}.${ext}",
-    target: ["7z"],
+    target: ["zip"],
   },
   nsis: {
     oneClick: true,
