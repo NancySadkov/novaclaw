@@ -315,6 +315,20 @@ export function SessionContextTab() {
       )
         return
       /**
+       * 🔴 **THE INSPECTOR DIES THE MOMENT THE CHAT IS CLEARED, so it closes there and then.**
+       *
+       * Owner, 2026-09-26: the panel was still open after the clear, describing a transcript that no
+       * longer existed, under a heading that had fallen back to a session id. It used to close after
+       * the removal returned — which meant every failure left it open, and a fault part way through
+       * left it describing a half-cleared chat.
+       *
+       * There is nothing to wait for. The user's decision is the confirmation, and from that moment
+       * the numbers in this panel are about something being discarded, so keeping them on screen is
+       * the misleading part. If the clear then fails, the panel is already closed and the toast says
+       * why; reopening it is one click, which is a far better place to be than reading stale figures.
+       */
+      view().reviewPanel.close()
+      /**
        * 🔴 **A cleared chat is RETIRED, not merely deleted.**
        *
        * Reported live 2026-09-22: Clear Chat removed `ses_daedalus` server-side, the removal's
@@ -346,10 +360,6 @@ export function SessionContextTab() {
       }
       for (const id of cleared.removed)
         forgetGoneSession({ session: serverSync().session, tabs, server: key, sessionID: id })
-      // Clear Chat means "start this colleague fresh": the context inspector is showing the retired
-      // chat's stats, so close it rather than leave it open on a transcript that no longer exists
-      // (owner, 2026-09-26).
-      view().reviewPanel.close()
       if (sessionScope) {
         /**
          * 🔴 The colleague did not move, and neither did the tab or the route (owner, 2026-09-26).
@@ -363,23 +373,8 @@ export function SessionContextTab() {
         if (server.key === key && params.id === sessionID) navigate(tabHref(tab))
       }
     } catch (error) {
-      /**
-       * 🔴 **A FAILED CLEAR STILL CLOSES THE PANEL, and says what it managed to remove.**
-       *
-       * Owner, 2026-09-26: Clear chat on Nova answered *"Could not clear this chat: Session not found:
-       * ses_nova"*, the instance then dropped its connection, and the context inspector stayed open
-       * showing the retired chat's stats under a heading that had become a session id. The throw
-       * arrives from `clearOfficerChat` — which removes the roots one at a time, so a failure part way
-       * through leaves the earlier ones GONE — and every line after the `await` was skipped, the panel
-       * close among them.
-       *
-       * So the failure path retires the ids the call did report, closes the panel, and then reports.
-       * Closing it is right in both directions: the chats it did remove are gone, and if none were
-       * removed then this panel is still showing the live chat and closing it is a dismissal the user
-       * can undo by opening it again — which is strictly better than a panel describing a transcript
-       * that no longer exists.
-       */
-      view().reviewPanel.close()
+      // The panel was closed when the user confirmed, because from that moment it describes
+      // something being discarded — so a failure here has nothing left to close, only to report.
       showToast({ variant: "error", title: language.t("agentConfig.clearFailed"), description: String(error) })
     } finally {
       setClearing(false)
