@@ -27,7 +27,7 @@ const peerTurn = (hops: number) => ({
 const noticeTurn = () => ({
   id: ColleagueStall.noticeID({ asker: "aris", colleague: "theron", askedAt: 1234 }),
   type: "user" as const,
-  text: "[theron has not answered you.]",
+  text: "The message to theron you sent 31 minutes ago is still unanswered.",
 })
 
 const personTurn = () => ({ id: "msg_user_1", type: "user" as const, text: "carry on" })

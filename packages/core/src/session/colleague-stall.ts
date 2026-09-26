@@ -184,11 +184,18 @@ export const stalled = (input: {
   return [...out.values()]
 }
 
-/** What the asker is told, in its own chat. */
-export const notice = (input: Stalled & { readonly minutes: number }): string =>
-  `[${input.colleague} has not answered you. You asked ${input.minutes} minutes ago and nothing has ` +
-  `come back. Nobody is waiting on you here — but if you promised this answer to someone, say where ` +
-  `it stands rather than keep waiting: ask again, do it yourself, or tell the user it is outstanding.]`
+/**
+ * What the asker is told, in its own chat.
+ *
+ * `colleagueName` is the colleague's DISPLAY name (the roster name, e.g. "Nova"), falling back to the
+ * raw id only when no name is known — the id is an internal handle and reads wrong in a sentence.
+ */
+export const notice = (
+  input: Stalled & { readonly minutes: number; readonly colleagueName?: string | undefined },
+): string =>
+  `The message to ${input.colleagueName?.trim() || input.colleague} you sent ${input.minutes} minutes ago is still unanswered. ` +
+  `If you promised this answer to someone, report back, then ask again, do it yourself, or tell ` +
+  `your superior it is outstanding.`
 
 /**
  * How far back a sweep looks.
@@ -214,6 +221,12 @@ export const sweep = (
   db: Database.Interface["db"],
   events: EventV2.Interface,
   now: number,
+  /**
+   * Agent id -> DISPLAY name, so the notice names the colleague the way the user sees it ("Nova")
+   * rather than the internal handle ("nova"). Absent names fall back to the id rather than inventing
+   * one; this is a display concern and never a reason to skip telling the asker.
+   */
+  names: Readonly<Record<string, string>> = {},
 ): Effect.Effect<number> =>
   Effect.gen(function* () {
     const sessions = yield* db
@@ -290,7 +303,11 @@ export const sweep = (
         id,
         sessionID: chat as SessionSchema.ID,
         prompt: {
-          text: notice({ ...stall, minutes: Math.round((now - stall.askedAt) / 60_000) }),
+          text: notice({
+            ...stall,
+            minutes: Math.round((now - stall.askedAt) / 60_000),
+            colleagueName: names[stall.colleague],
+          }),
           files: [],
           agents: [],
           // No peer origin: this is the instance reporting silence, not a colleague speaking. Giving

@@ -169,7 +169,13 @@ export const layer = Layer.effect(Service, Effect.gen(function* () {
   yield* Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis
     yield* tick(db, deliver, superiorOf, now)
-    yield* ColleagueStall.sweep(db, events, now)
+    // Agent id -> DISPLAY name, so a stall notice names the colleague the way the user sees it. Read
+    // from the roster this service already holds; a missing name falls back to the id.
+    const roster = yield* agents.agents()
+    const names = Object.fromEntries(
+      Object.entries(roster).map(([id, layers]) => [id, AgentConfigStore.fold(layers)?.name ?? id]),
+    )
+    yield* ColleagueStall.sweep(db, events, now, names)
   }).pipe(
     Effect.catchCause((cause) => Log.event("instance.schedule.tick.failed", { "instance.cause": Log.fault(cause) })),
     Effect.repeat(Schedule.spaced(Duration.seconds(TICK_INTERVAL_SECONDS))),

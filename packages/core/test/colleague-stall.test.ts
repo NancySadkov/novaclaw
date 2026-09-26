@@ -129,14 +129,20 @@ describe("telling the asker exactly once", () => {
     )
   })
 
-  test("the notice says what to DO — it is not a bare complaint", () => {
-    const text = ColleagueStall.notice({ asker: "aris", colleague: "theron", askedAt: 0, minutes: 31 })
-    expect(text).toContain("theron")
-    expect(text).toContain("31 minutes")
-    // ⚠️ Obeys the wake discipline in its wording as well as its delivery: nobody is waiting on the
-    // asker, so this must not read as a summons.
-    expect(text).toContain("Nobody is waiting on you")
-    expect(text).toMatch(/ask again|tell the user/)
+  test("the notice names the colleague and the ACTUAL wait, interpolated", () => {
+    // Owner, 2026-09-26: the message must carry the colleague's display name and the real minutes,
+    // not a placeholder. Asserted EXACTLY, so a future edit cannot quietly go back to the raw id.
+    expect(ColleagueStall.notice({ asker: "nova", colleague: "daedalus", askedAt: 0, minutes: 262, colleagueName: "Daedalus" })).toBe(
+      "The message to Daedalus you sent 262 minutes ago is still unanswered. " +
+        "If you promised this answer to someone, report back, then ask again, do it yourself, or tell " +
+        "your superior it is outstanding.",
+    )
+  })
+
+  test("with no known name it falls back to the id rather than dropping the notice", () => {
+    expect(ColleagueStall.notice({ asker: "aris", colleague: "theron", askedAt: 0, minutes: 31 })).toContain(
+      "The message to theron you sent 31 minutes ago",
+    )
   })
 
   test("the threshold is a CEILING, not an estimate of a healthy reply", () => {
