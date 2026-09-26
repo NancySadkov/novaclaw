@@ -161,17 +161,29 @@ export const AgentHandler = handlerLayer(
         response(
           Effect.gen(function* () {
             const { db } = yield* Database.Service
-            // The kernel's rule, not a second one: `RosterChat.chatFor` is the authority on which chat
-            // belongs to a colleague (root only, never archived — a cleared conversation must not be
-            // handed back). Re-deriving it here would be the exact defect this endpoint exists to
-            // remove, one layer in.
+            // 🔴 `RosterChat.chatFor` answers "which chat" and CANNOT answer "does this colleague
+            // exist" — colleague-handoff.ts says so outright: it reads rows, and an absent row cannot
+            // be distinguished from a colleague nobody has opened a chat for. So the roster is asked
+            // FIRST. Folding the two would let a client create a chat for a name that is not an
+            // agent, which is the one thing an agent-addressed route exists to make impossible.
+            const known = yield* AgentV2.Service.use((agent) => agent.get(AgentV2.ID.make(ctx.params.agentID)))
+            if (known === undefined)
+              return yield* Effect.fail(
+                new InvalidRequestError({ kind: "agent_not_found", message: `no such agent: ${ctx.params.agentID}` }),
+              )
+            // The kernel's rule, not a second one: root only, never archived — a cleared conversation
+            // must not be handed back. Re-deriving it here would be the defect this endpoint exists
+            // to remove, one layer in.
             const chat = yield* RosterChat.chatFor(db, ctx.params.agentID)
             // 404 rather than a null body: "this colleague has never had a chat" is a real, different
             // answer from "here is the chat", and a caller that cannot tell them apart will treat a
             // colleague who has never been used as one whose chat failed to load.
             if (!chat)
               return yield* Effect.fail(
-                new InvalidRequestError({ kind: "agent_chat_not_found", message: "no chat for this agent" }),
+                new InvalidRequestError({
+                  kind: "agent_chat_not_found",
+                  message: `no chat for this agent: ${ctx.params.agentID}`,
+                }),
               )
             return { id: chat.id, title: chat.title, directory: chat.directory }
           }),

@@ -271,4 +271,79 @@ describe("the officer chat cache", () => {
     }
     await expect(resolveOfficerChat(sdk as never, { agentID: "solo" })).rejects.toBeDefined()
   })
+
+  test("🔴 a name that is not an agent gets NO chat created, while a chatless one does", async () => {
+    // The kernel says why this distinction had to exist: `RosterChat.chatFor` reads rows and cannot
+    // tell a chatless colleague from one that does not exist. So the instance asks the roster first
+    // and refuses with its own kind. Creating on the phantom would write a transcript owned by a name
+    // that is not an agent — and the caller cannot tell that from the quiet state it asked for.
+    const created: unknown[] = []
+    const phantom = {
+      agent: {
+        chat: async () => {
+          throw { data: { kind: "agent_not_found", message: "no such agent: nobody" } }
+        },
+      },
+      session: {
+        list: async () => ({ data: { data: [] } }),
+        create: async (input: unknown) => {
+          created.push(input)
+          return { data: { data: { id: "ses_phantom" } } }
+        },
+      },
+    }
+    expect(await resolveOfficerChat(phantom as never, { agentID: "nobody" })).toBeUndefined()
+    expect(created).toEqual([])
+
+    // The same call for a REAL colleague with no chat is the case that may create one.
+    const chatless = {
+      agent: {
+        chat: async () => {
+          throw { data: { kind: "agent_chat_not_found", message: "no chat for this agent: fresh" } }
+        },
+      },
+      session: {
+        list: async () => ({ data: { data: [] } }),
+        create: async (input: unknown) => {
+          created.push(input)
+          return { data: { data: { id: "ses_first" } } }
+        },
+      },
+    }
+    expect(await resolveOfficerChat(chatless as never, { agentID: "fresh" })).toBe("ses_first")
+    expect(created).toHaveLength(1)
+  })
+
+  test("a refusal naming a DIFFERENT agent is not this colleague's answer", async () => {
+    // Both refusals are 404s, so the status cannot be the test. A refusal about someone else means the
+    // instance answered about the wrong colleague, and reading it as "no chat" here would authorise a
+    // second conversation beside a real one.
+    const sdk = {
+      agent: {
+        chat: async () => {
+          throw { data: { kind: "agent_chat_not_found", message: "no chat for this agent: someone-else" } }
+        },
+      },
+      session: { list: async () => ({ data: { data: [] } }), create: async () => ({ data: { data: {} } }) },
+    }
+    await expect(resolveOfficerChat(sdk as never, { agentID: "solo" })).rejects.toBeDefined()
+  })
+
+  test("a 200 with no id is a fault, not permission to create", async () => {
+    // The instance contradicting its own contract must not be smoothed into the one answer that
+    // authorises writing a transcript over one that already exists.
+    const created: unknown[] = []
+    const sdk = {
+      agent: { chat: async () => ({ data: { data: { title: "t", directory: "/d" } } }) },
+      session: {
+        list: async () => ({ data: { data: [] } }),
+        create: async (input: unknown) => {
+          created.push(input)
+          return { data: { data: { id: "ses_written" } } }
+        },
+      },
+    }
+    await expect(resolveOfficerChat(sdk as never, { agentID: "solo" })).rejects.toBeDefined()
+    expect(created).toEqual([])
+  })
 })

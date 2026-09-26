@@ -78,26 +78,37 @@ export function isUnreachableError(error: unknown) {
 }
 
 /**
- * "This colleague has never had a chat" — a real answer from `GET /api/agent/{agentID}/chat`, not a
- * fault. Matched on the server's own `kind`, never on prose, so a wording change cannot turn an
- * ordinary state into an error the roster retries forever.
+ * WHY `GET /api/agent/{agentID}/chat` refused, or `undefined` if it did not refuse.
  *
- * ⚠️ Scoped to this agent on purpose. A 404 that named a DIFFERENT agent would mean the instance
- * answered about the wrong colleague, and answering that with a blank is how a message ends up
- * somewhere it should not.
+ * ⚠️ The two refusals are different FACTS and are kept apart on purpose:
+ *   - `agent_chat_not_found` — the colleague exists and has simply never been opened. The one state
+ *     that may authorise creating a first chat.
+ *   - `agent_not_found`     — there is no such agent. Creating here writes a transcript owned by a
+ *     phantom. The kernel is why this distinction had to exist at all: `RosterChat.chatFor` reads rows
+ *     and cannot tell a chatless colleague from one that does not exist (`colleague-handoff.ts`), so
+ *     the instance asks the roster first and says which of the two it found.
+ *
+ * Matched on the `kind` the instance raises, never on prose, so a wording change cannot turn an
+ * ordinary state into an error the roster retries forever. The HTTP status is NOT the test: both are
+ * 404s, and a bare status would also accept a refusal about a DIFFERENT agent — which is why the
+ * message is scoped to this one.
  */
-export function isAgentChatNotFoundError(error: unknown, agentID: string) {
+export type AgentChatRefusal = "agent_chat_not_found" | "agent_not_found"
+
+export function agentChatRefusal(error: unknown, agentID: string): AgentChatRefusal | undefined {
   const unwrapped = unwrapNamedError(error)
-  if (typeof unwrapped !== "object" || unwrapped === null) return false
+  if (typeof unwrapped !== "object" || unwrapped === null) return undefined
   const value = unwrapped as Record<string, unknown>
-  if (value._tag === "AgentChatNotFoundError" && value.agentID === agentID) return true
-  // The instance raises `InvalidRequestError` with this `kind`, and the transport carries it either
-  // beside the name or inside the body depending on the path — so the KIND is the test and the HTTP
-  // status is not. A 404 alone would also match a wrong-agent 404, which is why the message is scoped.
+  if (value._tag === "AgentChatNotFoundError" && value.agentID === agentID) return "agent_chat_not_found"
+  if (value._tag === "AgentNotFoundError" && value.agentID === agentID) return "agent_not_found"
+  // The transport carries the body either beside the name or inside it, depending on the path, so the
+  // kind is read from both and the status is never consulted.
   const data = (value.data ?? value) as { kind?: unknown; message?: unknown }
-  if (data.kind === "agent_chat_not_found")
-    return typeof data.message !== "string" || data.message.includes(agentID)
-  return false
+  if (data.kind === "agent_chat_not_found" || data.kind === "agent_not_found") {
+    if (typeof data.message === "string" && !data.message.includes(agentID)) return undefined
+    return data.kind
+  }
+  return undefined
 }
 
 export function isSessionNotFoundError(error: unknown, sessionID: string) {

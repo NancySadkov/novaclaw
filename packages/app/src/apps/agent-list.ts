@@ -133,7 +133,7 @@ export const listAgents = async (sdk: {
  *  directories, the scratch dir and a child-session hydration pass — because a CHAT LIST is
  *  organised by where the work happens. A roster is organised by WHO does it, so it asks the
  *  instance for its sessions once and groups them by agent. */
-import { isAgentChatNotFoundError } from "@/utils/server-errors"
+import { agentChatRefusal } from "@/utils/server-errors"
 
 export const listSessions = async (sdk: {
   session: { list: () => Promise<{ data?: unknown }> }
@@ -297,25 +297,42 @@ export const cachedOfficerChat = (serverKey: string, agentID: string): OfficerCh
  * thing that should authorise `startChat` below.
  */
 /**
- * The instance's answer, with its 404 read as the answer it is.
+ * The instance's answer, with its two "no"s kept apart.
  *
- * ⚠️ The generated client THROWS on a non-2xx, so "no chat" arrives as an exception. It is caught by
- * KIND and not by message, and it is deliberately NOT treated as a transport failure: a colleague who
- * has never had a chat is an ordinary state the roster renders, not an error to retry. Anything else
- * propagates, because a colleague whose chat could not be read must not be answered with a blank.
+ * ⚠️ The generated client THROWS on a non-2xx, so both negative answers arrive as exceptions. They are
+ * caught by KIND and never by message, and they are NOT the same fact:
+ *
+ *   - `no_chat`   — the colleague is real and has simply never been opened. The one state that may
+ *                   authorise creating a first chat.
+ *   - `no_agent`  — there is no such agent. Creating here would write a transcript owned by a phantom,
+ *                   and the kernel says why this needs saying at all: `RosterChat.chatFor` reads rows
+ *                   and cannot tell a chatless colleague from one that does not exist
+ *                   (colleague-handoff.ts). The instance now asks the roster first and says which.
+ *
+ * Anything else propagates. A colleague whose chat could not be READ is not a colleague without a chat,
+ * and answering it with a blank is how a second conversation appears beside a real one.
  */
+type OfficerChatAnswer =
+  | { readonly kind: "chat"; readonly id: string; readonly directory: string }
+  | { readonly kind: "no_chat" }
+  | { readonly kind: "no_agent" }
+
 const officerChat = async (
   sdk: { agent: { chat: (input: { agentID: string }) => Promise<unknown> } },
   agentID: string,
-): Promise<{ readonly id: string; readonly directory: string } | undefined> => {
+): Promise<OfficerChatAnswer> => {
   try {
     const response = (await sdk.agent.chat({ agentID })) as {
       data?: { data?: { id?: string; directory?: string } }
     }
     const chat = response?.data?.data
-    return chat?.id ? { id: chat.id, directory: chat.directory ?? "" } : undefined
+    // A 200 with no id is the instance contradicting its own contract. Treating it as `no_chat` would
+    // authorise creating a chat over one that exists, so it is a fault and it propagates.
+    if (!chat?.id) throw new Error(`the instance answered ${agentID}'s chat with no id`)
+    return { kind: "chat", id: chat.id, directory: chat.directory ?? "" }
   } catch (error) {
-    if (isAgentChatNotFoundError(error, agentID)) return undefined
+    const refusal = agentChatRefusal(error, agentID)
+    if (refusal) return { kind: refusal === "agent_not_found" ? "no_agent" : "no_chat" }
     throw error
   }
 }
@@ -331,11 +348,16 @@ export const resolveOfficerChat = async (
     readonly serverKey?: string | undefined
   },
 ): Promise<string | undefined> => {
-  const live = await officerChat(sdk, input.agentID)
-  if (live !== undefined) {
-    if (input.serverKey !== undefined) rememberOfficerChat(input.serverKey, input.agentID, live.id, live.directory)
-    return live.id
+  const answer = await officerChat(sdk, input.agentID)
+  if (answer.kind === "chat") {
+    if (input.serverKey !== undefined)
+      rememberOfficerChat(input.serverKey, input.agentID, answer.id, answer.directory)
+    return answer.id
   }
+  // 🔴 No chat, but ALSO no such colleague. Creating here writes a transcript owned by a name that is
+  // not an agent, and the caller cannot tell that from the quiet state it asked for — so it is refused
+  // outright rather than turned into an empty first chat.
+  if (answer.kind === "no_agent") return undefined
   // ⚠️ A route that merely OPENS a colleague must not CREATE a chat as a side effect of navigation
   // (owner, 2026-09-26). `create: false` returns nothing and the caller shows a quiet state; creating
   // is what the roster's own "open to start one" gesture does, deliberately.
