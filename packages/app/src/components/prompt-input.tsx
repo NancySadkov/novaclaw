@@ -273,7 +273,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       .join("")
     return text.trim().length === 0 && imageAttachments().length === 0 && commentCount() === 0
   })
-  const stopping = createMemo(() => working() && blank())
+  // 🔴 The control is a STOP whenever the agent is working — not only when the composer happens to
+  // be blank. Tying it to `blank()` meant a leftover character (or a differing `blank()` reading)
+  // flipped it back to Send while the agent was mid-turn, and the click was ignored
+  // (owner, 2026-09-26). While the agent works, this button stops; sending a queued follow-up is
+  // still Enter.
+  const stopping = createMemo(() => working())
   const resuming = createMemo(() => !working() && blank() && !!props.resume?.available())
   const tip = () => {
     if (stopping()) {
@@ -755,7 +760,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     // `stop()`'s own guard dedupes a second attempt.
                     disabled={!working() && blank() && !resuming()}
                     onClick={(event) => {
-                      if (!stopping()) return
+                      // Esc calls `abort()` directly; the button must do the SAME while the agent is
+                      // working, never depend on the form's submit or on `blank()`.
+                      if (!working()) return
                       event.preventDefault()
                       void abort()
                     }}
