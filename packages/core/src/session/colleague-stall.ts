@@ -1,4 +1,4 @@
-import { and, eq, gte, isNull, sql } from "drizzle-orm"
+import { and, eq, gte, isNull, like, sql } from "drizzle-orm"
 import { Effect } from "effect"
 import type { Database } from "../database/database"
 import type { EventV2 } from "../event"
@@ -79,17 +79,62 @@ export { NOTICE_PREFIX, isNotice } from "./notice"
  *
  * 🔴 Keyed on the COLLEAGUE, not on the ask. With `askedAt` in the id, the anchor moving (the oldest
  * unanswered ask aging out of the 24h lookback, or being answered) minted a NEW id and re-noticed the
- * same pair — the drip the owner saw at ~23h ages (owner, 2026-09-26). One pair, one notice, until it
- * is retired by `sweep` when the colleague finally replies; then a later stall can be told again.
+ * same pair — the drip the owner saw at ~23h ages (owner, 2026-09-26).
+ *
+ * ⚠️ **IT IS ALSO THE PERMANENT MEMORY OF HAVING TOLD THEM** (owner, 2026-09-26: *"once such pending
+ * notification is sent to the session, it will no longer be sent again"*). Nothing retires a minted
+ * notice any more: this sweep has no delete of its own, so a pair told once is told once for the life
+ * of the instance. The ONE deletion is {@link clearPending}, and it belongs to the user's Clear chat.
  */
 export const noticeID = (input: Stalled): string => `${NOTICE_PREFIX}${input.asker}_${input.colleague}`
 
 /**
- * Pairs this process has told, so a notice can be RETIRED the moment the colleague answers and a
- * later stall is told again. In-memory on purpose: after a restart the durable notice row still
- * suppresses a duplicate, so a restart re-notices at most once per pair — never the drip.
+ * Drop the notices this chat has not read yet, because the chat is being CLEARED.
+ *
+ * 🔴 **CLEAR CHAT IS THE ONE EVENT THAT MAKES A PENDING NOTICE OBSOLETE** (owner, 2026-09-26: *"Daedalus
+ * still gets spammed with 'the message to nova you sent 1437 minutes ago is still unanswered' even
+ * after a Clear chat was used — please ensure that clearing the session also clears all such obsolete
+ * pending notification"*).
+ *
+ * The notice is a queued input, so a cleared chat would otherwise carry it into the archive as a
+ * message nobody can ever read, and — before the generation rule in {@link stalled} — the sweep would
+ * mint a fresh copy into the replacement chat on the very next tick, about a promise made in the
+ * conversation that had just been thrown away.
+ *
+ * ⚠️ **PENDING ONLY, and that is the whole of "once sent, it will not be sent again".** A notice the
+ * agent has already read (`promoted_seq` set) is the asker's history and the pair's permanent memory:
+ * deleting it would free the id and let the same fact be told again, which is the drip the owner ruled
+ * out. A notice still sitting in the queue was never read, so clearing it costs the asker nothing and
+ * leaves the pair free to be told once about a genuinely new ask.
  */
-const noticedPairs = new Map<string, Stalled>()
+export const clearPending = (
+  db: Database.Interface["db"],
+  sessionID: SessionSchema.ID,
+): Effect.Effect<number> =>
+  Effect.gen(function* () {
+    // Selected before deleted rather than reading the driver's affected-row count: the count is the
+    // only thing a caller has to go on here, and it is also what a test asserts, so it must not depend
+    // on which shape this driver happens to return.
+    const doomed = yield* db
+      .select({ id: SessionInputTable.id })
+      .from(SessionInputTable)
+      .where(
+        and(
+          eq(SessionInputTable.session_id, sessionID),
+          isNull(SessionInputTable.promoted_seq),
+          like(SessionInputTable.id, `${NOTICE_PREFIX}%`),
+        ),
+      )
+      .all()
+      .pipe(Effect.orDie)
+    for (const row of doomed)
+      yield* db
+        .delete(SessionInputTable)
+        .where(eq(SessionInputTable.id, row.id))
+        .run()
+        .pipe(Effect.orDie)
+    return doomed.length
+  })
 
 /**
  * Which asks have gone unanswered for longer than `after`.
@@ -102,6 +147,15 @@ export const stalled = (input: {
   readonly landed: ReadonlyArray<Landed>
   readonly agentOf: Readonly<Record<string, string>>
   readonly chatOf: Readonly<Record<string, string>>
+  /**
+   * When the asker's CURRENT chat was created, by agent id.
+   *
+   * 🔴 REQUIRED, and required precisely so no call site can leave it out: an ask made before the
+   * asker's present chat existed cannot still be outstanding in it (see the rule in the loop). An
+   * optional field here would be optional in exactly the one place that matters, which is how this
+   * shipped the first time.
+   */
+  readonly chatBornAt: Readonly<Record<string, number>>
   readonly now: number
   readonly after?: number
 }): Stalled[] => {
@@ -145,6 +199,22 @@ export const stalled = (input: {
     if (input.now - ask.at <= after) continue
     const askerChat = input.chatOf[ask.from]
     if (askerChat === undefined) continue
+    /**
+     * 🔴 **AN ASK FROM A PREVIOUS GENERATION OF THE ASKER'S CHAT CANNOT BE OUTSTANDING IN THIS ONE.**
+     *
+     * Owner report, 2026-09-26: Daedalus was told *"The message to nova you sent 1437 minutes ago is
+     * still unanswered"* **in a chat created minutes earlier**. Read from the instance: the fresh
+     * `ses_daedalus` was created at 19:40, the notice was written into it at 19:40, and the ask it
+     * names was made at 20:13 the previous day — in the conversation that Clear chat had just
+     * archived. The promise, its context and the wait all belonged to a transcript that no longer
+     * exists, and the 24 h lookback could not tell the difference, so every clear handed the asker a
+     * fresh notice about a dead conversation.
+     *
+     * ⚠️ The fix is the CHAT's own birth, not a shorter window: shortening the lookback would lose
+     * real stalls (a 23 h wait is still a stall worth one line) and would not survive a second clear.
+     * A promise can only be outstanding in a conversation that was open when it was made.
+     */
+    if (ask.at < (input.chatBornAt[ask.from] ?? 0)) continue
     // 🔴 AN ANSWER IS NOT AN ASK. Every peer message looks alike here, so without this an answer
     // becomes a new unanswered ask and every completed exchange reports a stall — the reply itself
     // read as the thing nobody replied to.
@@ -206,18 +276,22 @@ export const sweep = (
 ): Effect.Effect<number> =>
   Effect.gen(function* () {
     const sessions = yield* db
-      .select({ id: SessionTable.id, agent: SessionTable.agent })
+      .select({ id: SessionTable.id, agent: SessionTable.agent, born: SessionTable.time_created })
       .from(SessionTable)
       .where(isNull(SessionTable.time_archived))
       .all()
       .pipe(Effect.orDie)
     const agentOf: Record<string, string> = {}
     const chatOf: Record<string, string> = {}
+    const chatBornAt: Record<string, number> = {}
     for (const row of sessions) {
       if (!row.agent) continue
       agentOf[row.id] = row.agent
-      // One chat per agent, so the first is the only.
+      // One chat per agent, so the first is the only. ⚠️ The birth time is taken under the SAME
+      // `??=` as the id it belongs to, so the two can never name different sessions — the rule in
+      // `stalled` compares an ask against the birth of the very chat the notice would go to.
       chatOf[row.agent] ??= row.id
+      chatBornAt[row.agent] ??= row.born
     }
 
     // 🔴 THE DATABASE DOES THE FILTERING, and it is not a micro-optimisation: this runs every 30 s.
@@ -259,25 +333,8 @@ export const sweep = (
     }
 
     let told = 0
-    const stalls = stalled({ landed, agentOf, chatOf, now })
-    /**
-     * 🔴 TOLD ONCE PER PAIR, and re-armed only when the colleague ANSWERS.
-     *
-     * The id is now the pair (see {@link noticeID}), so a moving anchor cannot re-notice. Retirement
-     * is what lets a genuinely new stall be told later: when a pair is no longer stalled (the
-     * colleague replied), its notice row is deleted, so the NEXT stall for that pair mints it again.
-     */
-    const pairKey = (stall: Stalled) => `${stall.asker}\u0000${stall.colleague}`
-    const current = new Map(stalls.map((stall) => [pairKey(stall), stall]))
-    for (const [key, stall] of noticedPairs) {
-      if (current.has(key)) continue
-      noticedPairs.delete(key)
-      yield* db
-        .delete(SessionInputTable)
-        .where(eq(SessionInputTable.id, SessionMessage.ID.make(noticeID(stall))))
-        .run()
-        .pipe(Effect.orDie)
-    }
+    const stalls = stalled({ landed, agentOf, chatOf, chatBornAt, now })
+
     for (const stall of stalls) {
       const chat = chatOf[stall.asker]
       if (chat === undefined) continue
@@ -293,10 +350,7 @@ export const sweep = (
         .where(eq(SessionInputTable.id, id))
         .get()
         .pipe(Effect.orDie)
-      if (already !== undefined) {
-        noticedPairs.set(pairKey(stall), stall)
-        continue
-      }
+      if (already !== undefined) continue
       const written = yield* SessionInput.admit(db, events, {
         id,
         sessionID: chat as SessionSchema.ID,
@@ -313,10 +367,7 @@ export const sweep = (
         Effect.as(true),
         Effect.orElseSucceed(() => false),
       )
-      if (written) {
-        told += 1
-        noticedPairs.set(pairKey(stall), stall)
-      }
+      if (written) told += 1
     }
     return told
   }).pipe(Effect.orElseSucceed(() => 0))

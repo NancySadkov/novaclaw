@@ -18,7 +18,14 @@ const CHAT_OF = { aris: "ses_aris", theron: "ses_theron", kallias: "ses_kallias"
 const AGENT_OF = { ses_aris: "aris", ses_theron: "theron", ses_kallias: "kallias" }
 const MINUTE = 60_000
 const find = (landed: ColleagueStall.Landed[]) =>
-  ColleagueStall.stalled({ landed, agentOf: AGENT_OF, chatOf: CHAT_OF, now: 90 * MINUTE })
+  ColleagueStall.stalled({
+    landed,
+    agentOf: AGENT_OF,
+    chatOf: CHAT_OF,
+    // Every chat predates every ask here, so the generation rule stays out of this file's subject.
+    chatBornAt: { aris: 0, theron: 0, kallias: 0 },
+    now: 90 * MINUTE,
+  })
 
 describe("a three-party room", () => {
   test("🔴 a bystander's silence is NOT a stall", () => {

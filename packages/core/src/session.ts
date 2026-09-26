@@ -12,6 +12,7 @@ import { ProviderV2 } from "./provider"
 import { forkSessionConfig, type SessionConfig, type StrictOverride } from "./session/config-resolve"
 import { SessionConfigColumns } from "./session/config-columns"
 import { Location } from "./location"
+import { ColleagueStall } from "./session/colleague-stall"
 import { SessionMessage } from "./session/message"
 import { Prompt } from "./session/prompt"
 import { PromptInput } from "@novaclaw/schema/prompt-input"
@@ -1663,6 +1664,24 @@ export const layer = Layer.effect(
         if (input.time !== undefined) {
           yield* Effect.uninterruptible(execution.interrupt(input.sessionID))
           yield* scheduler.evict(input.sessionID)
+          /**
+           * 🔴 **CLEARING A CHAT DROPS THE STALL NOTICES IT HAS NOT READ** (owner, 2026-09-26).
+           *
+           * A stall notice is a queued input aimed at a promise the asker made in THIS conversation.
+           * Clear chat throws the conversation away, so the notice is about a transcript that no longer
+           * exists — and the owner was told such notices again and again, each one freshly minted into
+           * the replacement chat by the 30 s sweep, naming a wait that had been reset along with the
+           * context. Read from the instance: a chat created at 19:40 was told about a message sent at
+           * 20:13 the previous day.
+           *
+           * ⚠️ Pending only, and it is the same cleanup the archive already does for workers and
+           * shells: residue of the session, removed with it. A notice the agent already read is the
+           * asker's history and stays — deleting that is what re-arms the pair, and the owner ruled
+           * that out ("once sent, it will no longer be sent again"). `stalled`'s generation rule is
+           * the other half: an ask older than the asker's current chat is not outstanding in it, so
+           * nothing is minted into the replacement either.
+           */
+          yield* Effect.uninterruptible(ColleagueStall.clearPending(db, input.sessionID))
         }
         yield* patchRecord(input.sessionID, (info) =>
           SessionSchema.Info.make({

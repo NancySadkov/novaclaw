@@ -5,6 +5,7 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { ColleagueStall } from "@novaclaw/core/session/colleague-stall"
+import { SessionMessage } from "@novaclaw/core/session/message"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionInputTable, SessionTable } from "@novaclaw/core/session/sql"
@@ -111,7 +112,7 @@ describe("the stall sweep", () => {
   )
 
   it.effect(
-    "🔴 a moving anchor does NOT re-notice, and an ANSWER retires the notice",
+    "🔴 a moving anchor does NOT re-notice, and an ANSWER never re-arms the pair",
     Effect.gen(function* () {
       const { db, events } = yield* twoChats
       const now = 10 * HOUR
@@ -123,11 +124,95 @@ describe("the stall sweep", () => {
       expect(yield* ColleagueStall.sweep(db, events, now)).toBe(0)
       expect((yield* noticesIn(db, ARIS)).length).toBe(1)
 
-      // The colleague answers: the pair is no longer stalled, so the notice is RETIRED (deleted),
-      // which is what allows a genuinely new stall for this pair to be told later.
+      // The colleague answers, and asks again into a new stall. Owner ruling 2026-09-26: *"once such
+      // pending notification is sent to the session, it will no longer be sent again"* — so the row is
+      // KEPT, not retired, and the pair stays told for the life of the instance. This reverses the
+      // previous behaviour (an answer deleted the row, which re-armed the pair), and the old rule had
+      // a second defect the new one does not: retirement ran off an in-process `Map`, so the row was
+      // deleted only if the SAME process had minted it.
       yield* landed(db, ARIS, "theron", now + HOUR)
       expect(yield* ColleagueStall.sweep(db, events, now + 2 * HOUR)).toBe(0)
+      expect((yield* noticesIn(db, ARIS)).length).toBe(1)
+      yield* landed(db, THERON, "aris", now + 3 * HOUR)
+      expect(yield* ColleagueStall.sweep(db, events, now + 4 * HOUR)).toBe(0)
+      expect((yield* noticesIn(db, ARIS)).length).toBe(1)
+    }),
+  )
+
+  it.effect(
+    "🔴 a CLEARED chat drops the notice it never read, and the replacement is told nothing",
+    Effect.gen(function* () {
+      const { db, events } = yield* twoChats
+      const now = 10 * HOUR
+      yield* landed(db, THERON, "aris", now - 2 * HOUR)
+      expect(yield* ColleagueStall.sweep(db, events, now)).toBe(1)
+      expect((yield* noticesIn(db, ARIS)).length).toBe(1)
+
+      // Clear chat: aris's chat is archived and a fresh one takes its place — created AFTER the ask
+      // this notice is about. The ask, its promise and its wait all belonged to the archived
+      // conversation, so nothing is outstanding in the new one. This is the notice the owner actually
+      // received (2026-09-26: a chat created at 19:40 was told about a message sent at 20:13 the day
+      // before).
+      expect(yield* ColleagueStall.clearPending(db, ARIS)).toBe(1)
+      yield* db
+        .update(SessionTable)
+        .set({ time_archived: now })
+        .where(eq(SessionTable.id, ARIS))
+        .run()
+        .pipe(Effect.orDie)
+      const FRESH = "ses_aris_2" as SessionSchema.ID
+      yield* db
+        .insert(SessionTable)
+        .values({
+          id: FRESH,
+          slug: FRESH,
+          directory: process.cwd(),
+          title: "aris's chat",
+          version: "test",
+          agent: "aris",
+          time_created: now + 1,
+          time_updated: now + 1,
+        })
+        .run()
+        .pipe(Effect.orDie)
+
+      // Nothing is minted into the replacement, and nothing is left behind to be read.
+      expect(yield* ColleagueStall.sweep(db, events, now + 2 * HOUR)).toBe(0)
       expect((yield* noticesIn(db, ARIS)).length).toBe(0)
+      expect((yield* noticesIn(db, FRESH)).length).toBe(0)
+
+      // And a genuinely NEW ask in the new generation is told once, because this pair's notice was
+      // never read — it was cleared, not delivered.
+      yield* landed(db, THERON, "aris", now + 3 * HOUR)
+      expect(yield* ColleagueStall.sweep(db, events, now + 4 * HOUR)).toBe(1)
+      expect((yield* noticesIn(db, FRESH)).length).toBe(1)
+    }),
+  )
+
+  it.effect(
+    "🔴 a notice the agent already READ is never deleted — that is the memory",
+    Effect.gen(function* () {
+      const { db, events } = yield* twoChats
+      const now = 10 * HOUR
+      yield* landed(db, THERON, "aris", now - 2 * HOUR)
+      expect(yield* ColleagueStall.sweep(db, events, now)).toBe(1)
+      // The runner picked it up: `promoted_seq` is what separates "queued" from "delivered", and it
+      // is the same signal the instance shows — the one notice Daedalus is still waiting on has
+      // `promoted_seq: null` and no transcript row, while every read one has both.
+      yield* db
+        .update(SessionInputTable)
+        .set({ promoted_seq: 1 })
+        .where(eq(SessionInputTable.id, SessionMessage.ID.make("msg_stall_aris_theron")))
+        .run()
+        .pipe(Effect.orDie)
+
+      expect(yield* ColleagueStall.clearPending(db, ARIS)).toBe(0)
+      expect((yield* noticesIn(db, ARIS)).length).toBe(1)
+      // …and a later stall for the same pair is still not told: the row blocks it, for ever.
+      yield* landed(db, ARIS, "theron", now + HOUR)
+      yield* landed(db, THERON, "aris", now + 2 * HOUR)
+      expect(yield* ColleagueStall.sweep(db, events, now + 3 * HOUR)).toBe(0)
+      expect((yield* noticesIn(db, ARIS)).length).toBe(1)
     }),
   )
 
