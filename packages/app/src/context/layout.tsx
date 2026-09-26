@@ -94,6 +94,7 @@ export type LayoutRoute =
   | { type: "draft"; draftID: string; server?: ServerConnection.Key }
   | { type: "dir-new-sesssion"; dir: string; dirBase64: string; server?: ServerConnection.Key }
   | { type: "session"; sessionId: string; server?: ServerConnection.Key }
+  | { type: "agent"; agentID: string; server?: ServerConnection.Key }
 
 function nextSessionTabsForOpen(current: SessionTabs | undefined, tab: string): SessionTabs {
   const all = current?.all ?? []
@@ -135,7 +136,7 @@ const normalizeStoredSessionTabs = (key: string, tabs: SessionTabs) => {
   }
 }
 
-const currentRoute = (pathname: string, search: string): LayoutRoute => {
+export const currentRoute = (pathname: string, search: string): LayoutRoute => {
   const parts = pathname.split("/").filter(Boolean)
   if (parts.length === 0) return { type: "home" }
 
@@ -149,6 +150,15 @@ const currentRoute = (pathname: string, search: string): LayoutRoute => {
     return {
       type: "session",
       sessionId: parts[3],
+      server: requireServerKey(parts[1]),
+    }
+  }
+
+  // An AGENT-addressed page: the colleague is the address, its session a component of it.
+  if (parts[0] === "server" && parts[2] === "agent" && parts[3]) {
+    return {
+      type: "agent",
+      agentID: decodeURIComponent(parts[3]),
       server: requireServerKey(parts[1]),
     }
   }

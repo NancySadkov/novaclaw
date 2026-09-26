@@ -445,7 +445,11 @@ export default function Page() {
   const stop = async () => {
     const conn = server.current
     const id = params.id
-    if (!conn || !id || stopRequest() === id || !working()) return
+    // 🔴 Do NOT gate on `working()`. It is derived from streamed status, which can lag by seconds —
+    // and then the one control a user reaches for when something is wrong silently does nothing
+    // (owner, 2026-09-26: "Stop is just unresponsive"). Disable on the LOCAL signal and let the
+    // server no-op an idle interrupt.
+    if (!conn || !id || stopRequest() === id) return
     const attemptID = executionAttempt()?.attemptID
     setStopRequest(id)
     try {

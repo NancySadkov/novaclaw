@@ -340,6 +340,10 @@ export function SessionContextTab() {
       }
       for (const id of cleared.removed)
         forgetGoneSession({ session: serverSync().session, tabs, server: key, sessionID: id })
+      // Clear Chat means "start this colleague fresh": the context inspector is showing the retired
+      // chat's stats, so close it rather than leave it open on a transcript that no longer exists
+      // (owner, 2026-09-26).
+      view().reviewPanel.close()
       if (sessionScope) {
         /**
          * 🔴 The colleague did not move, and neither did the tab or the route (owner, 2026-09-26).

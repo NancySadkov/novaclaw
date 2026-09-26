@@ -716,7 +716,13 @@ function ContactRow(props: ContactRowProps) {
     // Prime the colleague's chat cache from what the roster ALREADY knows, so the agent route renders
     // its session immediately instead of re-listing every chat on the instance (owner, 2026-09-26).
     const liveSession = live().sessionID
-    if (props.serverKey && liveSession) rememberOfficerChat(props.serverKey, props.view.id, liveSession)
+    if (props.serverKey && liveSession)
+      rememberOfficerChat(
+        props.serverKey,
+        props.view.id,
+        liveSession,
+        props.sessions.find((session) => session.id === liveSession)?.location?.directory,
+      )
     const href = chatHref()
     if (href) navigate(href)
     else props.onStart()

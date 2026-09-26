@@ -392,9 +392,9 @@ function TargetAgentRoute() {
     const known = cachedOfficerChat(key, agent)
     setFailure(undefined)
     if (known !== undefined) {
-      // INSTANT: render the chat we already know, and take its directory from the store if we have it.
-      setChat(known)
-      setDirectory(sync().session.peek(known)?.location?.directory)
+      // INSTANT: render the chat and directory we already know. No fetch on the critical path.
+      setChat(known.id)
+      setDirectory(known.directory ?? sync().session.peek(known.id)?.location?.directory)
     } else {
       setChat(undefined)
       setDirectory(undefined)
@@ -410,7 +410,10 @@ function TargetAgentRoute() {
           .session.lineage.resolve(id)
           .catch(() => undefined)
         if (mine !== run) return
-        setDirectory(lineage?.session.location.directory)
+        const dir = lineage?.session.location.directory
+        setDirectory(dir)
+        // Cache the directory too, so the NEXT open needs no fetch at all.
+        if (dir !== undefined) rememberOfficerChat(key, agent, id, dir)
       })
       .catch((error) => {
         // A failed refresh must not tear down a page we already rendered from cache.

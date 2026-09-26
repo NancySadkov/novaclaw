@@ -249,15 +249,35 @@ export const startChat = async (
  * created or resolved, so opening a colleague is instant (owner, 2026-09-26: a tab click should not
  * feel like a signal from Mars).
  */
-const officerChatCache = new Map<string, string>()
+export interface OfficerChat {
+  readonly id: string
+  /**
+   * The chat's location, cached with the id. Rendering the session page needs BOTH, and a cache that
+   * only knew the id still had to fetch the record for its directory before anything appeared —
+   * which is exactly the "signal from Mars" the owner reported on an empty, previously-opened chat
+   * (2026-09-26).
+   */
+  readonly directory?: string
+}
+
+const officerChatCache = new Map<string, OfficerChat>()
 
 const cacheKey = (serverKey: string, agentID: string) => `${serverKey}\n${agentID}`
 
-export const rememberOfficerChat = (serverKey: string, agentID: string, sessionID: string): void => {
-  officerChatCache.set(cacheKey(serverKey, agentID), sessionID)
+export const rememberOfficerChat = (
+  serverKey: string,
+  agentID: string,
+  sessionID: string,
+  directory?: string,
+): void => {
+  const previous = officerChatCache.get(cacheKey(serverKey, agentID))
+  officerChatCache.set(cacheKey(serverKey, agentID), {
+    id: sessionID,
+    directory: directory ?? (previous?.id === sessionID ? previous.directory : undefined),
+  })
 }
 
-export const cachedOfficerChat = (serverKey: string, agentID: string): string | undefined =>
+export const cachedOfficerChat = (serverKey: string, agentID: string): OfficerChat | undefined =>
   officerChatCache.get(cacheKey(serverKey, agentID))
 
 export const resolveOfficerChat = async (
@@ -271,7 +291,8 @@ export const resolveOfficerChat = async (
 ): Promise<string | undefined> => {
   const live = chatFor(await listSessions(sdk), input.agentID)
   if (live !== undefined) {
-    if (input.serverKey !== undefined) rememberOfficerChat(input.serverKey, input.agentID, live.id)
+    if (input.serverKey !== undefined)
+      rememberOfficerChat(input.serverKey, input.agentID, live.id, live.location?.directory)
     return live.id
   }
   // ⚠️ A route that merely OPENS a colleague must not CREATE a chat as a side effect of navigation

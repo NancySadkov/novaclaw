@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { listAgents, listSessions, listUsage } from "./agent-list"
+import {
+  cachedOfficerChat,
+  listAgents,
+  listSessions,
+  listUsage,
+  rememberOfficerChat,
+  resolveOfficerChat,
+} from "./agent-list"
 
 /**
  * WHAT SURVIVES THE TRIP from the roster response to the UI.
@@ -175,5 +182,60 @@ describe("roster session time boundary", () => {
       },
     } as never)
     expect(rows[0]?.type).toBe("sub-agent")
+  })
+})
+
+/**
+ * 🔴 OPENING A COLLEAGUE MUST BE INSTANT (owner, 2026-09-26). The agent route renders from this cache
+ * so a previously-opened colleague needs no session list and no record fetch — the "signal from Mars"
+ * was those two round trips on every click.
+ */
+describe("the officer chat cache", () => {
+  test("remembers the id AND directory, so the next open needs no fetch", () => {
+    rememberOfficerChat("cache-srv", "daedalus", "ses_d", "/work")
+    expect(cachedOfficerChat("cache-srv", "daedalus")).toEqual({ id: "ses_d", directory: "/work" })
+    expect(cachedOfficerChat("cache-srv", "nova")).toBeUndefined()
+  })
+
+  test("a later prime that omits the directory keeps the one already known", () => {
+    rememberOfficerChat("cache-srv2", "daedalus", "ses_d", "/work")
+    rememberOfficerChat("cache-srv2", "daedalus", "ses_d")
+    expect(cachedOfficerChat("cache-srv2", "daedalus")).toEqual({ id: "ses_d", directory: "/work" })
+  })
+
+  test("a NEW chat id does not inherit the old chat's directory", () => {
+    rememberOfficerChat("cache-srv3", "daedalus", "ses_d", "/work")
+    rememberOfficerChat("cache-srv3", "daedalus", "ses_new")
+    expect(cachedOfficerChat("cache-srv3", "daedalus")).toEqual({ id: "ses_new", directory: undefined })
+  })
+
+  test("resolveOfficerChat with create:false never creates a chat on navigation", async () => {
+    const created: unknown[] = []
+    const sdk = {
+      session: {
+        list: async () => ({ data: { data: [] } }),
+        create: async (input: unknown) => {
+          created.push(input)
+          return { data: { data: { id: "ses_created" } } }
+        },
+      },
+    }
+    expect(await resolveOfficerChat(sdk as never, { agentID: "nobody", create: false, serverKey: "cache-srv4" })).toBeUndefined()
+    expect(created).toEqual([])
+    expect(cachedOfficerChat("cache-srv4", "nobody")).toBeUndefined()
+  })
+
+  test("resolveOfficerChat caches the live chat's id and directory", async () => {
+    const sdk = {
+      session: {
+        list: async () => ({
+          data: {
+            data: [{ id: "ses_live", agent: "solo", time: { created: 1 }, location: { directory: "/live" } }],
+          },
+        }),
+      },
+    }
+    expect(await resolveOfficerChat(sdk as never, { agentID: "solo", serverKey: "cache-srv5" })).toBe("ses_live")
+    expect(cachedOfficerChat("cache-srv5", "solo")).toEqual({ id: "ses_live", directory: "/live" })
   })
 })

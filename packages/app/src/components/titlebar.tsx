@@ -169,6 +169,17 @@ export function Titlebar() {
           if (route.type === "draft") {
             return tabsStore.find((item) => item.type === "draft" && item.draftID === route.draftID)
           }
+          if (route.type === "agent") {
+            // 🔴 The CURRENT officer's tab is highlighted by the COLLEAGUE, not a session id — the
+            // route addresses the agent (AGENTS.md). Without this the strip showed no selection at all
+            // on an officer page (owner, 2026-09-26).
+            return tabsStore.find(
+              (item) =>
+                item.type === "agent" &&
+                item.server === (route.server ?? server.key) &&
+                item.agent === route.agentID,
+            )
+          }
           if (route.type === "session") {
             const main = tabsStore.find(
               (item) => item.type === "session" && item.server === route.server && item.sessionId === route.sessionId,
@@ -232,7 +243,22 @@ export function Titlebar() {
           }
           // Home, an app page, anything that is not a session: the user has left, so the suppression
           // has done its job and must not outlive it.
-          if (route.type !== "session") tabsStoreActions.clearRemoved()
+          if (route.type !== "session" && route.type !== "agent") tabsStoreActions.clearRemoved()
+
+          if (route.type === "agent") {
+            // Deep link / restored window straight onto a colleague: open (or select) the AGENT tab.
+            const key = route.server ?? server.key
+            const existing = tabsStore.find(
+              (item) => item.type === "agent" && item.server === key && item.agent === route.agentID,
+            )
+            if (existing) {
+              tabsStoreActions.remember(existing)
+              return
+            }
+            const created = tabsStoreActions.addSessionTab({ server: key, sessionId: "", agent: route.agentID })
+            tabsStoreActions.select(created)
+            return
+          }
 
           if (route.type === "session") {
             const s = session()
