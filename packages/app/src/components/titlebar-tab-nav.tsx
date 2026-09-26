@@ -113,7 +113,9 @@ export function TabNavItem(props: {
   const rename = async (title: string) => {
     const ctx = serverCtx()
     const session = props.session()
-    if (!ctx || !session) return
+    // An AGENT tab has no session record yet (its chat resolves through the colleague), so there is
+    // nothing to rename against — the title is derived, not stored. Never throw on that.
+    if (!ctx || !session?.location?.directory || !session.id) return
     const client = ctx.sdk.createClient({ directory: session.location.directory, throwOnError: true })
     await client.v2.session.update({ sessionID: session.id, title })
   }

@@ -18,6 +18,7 @@ import {
   homeProjectDirectories,
   homeSessionServerStatus,
   latestRootSession,
+  projectForSession,
   toggleHomeProjectSelection,
 } from "./helpers"
 import { pathKey } from "@/utils/path-key"
@@ -337,5 +338,26 @@ describe("layout workspace helpers", () => {
     expect(errorMessage({ message: "Request failed", data: { message: "session not found" } }, "fallback")).toBe(
       "session not found",
     )
+  })
+})
+
+/**
+ * 🔴 A SESSION WITHOUT A LOCATION MUST NOT THROW (owner, 2026-09-26).
+ *
+ * An AGENT-addressed tab has no session record — the colleague's chat is resolved through the agent —
+ * so the strip renders a minimal `{ agent }` stub until it resolves. `projectForSession` read
+ * `session.location.directory` on it and took the whole renderer down with
+ * `TypeError: Cannot read properties of undefined (reading 'directory')`. A session that has no
+ * location has no project: that is the honest answer, not a crash.
+ */
+describe("projectForSession tolerates a session with no location", () => {
+  const projects = [{ worktree: "/work/app", sandboxes: [] }]
+
+  test("a located session still matches its project", () => {
+    expect(projectForSession(session({ id: "ses_a", directory: "/work/app" }), projects)?.worktree).toBe("/work/app")
+  })
+
+  test("a session with no location has no project and does not throw", () => {
+    expect(projectForSession({ agent: "nova" } as unknown as Session, projects)).toBeUndefined()
   })
 })

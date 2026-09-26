@@ -106,10 +106,16 @@ export function projectForSession<T extends { id?: string; worktree: string; san
   projects: T[],
 ) {
   // T3 (entities.md): sessions carry no project id — match by directory alone.
-  const directory = pathKey(session.location.directory)
+  //
+  // 🔴 A LOCATION IS NOT GUARANTEED. An AGENT-addressed tab has no session record at all, so the tab
+  // renders a colleague stub until its chat resolves; reading `session.location.directory` there
+  // crashed the whole renderer (owner, 2026-09-26). A session without a location simply has no
+  // project — that is the honest answer, and it must never throw.
+  const directory = session.location?.directory
+  if (!directory) return undefined
+  const key = pathKey(directory)
   return projects.find(
-    (project) =>
-      pathKey(project.worktree) === directory || project.sandboxes?.some((sandbox) => pathKey(sandbox) === directory),
+    (project) => pathKey(project.worktree) === key || project.sandboxes?.some((sandbox) => pathKey(sandbox) === key),
   )
 }
 
