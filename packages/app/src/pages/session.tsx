@@ -405,7 +405,19 @@ export default function Page() {
     // poll confirms it (`stopping: false`, `interrupted`); this just clears the spinner without
     // waiting up to 2 s for that poll.
     if (confirmed?.sessionID === id && confirmed.attemptID === attempt?.attemptID) return false
-    return isSessionWorking(sync().data.session_status[id], attempt)
+    // 🔴 …OR the agent generated output within the last ~10 s (owner, 2026-09-26: Stop clicks
+    // ignored while Daedalus was visibly streaming, Esc working seconds later on the same tab).
+    // Bookkeeping (`session_status`, the 2 s execution poll) can lag the visible activity it
+    // records — and a click that arrives in that lag reads `working() === false`, shows Send, and
+    // goes to the send path instead of stopping. Stream liveness is direct observation, not a
+    // second opinion about the stop: `session_live` is fed only by live generation deltas (a
+    // delayed backlog counts at generation time, never arrival) and dies with the run's settle.
+    // `tps > 0` bounds it to the live-rate window, so a missing settle event cannot pin Stop on
+    // forever — at most one quiet window of it.
+    return (
+      isSessionWorking(sync().data.session_status[id], attempt) ||
+      (serverSync().session.data.session_live(id)?.tps ?? 0) > 0
+    )
   })
   const explicitlyStopped = createMemo(() => {
     const attempt = executionAttempt()
