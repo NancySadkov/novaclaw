@@ -68,7 +68,10 @@ function SessionTabSlot(props: {
     ({ id, ctx }) => ctx.sync.session.resolve(id).catch(() => undefined),
   )
   const session = createMemo<Session | undefined>(() => {
-    if (props.tab.type === "agent") return { agent: props.tab.agent } as Session
+    // A minimal, SAFE stub: the colleague the tab stands for, and an empty id/title. Everything the
+    // strip reads off it (`agent`, `id`, `title`, `location?`) is optional-tolerant by construction —
+    // an agent tab has no session record until its chat resolves.
+    if (props.tab.type === "agent") return { agent: props.tab.agent, id: "" } as Session
     return cachedSession() ?? loadedSession()
   })
 
