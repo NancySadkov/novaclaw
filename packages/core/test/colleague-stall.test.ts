@@ -99,6 +99,17 @@ describe("which asks have gone unanswered", () => {
         .sort(),
     ).toEqual(["kallias", "theron"])
   })
+
+  test("🔴 MANY unanswered asks to ONE colleague are told ONCE, anchored on the oldest", () => {
+    // Owner report 2026-09-26: a relaunch fired 33 backlogged notices into one chat, one per
+    // historical ask. The unit is the PAIR — the colleague either answered or it did not.
+    const landed = [
+      { sessionID: "ses_theron", from: "aris", at: 0 },
+      { sessionID: "ses_theron", from: "aris", at: 20 * MINUTE },
+      { sessionID: "ses_theron", from: "aris", at: 25 * MINUTE },
+    ]
+    expect(find({ landed, now: 60 * MINUTE })).toEqual([{ asker: "aris", colleague: "theron", askedAt: 0 }])
+  })
 })
 
 describe("telling the asker exactly once", () => {
@@ -111,7 +122,8 @@ describe("telling the asker exactly once", () => {
   })
 
   test("a DIFFERENT ask to the same colleague gets its own notice", () => {
-    // Otherwise the second time aris is left hanging by theron, it is never told.
+    // The anchor is the OLDEST unanswered ask, so the id has to move with `askedAt`: once that ask is
+    // answered, the next-oldest becomes the anchor and must be able to mint a fresh notice.
     expect(ColleagueStall.noticeID({ asker: "aris", colleague: "theron", askedAt: 1 })).not.toBe(
       ColleagueStall.noticeID({ asker: "aris", colleague: "theron", askedAt: 2 }),
     )

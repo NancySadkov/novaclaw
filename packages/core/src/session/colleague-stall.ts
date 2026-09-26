@@ -117,7 +117,22 @@ export const stalled = (input: {
   readonly after?: number
 }): Stalled[] => {
   const after = input.after ?? AFTER_MS
-  const out: Stalled[] = []
+  /**
+   * ONE NOTICE PER COLLEAGUE, not one per historical message.
+   *
+   * 🔴 Owner report 2026-09-26: after a relaunch Daedalus was DELUGED with stall notices. The sweep
+   * looks back 24 h, and a chatty pair leaves dozens of unanswered asks in that window — measured on
+   * the owner's instance, **33 notices landed in `ses_daedalus` in ONE tick**, one for every
+   * unanswered ask going back 22 hours, several of them identical to the eye. Telling an asker once
+   * per outstanding ASK is telling it the same fact N times. The unit is the PAIR: a colleague either
+   * answered you or it did not, and the oldest unanswered ask is the one that measures the wait.
+   *
+   * ⚠️ Keyed on the oldest ask, so the notice is STABLE while that ask stays unanswered (same derived
+   * id -> the primary key refuses a re-send). If that ask is later answered but others remain, the
+   * anchor moves to the next-oldest and a fresh notice is legitimate — that is a new stall, not a
+   * repeat.
+   */
+  const out = new Map<string, Stalled>()
   // ⚠️ INDEXED ONCE. Both lookups below are "what else is in the ASKER's chat", and doing them with a
   // `filter`/`some` over every landed message made this O(n²) in the number of peer messages on the
   // instance — inside a sweep that runs every 30 s. Grouping by session first makes each lookup touch
@@ -161,9 +176,12 @@ export const stalled = (input: {
     // colleague that answered in its own words as silent — the worst kind of false alarm, because
     // the asker can see the answer sitting in its chat.
     const answered = inAskersChat.some((reply) => reply.from === colleague && reply.at > ask.at)
-    if (!answered) out.push({ asker: ask.from, colleague, askedAt: ask.at })
+    if (answered) continue
+    const key = `${ask.from}\u0000${colleague}`
+    const existing = out.get(key)
+    if (existing === undefined || ask.at < existing.askedAt) out.set(key, { asker: ask.from, colleague, askedAt: ask.at })
   }
-  return out
+  return [...out.values()]
 }
 
 /** What the asker is told, in its own chat. */
