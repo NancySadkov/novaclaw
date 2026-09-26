@@ -293,11 +293,22 @@ const SessionCatalogHandler = handlerLayer(
           .handle(
             "session.execution.list",
             Effect.fn(function* (ctx) {
+              // 🔴 `stopping` is joined here, never stored: the thread manager owns the only copy
+              // (owner, 2026-09-26). The durable row cannot carry it — `requestInterrupt` lands
+              // before the fiber finishes cleanup, and a stored copy would disagree with the entry
+              // `settle`/`run` read for exactly that window. Both the scheduler and the Stop
+              // button sample the coordinator through this payload, so an unsettled stop has no
+              // second state to hide behind.
+              const withStopping = (found: SessionExecutionAttempt.Info) =>
+                Effect.map(execution.stopping(found.sessionID), (stopping) => ({ ...found, stopping }))
               if (ctx.query.sessionID !== undefined) {
                 const found = yield* attempts.get(ctx.query.sessionID)
-                return { data: found === undefined ? [] : [found] }
+                return { data: found === undefined ? [] : [yield* withStopping(found)] }
               }
-              return { data: yield* attempts.list() }
+              const rows = yield* attempts.list()
+              return {
+                data: yield* Effect.forEach(rows, withStopping, { concurrency: "unbounded" }),
+              }
             }),
           )
           .handle(

@@ -237,6 +237,46 @@ describe("SessionRunCoordinator", () => {
       Effect.gen(function* () {
         const coordinator = yield* SessionRunCoordinator.make({ drain: () => Effect.void })
         yield* coordinator.interrupt("session")
+        expect(yield* coordinator.stopping("session")).toBe(false)
+      }),
+    ),
+  )
+
+  it.effect("stopping is the one flag the scheduler and the Stop button share", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const started = yield* Deferred.make<void>()
+        const cleanupStarted = yield* Deferred.make<void>()
+        const cleanupGate = yield* Deferred.make<void>()
+        const coordinator = yield* SessionRunCoordinator.make({
+          drain: () =>
+            Deferred.succeed(started, undefined).pipe(
+              Effect.andThen(Effect.never),
+              Effect.onInterrupt(() =>
+                Deferred.succeed(cleanupStarted, undefined).pipe(Effect.andThen(Deferred.await(cleanupGate))),
+              ),
+            ),
+        })
+
+        // Idle and running: no stop in flight.
+        expect(yield* coordinator.stopping("session")).toBe(false)
+        const resumed = yield* coordinator.run("session").pipe(Effect.forkChild)
+        yield* Deferred.await(started)
+        expect(yield* coordinator.stopping("session")).toBe(false)
+
+        // The interrupt marks stopping BEFORE the fiber finishes cleanup — this is the window
+        // the button renders as a spinner, sampled from this same entry `settle` reads.
+        const interrupt = yield* coordinator.interrupt("session").pipe(Effect.forkChild)
+        yield* Deferred.await(cleanupStarted)
+        expect(yield* coordinator.stopping("session")).toBe(true)
+        yield* Deferred.succeed(cleanupGate, undefined)
+        yield* Fiber.join(interrupt)
+        const exit = yield* Fiber.await(resumed)
+        expect(Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)).toBeTrue()
+
+        // Settled: the entry is gone, so no second opinion can linger.
+        expect(yield* coordinator.stopping("session")).toBe(false)
+        expect(Array.from(yield* coordinator.active)).toEqual([])
       }),
     ),
   )

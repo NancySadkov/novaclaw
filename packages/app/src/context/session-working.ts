@@ -20,8 +20,16 @@ import type { SessionStatus } from "@novaclaw/sdk/v2/client"
  */
 export function isSessionWorking(
   status: SessionStatus | undefined,
-  execution?: { readonly state: "starting" | "busy" | "recovering" | "paused" | "failed" | "interrupted" | "settled" },
+  execution?: {
+    readonly state: "starting" | "busy" | "recovering" | "paused" | "failed" | "interrupted" | "settled"
+    readonly stopping?: boolean
+  },
 ): boolean {
+  // 🔴 The thread manager's stop-in-flight flag outranks every settled reading (owner, 2026-09-26):
+  // a row that already says `interrupted` while the owning process is still finalizing the fiber
+  // is still working — the spinner stays until the entry settles, and no client-local override
+  // can clear it first.
+  if (execution?.stopping) return true
   if (execution) return execution.state === "starting" || execution.state === "busy" || execution.state === "recovering"
   const type = status?.type
   return type === "busy" || type === "retry"

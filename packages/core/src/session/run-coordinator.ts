@@ -17,6 +17,13 @@ export interface Coordinator<Key, E> {
   readonly wake: (key: Key) => Effect.Effect<void>
   /** Stops active execution and waits for its cleanup. */
   readonly interrupt: (key: Key) => Effect.Effect<void>
+  /**
+   * 🔴 THE single stopping state (owner, 2026-09-26: an unsettled stop must be impossible by
+   * construction). Set by `interrupt`, cleared when the entry settles; `settle`/`run` read the
+   * SAME entry field, and the Stop button samples it through `SessionExecution.stopping` — so
+   * the scheduler and the button can never disagree about whether a stop is still in flight.
+   */
+  readonly stopping: (key: Key) => Effect.Effect<boolean>
 }
 
 type Entry<E> = {
@@ -113,7 +120,10 @@ export const make = <Key, E>(options: {
         return Fiber.interrupt(entry.owner)
       })
 
-    return { active: Effect.sync(() => new Set(active.keys())), run, adopt, wake, interrupt }
+    // Samples the same entry field `settle`/`run` act on — one state, never a second opinion.
+    const stopping = (key: Key): Effect.Effect<boolean> => Effect.sync(() => active.get(key)?.stopping ?? false)
+
+    return { active: Effect.sync(() => new Set(active.keys())), run, adopt, wake, interrupt, stopping }
   })
 
 // ── The wake seam (B1, 2026-07-28) ─────────────────────────────────────────────────────────────

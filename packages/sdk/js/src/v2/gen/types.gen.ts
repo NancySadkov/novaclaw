@@ -4732,6 +4732,7 @@ export type SessionExecution = {
   ownerID: string
   state: "starting" | "busy" | "recovering" | "paused" | "failed" | "interrupted" | "settled"
   phase: "drain" | "provider" | "tool" | "maintenance"
+  stopping: boolean
   heartbeatAt: number
   checkpointAt?: number
   failureClass?: string

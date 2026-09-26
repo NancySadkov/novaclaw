@@ -13,6 +13,14 @@ export const Info = Schema.Struct({
   ownerID: Schema.String,
   state: State,
   phase: Phase,
+  /**
+   * 🔴 Whether a stop is still in flight for this session — the thread manager's own flag
+   * (owner, 2026-09-26). Written by no row: the coordinator sets it on `interrupt` and clears
+   * it when the entry settles, and `session.execution.list` joins it onto the durable attempt.
+   * The scheduler acts on it; the Stop button renders its spinner from it. One state, sampled
+   * twice — never a client-local second opinion an unsettled stop could hide behind.
+   */
+  stopping: Schema.Boolean,
   heartbeatAt: Schema.Finite,
   checkpointAt: Schema.optional(Schema.Finite),
   failureClass: Schema.optional(Schema.String),

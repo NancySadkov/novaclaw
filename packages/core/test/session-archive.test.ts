@@ -46,6 +46,7 @@ const execution = Layer.succeed(
     adopt: () => Effect.void,
     wake: () => Effect.void,
     interrupt: (sessionID) => Effect.sync(() => void interrupts.push(String(sessionID))),
+    stopping: () => Effect.succeed(false),
     stopCommand: () => Effect.succeed(false),
   }),
 )

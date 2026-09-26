@@ -206,6 +206,8 @@ export const layer = Layer.effect(
     return SessionExecution.Service.of({
       active: coordinator.active,
       interrupt: interruptTree,
+      // The thread manager's own flag — the same entry `settle`/`run` read. See `Coordinator.stopping`.
+      stopping: coordinator.stopping,
       stopCommand: () => Effect.succeed(false),
       resume: coordinator.run,
       adopt: coordinator.adopt,

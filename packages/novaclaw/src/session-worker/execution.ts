@@ -678,6 +678,8 @@ export const layer = Layer.effect(
       adopt: coordinator.adopt,
       wake: coordinator.wake,
       interrupt: (sessionID) => interruptBranch(sessionID, new Set()),
+      // The thread manager's own flag — the same entry `settle`/`run` read. See `Coordinator.stopping`.
+      stopping: coordinator.stopping,
       stopCommand: (sessionID, commandID, reason) =>
         Effect.gen(function* () {
           const current = liveWorkers.get(sessionID)

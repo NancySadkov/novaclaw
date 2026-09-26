@@ -27,6 +27,7 @@ import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { observeAncestorReattachment } from "@/utils/dom-reattachment"
 import { createSettledResource } from "@/utils/settled-resource"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
+import { Spinner } from "@novaclaw/ui/spinner"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { TeamChatButton } from "@/components/team-chat-button"
@@ -139,7 +140,7 @@ export interface PromptInputProps {
   onNewSessionWorktreeReset?: () => void
   edit?: { id: string; prompt: Prompt; context: FollowupDraft["context"] }
   onEditLoaded?: () => void
-  stop?: { working: () => boolean; pending: () => boolean; run: () => Promise<void> }
+  stop?: { working: () => boolean; pending: () => boolean; stopping: () => boolean; run: () => Promise<void> }
   onSubmit?: () => void
   toolbar?: JSX.Element
   /** A stopped durable attempt can resume without manufacturing an empty user message. */
@@ -279,9 +280,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   // (owner, 2026-09-26). While the agent works, this button stops; sending a queued follow-up is
   // still Enter.
   const stopping = createMemo(() => working())
+  // 🔴 While the stop request is in flight the control is a SPINNER, not a Stop square (owner,
+  // 2026-09-26). Either half is the SAME single state: `stopping()` is the thread manager's own
+  // flag sampled through the execution list, and `pending()` is only its optimistic projection
+  // for the poll lag — cleared by the next poll, never a second opinion. Neither half disables
+  // the button (a stuck disable was the ignored-clicks defect) — a repeat press joins the
+  // in-flight request.
+  const stopFlight = createMemo(() => (props.stop?.pending() ?? false) || (props.stop?.stopping() ?? false))
   const resuming = createMemo(() => !working() && blank() && !!props.resume?.available())
   const tip = () => {
-    if (stopping()) {
+    if (stopping() || stopFlight()) {
       return (
         <div class="flex items-center gap-2">
           <span>{language.t("prompt.action.stop")}</span>
@@ -753,11 +761,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     data-action="prompt-submit"
                     type="submit"
                     // 🔴 NOT disabled while an interrupt is in flight, and the click runs the SAME
-                    // path as Esc. The button submits the form; Esc calls `abort()` directly. When a
-                    // stop did not settle, the button's `pending()` stayed true and the control was
-                    // disabled for ever — clicks ignored, no feedback — while Esc kept working
-                    // (owner, 2026-09-26). Now a click while stopping calls `abort()` itself, and
-                    // `stop()`'s own guard dedupes a second attempt.
+                    // path as Esc. The button submits the form; Esc calls `abort()` directly. An
+                    // earlier `disabled` included the stop's `pending()` and a stop that did not
+                    // settle left the control disabled for ever — clicks ignored, no feedback —
+                    // while Esc kept working (owner, 2026-09-26). Now a click while stopping calls
+                    // `abort()` itself, and repeat presses join the in-flight request instead of
+                    // no-op-ing. The in-flight state shows as a spinner (below), never as disabled.
                     disabled={!working() && blank() && !resuming()}
                     onClick={(event) => {
                       // Esc calls `abort()` directly; the button must do the SAME while the agent is
@@ -768,17 +777,26 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     }}
                     tabIndex={store.mode === "normal" ? undefined : -1}
                     icon={
-                      <IconV2
-                        name={
-                          stopping()
-                            ? "stop"
-                            : resuming()
-                              ? "play"
-                              : store.mode === "shell"
-                                ? "arrow-undo-down"
-                                : "arrow-up"
-                        }
-                      />
+                      // 🔴 Stop pressed → spinner until the agent settles, then play when a stopped
+                      // turn can resume (owner, 2026-09-26). The spinner is keyed on the stop
+                      // request's `pending()`, not on `working()`, so it shows from the click —
+                      // before streamed status could catch up — and clears when the request
+                      // settles, at which point `working()`/`resuming()` pick the steady icon.
+                      stopFlight() ? (
+                        <Spinner class="size-4" />
+                      ) : (
+                        <IconV2
+                          name={
+                            stopping()
+                              ? "stop"
+                              : resuming()
+                                ? "play"
+                                : store.mode === "shell"
+                                  ? "arrow-undo-down"
+                                  : "arrow-up"
+                          }
+                        />
+                      )
                     }
                     variant="contrast"
                     class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted shadow-[var(--v2-elevation-button-contrast)] disabled:opacity-50"
@@ -787,7 +805,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         "linear-gradient(180deg,var(--v2-alpha-light-20) 0%,var(--v2-alpha-light-0) 100%),linear-gradient(90deg,var(--v2-background-bg-contrast) 0%,var(--v2-background-bg-contrast) 100%)",
                     }}
                     aria-label={
-                      stopping()
+                      stopping() || stopFlight()
                         ? language.t("prompt.action.stop")
                         : resuming()
                           ? language.t("prompt.action.resume")

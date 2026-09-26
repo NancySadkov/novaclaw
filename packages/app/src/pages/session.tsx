@@ -399,6 +399,11 @@ export default function Page() {
     const submitted = submittedFrom()
     if (submitted?.sessionID === id && submitted.attemptID === attempt?.attemptID && busy(id)) return true
     const confirmed = stopConfirmed()
+    // The server's OWN answer, not a second opinion: `stop()` sets this only after the interrupt
+    // POST returned, which happens after the fiber, the children and the jobs settled — so by the
+    // time this forces `false`, the thread manager's entry is already gone. The next execution
+    // poll confirms it (`stopping: false`, `interrupted`); this just clears the spinner without
+    // waiting up to 2 s for that poll.
     if (confirmed?.sessionID === id && confirmed.attemptID === attempt?.attemptID) return false
     return isSessionWorking(sync().data.session_status[id], attempt)
   })
@@ -1104,7 +1109,7 @@ export default function Page() {
         promptInput={
           <PromptInput
             controls={inputController()}
-            stop={{ working, pending: stopPending, run: stop }}
+            stop={{ working, pending: stopPending, stopping: () => executionAttempt()?.stopping ?? false, run: stop }}
             edit={queuedEdit()}
             onEditLoaded={() => setQueuedEdit(undefined)}
             ref={(el) => {

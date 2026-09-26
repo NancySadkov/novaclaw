@@ -49,6 +49,16 @@ describe("isSessionWorking", () => {
     expect(isSessionWorking(sample("idle"), { state: "recovering" })).toBe(true)
   })
 
+  test("🔴 a stop still in flight outranks every settled reading — the spinner cannot clear first", () => {
+    // The thread manager's own flag (owner, 2026-09-26): the row may already say `interrupted`
+    // while the owning process finalizes the fiber. Either way the agent is still stopping.
+    expect(isSessionWorking(sample("idle"), { state: "interrupted", stopping: true })).toBe(true)
+    expect(isSessionWorking(sample("idle"), { state: "settled", stopping: true })).toBe(true)
+    expect(isSessionWorking(sample("busy"), { state: "settled", stopping: true })).toBe(true)
+    // And its absence changes nothing — the settled readings above still settle.
+    expect(isSessionWorking(sample("idle"), { state: "settled", stopping: false })).toBe(false)
+  })
+
   test("an unknown or absent status is settled, not working", () => {
     // NEGATIVE CONTROL for the direction of the default. The old predicate defaulted the unknown
     // case to WORKING, which is the state that disables controls — so a status this build has not

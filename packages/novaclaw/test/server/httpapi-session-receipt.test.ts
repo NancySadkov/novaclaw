@@ -205,9 +205,16 @@ describe("GET /api/session/execution", () => {
 
       const res = yield* requestInDirectory(`/api/session/execution?sessionID=${first}`, test.directory)
       expect(res.status).toBe(200)
-      const body = JSON.parse(yield* res.text) as { data: Array<{ sessionID: string; attemptID: string }> }
+      const body = JSON.parse(yield* res.text) as {
+        data: Array<{ sessionID: string; attemptID: string; stopping: boolean }>
+      }
       expect(body.data).toHaveLength(1)
       expect(body.data[0]).toEqual(expect.objectContaining({ sessionID: first, attemptID: firstLease.attemptID }))
+      // 🔴 `stopping` rides the execution payload (owner, 2026-09-26): the thread manager's own
+      // flag, joined server-side — the single state the scheduler acts on and the Stop button
+      // renders. No stop is in flight here, so it reads false; the true-during-cleanup half is
+      // proven at the source in `session-run-coordinator.test.ts`, which samples the same entry.
+      expect(body.data[0]?.stopping).toBe(false)
     }),
   )
 })

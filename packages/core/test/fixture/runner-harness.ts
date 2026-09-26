@@ -795,6 +795,7 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
         adopt: coordinator.adopt,
         wake: coordinator.wake,
         interrupt: coordinator.interrupt,
+        stopping: coordinator.stopping,
         stopCommand: () => Effect.succeed(false),
       })
     }),

@@ -8,6 +8,12 @@ export interface SessionExecutionInfo {
   readonly ownerID: string
   readonly state: "starting" | "busy" | "recovering" | "paused" | "failed" | "interrupted" | "settled"
   readonly phase: "drain" | "provider" | "tool" | "maintenance"
+  /**
+   * 🔴 The thread manager's own flag, joined server-side (owner, 2026-09-26). True while a stop
+   * is still in flight in the owning process — the same entry the scheduler's `settle`/`run`
+   * read. The button renders its spinner from this, never from a client-local second opinion.
+   */
+  readonly stopping: boolean
   readonly heartbeatAt: number
   readonly checkpointAt?: number
   readonly failureClass?: string
