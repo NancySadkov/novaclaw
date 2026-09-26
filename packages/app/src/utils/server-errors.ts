@@ -77,6 +77,29 @@ export function isUnreachableError(error: unknown) {
   return !("body" in cause) && !("status" in cause)
 }
 
+/**
+ * "This colleague has never had a chat" — a real answer from `GET /api/agent/{agentID}/chat`, not a
+ * fault. Matched on the server's own `kind`, never on prose, so a wording change cannot turn an
+ * ordinary state into an error the roster retries forever.
+ *
+ * ⚠️ Scoped to this agent on purpose. A 404 that named a DIFFERENT agent would mean the instance
+ * answered about the wrong colleague, and answering that with a blank is how a message ends up
+ * somewhere it should not.
+ */
+export function isAgentChatNotFoundError(error: unknown, agentID: string) {
+  const unwrapped = unwrapNamedError(error)
+  if (typeof unwrapped !== "object" || unwrapped === null) return false
+  const value = unwrapped as Record<string, unknown>
+  if (value._tag === "AgentChatNotFoundError" && value.agentID === agentID) return true
+  // The instance raises `InvalidRequestError` with this `kind`, and the transport carries it either
+  // beside the name or inside the body depending on the path — so the KIND is the test and the HTTP
+  // status is not. A 404 alone would also match a wrong-agent 404, which is why the message is scoped.
+  const data = (value.data ?? value) as { kind?: unknown; message?: unknown }
+  if (data.kind === "agent_chat_not_found")
+    return typeof data.message !== "string" || data.message.includes(agentID)
+  return false
+}
+
 export function isSessionNotFoundError(error: unknown, sessionID: string) {
   // Bare client-synthesized Error (result-tuple path).
   if (error instanceof Error && error.message === `Session not found: ${sessionID}`) return true

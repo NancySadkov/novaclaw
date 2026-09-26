@@ -133,6 +133,8 @@ export const listAgents = async (sdk: {
  *  directories, the scratch dir and a child-session hydration pass — because a CHAT LIST is
  *  organised by where the work happens. A roster is organised by WHO does it, so it asks the
  *  instance for its sessions once and groups them by agent. */
+import { isAgentChatNotFoundError } from "@/utils/server-errors"
+
 export const listSessions = async (sdk: {
   session: { list: () => Promise<{ data?: unknown }> }
 }): Promise<SessionLike[]> => {
@@ -280,8 +282,48 @@ export const rememberOfficerChat = (
 export const cachedOfficerChat = (serverKey: string, agentID: string): OfficerChat | undefined =>
   officerChatCache.get(cacheKey(serverKey, agentID))
 
+/**
+ * 🔴 "Which chat is this colleague's" is answered by the INSTANCE, never derived here.
+ *
+ * This used to fold `listSessions(sdk)`, whose request carries no `limit` and therefore returns the
+ * newest 50 sessions (the protocol's documented default; `handlers/session.ts:90`). A colleague whose
+ * current chat fell outside that page was answered with an older chat — or with nothing, which is the
+ * same value that means "this colleague has never had a chat", and this function CREATES a chat on
+ * nothing. So the failure mode was: open a colleague you have been talking to all day, land in a
+ * stranger's transcript, or start a second one.
+ *
+ * `GET /api/agent/{agentID}/chat` answers it from SQL via the kernel's own `RosterChat.chatFor`, and
+ * 404s when there is genuinely nothing — which is a real answer, not a failed load, and is the only
+ * thing that should authorise `startChat` below.
+ */
+/**
+ * The instance's answer, with its 404 read as the answer it is.
+ *
+ * ⚠️ The generated client THROWS on a non-2xx, so "no chat" arrives as an exception. It is caught by
+ * KIND and not by message, and it is deliberately NOT treated as a transport failure: a colleague who
+ * has never had a chat is an ordinary state the roster renders, not an error to retry. Anything else
+ * propagates, because a colleague whose chat could not be read must not be answered with a blank.
+ */
+const officerChat = async (
+  sdk: { agent: { chat: (input: { agentID: string }) => Promise<unknown> } },
+  agentID: string,
+): Promise<{ readonly id: string; readonly directory: string } | undefined> => {
+  try {
+    const response = (await sdk.agent.chat({ agentID })) as {
+      data?: { data?: { id?: string; directory?: string } }
+    }
+    const chat = response?.data?.data
+    return chat?.id ? { id: chat.id, directory: chat.directory ?? "" } : undefined
+  } catch (error) {
+    if (isAgentChatNotFoundError(error, agentID)) return undefined
+    throw error
+  }
+}
+
 export const resolveOfficerChat = async (
-  sdk: Parameters<typeof listSessions>[0] & Parameters<typeof startChat>[0],
+  sdk: {
+    agent: { chat: (input: { agentID: string }) => Promise<unknown> }
+  } & Parameters<typeof startChat>[0],
   input: {
     readonly agentID: string
     readonly title?: string | undefined
@@ -289,10 +331,9 @@ export const resolveOfficerChat = async (
     readonly serverKey?: string | undefined
   },
 ): Promise<string | undefined> => {
-  const live = chatFor(await listSessions(sdk), input.agentID)
+  const live = await officerChat(sdk, input.agentID)
   if (live !== undefined) {
-    if (input.serverKey !== undefined)
-      rememberOfficerChat(input.serverKey, input.agentID, live.id, live.location?.directory)
+    if (input.serverKey !== undefined) rememberOfficerChat(input.serverKey, input.agentID, live.id, live.directory)
     return live.id
   }
   // ⚠️ A route that merely OPENS a colleague must not CREATE a chat as a side effect of navigation

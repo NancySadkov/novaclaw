@@ -212,6 +212,13 @@ describe("the officer chat cache", () => {
   test("resolveOfficerChat with create:false never creates a chat on navigation", async () => {
     const created: unknown[] = []
     const sdk = {
+      // The instance's answer, not a list to fold: a colleague with no chat is a 404 carrying the
+      // kind the client matches on. See `officerChat` in agent-list.ts.
+      agent: {
+        chat: async () => {
+          throw { data: { kind: "agent_chat_not_found", message: "no chat for this agent: nobody" } }
+        },
+      },
       session: {
         list: async () => ({ data: { data: [] } }),
         create: async (input: unknown) => {
@@ -227,15 +234,41 @@ describe("the officer chat cache", () => {
 
   test("resolveOfficerChat caches the live chat's id and directory", async () => {
     const sdk = {
+      agent: { chat: async () => ({ data: { data: { id: "ses_live", title: "t", directory: "/live" } } }) },
       session: {
-        list: async () => ({
-          data: {
-            data: [{ id: "ses_live", agent: "solo", time: { created: 1 }, location: { directory: "/live" } }],
-          },
-        }),
+        list: async () => ({ data: { data: [] } }),
+        create: async () => ({ data: { data: { id: "ses_created" } } }),
       },
     }
     expect(await resolveOfficerChat(sdk as never, { agentID: "solo", serverKey: "cache-srv5" })).toBe("ses_live")
     expect(cachedOfficerChat("cache-srv5", "solo")).toEqual({ id: "ses_live", directory: "/live" })
+  })
+
+  test("🔴 the answer comes from the instance, never from a page of the session list", async () => {
+    // The defect this replaced: `listSessions` asks for no limit and therefore gets the newest 50
+    // sessions. A colleague whose current chat is older than that page was answered with a STRANGER'S
+    // transcript — or with nothing, which is the value that means "no chat" and would have started a
+    // second one. A list carrying a different colleague's chat must not be consulted at all.
+    const decoy = { id: "ses_stranger", agent: "someone-else", time: { created: 9 } }
+    const sdk = {
+      agent: { chat: async () => ({ data: { data: { id: "ses_true", title: "t", directory: "/true" } } }) },
+      session: { list: async () => ({ data: { data: [decoy] } }), create: async () => ({ data: { data: {} } }) },
+    }
+    expect(await resolveOfficerChat(sdk as never, { agentID: "solo", serverKey: "cache-srv6" })).toBe("ses_true")
+    expect(cachedOfficerChat("cache-srv6", "solo")).toEqual({ id: "ses_true", directory: "/true" })
+  })
+
+  test("a fault reading the colleague's chat is NOT answered as 'no chat'", async () => {
+    // The 404 is an answer; a transport failure is not. Folding the second into the first is how a
+    // colleague who HAS a chat gets a second one created beside it.
+    const sdk = {
+      agent: {
+        chat: async () => {
+          throw { data: { kind: "unreachable", message: "connection refused" } }
+        },
+      },
+      session: { list: async () => ({ data: { data: [] } }), create: async () => ({ data: { data: {} } }) },
+    }
+    await expect(resolveOfficerChat(sdk as never, { agentID: "solo" })).rejects.toBeDefined()
   })
 })
