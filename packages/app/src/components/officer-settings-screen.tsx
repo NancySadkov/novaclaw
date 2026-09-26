@@ -1040,11 +1040,24 @@ export function OfficerSettingsScreen(props: {
           if (response.error) throw response.error
         })
       showToast({ variant: "success", title: language.t("agentConfig.retiredTitle", { name: name() }) })
-      // Retiring ARCHIVES the colleague's chat, so it leaves exactly the same orphaned tab clearing
-      // did — a conversation belonging to somebody no longer on the roster.
-      const retiredChat = chatFor(await listSessions(client), id)
+      /**
+       * 🔴 Close the tab by the COLLEAGUE, which is the identity an officer tab actually has.
+       *
+       * This used to re-derive the chat with `chatFor(await listSessions(client), id)` and close by
+       * session id, and it could not work. `chatFor` excludes ARCHIVED sessions on purpose — handing a
+       * colleague back the conversation the user just cleared is the one thing it must never do — and
+       * retiring ARCHIVES the chat, as the line above this one already said. So the lookup ran after
+       * the row it was looking for had become invisible to it, answered undefined, and the orphaned tab
+       * survived every retirement. The comment claimed to prevent exactly that.
+       *
+       * Two other reasons the derivation had to go. The list is a PAGE: `listSessions` asks for no
+       * limit and the instance returns the newest 50 sessions. And the colleague no longer EXISTS by
+       * this point, so `GET /api/agent/{agentID}/chat` would refuse with `agent_not_found` — correctly.
+       * None of that matters to the question being asked, which is "which tab was showing this
+       * colleague", and the tab store already answers it by the agent.
+       */
       const retiredKey = serverKey()
-      if (retiredChat && retiredKey) tabs.closeSessionTab(retiredKey, retiredChat.id)
+      if (retiredKey) tabs.closeAgentTab(retiredKey, id)
       props.onChanged?.()
       props.onDismiss()
     } catch (error) {
