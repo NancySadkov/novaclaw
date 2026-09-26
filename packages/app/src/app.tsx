@@ -399,12 +399,16 @@ function TargetAgentRoute() {
       setChat(undefined)
       setDirectory(undefined)
     }
-    void resolveOfficerChat(serverSDK().client.v2, { agentID: agent, create: false, serverKey: key })
+    void resolveOfficerChat(serverSDK().client.v2, { agentID: agent, create: true, serverKey: key })
       .then(async (id) => {
         if (mine !== run) return
-        // No live chat: opening a colleague must NOT create one as a side effect of navigation. Stay
-        // quiet; the roster's own "open to start one" gesture is what makes a chat.
-        if (id === undefined) return
+        // No live chat: ensure one, then render it. An officer page with NOTHING to show is the dead
+        // end the roster's own "open to start one" gesture exists to avoid — and an unresolved page
+        // that pulses forever is the "takes ages" the owner reported (measured live 2026-09-26).
+        if (id === undefined) {
+          setFailure(new Error(`${agent} has no chat`))
+          return
+        }
         setChat(id)
         const lineage = await sync()
           .session.lineage.resolve(id)

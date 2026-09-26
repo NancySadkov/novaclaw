@@ -713,10 +713,16 @@ function ContactRow(props: ContactRowProps) {
   let tile: HTMLDivElement | undefined
   const openChat = () => {
     if (props.suppressOpen() || props.starting) return
-    // Prime the colleague's chat cache from what the roster ALREADY knows, so the agent route renders
-    // its session immediately instead of re-listing every chat on the instance (owner, 2026-09-26).
     const liveSession = live().sessionID
-    if (props.serverKey && liveSession)
+    // No chat yet: the roster's OWN gesture creates one (and opens it), instead of navigating to an
+    // officer page with nothing to render (owner, 2026-09-26).
+    if (!liveSession) {
+      props.onStart()
+      return
+    }
+    // Prime the colleague's chat cache from what the roster ALREADY knows, so the agent route renders
+    // its session immediately instead of re-listing every chat on the instance.
+    if (props.serverKey)
       rememberOfficerChat(
         props.serverKey,
         props.view.id,
