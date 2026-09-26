@@ -2,7 +2,7 @@ import type { SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { showToast } from "@/utils/toast"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { Binary } from "@novaclaw/core/util/binary"
-import { useNavigate, useParams, useSearchParams } from "@solidjs/router"
+import { useNavigate, useSearchParams } from "@solidjs/router"
 import { type Accessor } from "solid-js"
 import { useTabs } from "@/context/tabs"
 import { useServer } from "@/context/server"
@@ -358,6 +358,16 @@ type PromptSubmitInput = {
   onNewSessionWorktreeReset?: () => void
   stopSession?: () => Promise<void>
   onSubmit?: () => void
+  /**
+   * 🔴 The session this composer is showing — the SAME id the control's `working()` reads.
+   *
+   * It used to come from `useParams().id`, and that is the defect this type now prevents: a route
+   * may address a colleague (`/server/<key>/agent/<agentID>`), where there is no `id` param at all
+   * and every read of it is `undefined`. The button then said Stop, the click ran `abort()`,
+   * `abort()` found no id and returned — no request, no spinner, no error (measured in the packaged
+   * app, 2026-09-26). One fact, two sources, and the composer may only act on the session it renders.
+   */
+  sessionID?: Accessor<string | undefined>
 }
 
 export function createPromptSubmit(input: PromptSubmitInput) {
@@ -369,7 +379,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const prompt = input.prompt
   const layout = useLayout()
   const language = useLanguage()
-  const params = useParams()
+  /**
+   * 🔴 ONE session id, and it is the composer's own. A route may address a colleague rather than a
+   * chat, so a raw `useParams().id` is `undefined` on a page that is very much showing a session —
+   * which is how a Stop click could run, do nothing, and report nothing (2026-09-26). The route
+   * parameter is a way to ADDRESS a page; this is which session the composer is acting on.
+   */
+  const sessionID = input.sessionID ?? (() => undefined)
   const [search] = useSearchParams<{ draftId?: string }>()
   const tabs = useTabs()
   const server = useServer()
@@ -378,12 +394,12 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const errorMessage = (err: unknown) => layoutErrorMessage(err, language.t("common.requestFailed"))
 
   const abort = async () => {
-    const sessionID = params.id
-    if (!sessionID) return Promise.resolve()
+    const id = sessionID()
+    if (!id) return Promise.resolve()
 
-    serverSync().session.set("todo", sessionID, [])
+    serverSync().session.set("todo", id, [])
 
-    const key = pendingKey(sessionID)
+    const key = pendingKey(id)
     const queued = pending.get(key)
     if (queued) {
       queued.abort.abort()
@@ -393,7 +409,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
     return (input.stopSession
       ? input.stopSession()
-      : sdk().client.v2.session.interrupt({ sessionID }).then(() => undefined))
+      : sdk().client.v2.session.interrupt({ sessionID: id }).then(() => undefined))
       .catch((err) => {
         // Stop is the control a user reaches for when something is already going wrong, so a silent
         // failure here is the worst-placed one in the composer: the agent keeps streaming and the
@@ -465,7 +481,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       // the branch that makes Enter stop too. If a click ever lands here, the ledger shows it.
       if (input.working()) {
         pushStopLedger({
-          sessionID: params.id,
+          sessionID: sessionID(),
           shown: "stop",
           working: true,
           blank: true,
@@ -481,7 +497,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     // spinner here (that memo lives in the component); `working: true` is the load-bearing fact.
     if (input.working())
       pushStopLedger({
-        sessionID: params.id,
+        sessionID: sessionID(),
         shown: "stop",
         working: true,
         blank: false,
@@ -505,7 +521,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     input.resetHistoryNavigation()
 
     const projectDirectory = sdk().directory
-    const isNewSession = !params.id
+    const isNewSession = !sessionID()
     const worktreeSelection = input.newSessionWorktree?.() || "main"
 
     let sessionDirectory = projectDirectory

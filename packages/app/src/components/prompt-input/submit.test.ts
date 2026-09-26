@@ -31,6 +31,15 @@ const navigated: string[] = []
 let promptLanded: string | undefined
 
 let params: { id?: string } = {}
+/**
+ * 🔴 The session the composer is SHOWING, which is what the stop and the send act on.
+ *
+ * It used to be the route's `params.id`, and that was the defect measured in the packaged app
+ * (2026-09-26): a route may address a colleague (`/server/<key>/agent/<agentID>`), where there is no
+ * `id` param, so `abort()` found nothing to stop and returned in silence while the button read Stop.
+ * The composer takes its id from its own controls now, and these tests say so.
+ */
+let composerSession: string | undefined
 let search: { draftId?: string } = {}
 let selected = "/repo/worktree-a"
 let variant: string | undefined
@@ -299,6 +308,7 @@ beforeEach(() => {
   promotedDrafts.length = 0
   promptedVariants.length = 0
   params = {}
+  composerSession = undefined
   search = {}
   sentShell.length = 0
   syncedDirectories.length = 0
@@ -315,7 +325,7 @@ describe("prompt submit worktree selection", () => {
   // control a user reaches for when something is already wrong; `.catch(() => {})` meant the agent
   // kept streaming with no reason given.
   test("reports interrupt failures", async () => {
-    params = { id: "session-1" }
+    composerSession = "session-1"
     interruptError = new Error("interrupt unavailable")
     const submit = createPromptSubmit({
       prompt,
@@ -330,6 +340,7 @@ describe("prompt submit worktree selection", () => {
       addToHistory: () => undefined,
       resetHistoryNavigation: () => undefined,
       setMode: () => undefined,
+      sessionID: () => composerSession,
     })
 
     await submit.abort()
@@ -338,7 +349,7 @@ describe("prompt submit worktree selection", () => {
   })
 
   test("the session page owns one stop request for the button and Escape", async () => {
-    params = { id: "session-1" }
+    composerSession = "session-1"
     let pageStops = 0
     const submit = createPromptSubmit({
       prompt,
@@ -353,12 +364,53 @@ describe("prompt submit worktree selection", () => {
       addToHistory: () => undefined,
       resetHistoryNavigation: () => undefined,
       setMode: () => undefined,
+      sessionID: () => composerSession,
       stopSession: async () => { pageStops++ },
     })
 
     await submit.abort()
 
     expect(pageStops).toBe(1)
+    expect(interruptCalls).toBe(0)
+  })
+
+  /**
+   * 🔴 THE REGRESSION, AS A TEST (owner, 2026-09-26: "Stop clicks are just ignored").
+   *
+   * `params` is left EMPTY on purpose: that is what the route holds on a COLLEAGUE page
+   * (`/server/<key>/agent/<agentID>` — no `id` param at all), and it is what the packaged app's
+   * composer saw while the button read Stop and the agent streamed. The click ran `abort()`,
+   * `abort()` read the route, found nothing, and returned — no request, no spinner, no toast. Esc
+   * kept working because the session page's own keyboard controller passes its own stop.
+   *
+   * The stop must therefore name the session the composer RENDERS, whatever the route holds.
+   */
+  test("🔴 stops the session the composer renders even when the route names a colleague", async () => {
+    composerSession = "ses_daedalus"
+    params = {}
+    let stopped: string | undefined
+    const submit = createPromptSubmit({
+      prompt,
+      info: () => ({ id: "ses_daedalus" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      mode: () => "normal",
+      working: () => true,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      sessionID: () => composerSession,
+      stopSession: async () => { stopped = composerSession },
+    })
+
+    await submit.abort()
+
+    expect(stopped).toBe("ses_daedalus")
+    // …and the fallback must not quietly take over either: a request naming an undefined session is
+    // the same silent failure wearing a network call.
     expect(interruptCalls).toBe(0)
   })
 
@@ -390,6 +442,7 @@ describe("prompt submit worktree selection", () => {
       addToHistory: () => undefined,
       resetHistoryNavigation: () => undefined,
       setMode: () => undefined,
+      sessionID: () => composerSession,
       newSessionWorktree: () => selected,
       onNewSessionWorktreeReset: () => undefined,
       onSubmit: () => undefined,
@@ -420,6 +473,7 @@ describe("prompt submit worktree selection", () => {
       addToHistory: () => undefined,
       resetHistoryNavigation: () => undefined,
       setMode: () => undefined,
+      sessionID: () => composerSession,
       newSessionWorktree: () => selected,
       onNewSessionWorktreeReset: () => undefined,
       onSubmit: () => undefined,
@@ -457,6 +511,7 @@ describe("prompt submit worktree selection", () => {
       addToHistory: () => undefined,
       resetHistoryNavigation: () => undefined,
       setMode: () => undefined,
+      sessionID: () => composerSession,
       newSessionWorktree: () => selected,
       onNewSessionWorktreeReset: () => undefined,
       onSubmit: () => undefined,
@@ -468,7 +523,7 @@ describe("prompt submit worktree selection", () => {
   })
 
   test("includes the selected variant on optimistic prompts", async () => {
-    params = { id: "session-1" }
+    composerSession = "session-1"
     variant = "high"
 
     const submit = createPromptSubmit({
@@ -484,6 +539,7 @@ describe("prompt submit worktree selection", () => {
       addToHistory: () => undefined,
       resetHistoryNavigation: () => undefined,
       setMode: () => undefined,
+      sessionID: () => composerSession,
       onSubmit: () => undefined,
     })
 
@@ -512,6 +568,7 @@ describe("prompt submit worktree selection", () => {
       addToHistory: () => undefined,
       resetHistoryNavigation: () => undefined,
       setMode: () => undefined,
+      sessionID: () => composerSession,
       newSessionWorktree: () => selected,
       onNewSessionWorktreeReset: () => undefined,
       onSubmit: () => undefined,
@@ -530,7 +587,7 @@ describe("prompt submit worktree selection", () => {
     // The kernel resolves a filed chat to the colleague's CURRENT chat and answers with the session
     // that took the prompt. Without this the user's words would be delivered into a chat they are not
     // looking at, and their screen would sit on the superseded conversation.
-    params = { id: "session-1" }
+    composerSession = "session-1"
     promptLanded = "ses_landed"
 
     const submit = createPromptSubmit({
@@ -546,6 +603,7 @@ describe("prompt submit worktree selection", () => {
       addToHistory: () => undefined,
       resetHistoryNavigation: () => undefined,
       setMode: () => undefined,
+      sessionID: () => composerSession,
       newSessionWorktree: () => selected,
       onNewSessionWorktreeReset: () => undefined,
       onSubmit: () => undefined,
@@ -561,7 +619,7 @@ describe("prompt submit worktree selection", () => {
   })
 
   test("CONTROL — a prompt that landed where it was sent navigates nowhere", async () => {
-    params = { id: "session-1" }
+    composerSession = "session-1"
     promptLanded = "session-1"
     navigated.length = 0
 
@@ -578,6 +636,7 @@ describe("prompt submit worktree selection", () => {
       addToHistory: () => undefined,
       resetHistoryNavigation: () => undefined,
       setMode: () => undefined,
+      sessionID: () => composerSession,
       newSessionWorktree: () => selected,
       onNewSessionWorktreeReset: () => undefined,
       onSubmit: () => undefined,

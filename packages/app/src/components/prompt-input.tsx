@@ -572,6 +572,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       onNewSessionWorktreeReset: props.onNewSessionWorktreeReset,
       stopSession: props.stop?.run,
       onSubmit: props.onSubmit,
+      // 🔴 The id the control's `working()` above already reads. The stop and the send used to take
+      // the session from the ROUTE instead, which names a colleague as often as a chat and so reads
+      // `undefined` on a page that is plainly showing one — the click then did nothing, silently,
+      // while the button said Stop (measured in the packaged app, 2026-09-26).
+      sessionID: () => props.controls.session.id,
     })
 
   const submit = (event: Event) => {

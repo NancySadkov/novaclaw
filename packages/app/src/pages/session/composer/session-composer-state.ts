@@ -1,18 +1,22 @@
 import { createEffect, createMemo, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { Todo } from "@novaclaw/sdk/v2"
-import { useParams } from "@solidjs/router"
+import { useResolvedSessionID } from "@/pages/session/session-layout"
 import { useServerSync } from "@/context/server-sync"
 import { useSync } from "@/context/sync"
 import { todoDockAtBoundary, todoState } from "./session-composer-todo"
 
 export function createSessionComposerController(options?: { closeMs?: number | (() => number) }) {
-  const params = useParams()
+  // 🔴 The RESOLVED session id, not `useParams().id`. A route addresses a colleague as often as a
+  // chat, and under a colleague there is no `id` param — so every read below was `undefined`: the
+  // dock never opened and `live()` was permanently false on a working agent. Same class as the Stop
+  // click that did nothing (2026-09-26), same subtree, same fix.
+  const sessionID = useResolvedSessionID()
   const sync = useSync()
   const serverSync = useServerSync()
 
   const todos = createMemo((): Todo[] => {
-    const id = params.id
+    const id = sessionID()
     if (!id) return []
     return serverSync().session.data.todo[id] ?? []
   })
@@ -21,10 +25,10 @@ export function createSessionComposerController(options?: { closeMs?: number | (
     () => todos().length > 0 && todos().every((todo) => todo.status === "completed" || todo.status === "cancelled"),
   )
 
-  const live = createMemo(() => sync().data.session_working(params.id ?? ""))
+  const live = createMemo(() => sync().data.session_working(sessionID() ?? ""))
 
   const [store, setStore] = createStore({
-    sessionID: params.id,
+    sessionID: sessionID(),
     dock: todos().length > 0 && !done() && live(),
     closing: false,
     opening: false,
@@ -50,14 +54,14 @@ export function createSessionComposerController(options?: { closeMs?: number | (
 
   // Keep stale turn todos from reopening if the model never clears them.
   const clear = () => {
-    const id = params.id
+    const id = sessionID()
     if (!id) return
     sync().set("todo", id, [])
   }
 
   createEffect(
     on(
-      () => [params.id, todos().length, done(), live()] as const,
+      () => [sessionID(), todos().length, done(), live()] as const,
       ([id, count, complete, active], previous) => {
         if (raf) cancelAnimationFrame(raf)
         raf = undefined
@@ -126,11 +130,11 @@ export function createSessionComposerController(options?: { closeMs?: number | (
   return {
     todos,
     dock: () =>
-      store.sessionID === params.id
+      store.sessionID === sessionID()
         ? store.dock
         : todoDockAtBoundary(todoState({ count: todos().length, done: done(), live: live() })),
-    closing: () => store.sessionID === params.id && store.closing,
-    opening: () => store.sessionID === params.id && store.opening,
+    closing: () => store.sessionID === sessionID() && store.closing,
+    opening: () => store.sessionID === sessionID() && store.opening,
   }
 }
 
