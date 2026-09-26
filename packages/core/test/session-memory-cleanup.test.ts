@@ -109,15 +109,18 @@ describe("deleting a chat takes its memories", () => {
   it.effect("🔴 a session-scoped memory is gone once the chat is deleted", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
       const memory = WorldMemory.client(yield* WorldMemory.node.service)
       const created = yield* session.create({ location, agent: rootAgent })
       yield* memory.addMemory({ id: "m1", kind: "entity", text: "a private note", scope: `session:${created.id}` })
       yield* memory.addMemory({ id: "keep", kind: "entity", text: "a shared note", scope: "global" })
 
       yield* session.remove(created.id)
+      // 🔴 The removal ENQUEUES the durable tombstone and FORKS the sweep, so it never waits on the
+      // graph (owner, 2026-09-26). Discharge it here so this asserts the CONTRACT, not a race with the
+      // forked fiber: whatever the request did, the tombstone makes the memory clearable.
+      yield* SessionMemoryCleanup.sweep(db, memory)
 
-      // `session.remove` writes the tombstone AND sweeps, so the memory is gone by the time the user's
-      // request returns. The durable row is what makes it survive an outage, not what delays it.
       // ⚠️ `includeInvalid` — `clearScope` is a hard delete, so a soft-invalidated row would still be
       // here and this assertion has to be able to see one.
       expect(yield* survivors(memory, ["m1", "keep"])).toEqual(["keep"])
@@ -127,6 +130,7 @@ describe("deleting a chat takes its memories", () => {
   it.effect("⚠️ another chat's memories are untouched", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
       const memory = WorldMemory.client(yield* WorldMemory.node.service)
       const doomed = yield* session.create({ location, agent: rootAgent })
       const survivor = yield* session.create({ location, agent: rootAgent })
@@ -134,6 +138,7 @@ describe("deleting a chat takes its memories", () => {
       yield* memory.addMemory({ id: "stays", kind: "entity", text: "y", scope: `session:${survivor.id}` })
 
       yield* session.remove(doomed.id)
+      yield* SessionMemoryCleanup.sweep(db, memory)
 
       expect(yield* survivors(memory, ["gone", "stays"])).toEqual(["stays"])
     }),
@@ -142,6 +147,7 @@ describe("deleting a chat takes its memories", () => {
   it.effect("every chat in a deleted TREE loses its memories, not just the root", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
       const memory = WorldMemory.client(yield* WorldMemory.node.service)
       const parent = yield* session.create({ location, agent: rootAgent })
       const child = yield* session.create({ location, agent: rootAgent, parentID: parent.id })
@@ -149,6 +155,7 @@ describe("deleting a chat takes its memories", () => {
         yield* memory.addMemory({ id: `m_${id}`, kind: "entity", text: "note", scope: `session:${id}` })
 
       yield* session.remove(parent.id)
+      yield* SessionMemoryCleanup.sweep(db, memory)
 
       expect(yield* survivors(memory, [`m_${parent.id}`, `m_${child.id}`])).toEqual([])
     }),
@@ -158,8 +165,10 @@ describe("deleting a chat takes its memories", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
       const { db } = yield* Database.Service
+      const memory = WorldMemory.client(yield* WorldMemory.node.service)
       const created = yield* session.create({ location, agent: rootAgent })
       yield* session.remove(created.id)
+      yield* SessionMemoryCleanup.sweep(db, memory)
       expect(yield* SessionMemoryCleanup.pending(db)).toEqual([])
     }),
   )

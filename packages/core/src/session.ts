@@ -1,9 +1,9 @@
 export * as SessionV2 from "./session"
 export * from "./session/schema"
 
-import { DateTime, Duration, Effect, Layer, Schema, Context, Stream } from "effect"
+import { DateTime, Duration, Effect, Layer, Schedule, Schema, Context, Stream } from "effect"
 import { ListAnchor } from "@novaclaw/schema/session"
-import { and, asc, desc, eq, gt, isNull, like, lt, or, type SQL } from "drizzle-orm"
+import { and, asc, desc, eq, gt, isNull, like, lt, lte, or, type SQL } from "drizzle-orm"
 import { ProjectV2 } from "./project"
 import { WorkspaceV2 } from "./workspace"
 import { ModelV2 } from "./model"
@@ -978,6 +978,46 @@ const resolveFiledChat = (
  * on disk forever. It runs BEFORE the delete publish so a store fault aborts the removal instead
  * of reporting success over a half-deleted session.
  */
+/**
+ * Rows one synchronous transcript `DELETE` may take before the fiber yields. Paired with the
+ * event-log batch in `event.ts`: together they keep the removal path's largest single statement
+ * bounded, so a busy server is never mistaken for a hung one by the desktop supervisor.
+ */
+const SESSION_MESSAGE_PURGE_BATCH = 2_000
+
+/**
+ * Reclaim a chat's transcript in bounded, yielding batches.
+ *
+ * 🔴 The `session.deleted` projector deletes the `session` row and its `ON DELETE CASCADE` children in
+ * ONE synchronous statement. For a chat with a large transcript that is a long block on the single
+ * SQLite connection. Draining `session_message` here first — chunked, yielding between batches —
+ * leaves the cascade to delete only the small satellite rows, so no removal step can stall the loop.
+ */
+const purgeSessionMessages = (
+  db: Database.Interface["db"],
+  sessionID: SessionSchema.ID,
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    for (;;) {
+      const batch = yield* db
+        .select({ seq: SessionMessageTable.seq })
+        .from(SessionMessageTable)
+        .where(eq(SessionMessageTable.session_id, sessionID))
+        .orderBy(asc(SessionMessageTable.seq))
+        .limit(SESSION_MESSAGE_PURGE_BATCH)
+        .all()
+        .pipe(Effect.orDie)
+      if (batch.length === 0) break
+      const last = batch[batch.length - 1]!.seq
+      yield* db
+        .delete(SessionMessageTable)
+        .where(and(eq(SessionMessageTable.session_id, sessionID), lte(SessionMessageTable.seq, last)))
+        .run()
+        .pipe(Effect.orDie)
+      yield* Effect.yieldNow
+    }
+  }).pipe(Effect.orDie)
+
 export const removeSessionRecord = (
   deps: {
     readonly db: Database.Interface["db"]
@@ -1034,6 +1074,7 @@ export const removeSessionRecord = (
       yield* AgentStatus.removeFrom(db, row.agent)
       yield* events.publish(AgentStatusEvent.Removed, { agent: row.agent }, { location })
     }
+    yield* purgeSessionMessages(db, sessionID)
     const deletedInfo = fromRow(row)
     yield* events.publish(SessionRecordEvent.Deleted, {
       sessionID,
@@ -1099,6 +1140,15 @@ export const layer = Layer.effect(
      * so running it here can only move the outstanding set toward zero.
      */
     yield* Effect.forkScoped(SessionMemoryCleanup.sweep(db, memory).pipe(Effect.ignore))
+    /**
+     * 🔴 …and keep draining while the process lives. The removal request forks its sweep so it never
+     * waits on the graph; if that fiber is lost (the engine was down), the tombstone would otherwise
+     * sit until the next restart. Draining on an interval is what turns "at the next boot" into
+     * "shortly, on its own", without putting any of it back on the request path.
+     */
+    yield* Effect.forkScoped(
+      SessionMemoryCleanup.sweep(db, memory).pipe(Effect.ignore, Effect.repeat(Schedule.spaced("30 seconds"))),
+    )
     const isDurableSessionEvent = Schema.is(SessionEvent.Durable)
     const decode = SessionMessageRead.decodeRow
 
@@ -1146,7 +1196,16 @@ export const layer = Layer.effect(
          * store nor makes memory a hard dependency of deleting a chat. With memory disabled the sweep
          * defers every row forever, which is correct: there is no store holding anything to clear.
          */
-        Effect.tap(() => SessionMemoryCleanup.sweep(db, memory).pipe(Effect.ignore)),
+        /**
+         * .then discharge the memory tombstones the removal just wrote — OFF the request.
+         *
+         * 🔴 **FORKED, never awaited** (owner, 2026-09-26). `clearScope` reaches the KB graph engine,
+         * and a removal request must not wait on it: an awaited sweep is what let one deletion hold a
+         * request open across the engine's timeouts while the desktop supervisor grew impatient. The
+         * durable tombstone above is the guarantee (NC-SEC-019); this fiber is only the "do it now"
+         * nudge, and the boot sweep plus the periodic drain retry anything it misses.
+         */
+        Effect.tap(() => SessionMemoryCleanup.sweep(db, memory).pipe(Effect.ignore, Effect.forkDetach)),
       )
 
     const result = Service.of({

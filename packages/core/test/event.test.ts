@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { readFile } from "node:fs/promises"
 import { Cause, DateTime, Deferred, Effect, Exit, Fiber, Layer, Option, Schema, Stream } from "effect"
-import { EventV2 } from "@novaclaw/core/event"
+import { EventV2, EVENT_PURGE_BATCH } from "@novaclaw/core/event"
 import { Event } from "@novaclaw/schema/event"
 import { Session } from "@novaclaw/schema/session"
 import { SessionEvent } from "@novaclaw/schema/session-event"
@@ -456,6 +456,37 @@ describe("EventV2", () => {
         .pipe(Effect.orDie)
 
       expect(rows.map((row) => row.seq)).toEqual([0, 1])
+    }),
+  )
+
+  it.effect("removes an aggregate larger than one purge batch, clearing every row", () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2.Service
+      const { db } = yield* Database.Service
+      const aggregateID = EventV2.ID.create()
+
+      // One batch plus one: the second, partial batch is where an off-by-one in the seq-range
+      // chunking would leave a row behind — the exact shape a big chat's log has.
+      const total = EVENT_PURGE_BATCH + 1
+      for (let index = 0; index < total; index++)
+        yield* events.publish(SyncMessage, { id: aggregateID, text: `row-${index}` })
+
+      yield* events.remove(aggregateID)
+
+      const rows = yield* db
+        .select()
+        .from(EventTable)
+        .where(eq(EventTable.aggregate_id, aggregateID))
+        .all()
+        .pipe(Effect.orDie)
+      const sequences = yield* db
+        .select()
+        .from(EventSequenceTable)
+        .where(eq(EventSequenceTable.aggregate_id, aggregateID))
+        .all()
+        .pipe(Effect.orDie)
+      expect(rows).toHaveLength(0)
+      expect(sequences).toHaveLength(0)
     }),
   )
 

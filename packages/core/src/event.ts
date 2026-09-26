@@ -3,7 +3,7 @@ export * as EventV2 from "./event"
 import { Cause, Context, Effect, Layer, Option, PubSub, Queue, Schema, Stream } from "effect"
 import { Event } from "@novaclaw/schema/event"
 import type { Data, Definition, Payload } from "@novaclaw/schema/event"
-import { and, asc, eq, gt, inArray } from "drizzle-orm"
+import { and, asc, eq, gt, inArray, lte } from "drizzle-orm"
 import { Database } from "./database/database"
 import { EventSequenceTable, EventTable } from "./event/sql"
 import { Location } from "./location"
@@ -18,6 +18,13 @@ export type { Data, Definition, Payload } from "@novaclaw/schema/event"
 
 export type Subscriber<D extends Definition = Definition> = (event: Payload<D>) => Effect.Effect<void>
 export type Unsubscribe = Effect.Effect<void>
+
+/**
+ * How many event rows one synchronous `DELETE` may take before the fiber yields. Sized so a batch
+ * costs on the order of 10-30 ms against the indexes on `event(aggregate_id, seq)` — short enough
+ * that the desktop supervisor's health probes never miss while a large transcript is reclaimed.
+ */
+export const EVENT_PURGE_BATCH = 2_000
 
 export const latestSequence = Effect.fn("EventV2.latestSequence")(function* (
   db: Database.Interface["db"],
@@ -549,14 +556,36 @@ export const layerWith = (options?: LayerOptions) =>
       }
 
       function remove(aggregateID: string) {
-        return db
-          .transaction(() =>
-            Effect.gen(function* () {
-              yield* db.delete(EventSequenceTable).where(eq(EventSequenceTable.aggregate_id, aggregateID)).run()
-              yield* db.delete(EventTable).where(eq(EventTable.aggregate_id, aggregateID)).run()
-            }),
-          )
-          .pipe(Effect.orDie)
+        return Effect.gen(function* () {
+          /**
+           * 🔴 **CHUNKED, not one statement** (owner, 2026-09-26). A long-lived colleague's aggregate
+           * holds hundreds of thousands of event rows (measured on the owner's instance: 255,753 for
+           * one chat), and a single `DELETE ... WHERE aggregate_id = ?` on that is a multi-second
+           * SYNCHRONOUS block on the one SQLite connection — long enough to miss the desktop
+           * supervisor's health probes, which killed and restarted a server that was only busy. Each
+           * batch here is bounded and the fiber YIELDS between them, so HTTP and `/global/health` keep
+           * running while a big transcript is reclaimed.
+           */
+          for (;;) {
+            const batch = yield* db
+              .select({ seq: EventTable.seq })
+              .from(EventTable)
+              .where(eq(EventTable.aggregate_id, aggregateID))
+              .orderBy(asc(EventTable.seq))
+              .limit(EVENT_PURGE_BATCH)
+              .all()
+              .pipe(Effect.orDie)
+            if (batch.length === 0) break
+            const last = batch[batch.length - 1]!.seq
+            yield* db
+              .delete(EventTable)
+              .where(and(eq(EventTable.aggregate_id, aggregateID), lte(EventTable.seq, last)))
+              .run()
+              .pipe(Effect.orDie)
+            yield* Effect.yieldNow
+          }
+          yield* db.delete(EventSequenceTable).where(eq(EventSequenceTable.aggregate_id, aggregateID)).run().pipe(Effect.orDie)
+        }).pipe(Effect.orDie)
       }
 
       function claim(aggregateID: string, ownerID: string) {
