@@ -7,6 +7,7 @@ import { Scratch } from "@novaclaw/core/scratch"
 import { AgentRetire } from "@novaclaw/core/agent/retire"
 import { AgentUsage } from "@novaclaw/core/agent/usage"
 import { AgentTeamChat } from "@novaclaw/core/agent/team-chat"
+import { RosterChat } from "@novaclaw/core/session/roster-chat"
 import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { Database } from "@novaclaw/core/database/database"
 import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
@@ -153,6 +154,26 @@ export const AgentHandler = handlerLayer(
             // stopped growing would keep answering with its last busy day forever.
             const since = AgentUsage.minuteOf(Date.now()) - 24 * 60
             return yield* AgentUsage.since(db, { agent: ctx.params.agentID, minute: since })
+          }),
+        ),
+      )
+      .handle("agent.chat", (ctx) =>
+        response(
+          Effect.gen(function* () {
+            const { db } = yield* Database.Service
+            // The kernel's rule, not a second one: `RosterChat.chatFor` is the authority on which chat
+            // belongs to a colleague (root only, never archived — a cleared conversation must not be
+            // handed back). Re-deriving it here would be the exact defect this endpoint exists to
+            // remove, one layer in.
+            const chat = yield* RosterChat.chatFor(db, ctx.params.agentID)
+            // 404 rather than a null body: "this colleague has never had a chat" is a real, different
+            // answer from "here is the chat", and a caller that cannot tell them apart will treat a
+            // colleague who has never been used as one whose chat failed to load.
+            if (!chat)
+              return yield* Effect.fail(
+                new InvalidRequestError({ kind: "agent_chat_not_found", message: "no chat for this agent" }),
+              )
+            return { id: chat.id, title: chat.title, directory: chat.directory }
           }),
         ),
       )

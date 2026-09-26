@@ -220,3 +220,30 @@ export const TeamChatPage = Schema.Struct({
     latest: Schema.optional(Schema.String),
   }),
 }).annotate({ identifier: "Agent.TeamChatPage" })
+
+/**
+ * A colleague's own chat, resolved by the instance.
+ *
+ * ⚠️ This is the ANSWER, not a list to fold. The client could always derive it — `apps/roster-live.ts`
+ * does, and the kernel derives the same thing in `RosterChat.chatFor` — but the client's input is
+ * `GET /api/session`, whose documented default is "the newest 50 sessions". So a derivation over that
+ * page is a derivation over a PAGE: a colleague whose current chat falls outside it is answered with
+ * an older chat, or with nothing, and "nothing" is the same value that means "this colleague has
+ * never had a chat".
+ *
+ * `RosterChat.chatFor` is deliberately not shared with the client across the wire boundary — the
+ * kernel says so, and the rule is short enough to state and test twice. This endpoint is not that
+ * sharing. It is the one question the client cannot answer correctly from what it already holds, so
+ * the instance answers it, once, from SQL.
+ */
+export interface Chat extends Schema.Schema.Type<typeof Chat> {}
+export const Chat = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  /**
+   * Where this chat actually runs — NOT the colleague's configured folder, which diverges the moment
+   * the colleague is reassigned (`agent/workspace.ts`). A caller that must tell the chat something
+   * true about its own root gets it here and nowhere else.
+   */
+  directory: Schema.String,
+}).annotate({ identifier: "Agent.Chat" })

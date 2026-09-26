@@ -11671,6 +11671,92 @@
         ]
       }
     },
+    "/api/agent/{agentID}/chat": {
+      "get": {
+        "tags": ["agents"],
+        "operationId": "v2.agent.chat",
+        "parameters": [
+          {
+            "name": "agentID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "$ref": "#/components/schemas/LocationInfo"
+                    },
+                    "data": {
+                      "$ref": "#/components/schemas/AgentChat"
+                    }
+                  },
+                  "required": ["location", "data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Resolve the one live root chat belonging to this colleague, or 404 when it has never had one. This is the agent-addressed form of the question every per-colleague surface needs — the working dot, the badge, the transcript to open — answered from the database rather than derived from a page of a session list. `directory` is where the chat actually runs, which is not necessarily the colleague's configured folder.",
+        "summary": "A colleague's own chat",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.agent.chat({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/agent/{agentID}/avatar": {
       "get": {
         "tags": ["agents"],
@@ -39051,6 +39137,22 @@
           }
         },
         "required": ["data", "cursor"],
+        "additionalProperties": false
+      },
+      "AgentChat": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "directory": {
+            "type": "string"
+          }
+        },
+        "required": ["id", "title", "directory"],
         "additionalProperties": false
       },
       "AgentUsageMinute": {

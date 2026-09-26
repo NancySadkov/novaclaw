@@ -49,6 +49,42 @@ export const AgentGroup = HttpApiGroup.make("server.agent")
   )
   .add(
     /**
+     * 🔴 THE COLLEAGUE'S OWN CHAT — the one identity question a client must not answer itself.
+     *
+     * A session is a component ON an agent (AGENTS.md), so "this colleague's chat" is the addressable
+     * thing and the transcript id is an implementation detail that changes when the user clears the
+     * chat. A client can derive it — the roster does — but the derivation runs over
+     * `GET /api/session`, whose documented default is "the newest 50 sessions", so the answer is only
+     * as complete as that page. A colleague whose current chat is older than the page is answered
+     * with a different chat, or with nothing at all, and nothing is indistinguishable from "this
+     * colleague has never had a chat".
+     *
+     * `RosterChat.chatFor` in the kernel answers this from SQL and is deliberately not shared across
+     * the wire boundary. This is not that sharing — it is the instance answering, once, the one
+     * question the client cannot answer correctly from what it already holds.
+     */
+    HttpApiEndpoint.get("agent.chat", "/api/agent/:agentID/chat", {
+      params: { agentID: Agent.ID },
+      query: LocationQuery,
+      success: Location.response(Agent.Chat),
+      error: InvalidRequestError,
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.agent.chat",
+          summary: "A colleague's own chat",
+          description:
+            "Resolve the one live root chat belonging to this colleague, or 404 when it has never had one. " +
+            "This is the agent-addressed form of the question every per-colleague surface needs — the " +
+            "working dot, the badge, the transcript to open — answered from the database rather than " +
+            "derived from a page of a session list. `directory` is where the chat actually runs, which " +
+            "is not necessarily the colleague's configured folder.",
+        }),
+      ),
+  )
+  .add(
+    /**
      * The portrait bytes owned by the instance. This is a raw endpoint because an image must remain
      * bytes all the way to the browser; putting it in the roster JSON would make every refresh carry
      * the same base64 payload and would make the model/UI identity split again.
