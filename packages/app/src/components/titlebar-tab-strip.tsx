@@ -16,6 +16,7 @@ import { useTabs } from "@/context/tabs"
 import { createTabPromptState } from "@/context/prompt"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { canStartTabDrag, TAB_DRAG_ACTIVATION_DISTANCE } from "./titlebar-tab-gesture"
+import { chatFor } from "@/apps/roster-live"
 import type { SessionV2Info as Session } from "@novaclaw/sdk/v2"
 
 const sortableTransition = { duration: 0 }
@@ -67,11 +68,37 @@ function SessionTabSlot(props: {
     },
     ({ id, ctx }) => ctx.sync.session.resolve(id).catch(() => undefined),
   )
+  /**
+   * 🔴 An AGENT TAB MUST STILL NAME THE CHAT ITS BADGES ARE ABOUT.
+   *
+   * The stub below carries `id: ""`, and `""` is not a session: every per-session read the tab makes
+   * through it asks about a session that does not exist. The working dot is one of those reads — it
+   * asks `session_working(id)`, which reads `session_status[id]`, so an agent tab asked about session
+   * `""` and got `undefined` for as long as the tab existed. Measured 2026-09-26 in the packaged
+   * release build: `ses_nova` `busy/provider` for 17 s, the composer reading Stop, and the pulsing dot
+   * absent in 10 of 10 samples, on a tab whose id was the empty string.
+   *
+   * The id is not decoration. It came from `id: ""` only because the tab renders BEFORE its chat is
+   * resolved, and the strip has always been able to name the colleague's current chat by asking the
+   * colleague — `chatFor`, the same answer the roster and the settings screen act on. The stub stays
+   * as the fallback for the window before that answer exists, so a tab still renders with no chat.
+   */
+  const colleagueChat = createMemo<Session | undefined>(() => {
+    if (props.tab.type !== "agent") return undefined
+    const rows = Object.values(props.serverCtx()?.sync.session.data.info ?? {}).filter(
+      (row): row is Session => row !== undefined,
+    )
+    // `chatFor` answers the only question the strip was missing — WHICH chat — and the store hands
+    // back the real record, so the tab carries the same `Session` a session tab does rather than a
+    // narrower projection of one.
+    const id = chatFor(rows, props.tab.agent)?.id
+    return id ? props.serverCtx()?.sync.session.peek(id) : undefined
+  })
   const session = createMemo<Session | undefined>(() => {
     // A minimal, SAFE stub: the colleague the tab stands for, and an empty id/title. Everything the
     // strip reads off it (`agent`, `id`, `title`, `location?`) is optional-tolerant by construction —
     // an agent tab has no session record until its chat resolves.
-    if (props.tab.type === "agent") return { agent: props.tab.agent, id: "" } as Session
+    if (props.tab.type === "agent") return colleagueChat() ?? ({ agent: props.tab.agent, id: "" } as Session)
     return cachedSession() ?? loadedSession()
   })
 
