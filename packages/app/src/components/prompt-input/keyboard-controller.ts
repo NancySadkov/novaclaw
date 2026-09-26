@@ -118,7 +118,10 @@ export function createPromptInputKeyboardController(input: Input) {
     if (event.key !== "Enter" || event.shiftKey) return
     event.preventDefault()
     if (event.repeat) return
-    if (input.working() && !input.promptText().trim() && !input.attachmentCount() && !input.commentCount()) return
+    // 🔴 No blank-while-working guard here: an empty submit while the agent works IS the stop
+    // (handleSubmit aborts on blank+working, queues a follow-up when there is text). Swallowing
+    // Enter in that state made it the one key that did nothing while the button stopped and Esc
+    // stopped (owner, 2026-09-26: Stop unresponsive, clicks/keys ignored).
     void input.submit(event)
   }
 }

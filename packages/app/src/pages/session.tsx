@@ -442,6 +442,11 @@ export default function Page() {
     layout.fileTree.setTab("changes")
   }
 
+  // 🔴 A second press while the first is still in flight JOINS it instead of silently
+  // returning. The old `stopRequest() === id` early-return made repeat clicks — the exact thing a
+  // user does when Stop feels unresponsive — no-ops with no feedback, while the button stayed an
+  // enabled-looking Stop (owner, 2026-09-26: clicks ignored).
+  let stopInflight: Promise<void> | undefined
   const stop = async () => {
     const conn = server.current
     const id = params.id
@@ -449,24 +454,30 @@ export default function Page() {
     // and then the one control a user reaches for when something is wrong silently does nothing
     // (owner, 2026-09-26: "Stop is just unresponsive"). Disable on the LOCAL signal and let the
     // server no-op an idle interrupt.
-    if (!conn || !id || stopRequest() === id) return
+    if (!conn || !id) return
+    if (stopInflight) return stopInflight
     const attemptID = executionAttempt()?.attemptID
     setStopRequest(id)
-    try {
-      await stopSessionExecution(conn.http, id, sdk().directory)
-      setStopConfirmed({ sessionID: id, attemptID })
-      setSubmittedFrom(undefined)
-      void executionQuery.refetch()
-    } catch (error) {
-      if (shouldSuppressSessionExecutionError(error, id)) return
-      showToast({
-        title: "Could not stop this chat",
-        description: formatServerError(error, language.t),
-        variant: "error",
-      })
-    } finally {
-      if (stopRequest() === id) setStopRequest(undefined)
-    }
+    stopInflight = (async () => {
+      try {
+        await stopSessionExecution(conn.http, id, sdk().directory)
+        setStopConfirmed({ sessionID: id, attemptID })
+        setSubmittedFrom(undefined)
+        void executionQuery.refetch()
+      } catch (error) {
+        if (shouldSuppressSessionExecutionError(error, id)) return
+        showToast({
+          title: "Could not stop this chat",
+          description: formatServerError(error, language.t),
+          variant: "error",
+        })
+      } finally {
+        if (stopRequest() === id) setStopRequest(undefined)
+      }
+    })().finally(() => {
+      stopInflight = undefined
+    })
+    return stopInflight
   }
   const executionAction = async (action: "retry" | "stop") => {
     if (action === "stop") return stop()

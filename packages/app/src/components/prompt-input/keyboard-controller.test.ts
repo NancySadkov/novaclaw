@@ -67,6 +67,44 @@ test("Shift+Enter inserts a newline before IME and submit handling", () => {
   value.element.remove()
 })
 
+test("Enter with an empty composer while working still submits — the empty submit IS the stop", () => {
+  const element = document.createElement("div")
+  document.body.append(element)
+  let submits = 0
+  const handle = createPromptInputKeyboardController({
+    state: { mode: () => "normal", historyIndex: () => -1 },
+    editor: {
+      element: () => element,
+      collapseBackspaceAtZeroWidth: () => {},
+      blur: () => {},
+      caret: () => ({ collapsed: true, cursorPosition: 0, textLength: 0 }),
+    },
+    advanced: () => true,
+    composing: () => false,
+    working: () => true,
+    promptText: () => "",
+    attachmentCount: () => 0,
+    commentCount: () => 0,
+    setMode: () => {},
+    pickAttachment: () => {},
+    abort: () => {},
+    blurOnEscape: () => false,
+    addNewline: () => {},
+    navigateHistory: () => false,
+    submit: () => {
+      submits++
+    },
+  })
+  // 🔴 Swallowing this Enter made it the one key that did nothing while the button stopped and
+  // Esc stopped (owner, 2026-09-26). handleSubmit aborts on blank+working, so reaching submit
+  // is what makes Enter stop too.
+  const event = new KeyboardEvent("keydown", { key: "Enter", cancelable: true })
+  handle(event)
+  expect(submits).toBe(1)
+  expect(event.defaultPrevented).toBe(true)
+  element.remove()
+})
+
 test("one Escape stops working", () => {
   const element = document.createElement("div")
   document.body.append(element)
