@@ -74,8 +74,22 @@ export const AFTER_MS = 30 * 60_000
  */
 export { NOTICE_PREFIX, isNotice } from "./notice"
 
-/** The id a notice for this ask MUST have — deterministic, so the second attempt collides. */
-export const noticeID = (input: Stalled): string => `${NOTICE_PREFIX}${input.asker}_${input.colleague}_${input.askedAt}`
+/**
+ * The id a notice for this PAIR must have — deterministic, so the second attempt collides.
+ *
+ * 🔴 Keyed on the COLLEAGUE, not on the ask. With `askedAt` in the id, the anchor moving (the oldest
+ * unanswered ask aging out of the 24h lookback, or being answered) minted a NEW id and re-noticed the
+ * same pair — the drip the owner saw at ~23h ages (owner, 2026-09-26). One pair, one notice, until it
+ * is retired by `sweep` when the colleague finally replies; then a later stall can be told again.
+ */
+export const noticeID = (input: Stalled): string => `${NOTICE_PREFIX}${input.asker}_${input.colleague}`
+
+/**
+ * Pairs this process has told, so a notice can be RETIRED the moment the colleague answers and a
+ * later stall is told again. In-memory on purpose: after a restart the durable notice row still
+ * suppresses a duplicate, so a restart re-notices at most once per pair — never the drip.
+ */
+const noticedPairs = new Map<string, Stalled>()
 
 /**
  * Which asks have gone unanswered for longer than `after`.
@@ -245,7 +259,26 @@ export const sweep = (
     }
 
     let told = 0
-    for (const stall of stalled({ landed, agentOf, chatOf, now })) {
+    const stalls = stalled({ landed, agentOf, chatOf, now })
+    /**
+     * 🔴 TOLD ONCE PER PAIR, and re-armed only when the colleague ANSWERS.
+     *
+     * The id is now the pair (see {@link noticeID}), so a moving anchor cannot re-notice. Retirement
+     * is what lets a genuinely new stall be told later: when a pair is no longer stalled (the
+     * colleague replied), its notice row is deleted, so the NEXT stall for that pair mints it again.
+     */
+    const pairKey = (stall: Stalled) => `${stall.asker}\u0000${stall.colleague}`
+    const current = new Map(stalls.map((stall) => [pairKey(stall), stall]))
+    for (const [key, stall] of noticedPairs) {
+      if (current.has(key)) continue
+      noticedPairs.delete(key)
+      yield* db
+        .delete(SessionInputTable)
+        .where(eq(SessionInputTable.id, SessionMessage.ID.make(noticeID(stall))))
+        .run()
+        .pipe(Effect.orDie)
+    }
+    for (const stall of stalls) {
       const chat = chatOf[stall.asker]
       if (chat === undefined) continue
       const id = SessionMessage.ID.make(noticeID(stall))
@@ -260,7 +293,10 @@ export const sweep = (
         .where(eq(SessionInputTable.id, id))
         .get()
         .pipe(Effect.orDie)
-      if (already !== undefined) continue
+      if (already !== undefined) {
+        noticedPairs.set(pairKey(stall), stall)
+        continue
+      }
       const written = yield* SessionInput.admit(db, events, {
         id,
         sessionID: chat as SessionSchema.ID,
@@ -277,7 +313,10 @@ export const sweep = (
         Effect.as(true),
         Effect.orElseSucceed(() => false),
       )
-      if (written) told += 1
+      if (written) {
+        told += 1
+        noticedPairs.set(pairKey(stall), stall)
+      }
     }
     return told
   }).pipe(Effect.orElseSucceed(() => 0))

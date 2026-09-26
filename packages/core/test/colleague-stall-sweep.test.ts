@@ -111,6 +111,27 @@ describe("the stall sweep", () => {
   )
 
   it.effect(
+    "🔴 a moving anchor does NOT re-notice, and an ANSWER retires the notice",
+    Effect.gen(function* () {
+      const { db, events } = yield* twoChats
+      const now = 10 * HOUR
+      yield* landed(db, THERON, "aris", now - 2 * HOUR)
+      expect(yield* ColleagueStall.sweep(db, events, now)).toBe(1)
+      // A SECOND unanswered ask to the same colleague: still ONE notice — `askedAt` is no longer in
+      // the id, so the anchor ages without minting a new one.
+      yield* landed(db, THERON, "aris", now - HOUR)
+      expect(yield* ColleagueStall.sweep(db, events, now)).toBe(0)
+      expect((yield* noticesIn(db, ARIS)).length).toBe(1)
+
+      // The colleague answers: the pair is no longer stalled, so the notice is RETIRED (deleted),
+      // which is what allows a genuinely new stall for this pair to be told later.
+      yield* landed(db, ARIS, "theron", now + HOUR)
+      expect(yield* ColleagueStall.sweep(db, events, now + 2 * HOUR)).toBe(0)
+      expect((yield* noticesIn(db, ARIS)).length).toBe(0)
+    }),
+  )
+
+  it.effect(
     "🔴 an ANNOUNCE copy in the database produces no notice — through the real query",
     Effect.gen(function* () {
       const { db, events } = yield* twoChats
