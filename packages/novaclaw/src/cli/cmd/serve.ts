@@ -116,10 +116,6 @@ const superviseLoop = async (): Promise<"clean" | "giveup"> => {
     monitorAbort = undefined
     const child = Bun.spawn(cmd, {
       stdin: "inherit",
-      // A console-subsystem child gets its OWN black console window on Windows unless it is asked for
-      // none. The supervisor runs under the desktop (no console), so the re-exec'd server child must
-      // carry the flag itself or a window pops up beside the app.
-      windowsHide: true,
       // Pipe only to discover the ACTUAL address when `--port 0` is used; every byte is immediately
       // forwarded, so supervised serve has the same visible stdout contract as the bare child.
       stdout: "pipe",

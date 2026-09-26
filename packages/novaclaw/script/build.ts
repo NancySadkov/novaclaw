@@ -341,6 +341,13 @@ for (const item of targets) {
               version: Script.version,
               description: "NovaClaw — a local-first AI agent OS",
               copyright: `© 2025-2026 Nancy Sadkov`,
+              // A compiled Bun binary is a CONSOLE-subsystem executable by default, so every process
+              // in the server's tree opened its own Command Prompt when the desktop (a GUI process)
+              // launched it — the supervisor's re-exec'd child, measured 2026-09-26. `Bun.spawn`'s
+              // `windowsHide` did NOT suppress it (also measured); the subsystem is the root, so it
+              // is set here and covers the top-level server, its supervisor child and the memory
+              // worker at once.
+              hideConsole: true,
             }
           : {},
     },
