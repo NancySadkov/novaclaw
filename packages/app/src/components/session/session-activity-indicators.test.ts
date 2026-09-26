@@ -5,7 +5,6 @@ const activity = readFileSync(new URL("./session-activity-indicators.tsx", impor
 const composer = readFileSync(new URL("../prompt-input.tsx", import.meta.url), "utf8")
 const teamChat = readFileSync(new URL("../team-chat-button.tsx", import.meta.url), "utf8")
 const teamChatScreen = readFileSync(new URL("../team-chat-screen.tsx", import.meta.url), "utf8")
-const teamChatPage = readFileSync(new URL("../../pages/team-chat.tsx", import.meta.url), "utf8")
 const workerDialog = readFileSync(new URL("../worker-list-dialog.tsx", import.meta.url), "utf8")
 const shellDialog = readFileSync(new URL("../shell-list-dialog.tsx", import.meta.url), "utf8")
 
@@ -88,15 +87,4 @@ test("Team Chat is a full-window route, not a modal sheet", () => {
   expect(teamChatScreen).toContain("flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden")
   expect(teamChatScreen).not.toContain("h-[min(82dvh,42rem)]")
   expect(teamChatScreen).not.toContain("<Dialog")
-})
-
-test("Team Chat, as a route, supplies its own directory-scoped SDK", () => {
-  // 🔴 The screen calls useSDK(), and the global shell supplies only the SERVER-scoped SDK. A route
-  // that renders it without its own SDKProvider throws "SDK context must be used within a context
-  // provider" and the whole window dies — measured 2026-09-26.
-  expect(teamChatPage).toContain("useServerSync")
-  const provider = teamChatPage.indexOf("<SDKProvider")
-  const screen = teamChatPage.indexOf("<TeamChatScreen")
-  expect(provider).toBeGreaterThan(-1)
-  expect(screen).toBeGreaterThan(provider)
 })

@@ -58,6 +58,26 @@ describe("server-scoped provider ordering", () => {
     expect(selected).toMatch(/<ServerSDKProvider>\s*<ServerSyncProvider>/)
     expect(shared).not.toContain("<ServerSyncProvider>")
   })
+
+  /**
+   * 🔴 The directory-scoped SDK is per-DIRECTORY and is NOT the same context as the server-scoped one
+   * the shell provides. It used to be mounted ad hoc by the session, draft and terminal routes, so a
+   * route that mounted a `useSDK()` consumer without one threw "SDK context must be used within a
+   * context provider" and killed the window — measured 2026-09-26 on Team Chat, a full-window route.
+   * It is provided ONCE, for every route, inside the server-scoped providers; session-bound routes
+   * override the directory beneath it.
+   */
+  test("the shell supplies the directory-scoped SDK to every route", () => {
+    const app = read("app.tsx")
+    const selected = app.slice(app.indexOf("function SelectedServerProviders"), app.indexOf("function DraftRoute"))
+
+    const sdk = selected.indexOf("<SDKProvider")
+    expect(sdk, "no directory-scoped SDKProvider in the shared shell — a non-session route using " +
+      "useSDK() will crash the window").toBeGreaterThan(-1)
+    expect(sdk).toBeGreaterThan(selected.indexOf("<ServerSDKProvider>"))
+    expect(selected).toContain("<DefaultDirectorySDK>")
+    expect(app).toContain("sync().data.path.directory")
+  })
 })
 
 describe("the legacy directory URL shape still resolves", () => {

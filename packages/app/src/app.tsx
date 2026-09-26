@@ -312,11 +312,26 @@ function SelectedServerProviders(props: ParentProps) {
       <ServerSDKProvider>
         <ServerSyncProvider>
           <SessionTabRevalidate />
-          {props.children}
+          <DefaultDirectorySDK>{props.children}</DefaultDirectorySDK>
         </ServerSyncProvider>
       </ServerSDKProvider>
     </ServerKey>
   )
+}
+
+/**
+ * The directory-scoped SDK every route inherits.
+ *
+ * 🔴 `SDKProvider` is per-DIRECTORY, while the shell above supplies only the SERVER-scoped SDK. It
+ * used to be mounted ad hoc by the session, draft and terminal routes, so any OTHER route that
+ * mounted a `useSDK()` consumer threw "SDK context must be used within a context provider" and took
+ * the window down — measured 2026-09-26 on Team Chat, which had just become a full-window route.
+ * Providing it once here makes the omission unspellable: a new route cannot be added without it.
+ * Session-bound routes still override it with their own directory beneath this one.
+ */
+function DefaultDirectorySDK(props: ParentProps) {
+  const sync = useServerSync()
+  return <SDKProvider directory={() => sync().data.path.directory}>{props.children}</SDKProvider>
 }
 
 function DraftRoute() {
