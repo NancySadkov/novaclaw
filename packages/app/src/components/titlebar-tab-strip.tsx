@@ -6,7 +6,7 @@ import { Accessibility, AutoScroller, Feedback, PointerActivationConstraints } f
 import { RestrictToHorizontalAxis } from "@dnd-kit/abstract/modifiers"
 import { RestrictToElement } from "@dnd-kit/dom/modifiers"
 import { arrayMove } from "@dnd-kit/helpers"
-import { tabHref, tabKey, type SessionTab, type Tab } from "@/context/tabs"
+import { tabHref, tabKey, type AgentTab, type SessionTab, type Tab } from "@/context/tabs"
 import { ServerConnection } from "@/context/server"
 import { DraftTabItem, TabNavItem } from "@/components/titlebar-tab-nav"
 import { useGlobal, type ServerCtx } from "@/context/global"
@@ -16,6 +16,7 @@ import { useTabs } from "@/context/tabs"
 import { createTabPromptState } from "@/context/prompt"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { canStartTabDrag, TAB_DRAG_ACTIVATION_DISTANCE } from "./titlebar-tab-gesture"
+import type { SessionV2Info as Session } from "@novaclaw/sdk/v2"
 
 const sortableTransition = { duration: 0 }
 
@@ -36,7 +37,7 @@ function useTabSortable(id: () => string, index: () => number) {
 }
 
 function SessionTabSlot(props: {
-  tab: SessionTab
+  tab: SessionTab | AgentTab
   id: string
   index: () => number
   active: () => boolean
@@ -50,34 +51,46 @@ function SessionTabSlot(props: {
   const sortable = useTabSortable(() => props.id, props.index)
   let ref!: HTMLDivElement
   const sdk = createMemo(() => props.serverCtx()?.sdk ?? null)
-  const cachedSession = createMemo(() => props.serverCtx()?.sync.session.peek(props.tab.sessionId))
+  // A session tab resolves ITS session; an AGENT tab resolves the COLLEAGUE — the session is a
+  // component reached through it (AGENTS.md) — and is labelled by the colleague, exactly as the
+  // roster names it. No session id is needed for the tab to render or to keep its place.
+  const sessionId = () => (props.tab.type === "session" ? props.tab.sessionId : undefined)
+  const cachedSession = createMemo(() => {
+    const id = sessionId()
+    return id ? props.serverCtx()?.sync.session.peek(id) : undefined
+  })
   const [loadedSession] = createResource(
     () => {
       const ctx = props.serverCtx()
-      return ctx ? { id: props.tab.sessionId, ctx } : null
+      const id = sessionId()
+      return ctx && id ? { id, ctx } : null
     },
     ({ id, ctx }) => ctx.sync.session.resolve(id).catch(() => undefined),
   )
-  const session = createMemo(() => cachedSession() ?? loadedSession())
+  const session = createMemo<Session | undefined>(() => {
+    if (props.tab.type === "agent") return { agent: props.tab.agent } as Session
+    return cachedSession() ?? loadedSession()
+  })
 
   /**
    * Tell the store whose chat this tab is showing.
    *
    * 🔴 This is where the one-tab-per-colleague invariant reaches tabs the app did not just open. The
    * strip is restored from disk, so a store written before the rule existed loads already breaking
-   * it — four tabs all reading "Nova" were sitting in the strip when the owner reported this. The
-   * tab itself does not know its colleague; this component is the one place that resolves the
-   * session behind every tab, so it is the one place that CAN say. The store collapses from there.
+   * it — four tabs all reading "Nova" were sitting in the strip when the owner reported this. An
+   * AGENT tab already knows its colleague, so only session tabs need this fill-in.
    */
   createEffect(() => {
+    if (props.tab.type !== "session") return
     const value = session()
     if (!value) return
-    tabs.noteSessionAgent(props.tab.server, props.tab.sessionId, value.agent)
+    tabs.noteSessionAgent(props.tab.server, sessionId()!, value.agent)
   })
 
   let prefetched = false
 
   createEffect(() => {
+    if (props.tab.type !== "session") return
     const ctx = props.serverCtx()
     const value = session()
     if (!ctx || !value?.location || prefetched) return
@@ -96,6 +109,7 @@ function SessionTabSlot(props: {
   })
 
   createEffect(() => {
+    if (props.tab.type !== "session") return
     const value = session()
     const current = sdk()
     if (!value?.location || !current) return
@@ -104,6 +118,12 @@ function SessionTabSlot(props: {
       id: value.id,
     })
   })
+
+  const rememberTitle = (title: string) => {
+    const value = loadedSession()
+    const ctx = props.serverCtx()
+    if (value && ctx) ctx.sync.session.remember({ ...value, title })
+  }
 
   return (
     <div
@@ -120,16 +140,8 @@ function SessionTabSlot(props: {
         href={tabHref(props.tab)}
         server={props.tab.server}
         session={session}
-        onTitleChange={(title) => {
-          const value = session()
-          const ctx = props.serverCtx()
-          if (value && ctx) ctx.sync.session.remember({ ...value, title })
-        }}
-        onTitleChangeFailed={(title) => {
-          const value = session()
-          const ctx = props.serverCtx()
-          if (value && ctx) ctx.sync.session.remember({ ...value, title })
-        }}
+        onTitleChange={props.tab.type === "session" ? rememberTitle : undefined}
+        onTitleChangeFailed={props.tab.type === "session" ? rememberTitle : undefined}
         onNavigate={() => props.onNavigate(ref)}
         onOpenSettings={props.onOpenSettings}
         active={props.active()}
@@ -175,7 +187,7 @@ export function TitlebarTabStrip(props: {
   forceTruncate: boolean
   onNavigate: (tab: Tab, el?: HTMLDivElement) => void
   onReorder: (keys: string[]) => void
-  onOpenSettings: (tab: SessionTab, agentID: string) => void
+  onOpenSettings: (tab: SessionTab | AgentTab, agentID: string) => void
   onOverflowChange: (overflowing: boolean) => void
 }) {
   const global = useGlobal()
@@ -266,12 +278,12 @@ export function TitlebarTabStrip(props: {
                 let ref!: HTMLDivElement
                 useTabShortcut(index, () => props.onNavigate(tab, ref))
                 const serverCtx = createMemo(() => {
-                  if (tab.type !== "session") return
+                  if (tab.type !== "session" && tab.type !== "agent") return
                   const conn = global.servers.list().find((item) => ServerConnection.key(item) === tab.server)
                   if (conn) return global.ensureServerCtx(conn)
                 })
 
-                if (tab.type === "session") {
+                if (tab.type === "session" || tab.type === "agent") {
                   return (
                     <SessionTabSlot
                       tab={tab}
@@ -286,7 +298,7 @@ export function TitlebarTabStrip(props: {
                         props.onNavigate(tab, element)
                       }}
                       onOpenSettings={(agentID) => {
-                        if (!tab.worker) props.onOpenSettings(tab, agentID)
+                        if (tab.type === "agent" || !tab.worker) props.onOpenSettings(tab, agentID)
                       }}
                     />
                   )

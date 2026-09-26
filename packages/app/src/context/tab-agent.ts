@@ -31,14 +31,12 @@ export function findAgentTab(
   exceptSession?: string,
 ) {
   if (agent === undefined) return -1
-  return tabs.findIndex(
-    (tab) =>
-      tab.type === "session" &&
-      tab.worker !== true &&
-      tab.server === server &&
-      tab.agent === agent &&
-      tab.sessionId !== exceptSession,
-  )
+  return tabs.findIndex((tab) => {
+    // The colleague's own tab, keyed on the AGENT (a session is a component of it).
+    if (tab.type === "agent") return tab.server === server && tab.agent === agent
+    if (tab.type !== "session") return false
+    return tab.server === server && tab.worker !== true && tab.agent === agent && tab.sessionId !== exceptSession
+  })
 }
 
 /**

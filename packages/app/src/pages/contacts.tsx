@@ -38,7 +38,7 @@ import {
 } from "@/apps/roster-live"
 import { compactTokens } from "@/pages/home-session-meta"
 import { ServerConnection } from "@/context/server"
-import { sessionHref } from "@/utils/session-route"
+import { agentHref, sessionHref } from "@/utils/session-route"
 import { AgentPortrait } from "@/components/agent-portrait"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { sessionExecutions, stopSessionExecution, type SessionExecutionInfo } from "@/utils/session-execution-api"
@@ -293,7 +293,9 @@ export function ContactsPage() {
     try {
       const id = await startChat(current.sdk.client.v2 as never, { agentID, title: name })
       if (id === undefined) throw new Error("no session id came back")
-      navigate(sessionHref(key, id))
+      // 🔴 Open the COLLEAGUE, not the session id it just got (AGENTS.md). The agent route resolves
+      // whatever chat the colleague holds, so Clear Chat can never invalidate where this lands.
+      navigate(agentHref(key, agentID))
     } catch (error) {
       // Said, never swallowed: a row that quietly refuses to open reads as a broken product.
       // ⚠️ And SAID IN WORDS THE USER CAN ACT ON. `String(error)` here produced
@@ -703,10 +705,9 @@ function ContactRow(props: ContactRowProps) {
   // ⚠️ Through `sessionHref`, never hand-built. The route segment is BASE64 of the server key, and
   // interpolating the raw key produced `/server/http://localhost:4096/session/…` — a link that looks
   // right in the DOM and cannot resolve. Caught by reading the rendered hrefs, not by the typecheck.
-  const chatHref = createMemo(() => {
-    const sessionID = unseenRoots()[0]?.id ?? live().sessionID
-    return sessionID && props.serverKey ? sessionHref(props.serverKey, sessionID) : undefined
-  })
+  const chatHref = createMemo(() =>
+    props.serverKey ? agentHref(props.serverKey, props.view.id) : undefined,
+  )
   let tile: HTMLDivElement | undefined
   const openChat = () => {
     if (props.suppressOpen() || props.starting) return

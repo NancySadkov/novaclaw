@@ -6,6 +6,17 @@ export function sessionHref(server: ServerConnection.Key, sessionID: string) {
   return `/server/${base64Encode(server)}/session/${sessionID}`
 }
 
+/**
+ * The route for an AGENT — its current session is resolved through it, never named in the URL.
+ *
+ * 🔴 AGENTS.md: a session is a component on the agent entity. Addressing the agent is what makes
+ * Clear Chat a change of COMPONENT (the route, the tab and any open dialog keep their identity)
+ * instead of a change of place.
+ */
+export function agentHref(server: ServerConnection.Key, agentID: string) {
+  return `/server/${base64Encode(server)}/agent/${agentID}`
+}
+
 export function legacySessionHref(directory: string, sessionID: string) {
   return `/${base64Encode(directory)}/session/${sessionID}`
 }

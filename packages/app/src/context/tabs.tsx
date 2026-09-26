@@ -7,7 +7,7 @@ import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { usePlatform } from "./platform"
 import { uuid } from "@/utils/uuid"
 import { SessionTabsRemovedDetail } from "@/components/titlebar-session-events"
-import { sessionHref } from "@/utils/session-route"
+import { agentHref, sessionHref } from "@/utils/session-route"
 import { createTabMemory } from "./tab-memory"
 import { findAgentTab } from "./tab-agent"
 import { appendRecentTab, retainRecentTabs } from "./tab-retention"
@@ -27,6 +27,21 @@ export type SessionTab = {
   worker?: boolean
 }
 
+/**
+ * A COLLEAGUE's tab — the entity, not its current transcript.
+ *
+ * 🔴 AGENTS.md: an agent session is a PROCESS; the agent is what you address. So an officer's tab
+ * records the AGENT and nothing about which session it is running right now. Clear Chat then changes
+ * the component, not the tab: the strip order is preserved, and anything open on it (a context
+ * inspector, a draft) keeps its identity. The session id is resolved through the agent at render
+ * time (`/server/<key>/agent/<agentID>`).
+ */
+export type AgentTab = {
+  type: "agent"
+  server: ServerConnection.Key
+  agent: string
+}
+
 export type DraftTab = {
   type: "draft"
   draftID: string
@@ -35,7 +50,7 @@ export type DraftTab = {
   worktree?: string
 }
 
-export type Tab = SessionTab | DraftTab
+export type Tab = SessionTab | DraftTab | AgentTab
 
 type RecentTab = {
   key?: string
@@ -52,9 +67,24 @@ const RECENT_LIMIT = 24
 export const draftHref = (draftID: string) => `/new-session?draftId=${encodeURIComponent(draftID)}`
 
 export const tabHref = (tab: Tab) =>
-  tab.type === "draft" ? draftHref(tab.draftID) : sessionHref(tab.server, tab.sessionId)
+  tab.type === "draft"
+    ? draftHref(tab.draftID)
+    : tab.type === "agent"
+      ? agentHref(tab.server, tab.agent)
+      : sessionHref(tab.server, tab.sessionId)
 
-export const tabKey = (tab: Tab) => (tab.type === "draft" ? `draft:${tab.draftID}` : `${tab.server}\n${tabHref(tab)}`)
+/**
+ * A tab's IDENTITY. For a colleague it is the AGENT — so Clear Chat, which hands the colleague a new
+ * session, does not change the key and therefore does not reorder the strip or re-open the tab at the
+ * end. Session tabs keep a session-keyed identity, because for a worker or anonymous chat the session
+ * genuinely IS the thing.
+ */
+export const tabKey = (tab: Tab) =>
+  tab.type === "draft"
+    ? `draft:${tab.draftID}`
+    : tab.type === "agent"
+      ? `agent:${tab.server}\n${tab.agent}`
+      : `${tab.server}\n${tabHref(tab)}`
 
 export const {
   use: useTabs,
@@ -73,8 +103,15 @@ export const {
         migrate: (value: unknown) => {
           if (!Array.isArray(value)) return value
           return value.map((tab) => {
-            if (!tab || typeof tab !== "object" || "server" in tab) return tab
-            return { ...tab, server: fallback }
+            if (!tab || typeof tab !== "object") return tab
+            const withServer = "server" in tab ? tab : { ...tab, server: fallback }
+            // 🔴 Promote a persisted officer SESSION tab to an AGENT tab. The colleague is the
+            // entity; a session id in the identity is what let Clear Chat reorder the strip.
+            const candidate = withServer as { type?: string; agent?: string; worker?: boolean; server?: unknown }
+            if (candidate.type === "session" && candidate.agent !== undefined && candidate.worker !== true) {
+              return { type: "agent", server: candidate.server, agent: candidate.agent }
+            }
+            return withServer
           })
         },
       },
@@ -214,6 +251,51 @@ export const {
        * different chats, which is the defect this exists to prevent.
        */
       addSessionTab: (tab: Omit<SessionTab, "type">) => {
+        /**
+         * 🔴 A COLLEAGUE's tab is the AGENT, not a session id (AGENTS.md; owner, 2026-09-26).
+         *
+         * Clear Chat hands the colleague a NEW session. With the session in the tab's identity that
+         * changed the key, so the strip re-sorted and the tab was re-opened at the end — and anything
+         * open on the old route (a context inspector) was left behind. Here the identity is the agent,
+         * so the same tab is returned, in the same place, for whatever session the colleague now has.
+         */
+        if (tab.agent !== undefined && tab.worker !== true) {
+          const held = store.find(
+            (item): item is AgentTab => item.type === "agent" && item.server === tab.server && item.agent === tab.agent,
+          )
+          if (held) return held
+          // A legacy session tab for this colleague may still be open — PROMOTE it IN PLACE rather
+          // than opening a second tab (one per colleague) or reordering the strip.
+          const legacy = store.findIndex(
+            (item) =>
+              item.type === "session" && item.server === tab.server && item.worker !== true && item.agent === tab.agent,
+          )
+          const created: AgentTab = { type: "agent", server: tab.server, agent: tab.agent }
+          if (legacy >= 0) {
+            void startTransition(() => {
+              setStore(
+                produce((tabs) => {
+                  const current = tabs[legacy!]
+                  if (current) tabs[legacy!] = created
+                }),
+              )
+            })
+            return created
+          }
+          void startTransition(() => {
+            let evicted: Tab[] = []
+            setStore(
+              produce((tabs) => {
+                if (tabs.some((item) => tabKey(item) === tabKey(created))) return
+                const bounded = appendRecentTab(tabs, created, promote(recent.keys, recentKey()), tabKey)
+                evicted = bounded.evicted
+                tabs.splice(0, tabs.length, ...bounded.tabs)
+              }),
+            )
+            for (const item of evicted) forgetTab(item)
+          })
+          return created
+        }
         const next = { type: "session" as const, ...tab }
         const existing = store.find((item) => tabKey(item) === tabKey(next))
         if (existing) {
@@ -300,8 +382,10 @@ export const {
         const tab = store[index]
         if (!tab || tab.type !== "session") return
         if (tab.worker === true) return
-        const keeperIndex = agentTab(server, agent, sessionId)
-        if (keeperIndex >= 0) {
+        const keeperIndex = store.findIndex(
+          (item): item is AgentTab => item.type === "agent" && item.server === server && item.agent === agent,
+        )
+        if (keeperIndex >= 0 && keeperIndex !== index) {
           const keeper = store[keeperIndex]!
           // Was the user LOOKING at the tab about to disappear? Then send them to the survivor
           // rather than to whichever tab happens to sit next to it.
@@ -311,7 +395,19 @@ export const {
           return
         }
         if (tab.agent === agent) return
-        learnAgent(sessionId, server, agent)
+        /**
+         * PROMOTE the session tab to an agent tab, IN PLACE. A chat opened by a session deep link is
+         * discovered to belong to a colleague; from then on the colleague is the identity, so the tab
+         * no longer carries a session id that Clear Chat would invalidate.
+         */
+        void startTransition(() => {
+          setStore(
+            produce((tabs) => {
+              const current = tabs[index]
+              if (current?.type === "session") tabs[index] = { type: "agent", server, agent }
+            }),
+          )
+        })
       },
       reorder(keys: string[]) {
         setStore(
@@ -418,6 +514,11 @@ export const {
         const index = store.findIndex(
           (tab) => tab.type === "session" && tab.server === server && tab.sessionId === sessionId,
         )
+        if (index >= 0) removeTab(index)
+      },
+      /** Close a COLLEAGUE's tab by the agent — the identity an officer tab actually has. */
+      closeAgentTab: (server: ServerConnection.Key, agent: string) => {
+        const index = store.findIndex((tab) => tab.type === "agent" && tab.server === server && tab.agent === agent)
         if (index >= 0) removeTab(index)
       },
       /**

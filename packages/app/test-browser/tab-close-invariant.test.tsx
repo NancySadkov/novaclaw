@@ -101,14 +101,16 @@ function Probe() {
         data-testid="close-last"
         onClick={() => {
           const tab = tabs.store.at(-1)
-          if (tab?.type === "session") tabs.closeSessionTab(tab.server, tab.sessionId)
+          if (tab?.type === "agent") tabs.closeAgentTab(tab.server, tab.agent)
+          else if (tab?.type === "session") tabs.closeSessionTab(tab.server, tab.sessionId)
         }}
       />
       <button
         data-testid="close-first"
         onClick={() => {
           const tab = tabs.store[0]
-          if (tab?.type === "session") tabs.closeSessionTab(tab.server, tab.sessionId)
+          if (tab?.type === "agent") tabs.closeAgentTab(tab.server, tab.agent)
+          else if (tab?.type === "session") tabs.closeSessionTab(tab.server, tab.sessionId)
         }}
       />
       <button
@@ -118,7 +120,11 @@ function Probe() {
           if (tab?.type === "session") tabs.removeSessionTab(tab)
         }}
       />
-      <span data-testid="ids">{tabs.store.map((t) => (t.type === "session" ? t.sessionId : "?")).join(",")}</span>
+      <span data-testid="ids">
+        {tabs.store
+          .map((t) => (t.type === "agent" ? `agent:${t.agent}` : t.type === "session" ? t.sessionId : "draft"))
+          .join(",")}
+      </span>
       <button
         data-testid="readd"
         onClick={() => tabs.addSessionTab({ server: KEY, sessionId: "ses_fresh", agent: "nova" })}
@@ -228,7 +234,7 @@ describe("tab lifecycle removal", () => {
     await settle()
     click(container, "close-last")
     await settle()
-    expect(text(container, "removed")).toBe(tabKey({ type: "session", server: KEY, sessionId: "ses_two" } as never))
+    expect(text(container, "removed")).toBe(tabKey({ type: "agent", server: KEY, agent: "xenia" } as never))
   })
 
   test("CONTROL — a RECONCILIATION is not a lifecycle removal", async () => {
@@ -256,9 +262,9 @@ describe("automatic tab retention", () => {
     await settle()
     click(container, "add-seventh")
     await settle()
-    expect(await waitForText(container, "ids", "ses_one,ses_three,ses_four,ses_five,ses_six,ses_seven")).toBe(
-      "ses_one,ses_three,ses_four,ses_five,ses_six,ses_seven",
-    )
+    expect(
+      await waitForText(container, "ids", "agent:nova,agent:theron,agent:umbris,agent:xenia-2,agent:iris,agent:sable"),
+    ).toBe("agent:nova,agent:theron,agent:umbris,agent:xenia-2,agent:iris,agent:sable")
     expect(text(container, "count")).toBe("6")
   })
 })
@@ -301,73 +307,53 @@ describe("where lifecycle removal leaves you", () => {
 })
 
 /**
- * A COLLEAGUE'S TAB FOLLOWS ITS COLLEAGUE.
+ * 🔴 A COLLEAGUE'S TAB IS THE COLLEAGUE (AGENTS.md; owner, 2026-09-26).
  *
- * Reassignment archives the chat and opens a successor in the new folder, on purpose — a
- * cross-project move is refused outright. The kernel is coherent about it; the TAB was not, because
- * it pinned a `sessionId` forever. That is a component holding an identity of its own, which the ECS
- * lens names as the thing to avoid: a colleague's chat is reached THROUGH the colleague.
- *
- * Measured on the owner's instance: the filed chat took 296 more events over three minutes, wrote and
- * compiled a file into the colleague's scratch, and had a write to the real project refused —
- * correctly, since that session's root really was scratch. The successor sat unopened at 2 events.
+ * The old model pinned a `sessionId` in the tab, so a reassignment or Clear Chat that handed the
+ * colleague a NEW session had to be chased — re-pointing the tab, moving it to the end. Now the tab IS
+ * the agent: a chat change cannot move it, reorder it or strand it, so there is nothing to follow.
  */
-describe("a colleague's tab follows its colleague", () => {
-  test("🔴 an archived chat is replaced by the colleague's live one", async () => {
-    const { container } = mount()
-    click(container, "add")
-    await settle()
-    click(container, "follow")
-    await settle()
-    expect(await waitForText(container, "ids", "ses_successor,ses_two")).toBe("ses_successor,ses_two")
-  })
-
-  test("CONTROL — a tab whose chat is still live is left alone", async () => {
-    // Without this the file would pass on a build that re-pointed every colleague tab on every
-    // reconcile, which would move people off conversations that are perfectly fine.
-    const { container } = mount()
-    click(container, "add")
-    await settle()
-    click(container, "follow")
-    await settle()
-    // `ses_two` (xenia) is not archived, so it must not move.
-    expect(text(container, "ids").split(",")[1]).toBe("ses_two")
-  })
-
-  test("CONTROL — no successor means the tab stays, so the route can explain", async () => {
-    // A retired colleague has no live chat. Inventing a destination would be the dead end AGENTS.md
-    // forbids; leaving the tab lets the session-gone card say what happened.
+describe("a colleague's tab is the colleague, not its current chat", () => {
+  test("🔴 a chat change (archived + successor) leaves the tab exactly where it was", async () => {
     const { container } = mount()
     click(container, "add")
     await settle()
     const before = text(container, "ids")
-    ;(container.querySelector('[data-testid="follow"]') as HTMLButtonElement).click()
+    expect(before).toBe("agent:nova,agent:xenia")
+    click(container, "follow")
     await settle()
-    expect(text(container, "ids").split(",").length).toBe(before.split(",").length)
+    expect(text(container, "ids")).toBe(before)
+  })
+
+  test("CONTROL — a live colleague is untouched too", async () => {
+    const { container } = mount()
+    click(container, "add")
+    await settle()
+    click(container, "follow")
+    await settle()
+    expect(text(container, "ids").split(",")[1]).toBe("agent:xenia")
   })
 })
 
 /**
- * ONE TAB PER COLLEAGUE, POINTING AT THE COLLEAGUE'S CURRENT CHAT.
+ * ONE TAB PER COLLEAGUE, AND THE TAB IS THE AGENT.
  *
- * The dedupe used to hand the existing tab straight back, so a caller that had just been given a NEW
- * session for that colleague got a tab still rendering the previous one. Measured on the owner's
- * instance: Clear chat deleted the live chat (correctly), the tab stayed pinned to the ARCHIVED
- * predecessor holding 296 events, and opening the colleague from Contacts created a fresh chat and
- * then handed back the stale tab — so the user saw the conversation they had just cleared.
+ * The old defect: re-opening a colleague after Clear handed back the stale session tab — or, once
+ * re-pointed, re-opened it at the END. With the agent as the identity, re-opening the same colleague
+ * returns the SAME tab in the SAME place; whichever session it holds now is irrelevant.
  */
-describe("re-opening a colleague adopts the chat it was given", () => {
-  test("🔴 the tab moves to the new session rather than handing back the old one", async () => {
+describe("re-opening a colleague returns the colleague's tab", () => {
+  test("🔴 a new session id does not re-open, reorder or duplicate the tab", async () => {
     const { container } = mount()
     click(container, "add")
     await settle()
+    const before = text(container, "ids")
     click(container, "readd")
     await settle()
-    expect(text(container, "ids").split(",")[0]).toBe("ses_fresh")
+    expect(text(container, "ids")).toBe(before)
   })
 
   test("CONTROL — it does not open a SECOND tab for the same colleague", async () => {
-    // The dedupe is still a dedupe. Adopting must not become "add another".
     const { container } = mount()
     click(container, "add")
     await settle()

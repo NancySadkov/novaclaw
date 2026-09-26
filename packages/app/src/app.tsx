@@ -63,6 +63,7 @@ import { legacySessionServer, requireServerKey, selectSessionLineage, sessionHre
 import { isSessionNotFoundError } from "./utils/server-errors"
 import { forgetGoneSession, revalidateSessionTabs } from "./context/session-gone"
 import { officerTabAgent } from "./context/tab-agent"
+import { SessionScopeProvider } from "./context/session-scope"
 import { resolveOfficerChat } from "./apps/agent-list"
 import { showToast } from "@/utils/toast"
 
@@ -353,6 +354,71 @@ function ResolvedTargetSessionRoute() {
         </Show>
       </Show>
     </TargetServerScopedProviders>
+  )
+}
+
+/**
+ * 🔴 THE AGENT-ADDRESSED ROUTE — a colleague is addressed by its id; its session is a component
+ * resolved through it (AGENTS.md: *"session is just a component on top of the agent entity, and it is
+ * accessed through agent's id, not as a first class entity"*).
+ *
+ * This is what makes Clear Chat a change of COMPONENT rather than a change of place: the URL stays on
+ * the colleague, the tab keeps its identity and position, and anything open on the page (a context
+ * inspector, a composer draft) is not thrown away because a transcript id changed. `refresh()` lets
+ * Clear re-resolve the colleague's current chat in place.
+ */
+function TargetAgentRoute() {
+  const params = useParams<{ serverKey: string; agentID: string }>()
+  const serverSDK = useServerSDK()
+  const sync = useServerSync()
+  const serverKey = createMemo(() => requireServerKey(params.serverKey))
+  const [revision, setRevision] = createSignal(0)
+  const [chat, setChat] = createSignal<string>()
+  const [directory, setDirectory] = createSignal<string>()
+  const [failure, setFailure] = createSignal<unknown>()
+  let run = 0
+  // A one-shot side effect that NAVIGATES nothing and renders no value of its own — deliberately not
+  // a `createResource` (the settled-resource ledger is shrink-only and these are id resolution, not
+  // view data). `revision` re-runs it when Clear Chat asks the page to follow the colleague.
+  createEffect(() => {
+    const agent = params.agentID
+    serverKey()
+    revision()
+    const mine = ++run
+    setFailure(undefined)
+    void resolveOfficerChat(serverSDK().client.v2, { agentID: agent })
+      .then(async (id) => {
+        if (mine !== run) return
+        if (id === undefined) {
+          setFailure(new Error(`${agent} has no chat to open`))
+          return
+        }
+        setChat(id)
+        const lineage = await sync()
+          .session.lineage.resolve(id)
+          .catch(() => undefined)
+        if (mine !== run) return
+        setDirectory(lineage?.session.location.directory)
+      })
+      .catch((error) => {
+        if (mine === run) setFailure(error)
+      })
+  })
+  const sessionID = () => chat()
+  return (
+    <SessionScopeProvider value={{ sessionID, refresh: () => setRevision((n) => n + 1) }}>
+      <Show when={failure() === undefined} fallback={<ErrorPage error={failure()} />}>
+        <Show when={directory()} fallback={<OfficerChatRecovering />}>
+          <TargetServerScopedProviders directory={() => directory()!} sessionID={sessionID}>
+            <SDKProvider directory={() => directory()!}>
+              <DirectoryDataProvider directory={() => directory()!} server={serverKey}>
+                <TargetSessionPage />
+              </DirectoryDataProvider>
+            </SDKProvider>
+          </TargetServerScopedProviders>
+        </Show>
+      </Show>
+    </SessionScopeProvider>
   )
 }
 
@@ -948,6 +1014,7 @@ function Routes() {
       <Route path="/terminal" component={TerminalPage} />
       <Route path="/new-session" component={DraftRoute} />
       <Route path="/server/:serverKey/session/:id" component={TargetSessionRoute} />
+      <Route path="/server/:serverKey/agent/:agentID" component={TargetAgentRoute} />
       {/* Keep LAST: `/:dir` outranks nothing, and the static routes above must win the match. */}
       <Route path="/:dir" component={LegacyDirectoryRoute} />
       <Route path="/:dir/session/:id?" component={LegacyDirectoryRoute} />

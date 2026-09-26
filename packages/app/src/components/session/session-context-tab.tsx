@@ -31,6 +31,7 @@ import { showToast } from "@/utils/toast"
 import { useConfirm } from "@/components/dialog-confirm"
 import { tabHref, useTabs } from "@/context/tabs"
 import { forgetGoneSession } from "@/context/session-gone"
+import { useSessionScope } from "@/context/session-scope"
 import { clearOfficerChat } from "./session-clear-chat"
 
 const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
@@ -72,6 +73,9 @@ export function SessionContextTab() {
   const models = useModels()
   const local = useLocal()
   const { params, view } = useSessionLayout()
+  // Present only on an AGENT-addressed page; Clear then follows the colleague in place instead of
+  // navigating to a new session id (AGENTS.md: the session is a component of the agent).
+  const sessionScope = useSessionScope()
 
   const info = createMemo(() => (params.id ? sync().session.get(params.id) : undefined))
 
@@ -325,7 +329,9 @@ export function SessionContextTab() {
         onReplacementFailed: (sessionIDs) => {
           for (const id of sessionIDs)
             forgetGoneSession({ session: serverSync().session, tabs, server: key, sessionID: id })
-          if (server.key === key && params.id === sessionID) navigate("/")
+          // Agent-addressed: the colleague is still the address, so just re-resolve its chat.
+          if (sessionScope) sessionScope.refresh()
+          else if (server.key === key && params.id === sessionID) navigate("/")
         },
       })
       if (cleared === undefined) {
@@ -334,8 +340,18 @@ export function SessionContextTab() {
       }
       for (const id of cleared.removed)
         forgetGoneSession({ session: serverSync().session, tabs, server: key, sessionID: id })
-      const tab = tabs.addSessionTab({ server: key, sessionId: cleared.successor, agent: agentID })
-      if (server.key === key && params.id === sessionID) navigate(tabHref(tab))
+      if (sessionScope) {
+        /**
+         * 🔴 The colleague did not move, and neither did the tab or the route (owner, 2026-09-26).
+         * Clear Chat gives the colleague a NEW session; this page is addressed by the AGENT, so it
+         * simply follows it there. No navigation, no tab re-open, no reorder — and anything open on
+         * the page (a context inspector, a draft) is preserved because nothing named the transcript.
+         */
+        sessionScope.refresh()
+      } else {
+        const tab = tabs.addSessionTab({ server: key, sessionId: cleared.successor, agent: agentID })
+        if (server.key === key && params.id === sessionID) navigate(tabHref(tab))
+      }
     } catch (error) {
       showToast({ variant: "error", title: language.t("agentConfig.clearFailed"), description: String(error) })
     } finally {

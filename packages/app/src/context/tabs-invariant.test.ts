@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { findAgentTab, officerTabAgent } from "./tab-agent"
-import type { SessionTab, Tab } from "./tabs"
+import { tabHref, tabKey, type SessionTab, type Tab } from "./tabs"
 import type { ServerConnection } from "./server"
 
 /**
@@ -96,5 +96,32 @@ describe("officerTabAgent — the colleague behind a route's session", () => {
 
   test("scoped to one server", () => {
     expect(officerTabAgent([chat("ses_a", "nova", OTHER)], SERVER, "ses_a")).toBeUndefined()
+  })
+})
+
+/**
+ * 🔴 A COLLEAGUE'S TAB IS THE AGENT (AGENTS.md; owner, 2026-09-26).
+ *
+ * The failure this replaces: Clear Chat hands the colleague a NEW session, the tab's key changed, and
+ * the strip re-sorted and re-opened at the end while a context inspector stayed on the old id. With
+ * the agent as the identity none of that can move — the session is a component reached through it.
+ */
+describe("a colleague's tab is addressed by the AGENT", () => {
+  test("its href names the agent, never a session id", () => {
+    const tab = { type: "agent", server: SERVER, agent: "daedalus" } as const
+    expect(tabHref(tab)).toContain("/agent/daedalus")
+    expect(tabHref(tab)).not.toContain("/session/")
+  })
+
+  test("the key is stable across session changes, and a session tab still keys on its session", () => {
+    const colleague = { type: "agent", server: SERVER, agent: "nova" } as const
+    // Same colleague, same key — whatever session it is running right now.
+    expect(tabKey(colleague)).toBe(tabKey({ ...colleague }))
+    // Anonymous/worker chats genuinely ARE their session, so those keys still differ.
+    expect(tabKey(chat("ses_a"))).not.toBe(tabKey(chat("ses_b")))
+  })
+
+  test("its identity does not collide with a same-named session id", () => {
+    expect(tabKey({ type: "agent", server: SERVER, agent: "nova" })).not.toBe(tabKey(chat("nova", "nova")))
   })
 })
