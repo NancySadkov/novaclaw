@@ -25,7 +25,13 @@ export function createSessionComposerController(options?: { closeMs?: number | (
     () => todos().length > 0 && todos().every((todo) => todo.status === "completed" || todo.status === "cancelled"),
   )
 
-  const live = createMemo(() => sync().data.session_working(sessionID() ?? ""))
+  // Same rule as the composer's own `working`: an id that is not there yet is not the empty session.
+  // `session_working("")` reads `session_status[""]`, finds nothing, and reports a turn in flight as
+  // idle — so the todo dock could settle while the agent was still working.
+  const live = createMemo(() => {
+    const id = sessionID()
+    return id ? sync().data.session_working(id) : false
+  })
 
   const [store, setStore] = createStore({
     sessionID: sessionID(),

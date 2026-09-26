@@ -247,7 +247,21 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const info = createMemo(() => (props.controls.session.id ? sync().session.get(props.controls.session.id) : undefined))
-  const working = createMemo(() => props.stop?.working() ?? sync().data.session_working(props.controls.session.id ?? ""))
+  /**
+   * 🔴 An id that is not there yet is not the empty session.
+   *
+   * `?? ""` fed the empty string to `session_working`, which looks up `session_status[""]` and finds
+   * nothing — so a composer with no resolved session read as NOT working, which is the reading that
+   * shows Send and lets a second prompt queue behind a turn already in flight. It is the same shape
+   * as the title bar's dead working dot: a value legal to read before it is initialised, read as if it
+   * were an answer. The line above gets this right for the same id, which is what made the mismatch
+   * visible.
+   */
+  const working = createMemo(() => {
+    if (props.stop) return props.stop.working()
+    const id = props.controls.session.id
+    return id ? sync().data.session_working(id) : false
+  })
   const imageAttachments = createMemo(() =>
     prompt.current().filter((part): part is ImageAttachmentPart => part.type === "image"),
   )
