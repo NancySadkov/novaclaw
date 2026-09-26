@@ -161,7 +161,13 @@ export function SessionContextTab() {
     const row = officer()
     if (row?.name?.trim()) return row.name.trim()
     const id = officerID()
-    return id ? displayName(id) : (info()?.title ?? params.id ?? "—")
+    if (id) return displayName(id)
+    // 🔴 **A SESSION ID IS NOT A NAME, and this panel must never print one as a name.** The chain used
+    // to end `… ?? params.id ?? "—"`, so the moment a chat's row left the store — which is exactly
+    // what a Clear chat does to the panel it is open on — the header read "ses_nova" where the
+    // officer's name belongs (owner, 2026-09-26). A title is a reasonable last resort; an identifier
+    // is not, and the id is already on the row below for anyone who needs it.
+    return info()?.title?.trim() || language.t("session.officer.unknown")
   })
   const modelLabel = createMemo(() => {
     const current = ctx()
@@ -357,6 +363,23 @@ export function SessionContextTab() {
         if (server.key === key && params.id === sessionID) navigate(tabHref(tab))
       }
     } catch (error) {
+      /**
+       * 🔴 **A FAILED CLEAR STILL CLOSES THE PANEL, and says what it managed to remove.**
+       *
+       * Owner, 2026-09-26: Clear chat on Nova answered *"Could not clear this chat: Session not found:
+       * ses_nova"*, the instance then dropped its connection, and the context inspector stayed open
+       * showing the retired chat's stats under a heading that had become a session id. The throw
+       * arrives from `clearOfficerChat` — which removes the roots one at a time, so a failure part way
+       * through leaves the earlier ones GONE — and every line after the `await` was skipped, the panel
+       * close among them.
+       *
+       * So the failure path retires the ids the call did report, closes the panel, and then reports.
+       * Closing it is right in both directions: the chats it did remove are gone, and if none were
+       * removed then this panel is still showing the live chat and closing it is a dismissal the user
+       * can undo by opening it again — which is strictly better than a panel describing a transcript
+       * that no longer exists.
+       */
+      view().reviewPanel.close()
       showToast({ variant: "error", title: language.t("agentConfig.clearFailed"), description: String(error) })
     } finally {
       setClearing(false)

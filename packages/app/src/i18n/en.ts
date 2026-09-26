@@ -250,6 +250,7 @@ export const dict = {
   "session.child.promptDisabled":
     "This is a helper the main chat started. You can't message it directly — go back to the main chat to continue.",
   "session.child.backToParent": "Back to the main chat.",
+  "session.officer.unknown": "Unknown officer",
 
   "prompt.dropzone.label": "Drop images, PDFs, or text files here",
   "prompt.context.removeFile": "Remove file from context",
