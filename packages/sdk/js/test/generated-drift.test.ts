@@ -366,7 +366,12 @@ const GENERATE_TIMEOUT_MS = 60_000
 // - no client calls the route yet - so nothing that exists can be moved by the name landing. The
 // client-side `chatFor` copy of the roster rule is what stage 2 retires; this entry is not precedent
 // for keeping a second implementation in step with the first.
-const SCHEMA_NAME_FINGERPRINT = "526d9a7081da52613d6469bf02856952e56ef90ddf84cb977bd0ab7b46cd9794"
+// 2026-09-27 - `AgentChatSummary` is the SECOND public schema from the agent-addressed work, and it
+// is deliberately WIDER than `AgentChat`: every root chat including archived, which is the set "Clear
+// chat" must take, since the transcript a user is reading is often a filed one. Measured against the
+// previous commit: ONE schema ADDED (`AgentChatSummary -> AgentChatSummary`), nothing REMOVED, no
+// existing name changed. Pure addition, same as `AgentChat` the day before.
+const SCHEMA_NAME_FINGERPRINT = "ec86187f954b8b72ca655a4579e9519c9a287d3a73d287c5f1987f1c4fc7870d"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

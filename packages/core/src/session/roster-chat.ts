@@ -30,6 +30,12 @@ export interface Chat {
   readonly directory: string
 }
 
+/** A root chat with the one fact `chatFor` deliberately hides: whether it has been filed. */
+export interface RootChat extends Chat {
+  /** `null` while the chat is live, the archive instant once filed. Never absent. */
+  readonly archived: number | null
+}
+
 /**
  * A colleague's one live chat, or `undefined` when it has none yet.
  *
@@ -81,3 +87,31 @@ export const liveChatsFor = (db: Db, agentID: string) =>
     .orderBy(desc(SessionTable.time_updated))
     .all()
     .pipe(Effect.map((rows): ReadonlyArray<Chat> => rows), Effect.orDie)
+
+/**
+ * EVERY root chat of a colleague, ARCHIVED INCLUDED, newest first.
+ *
+ * 🔴 `liveChatsFor` is the wrong set for "Clear chat", and using it would be a quiet data-loss bug.
+ * Retirement wants every LIVE root, because a root left live is a transcript the next holder of that
+ * id opens into. A Clear wants something wider still: the transcript the user is LOOKING AT is often an
+ * archived one — that is the whole recorded incident behind `chatToClear` (a colleague whose every root
+ * carried `time_archived`, including the one on screen, where the clear said "there is nothing to
+ * clear" and the transcript stayed). So this set is every root, and the caller decides.
+ *
+ * The client cannot assemble this itself. It was folding `GET /api/session`, whose documented default
+ * is the newest 50 sessions, so a colleague with more history than that had a Clear that silently left
+ * the remainder in place — reported as success.
+ */
+export const allRootsFor = (db: Db, agentID: string) =>
+  db
+    .select({
+      id: SessionTable.id,
+      title: SessionTable.title,
+      directory: SessionTable.directory,
+      archived: SessionTable.time_archived,
+    })
+    .from(SessionTable)
+    .where(and(eq(SessionTable.agent, agentID), isNull(SessionTable.parent_id)))
+    .orderBy(desc(SessionTable.time_updated))
+    .all()
+    .pipe(Effect.map((rows): ReadonlyArray<RootChat> => rows), Effect.orDie)

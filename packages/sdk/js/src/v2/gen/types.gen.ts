@@ -4726,6 +4726,13 @@ export type AgentChat = {
   directory: string
 }
 
+export type AgentChatSummary = {
+  id: string
+  title: string
+  directory: string
+  archived: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+}
+
 export type AgentUsageMinute = {
   minute: number
   generated: number
@@ -13174,6 +13181,45 @@ export type V2AgentChatResponses = {
 }
 
 export type V2AgentChatResponse = V2AgentChatResponses[keyof V2AgentChatResponses]
+
+export type V2AgentChatsData = {
+  body?: never
+  path: {
+    agentID: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/agent/{agentID}/chats"
+}
+
+export type V2AgentChatsErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2AgentChatsError = V2AgentChatsErrors[keyof V2AgentChatsErrors]
+
+export type V2AgentChatsResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: Array<AgentChatSummary>
+  }
+}
+
+export type V2AgentChatsResponse = V2AgentChatsResponses[keyof V2AgentChatsResponses]
 
 export type V2AgentAvatarGetData = {
   body?: never

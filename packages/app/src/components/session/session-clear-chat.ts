@@ -1,9 +1,10 @@
-import { listSessions, startChat } from "@/apps/agent-list"
-import { rootsToClear } from "@/apps/roster-live"
+import { startChat } from "@/apps/agent-list"
+import { rootsToClear, type SessionLike } from "@/apps/roster-live"
 import { isSessionNotFoundError } from "@/utils/server-errors"
 
-type ClearChatClient = Parameters<typeof listSessions>[0] &
-  Parameters<typeof startChat>[0] & {
+type ClearChatClient = {
+  agent: { chats: (query: { agentID: string }) => Promise<unknown> }
+} & Parameters<typeof startChat>[0] & {
     session: { remove: (input: { sessionID: string }) => Promise<{ error?: unknown }> }
   }
 
@@ -17,6 +18,50 @@ type ClearChatClient = Parameters<typeof listSessions>[0] &
  * every send answered `Session not found: <id>` (owner, 2026-09-22). The ids are what makes the
  * retirement deterministic instead of eventual.
  */
+/**
+ * Every root chat this colleague has, straight from the instance.
+ *
+ * 🔴 This used to be `rootsToClear(await listSessions(client), …)`, and `listSessions` sends no limit,
+ * so the instance returned the newest 50 sessions and the Clear acted on a PAGE of the colleague's
+ * history. A colleague with more than that had a Clear that removed part of what it should have and
+ * reported success — and a removal that reports success while leaving transcripts behind is worse than
+ * one that fails, because the user is told the conversation is gone.
+ *
+ * `GET /api/agent/{agentID}/chats` returns every ROOT, archived included, which is both facts the
+ * client could not have: the roots are already filtered server-side, and an archived root is present —
+ * the transcript a user is reading is often a filed one, which is the recorded incident where clearing
+ * said there was nothing to do while that transcript stayed put.
+ *
+ * The rows are shaped to what `rootsToClear` already reads, so its ordering rules and their tests stand
+ * unchanged; only the SOURCE moved, and it now cannot be truncated.
+ */
+const everyOfficerChat = async (input: {
+  client: { agent: { chats: (query: { agentID: string }) => Promise<unknown> } }
+  agentID: string
+}): Promise<readonly SessionLike[]> => {
+  const response = (await input.client.agent.chats({ agentID: input.agentID })) as {
+    data?: { data?: ReadonlyArray<{ id?: string; title?: string; directory?: string; archived?: number | null }> }
+  }
+  const rows = response?.data?.data
+  // A 200 with no array is the instance contradicting its contract. Treating it as "no chats" would
+  // report "nothing to clear" and leave every transcript in place, so it is a fault and it propagates.
+  if (!Array.isArray(rows)) throw new Error(`the instance answered ${input.agentID}'s chats with no list`)
+  return rows.flatMap((row) =>
+    row.id
+      ? [
+          {
+            id: row.id,
+            agent: input.agentID,
+            // Roots only — the server filtered, and re-deriving it here is the bug this replaced.
+            parentID: undefined,
+            location: row.directory ? { directory: row.directory } : undefined,
+            time: { created: 0, updated: 0, archived: row.archived ?? undefined },
+          } as unknown as SessionLike,
+        ]
+      : [],
+  )
+}
+
 export async function clearOfficerChat(input: {
   client: ClearChatClient
   agentID: string
@@ -27,7 +72,7 @@ export async function clearOfficerChat(input: {
   | { readonly successor: string; readonly removed: readonly string[]; readonly alreadyGone: readonly string[] }
   | undefined
 > {
-  const targets = rootsToClear(await listSessions(input.client), input.agentID, input.pathname)
+  const targets = rootsToClear(await everyOfficerChat(input), input.agentID, input.pathname)
   if (targets.length === 0) return undefined
   const removed: string[] = []
   const alreadyGone: string[] = []

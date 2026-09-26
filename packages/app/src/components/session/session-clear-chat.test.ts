@@ -11,19 +11,27 @@ function fixture(
   } = {},
 ) {
   const calls: string[] = []
+  /**
+   * ⚠️ These are ROOTS of `theron` only, archived included — which is what
+   * `GET /api/agent/{agentID}/chats` returns and what the client no longer computes. Another
+   * agent's chat and a sub-agent's thread used to sit in this list and be filtered out HERE, by
+   * `isRoot` and an agent comparison. That filtering is the instance's job now
+   * (`RosterChat.allRootsFor`), so a fake that still returned them would be testing a filter the
+   * product no longer performs; the proof that they are excluded now lives beside the query.
+   */
   const rows = [
-    { id: "old", agent: "theron", time: { created: 1, archived: 2 } },
-    { id: "live", agent: "theron", time: { created: 3 } },
-    { id: "other", agent: "nova", time: { created: 1 } },
-    { id: "child", agent: "theron", parentID: "live", time: { created: 4 } },
+    { id: "old", title: "Old", directory: "/p", archived: 2 },
+    { id: "live", title: "Live", directory: "/p", archived: null },
   ]
   const input = {
     agentID: "theron",
     name: "Theron",
     pathname: "/project/session/old",
     client: {
+      agent: {
+        chats: async () => ({ data: { data: options.empty ? [] : rows } }),
+      },
       session: {
-        list: async () => ({ data: { data: options.empty ? [] : rows } }),
         remove: async ({ sessionID }: { sessionID: string }) => {
           calls.push(`remove:${sessionID}`)
           if (options.gone?.includes(sessionID))
@@ -95,4 +103,63 @@ test("a removal that fails for any OTHER reason still fails the clear", async ()
   const operation = fixture({ removeError: true })
   await expect(operation.run()).rejects.toThrow("remove failed")
   expect(operation.calls.length).toBe(1)
+})
+
+test("🔴 the clear removes EXACTLY what the instance named, including a filed chat", async () => {
+  // The defect this replaced: the target list was folded from `GET /api/session`, whose default is the
+  // newest 50 sessions, so a colleague with more history than one page had a Clear that removed part of
+  // it and reported success. The list is now the instance's, and this pins that the client acts on all of
+  // it — the FILED root included, which is the transcript a user is often reading when they clear.
+  const removed: string[] = []
+  const client = {
+    agent: {
+      chats: async () => ({
+        data: {
+          data: [
+            { id: "ses_newest", title: "n", directory: "/p", archived: null },
+            { id: "ses_filed", title: "f", directory: "/p", archived: 42 },
+          ],
+        },
+      }),
+    },
+    session: {
+      remove: async ({ sessionID }: { sessionID: string }) => {
+        removed.push(sessionID)
+        return {}
+      },
+      create: async () => ({ data: { data: { id: "ses_successor" } } }),
+    },
+  }
+  const cleared = await clearOfficerChat({
+    client: client as never,
+    agentID: "theron",
+    name: "Theron",
+    pathname: "/project/session/ses_filed",
+    onReplacementFailed: () => {},
+  })
+  expect([...(cleared?.removed ?? [])].sort()).toEqual(["ses_filed", "ses_newest"])
+  expect(removed.sort()).toEqual(["ses_filed", "ses_newest"])
+  expect(cleared?.successor).toBe("ses_successor")
+})
+
+test("an instance that answers with no list fails the clear rather than reporting nothing to do", async () => {
+  // The most dangerous shape of this bug is silent: an empty target list means "there is nothing to
+  // clear", the user is told their conversation is gone, and every transcript is still on disk. So a
+  // 200 with no array is a FAULT, and it must not be smoothed into that answer.
+  const client = {
+    agent: { chats: async () => ({ data: { data: undefined } }) },
+    session: {
+      remove: async () => ({}),
+      create: async () => ({ data: { data: { id: "ses_successor" } } }),
+    },
+  }
+  await expect(
+    clearOfficerChat({
+      client: client as never,
+      agentID: "theron",
+      name: "Theron",
+      pathname: "/project/session/old",
+      onReplacementFailed: () => {},
+    }),
+  ).rejects.toBeDefined()
 })

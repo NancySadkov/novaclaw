@@ -85,6 +85,38 @@ export const AgentGroup = HttpApiGroup.make("server.agent")
   )
   .add(
     /**
+     * 🔴 EVERY root chat a colleague has — the set a "Clear chat" must take.
+     *
+     * The sibling of `/chat` above, and deliberately WIDER. `/chat` answers "which chat is this
+     * colleague's now" and hides filed chats on purpose. A Clear needs the opposite: the transcript the
+     * user is looking at is frequently an archived one, which is the recorded incident where clearing
+     * reported nothing to do while the transcript stayed on screen.
+     *
+     * It exists because the client cannot assemble the set. It was folding `GET /api/session`, whose
+     * documented default is the newest 50 sessions, so a colleague with more history than one page had a
+     * Clear that removed part of it and reported success. A removal that reports success and leaves
+     * transcripts behind is worse than one that fails.
+     */
+    HttpApiEndpoint.get("agent.chats", "/api/agent/:agentID/chats", {
+      params: { agentID: Agent.ID },
+      query: LocationQuery,
+      success: Location.response(Schema.Array(Agent.ChatSummary)),
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.agent.chats",
+          summary: "Every chat a colleague has",
+          description:
+            "All root chats belonging to this colleague, newest first, INCLUDING archived ones — the set " +
+            "\"Clear chat\" must act on, since the transcript a user is reading is often a filed one. " +
+            "Sub-agent threads are not roots and are not included. An empty array means this colleague " +
+            "has never had a chat.",
+        }),
+      ),
+  )
+  .add(
+    /**
      * The portrait bytes owned by the instance. This is a raw endpoint because an image must remain
      * bytes all the way to the browser; putting it in the roster JSON would make every refresh carry
      * the same base64 payload and would make the model/UI identity split again.

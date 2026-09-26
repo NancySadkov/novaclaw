@@ -157,6 +157,25 @@ export const AgentHandler = handlerLayer(
           }),
         ),
       )
+      .handle("agent.chats", (ctx) =>
+        response(
+          Effect.gen(function* () {
+            const { db } = yield* Database.Service
+            // The roster is asked first here too, but for the OPPOSITE reason: an empty set and a
+            // non-existent colleague are different answers, and `agent.chats` returning `[]` for a name
+            // that is not an agent would let a Clear report "nothing to clear" for a phantom.
+            const known = yield* AgentV2.Service.use((agent) => agent.get(AgentV2.ID.make(ctx.params.agentID)))
+            if (known === undefined)
+              return yield* Effect.fail(
+                new InvalidRequestError({ kind: "agent_not_found", message: `no such agent: ${ctx.params.agentID}` }),
+              )
+            // Every root, archived included — `chatFor` is the wrong set here and using it would be a
+            // quiet data-loss bug: a Clear must take the transcript the user is LOOKING AT, and that is
+            // often a filed one.
+            return yield* RosterChat.allRootsFor(db, ctx.params.agentID)
+          }),
+        ),
+      )
       .handle("agent.chat", (ctx) =>
         response(
           Effect.gen(function* () {

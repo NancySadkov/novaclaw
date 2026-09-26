@@ -247,3 +247,25 @@ export const Chat = Schema.Struct({
    */
   directory: Schema.String,
 }).annotate({ identifier: "Agent.Chat" })
+
+/**
+ * Every root chat a colleague has, ARCHIVED INCLUDED.
+ *
+ * ⚠️ This is the wider set on purpose. `Agent.Chat` answers "which chat is this colleague's NOW" and
+ * deliberately hides filed ones, because handing back the conversation the user just cleared is the one
+ * thing that must never happen. "Clear chat" needs the opposite: the transcript on screen is often an
+ * ARCHIVED one, which is the recorded incident where the clear reported nothing to do while the
+ * transcript the user was reading stayed put.
+ *
+ * The client cannot build this from a session list. It was folding `GET /api/session`, whose default is
+ * the newest 50 sessions, so a Clear over a colleague with more history than that silently removed only
+ * part of it and reported success.
+ */
+export interface ChatSummary extends Schema.Schema.Type<typeof ChatSummary> {}
+export const ChatSummary = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  directory: Schema.String,
+  /** The archive instant, or null while the chat is live. Never absent: absent would mean unknown. */
+  archived: Schema.NullOr(Schema.Number),
+}).annotate({ identifier: "Agent.ChatSummary" })
