@@ -73,26 +73,6 @@ describe("desktop command line", () => {
     })
   })
 
-  test("a client build defaults to connecting, so --connect alone is a launch", () => {
-    // A client package carries no server, so `both` on a bare double-click would try to spawn one
-    // that is not there. The build's default mode is `client`, and the URL is what it still needs.
-    expect(parseDesktopInvocation(["NovaClaw.exe"], "client")).toEqual({
-      action: "error",
-      message: "option '--client-only' requires '--connect=URL'",
-    })
-    expect(
-      parseDesktopInvocation(["NovaClaw.exe", "--connect=https://nova.example", "--connect-password=secret"], "client"),
-    ).toMatchObject({
-      action: "launch",
-      options: { mode: "client", connect: { url: "https://nova.example", password: "secret" } },
-    })
-    // An explicit server flag still wins over the build's default.
-    expect(parseDesktopInvocation(["NovaClaw.exe", "--server-only"], "client")).toMatchObject({
-      action: "launch",
-      options: { mode: "server" },
-    })
-  })
-
   test("parses a client-only connection", () => {
     expect(
       parseDesktopInvocation([

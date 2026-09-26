@@ -2,7 +2,7 @@ import { app, dialog } from "electron"
 import { desktopExecutableName, desktopHelp, desktopOptionError, parseDesktopInvocation } from "./desktop-cli"
 
 const executable = desktopExecutableName(process.execPath)
-const invocation = parseDesktopInvocation(process.argv, import.meta.env.NOVACLAW_DESKTOP_CLIENT ? "client" : "both")
+const invocation = parseDesktopInvocation(process.argv)
 
 if (invocation.action === "help") {
   process.stdout.write(desktopHelp(executable))

@@ -140,43 +140,6 @@ test("stages the compiled headless server, which the default launch runs instead
   expect(config.extraResources).toContainEqual({ from: `../novaclaw/dist/${distribution}/bin/`, to: "server/" })
 })
 
-test("a client build ships only the interface and none of the server's resources", async () => {
-  const previous = process.env.NOVACLAW_DESKTOP_ROLE
-  process.env.NOVACLAW_DESKTOP_ROLE = "client"
-  try {
-    const module = await import(`./electron-builder.config.ts?client=${Date.now()}`)
-    const config = module.default as Configuration
-    // The window icon is the client's one resource.
-    expect(config.extraResources).toContainEqual({ from: "resources/icons/", to: "icons/" })
-    for (const to of [
-      "host/",
-      "dht/",
-      "watchdog/",
-      "server/",
-      "third-party/ripgrep/",
-      "third-party/w64devkit/",
-      "third-party/portable-git/",
-      "third-party/imagemagick/",
-    ])
-      expect(config.extraResources, to).not.toContainEqual(expect.objectContaining({ to }))
-    expect(config.files).toContain("!out/main/server-runtime/**")
-    expect(config.files).toContain("!out/main/sidecar.js")
-    for (const excluded of [
-      "!node_modules/@ladybugdb/**",
-      "!node_modules/@ff-labs/**",
-      "!node_modules/@novaclaw/host/**",
-      "!node_modules/bun-pty/**",
-      "!node_modules/@msgpackr-extract/**",
-    ])
-      expect(config.files, excluded).toContain(excluded)
-    expect(config.files).not.toContain("!node_modules/@lydell/**")
-    expect(config.win?.artifactName).toContain("-client-")
-  } finally {
-    if (previous === undefined) delete process.env.NOVACLAW_DESKTOP_ROLE
-    else process.env.NOVACLAW_DESKTOP_ROLE = previous
-  }
-})
-
 test("clears watchdog staging before requiring Cargo", () => {
   const source = readFileSync(join(import.meta.dir, "..", "watchdog", "build.ts"), "utf8")
   const clearStaging = source.indexOf("rmSync(staging, { recursive: true, force: true })")

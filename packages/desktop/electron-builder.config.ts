@@ -25,24 +25,6 @@ function serverDistributionName() {
 }
 
 /**
- * `client` builds carry the interface only. Everything a local server needs — the compiled server,
- * the watchdog that supervises it, the file-watching host module, the DHT sidecar and the agent
- * toolchain (w64devkit, PortableGit, ripgrep, ImageMagick) — is dropped, so a client on another
- * machine downloads a fraction of the combined app.
- */
-const role = process.env.NOVACLAW_DESKTOP_ROLE === "client" ? "client" : "combined"
-const SERVER_ONLY_RESOURCES = new Set([
-  "host/",
-  "dht/",
-  "watchdog/",
-  "server/",
-  "third-party/ripgrep/",
-  "third-party/w64devkit/",
-  "third-party/portable-git/",
-  "third-party/imagemagick/",
-])
-
-/**
  * Everything staged beside the app, checked BEFORE electron-builder copies it and AFTER it has.
  *
  * 🔴 **This is the general form of the bug that shipped twice.** `extraResources` copying from a
@@ -63,7 +45,7 @@ async function verifyBeforePack() {
     console.warn("DEVELOPMENT ONLY: packaging without the DHT sidecar; beta/prod builds refuse this degradation.")
 
   verifyStagedResources({
-    resources: RESOURCES,
+    resources: EXTRA_RESOURCES,
     channel,
     label: "staged resources",
     resolve: (entry) => path.resolve(packageDir, entry.from),
@@ -76,7 +58,7 @@ function verifyAfterPack(appOutDir: string, electronPlatformName: string | undef
   const platform = (electronPlatformName ?? process.platform) as NodeJS.Platform
   const resourcesDir = packagedResourcesDirectory(appOutDir, platform)
   verifyStagedResources({
-    resources: RESOURCES,
+    resources: EXTRA_RESOURCES,
     channel,
     platform,
     label: "packaged resources",
@@ -184,10 +166,6 @@ const EXTRA_RESOURCES: readonly StagedResource[] = [
     : []),
 ]
 
-/** The resources THIS role stages — the verifier and the packager read the same list. */
-const RESOURCES =
-  role === "client" ? EXTRA_RESOURCES.filter((entry) => !SERVER_ONLY_RESOURCES.has(entry.to)) : EXTRA_RESOURCES
-
 const getBase = (appId: string): Configuration => ({
   // `prebuild` normally creates these artifacts. The hook is a second, independent boundary for a
   // direct electron-builder invocation: a release cannot copy absence, an old source identity, a
@@ -227,26 +205,7 @@ const getBase = (appId: string): Configuration => ({
   // The expanded w64devkit tree is a native extraResource below. Excluding it here is load-bearing:
   // otherwise electron-builder copies ~575 MiB into app.asar (where native subprocesses cannot use
   // it) and then copies it a second time beside the asar.
-  files: [
-    "out/**/*",
-    "resources/**/*",
-    "!resources/third-party/**",
-    ...(role === "client"
-      ? [
-          "!out/main/server-runtime/**",
-          "!out/main/sidecar.js",
-          // Server-only native/integration packages the client's bundled main never references
-          // (checked against out/main/chunks): the KB engine, the fuzzy finder, the file-watcher host
-          // module, the Bun PTY and msgpackr's native accelerator. `@lydell/node-pty` stays — the
-          // client's main does reference it.
-          "!node_modules/@ladybugdb/**",
-          "!node_modules/@ff-labs/**",
-          "!node_modules/@novaclaw/host/**",
-          "!node_modules/bun-pty/**",
-          "!node_modules/@msgpackr-extract/**",
-        ]
-      : []),
-  ],
+  files: ["out/**/*", "resources/**/*", "!resources/third-party/**"],
   // The KB graph engine (@ladybugdb/wasm-core) is loaded by the sidecar through a RUNTIME
   // `createRequire(...)("@ladybugdb/wasm-core/nodejs/sync")`, which no bundler can see — so it is
   // neither inlined into the main bundle nor emitted as an asset, and it has to ship as a real
@@ -257,8 +216,8 @@ const getBase = (appId: string): Configuration => ({
   // is reliable against an asar's virtual paths. Without this, `WasmMemory.open` throws, the KB
   // layer degrades to a disabled client by design, and Memory is silently dead in the packaged app
   // while working fine in dev. It shipped that way in v0.0.1.
-  asarUnpack: role === "client" ? [] : ["node_modules/@ladybugdb/**"],
-  extraResources: [...RESOURCES],
+  asarUnpack: ["node_modules/@ladybugdb/**"],
+  extraResources: [...EXTRA_RESOURCES],
   mac: {
     category: "public.app-category.developer-tools",
     icon: `resources/icons/icon.icns`,
@@ -287,8 +246,7 @@ const getBase = (appId: string): Configuration => ({
     // now lives HERE, in one place the test below pins, instead of in a batch file nothing checks.
     // `nsis` was the default before this and its options block below is untouched — an explicit
     // `electron-builder --win nsis` still produces the one-click installer. Only the default moved.
-    artifactName:
-      role === "client" ? "NovaClaw-${version}-client-windows-${arch}.${ext}" : "NovaClaw-${version}-windows-${arch}.${ext}",
+    artifactName: "NovaClaw-${version}-windows-${arch}.${ext}",
     target: ["7z"],
   },
   nsis: {
