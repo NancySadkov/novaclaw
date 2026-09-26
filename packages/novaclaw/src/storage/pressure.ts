@@ -348,6 +348,7 @@ export function memorySync(): MemoryReading {
     const proc = spawnSync("powershell", [...WINDOWS_COMMIT_ARGV, WINDOWS_COMMIT_SCRIPT], {
       encoding: "utf8",
       timeout: 15_000,
+      windowsHide: true,
     })
     return windowsMemory(proc.status === 0 && proc.stdout ? proc.stdout : undefined)
   }
@@ -373,6 +374,7 @@ function windowsMemoryAsync(): Promise<MemoryReading> {
     try {
       const child = spawn("powershell", [...WINDOWS_COMMIT_ARGV, WINDOWS_COMMIT_SCRIPT], {
         stdio: ["ignore", "pipe", "ignore"],
+        windowsHide: true,
       })
       // ⚠️ Our OWN timer, not spawn's `timeout` option. A probe that never settles would leave
       // `inflight` pinned forever and every later caller would await a promise that can no longer
@@ -401,6 +403,17 @@ function windowsMemoryAsync(): Promise<MemoryReading> {
 /** How long a memory reading is reused. The probe may end up on a per-turn path; 400 ms per turn is not free. */
 export const MEMORY_CACHE_MS = 3_000
 
+/**
+ * How long the HOST memory reading is reused — deliberately far longer than `MEMORY_CACHE_MS`.
+ *
+ * The Windows host probe spawns PowerShell, and a UI that polls resource usage must not spawn one
+ * every few seconds: measured 2026-09-26, the desktop opened a visible console window on each probe.
+ * One minute is the idle ceiling the owner set. Freshness where it matters is preserved because a
+ * real admission decision calls `resetMemoryCache` (local-model start/stop) rather than waiting out
+ * this TTL.
+ */
+export const HOST_MEMORY_CACHE_MS = 60_000
+
 let cached: { readonly at: number; readonly value: MemoryReading } | undefined
 let inflight: Promise<MemoryReading> | undefined
 const processCached = new Map<
@@ -416,12 +429,12 @@ export function resetMemoryCache(): void {
 }
 
 /**
- * Memory headroom, cheap and lazy: cached for `MEMORY_CACHE_MS`, and concurrent callers share ONE probe
- * rather than each spawning their own PowerShell.
+ * Memory headroom, cheap and lazy: cached for `HOST_MEMORY_CACHE_MS`, and concurrent callers share ONE
+ * probe rather than each spawning their own PowerShell.
  */
 export function memory(now: () => number = Date.now): Promise<MemoryReading> {
   const at = now()
-  if (cached && at - cached.at < MEMORY_CACHE_MS) return Promise.resolve(cached.value)
+  if (cached && at - cached.at < HOST_MEMORY_CACHE_MS) return Promise.resolve(cached.value)
   if (inflight) return inflight
   const probe =
     process.platform === "win32"
@@ -490,7 +503,7 @@ export function processMemory(pid: number | undefined): Promise<ProcessMemoryRea
     const child = spawn(
       "powershell",
       ["-NoProfile", "-NonInteractive", "-Command", `(Get-Process -Id ${pid} -ErrorAction Stop).WorkingSet64`],
-      { stdio: ["ignore", "pipe", "ignore"] },
+      { stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
     )
     const finish = (value: ProcessMemoryReading) => {
       if (settled) return

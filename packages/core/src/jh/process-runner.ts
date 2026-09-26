@@ -96,6 +96,7 @@ function runOnce(
         cwd: input.cwd,
         stdio: ["ignore", "pipe", "pipe"] as Array<"ignore" | "pipe">,
         detached: process.platform !== "win32",
+        windowsHide: process.platform === "win32",
         ...envOption(plan),
       }
       // A confined command execs the sandbox binary directly — the shell is an argv element inside

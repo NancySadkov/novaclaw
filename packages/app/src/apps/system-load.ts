@@ -100,10 +100,10 @@ export function useSystemLoad(): () => SystemLoad {
   //
   // This poll hits `global/resources`, whose Windows memory reading spawns a `powershell.exe`
   // running `Get-CimInstance Win32_OperatingSystem` — measured on the owner's box at 360–657 ms,
-  // median ≈530 ms. The probe is cached for `MEMORY_CACHE_MS = 3_000`, a TTL sized for a per-turn
-  // path, so a 10-second poll misses it EVERY time: one fresh process per tick, ≈5% duty cycle,
-  // forever, on the app's idle screen. And it ran with the window minimised or backgrounded, where
-  // nobody can see the number it is refreshing.
+  // median ≈530 ms. The probe is cached for `HOST_MEMORY_CACHE_MS = 60_000` now — one spawn a minute
+  // at most, the idle ceiling — so a 10-second poll almost never misses it. The gate below is still
+  // right: it stops even that one spawn while the window is minimised or backgrounded, where nobody
+  // can see the number it is refreshing.
   //
   // The house pattern is already here — `components/debug-bar.tsx` and `context/server-sync.tsx`
   // both gate their polls the same way. Coming back to visible refetches once, so the tile is

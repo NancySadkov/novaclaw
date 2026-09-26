@@ -362,6 +362,14 @@ describe("Pressure — this machine", () => {
     expect(Date.now() - started).toBeLessThan(100)
   }, 30_000)
 
+  test("the idle host probe spawns at most once a minute", () => {
+    // Owner ceiling, 2026-09-26: the Windows probe spawns PowerShell, and a UI that polls resource
+    // usage must not open a console window every few seconds. The TTL is that ceiling expressed in
+    // code, so it is pinned rather than left to drift back to a per-turn value.
+    expect(Pressure.HOST_MEMORY_CACHE_MS).toBeGreaterThanOrEqual(60_000)
+    expect(Pressure.HOST_MEMORY_CACHE_MS).toBeGreaterThan(Pressure.MEMORY_CACHE_MS)
+  })
+
   test("a second process-memory call inside the cache window reuses the pid reading", async () => {
     const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 2000)"], { stdio: "ignore", windowsHide: true })
     try {

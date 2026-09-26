@@ -107,6 +107,7 @@ const readWindows = (pids: ReadonlyArray<number>): Promise<Sample> =>
       `ForEach-Object { "$($_.Id) $($_.PagedMemorySize64)" }`
     const child = spawn("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
       stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true,
     })
     const timer = setTimeout(() => {
       child.kill()
