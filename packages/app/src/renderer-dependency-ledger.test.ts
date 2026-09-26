@@ -75,6 +75,10 @@ const KEPT_WITHOUT_IMPORTS: Record<string, Record<string, string>> = {
     "@ff-labs/fff-bun":
       "never imported: `script/build.ts` reads THIS manifest's version to `bun install --os=* --cpu=*` every platform's `fff` binary before compiling the CLI. The declaration is the build's version source.",
   },
+  core: {
+    "@ladybugdb/wasm-core":
+      "the KB graph engine, loaded at RUNTIME: `src/kb-graph/wasm-engine.ts` resolves it with `bundledModulePath('@ladybugdb/wasm-core/nodejs/sync')` and then `require(...)`, which neither a bundler nor this static scanner can see. It has to ship as a real package that Node resolution can find.",
+  },
 }
 
 /**

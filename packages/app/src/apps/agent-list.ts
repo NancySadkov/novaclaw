@@ -5,7 +5,7 @@
 import { ConfigAgent } from "@novaclaw/core/config/agent"
 import * as Timestamp from "@novaclaw/schema/time"
 import type { AgentLike } from "./contacts"
-import type { SessionLike, UsageMinute } from "./roster-live"
+import { chatFor, type SessionLike, type UsageMinute } from "./roster-live"
 
 /** The V2 agent list, which is the ONE shape carrying the roster profile.
  *
@@ -228,4 +228,26 @@ export const startChat = async (
   const body = response.data as { readonly data?: { readonly id?: unknown }; readonly id?: unknown } | undefined
   const id = body?.data?.id ?? body?.id
   return typeof id === "string" ? id : undefined
+}
+
+/**
+ * The chat a COLLEAGUE holds right now — its live one, or a fresh canonical chat when it has none.
+ *
+ * 🔴 **The recovery half of officer routes** (owner, 2026-09-26). A tab and a route name a session id,
+ * but a colleague is the ENTITY and its chat is a COMPONENT: when that id is gone (Clear chat removed
+ * it, or the sidecar restarted before the replacement was opened) the route must follow the colleague
+ * rather than render *"This chat was deleted or has expired"*. `chatFor` answers with the live chat;
+ * when the colleague has none — e.g. it was just cleared and the successor never opened — `startChat`
+ * creates the canonical chat, so an officer route ALWAYS lands on a real transcript.
+ *
+ * ⚠️ Only for colleague tabs. An anonymous or worker chat has no entity to follow, so a missing id
+ * there is genuinely gone and the caller keeps the existing retirement policy.
+ */
+export const resolveOfficerChat = async (
+  sdk: Parameters<typeof listSessions>[0] & Parameters<typeof startChat>[0],
+  input: { readonly agentID: string; readonly title?: string | undefined },
+): Promise<string | undefined> => {
+  const live = chatFor(await listSessions(sdk), input.agentID)
+  if (live !== undefined) return live.id
+  return startChat(sdk, { agentID: input.agentID, title: input.title ?? input.agentID })
 }

@@ -62,6 +62,8 @@ import {
 import { legacySessionServer, requireServerKey, selectSessionLineage, sessionHref } from "./utils/session-route"
 import { isSessionNotFoundError } from "./utils/server-errors"
 import { forgetGoneSession, revalidateSessionTabs } from "./context/session-gone"
+import { officerTabAgent } from "./context/tab-agent"
+import { resolveOfficerChat } from "./apps/agent-list"
 import { showToast } from "@/utils/toast"
 
 import { HomeScreen } from "@/pages/home-screen/home-screen"
@@ -165,6 +167,17 @@ const TargetSessionRoute = () => {
   )
 }
 
+/** The calm state while an officer tab follows its colleague to the chat it holds now — never the
+ *  "deleted or expired" card, which is architecturally unreachable for a colleague. */
+function OfficerChatRecovering() {
+  const language = useLanguage()
+  return (
+    <div class="flex h-full items-center justify-center p-8 text-center">
+      <span class="text-sm text-v2-text-text-muted">{language.t("app.connection.reconnecting")}</span>
+    </div>
+  )
+}
+
 /** The calm scoped state for a chat that no longer exists — a normal lifecycle event in a
  *  multi-client OS (deleted from another window, the API, or server auto-prune), never a
  *  crash. Wire-accurate "Session not found" is wrong for humans: the chat was deleted. */
@@ -221,6 +234,9 @@ function ResolvedTargetSessionRoute() {
   const tabs = useTabs()
   const sync = useServerSync()
   const serverKey = createMemo(() => requireServerKey(params.serverKey))
+  const serverSDK = useServerSDK()
+  const navigate = useNavigate()
+  const officerAgent = createMemo(() => officerTabAgent(tabs.store, serverKey(), params.id))
   const cached = createMemo(() => sync().session.lineage.peek(params.id))
   const [resolved] = createResource(
     () => {
@@ -229,8 +245,15 @@ function ResolvedTargetSessionRoute() {
     },
     ({ id, server, sync }) =>
       sync.session.lineage.resolve(id).catch((error) => {
-        // GONE retires every trace, not just the tab — see `session-gone.ts` for the class.
-        if (isSessionNotFoundError(error, id)) forgetGoneSession({ session: sync.session, tabs, server, sessionID: id })
+        /**
+         * 🔴 **A colleague's chat being gone is NOT the colleague being gone** (owner, 2026-09-26).
+         * This used to retire every trace of the id — cache and tab — and the route then rendered
+         * *"This chat was deleted or has expired"*. That is unreachable for an officer now: the id is
+         * a pointer and the colleague is the identity, so the recovery below follows the colleague to
+         * its current chat instead. Only a chat with NO colleague is genuinely gone here.
+         */
+        if (isSessionNotFoundError(error, id) && officerTabAgent(tabs.store, server, id) === undefined)
+          forgetGoneSession({ session: sync.session, tabs, server, sessionID: id })
         throw error
       }),
   )
@@ -242,6 +265,38 @@ function ResolvedTargetSessionRoute() {
   )
   const directory = createMemo(() => current()?.session.location.directory)
   const targetDirectory = () => directory()!
+
+  /**
+   * 🔴 **RECOVERY BY COLLEAGUE.** When the route names a chat the server no longer has, and the tab
+   * tells us which colleague owns it, ask the roster for that colleague's CURRENT chat — creating the
+   * canonical one when it has none — and go there. This is the client half of "a colleague is an
+   * entity and its chat is a component": the id can never strand an officer tab, so the "deleted or
+   * expired" card is structurally unreachable for one.
+   *
+   * ⚠️ A plain effect, NOT a `createResource`: this is a one-shot side effect that NAVIGATES, not a
+   * value a view renders, so it has no place in the settled-resource ledger. `forwarded` keys the
+   * attempt to the dead id so a re-run cannot fire the lookup twice.
+   */
+  const [forwardError, setForwardError] = createSignal<unknown>()
+  let forwarded = ""
+  createEffect(() => {
+    const agent = officerAgent()
+    if (agent === undefined || current() !== undefined) return
+    if (resolved.state !== "errored" || !isSessionNotFoundError(resolved.error, params.id)) return
+    if (forwarded === params.id) return
+    forwarded = params.id
+    setForwardError(undefined)
+    void resolveOfficerChat(serverSDK().client.v2, { agentID: agent })
+      .then((successor) => {
+        if (successor === undefined) {
+          setForwardError(new Error(`${agent} has no chat to open`))
+          return
+        }
+        tabs.addSessionTab({ server: serverKey(), sessionId: successor, agent })
+        navigate(sessionHref(serverKey(), successor), { replace: true })
+      })
+      .catch((error) => setForwardError(error))
+  })
 
   /**
    * 🔴 **The ONE-TAB-PER-COLLEAGUE rule reaches this door too** (owner, 2026-09-01: *"picking a
@@ -276,7 +331,17 @@ function ResolvedTargetSessionRoute() {
       <Show
         when={!!current() || resolved.state !== "errored"}
         fallback={
-          isSessionNotFoundError(resolved.error, params.id) ? <SessionGoneCard /> : <ErrorPage error={resolved.error} />
+          officerAgent() !== undefined ? (
+            forwardError() !== undefined ? (
+              <ErrorPage error={forwardError()} />
+            ) : (
+              <OfficerChatRecovering />
+            )
+          ) : isSessionNotFoundError(resolved.error, params.id) ? (
+            <SessionGoneCard />
+          ) : (
+            <ErrorPage error={resolved.error} />
+          )
         }
       >
         <Show when={directory()}>

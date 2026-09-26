@@ -51,7 +51,10 @@ describe("revalidateSessionTabs", () => {
   const server = ServerConnection.Key.make("http://sidecar.test")
   const other = ServerConnection.Key.make("http://elsewhere.test")
 
-  const tabs = (store: Array<{ type: string; server: ServerConnection.Key; sessionId: string }>, ready = true) => {
+  const tabs = (
+    store: Array<{ type: string; server: ServerConnection.Key; sessionId: string; agent?: string; worker?: boolean }>,
+    ready = true,
+  ) => {
     const closed: Array<{ server: string; sessionId: string }> = []
     return {
       closed,
@@ -88,6 +91,26 @@ describe("revalidateSessionTabs", () => {
     expect(gone).toEqual(["deleted"])
     expect(forgotten).toEqual(["deleted"])
     expect(store.closed).toEqual([{ server, sessionId: "deleted" }])
+  })
+
+  test("a colleague's gone chat does not retire the colleague's tab", async () => {
+    const store = tabs([
+      { type: "session", server, sessionId: "ses_daedalus", agent: "daedalus" },
+      { type: "session", server, sessionId: "anon" },
+    ])
+    const forgotten: string[] = []
+    const gone = await revalidateSessionTabs({
+      session: {
+        revalidate: async () => ["ses_daedalus", "anon"],
+        forget: (id) => forgotten.push(id),
+      },
+      tabs: store,
+      server,
+    })
+    // The colleague's tab is LEFT STANDING so the route can follow it; the anonymous one is retired.
+    expect(gone).toEqual(["ses_daedalus", "anon"])
+    expect(forgotten).toEqual(["anon"])
+    expect(store.closed).toEqual([{ server, sessionId: "anon" }])
   })
 
   test("an un-hydrated strip validates nothing", async () => {

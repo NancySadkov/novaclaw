@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { findAgentTab } from "./tab-agent"
+import { findAgentTab, officerTabAgent } from "./tab-agent"
 import type { SessionTab, Tab } from "./tabs"
 import type { ServerConnection } from "./server"
 
@@ -65,5 +65,36 @@ describe("one tab per colleague", () => {
   test("ignores drafts, which have no colleague to be duplicated", () => {
     const draft: Tab = { type: "draft", draftID: "d1", server: SERVER, directory: "/tmp" }
     expect(findAgentTab([draft, chat("ses_a", "nova")], SERVER, "nova")).toBe(1)
+  })
+})
+
+/**
+ * WHICH colleague owns a route's session — the key that lets a gone transcript id recover instead of
+ * rendering "This chat was deleted or has expired" (owner, 2026-09-26).
+ *
+ * A/B: make `officerTabAgent` return `tab.agent` for a worker and "a worker is not its officer's
+ * route" fails; drop the `worker === true` guard and that same case flips the other way.
+ */
+describe("officerTabAgent — the colleague behind a route's session", () => {
+  test("names the colleague that owns the session", () => {
+    const tabs = [chat("ses_nova", "nova"), chat("ses_daedalus", "daedalus")]
+    expect(officerTabAgent(tabs, SERVER, "ses_daedalus")).toBe("daedalus")
+  })
+
+  test("a session no tab holds has no colleague to follow", () => {
+    expect(officerTabAgent([chat("ses_nova", "nova")], SERVER, "ses_other")).toBeUndefined()
+  })
+
+  test("an anonymous chat follows nobody — it is genuinely gone when deleted", () => {
+    expect(officerTabAgent([chat("ses_a")], SERVER, "ses_a")).toBeUndefined()
+  })
+
+  test("a worker is not its officer's route", () => {
+    const worker = { ...chat("ses_worker", "umbris"), worker: true } satisfies Tab
+    expect(officerTabAgent([worker], SERVER, "ses_worker")).toBeUndefined()
+  })
+
+  test("scoped to one server", () => {
+    expect(officerTabAgent([chat("ses_a", "nova", OTHER)], SERVER, "ses_a")).toBeUndefined()
   })
 })

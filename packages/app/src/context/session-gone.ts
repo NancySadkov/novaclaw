@@ -52,7 +52,13 @@ export function revalidateSessionTabs(input: {
   readonly tabs: {
     readonly ready: () => boolean
     readonly store: ReadonlyArray<
-      | { readonly type: "session"; readonly server: ServerConnection.Key; readonly sessionId: string }
+      | {
+          readonly type: "session"
+          readonly server: ServerConnection.Key
+          readonly sessionId: string
+          readonly agent?: string | undefined
+          readonly worker?: boolean | undefined
+        }
       | { readonly type: string; readonly server: ServerConnection.Key }
     >
     readonly removeSessionTab: (tab: { readonly server: ServerConnection.Key; readonly sessionId: string }) => void
@@ -62,6 +68,24 @@ export function revalidateSessionTabs(input: {
 }): Promise<readonly string[]> {
   // An un-hydrated strip has nothing to validate; the next connect re-runs this.
   if (!input.tabs.ready()) return Promise.resolve([])
+  /**
+   * 🔴 **A colleague's tab is never retired by a gone id** (owner, 2026-09-26). This is the reconnect
+   * arm of the "officer is the entity, its chat is a component" rule: the id is only a pointer, so a
+   * transcript the server no longer has must not close the colleague's tab. The route follows the
+   * colleague to its current chat when the tab is opened (`officerTabAgent` in the session route), so
+   * leaving the tab standing is what lets that recovery happen instead of showing "deleted".
+   */
+  const colleagueSessions = new Set(
+    input.tabs.store
+      .filter(
+        (tab): tab is { type: "session"; server: ServerConnection.Key; sessionId: string; agent: string } =>
+          tab.type === "session" &&
+          tab.server === input.server &&
+          (tab as { agent?: string }).agent !== undefined &&
+          (tab as { worker?: boolean }).worker !== true,
+      )
+      .map((tab) => tab.sessionId),
+  )
   const sessionIDs = input.tabs.store
     .filter(
       (tab): tab is { readonly type: "session"; readonly server: ServerConnection.Key; readonly sessionId: string } =>
@@ -72,8 +96,10 @@ export function revalidateSessionTabs(input: {
   return input.session
     .revalidate(sessionIDs, input.signal)
     .then((gone) => {
-      for (const sessionID of gone)
+      for (const sessionID of gone) {
+        if (colleagueSessions.has(sessionID)) continue
         forgetGoneSession({ session: input.session, tabs: input.tabs, server: input.server, sessionID })
+      }
       return gone
     })
     .catch(() => [])

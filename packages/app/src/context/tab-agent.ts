@@ -40,3 +40,29 @@ export function findAgentTab(
       tab.sessionId !== exceptSession,
   )
 }
+
+/**
+ * Which COLLEAGUE owns the session a route names, or `undefined` for a chat with no colleague.
+ *
+ * 🔴 **This is the key that makes a GONE session id recoverable** (owner, 2026-09-26). The tab strip
+ * and the route used to be keyed on the session id alone, so once "Clear chat" removed an officer's
+ * transcript — or the sidecar restarted mid-clear and the replacement was never opened — the route
+ * named an id the server no longer had and rendered *"This chat was deleted or has expired"*. That
+ * card is impossible by design here: a colleague is an ENTITY and its chat is a COMPONENT reached
+ * through it, so an officer route must follow the colleague to whatever chat it holds NOW, and never
+ * be retired because one transcript id went away. `undefined` keeps that policy off worker and
+ * anonymous chats, which genuinely have no entity to follow.
+ */
+export function officerTabAgent(
+  tabs: readonly Tab[],
+  server: ServerConnection.Key,
+  sessionID: string | undefined,
+): string | undefined {
+  if (sessionID === undefined) return undefined
+  const tab = tabs.find(
+    (item): item is Extract<Tab, { type: "session" }> =>
+      item.type === "session" && item.server === server && item.sessionId === sessionID,
+  )
+  if (tab === undefined || tab.worker === true) return undefined
+  return tab.agent
+}
