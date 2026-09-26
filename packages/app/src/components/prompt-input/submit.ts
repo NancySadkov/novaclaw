@@ -30,6 +30,7 @@ import { buildPrompt } from "./build-request-parts"
 import { setCursorPosition } from "./editor-dom"
 import { ScopedKey } from "@/utils/server-scope"
 import { createPromptSubmissionState } from "./submission-state"
+import { pushStopLedger } from "./stop-ledger"
 import { errorMessage as layoutErrorMessage } from "@/pages/layout/helpers"
 
 type PendingPrompt = {
@@ -460,9 +461,33 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const mode = input.mode()
 
     if (text.trim().length === 0 && images.length === 0 && input.commentCount() === 0) {
-      if (input.working()) void abort()
+      // 🔴 Recorded (`stop-ledger.ts`): an empty submit while working IS the stop, and this is
+      // the branch that makes Enter stop too. If a click ever lands here, the ledger shows it.
+      if (input.working()) {
+        pushStopLedger({
+          sessionID: params.id,
+          shown: "stop",
+          working: true,
+          blank: true,
+          resuming: false,
+          action: "submit-abort",
+        })
+        void abort()
+      }
       return
     }
+    // 🔴 Recorded (`stop-ledger.ts`): a non-empty submit while working queues a follow-up — the
+    // send path a click takes when the control reads idle. `shown` cannot distinguish the
+    // spinner here (that memo lives in the component); `working: true` is the load-bearing fact.
+    if (input.working())
+      pushStopLedger({
+        sessionID: params.id,
+        shown: "stop",
+        working: true,
+        blank: false,
+        resuming: false,
+        action: "submit-send",
+      })
 
     const currentModel = local.model.current()
     const currentOverride = local.model.override()

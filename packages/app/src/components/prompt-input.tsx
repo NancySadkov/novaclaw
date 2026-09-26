@@ -28,6 +28,7 @@ import { observeAncestorReattachment } from "@/utils/dom-reattachment"
 import { createSettledResource } from "@/utils/settled-resource"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { Spinner } from "@novaclaw/ui/spinner"
+import { pushStopLedger } from "./prompt-input/stop-ledger"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { TeamChatButton } from "@/components/team-chat-button"
@@ -771,7 +772,22 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     onClick={(event) => {
                       // Esc calls `abort()` directly; the button must do the SAME while the agent is
                       // working, never depend on the form's submit or on `blank()`.
-                      if (!working()) return
+                      const shown = stopFlight() ? "spinner" : stopping() ? "stop" : resuming() ? "play" : "send"
+                      const snapshot = {
+                        sessionID: props.controls.session.id,
+                        shown,
+                        working: working(),
+                        blank: blank(),
+                        resuming: resuming(),
+                      } as const
+                      if (!working()) {
+                        // 🔴 Recorded, not just fallen through (`stop-ledger.ts`): a click that
+                        // arrives while `working()` reads false goes to the send path — on a stale
+                        // or lagging tab that reads as "ignored". The ledger says which it was.
+                        pushStopLedger({ ...snapshot, action: "submit-path" })
+                        return
+                      }
+                      pushStopLedger({ ...snapshot, action: "abort" })
                       event.preventDefault()
                       void abort()
                     }}
