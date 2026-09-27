@@ -43,7 +43,7 @@ import { AgentPortrait } from "@/components/agent-portrait"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { sessionExecutions, stopSessionExecution, type SessionExecutionInfo } from "@/utils/session-execution-api"
 import { formatTokensPerSecond } from "@/utils/token-rate"
-import { WorkerListDialog, type WorkerListItem } from "@/components/worker-list-dialog"
+import { WorkerListDialog } from "@/components/worker-list-dialog"
 import { useWorkers } from "@/context/workers"
 import { useChatsAttention } from "@/apps/chats-attention"
 import { unseenOfficerSessions } from "@/apps/attention-ids"
@@ -681,14 +681,12 @@ function ContactRow(props: ContactRowProps) {
     return formatTokensPerSecond(tps)
   })
   const workerQuery = useWorkers(() => live().sessionID)
-  const workers = createMemo(() => workerQuery.data ?? [])
-  // The dialog's shape: identity plus the age the row shows. `SessionLike.time.created` is the
-  // worker's start, which is what "running for" measures.
-  const workerItems = createMemo<WorkerListItem[]>(() =>
-    workers().map((worker) => ({ id: worker.id, title: worker.title, startedAt: worker.startedAt })),
-  )
+  // ⚠️ `useWorkers` already hands back reference-stable rows; mapping them again here would REPLACE
+  // every object on every poll and undo that, which is what this page did — so a `state` flip on one
+  // worker rebuilt all of them, and the stop-reason box inside each row with them.
+  const workers = workerQuery.workers
   const openWorkers = () => {
-    const rows = workerItems()
+    const rows = workers()
     const root = props.sessions.find((session) => session.id === live().sessionID)
     if (rows.length === 0 || props.serverKey === undefined || props.server === undefined || !root?.location?.directory)
       return
@@ -696,7 +694,7 @@ function ContactRow(props: ContactRowProps) {
       <WorkerListDialog
         title={language.t("contacts.workers.title", { name: props.view.name })}
         // The accessor, not a snapshot: a worker that settles while the dialog is open drops out.
-        workers={workerItems()}
+        workers={workers()}
         href={(sessionID) => sessionHref(props.serverKey!, sessionID)}
         onStop={(worker, reason) => stopSessionExecution(props.server!, worker.id, root.location!.directory, reason)}
       />

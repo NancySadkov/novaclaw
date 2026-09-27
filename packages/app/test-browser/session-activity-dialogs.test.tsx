@@ -5,6 +5,8 @@ import { MemoryRouter, Route } from "@solidjs/router"
 import { DialogProvider, useDialog } from "@novaclaw/ui/context/dialog"
 import { ShellListDialog } from "@/components/shell-list-dialog"
 import { WorkerListDialog } from "@/components/worker-list-dialog"
+import type { LivingWorker } from "@/context/workers"
+import { stableRows } from "@/utils/stable-rows"
 import { LanguageContext } from "@/context/language"
 
 let dispose: (() => void) | undefined
@@ -195,4 +197,121 @@ test("a finished command leaves the open list and shows the empty state", async 
   await settle()
   expect(document.body.textContent).not.toContain("long build")
   expect(document.body.textContent).toContain("session.activity.shells.empty")
+})
+
+/**
+ * 🔴 **THE reported defect, as a rendering test: the stop-reason field must survive a poll.**
+ *
+ * Owner, 2026-09-27: *"when user clicks the workers icon in the chat screen, and tries to enter reason
+ * for stopping a worker, something keeps stealing the input focus, apparently as the agent generates
+ * in the background."*
+ *
+ * The chain, read out of the libraries rather than guessed. `context/workers.ts` polls every 2 s;
+ * `@tanstack/solid-query` sets `structuralSharing = false` (`useBaseQuery.ts`), so each poll is a new
+ * array of new objects; Solid's `<For>` is `mapArray`, which reuses a row only on
+ * `items[i] === newItems[i]`. Every row was therefore destroyed and recreated on every tick — and the
+ * row holds the `<textarea autofocus>`. Recreating it drops focus and caret, and the fresh
+ * `autofocus` takes the focus straight back, so the keystrokes after that went somewhere the user was
+ * not looking.
+ *
+ * This test drives the list the way the product does — a fresh, equal array, as JSON always produces —
+ * and asserts on the DOM NODE, not on the text. The text surviving was never the bug; the node being
+ * replaced was.
+ */
+/** What the wire carries: the rendered row PLUS a state the row never shows. */
+type WireWorker = LivingWorker & { readonly state?: string }
+
+const [liveWorkers, setLiveWorkers] = createSignal<readonly WireWorker[]>([])
+/**
+ * ⚠️ `startedAt` is a CONSTANT, not `Date.now()`. The row renders "running for N", so `startedAt` is
+ * one of its identity fields — and a fixture that recomputed it per call would change a rendered field
+ * on every poll and make this test fail for a reason that has nothing to do with the defect.
+ */
+const WORKER_STARTED_AT = 1_757_000_000_000
+const livingWorker = (id: string, over: Partial<WireWorker> = {}): WireWorker => ({
+  id,
+  title: `Worker ${id}`,
+  startedAt: WORKER_STARTED_AT,
+  ...over,
+})
+
+function LiveWorkerOpener() {
+  const dialog = useDialog()
+  const rows = stableRows<WireWorker>(liveWorkers, {
+    key: (worker) => worker.id,
+    // `state` is what the wire carries and the row never renders — and it is exactly what used to
+    // rebuild the row out from under the caret.
+    fields: (worker) => ({ title: worker.title, startedAt: worker.startedAt }),
+    project: (worker) => ({ id: worker.id, title: worker.title, startedAt: worker.startedAt }),
+  })
+  onMount(
+    () =>
+      void dialog.show(() => (
+        <WorkerListDialog
+          title="Running workers"
+          workers={rows()}
+          href={(id) => `/chat/${id}`}
+          onStop={async (worker, reason) => {
+            stopped.push({ id: worker.id, reason })
+          }}
+        />
+      )),
+  )
+  return null
+}
+
+test("🔴 the stop-reason field keeps its DOM node, its focus and its text across a poll", async () => {
+  setLiveWorkers([livingWorker("ses_research", { state: "queued" })])
+  mount(LiveWorkerOpener)
+  await settle()
+
+  const stop = [...document.querySelectorAll("button")].find((button) => button.textContent === "contacts.workers.stop")
+  stop?.click()
+  await settle()
+  const reason = document.querySelector("textarea") as HTMLTextAreaElement | null
+  expect(reason).not.toBeNull()
+  reason!.focus()
+  reason!.value = "the audit is already covered by the ledger worker"
+  reason!.dispatchEvent(new InputEvent("input", { bubbles: true }))
+  await settle()
+  expect(document.activeElement).toBe(reason)
+
+  // An unchanged poll: new array, new objects, one `state` flip — exactly what the wire delivers.
+  setLiveWorkers([livingWorker("ses_research", { state: "busy" })])
+  await settle()
+
+  const after = document.querySelector("textarea") as HTMLTextAreaElement | null
+  expect(after, "the field was torn down and rebuilt by a poll that changed nothing").toBe(reason)
+  expect(document.activeElement, "focus was stolen by the rebuilt field").toBe(reason)
+  expect(after!.value).toBe("the audit is already covered by the ledger worker")
+
+  // The row's toggle and the prompt's confirm share a label, and only the LAST one is the confirm —
+  // picking the first would toggle the prompt shut and assert nothing about the stop.
+  const confirm = [...document.querySelectorAll("button")]
+    .filter((button) => button.textContent === "contacts.workers.stop")
+    .at(-1)
+  expect(confirm?.disabled, "the typed reason was lost, so Stop is disabled again").toBe(false)
+  confirm?.click()
+  await settle()
+  expect(stopped).toEqual([
+    { id: "ses_research", reason: "the audit is already covered by the ledger worker" },
+  ])
+})
+
+test("🔴 NEGATIVE CONTROL: a worker whose rendered title changes DOES rebuild its row", async () => {
+  // A helper that ignored every change would pass the test above and freeze the list, which is its own
+  // silent lie: the row would show a stale purpose for a worker that has been re-tasked.
+  setLiveWorkers([livingWorker("ses_research", { title: "Research docs" })])
+  mount(LiveWorkerOpener)
+  await settle()
+  const stop = [...document.querySelectorAll("button")].find((button) => button.textContent === "contacts.workers.stop")
+  stop?.click()
+  await settle()
+  const before = document.querySelector("textarea")
+
+  setLiveWorkers([livingWorker("ses_research", { title: "Audit the ledger" })])
+  await settle()
+
+  expect(document.body.textContent).toContain("Audit the ledger")
+  expect(document.querySelector("textarea")).not.toBe(before)
 })

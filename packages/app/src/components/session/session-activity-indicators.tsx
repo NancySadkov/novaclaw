@@ -10,6 +10,7 @@ import { useSDK } from "@/context/sdk"
 import { useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
 import { sessionHref } from "@/utils/session-route"
+import { stableRows } from "@/utils/stable-rows"
 import { stopSessionCommand, stopSessionExecution } from "@/utils/session-execution-api"
 import { useWorkers } from "@/context/workers"
 
@@ -47,7 +48,9 @@ export function SessionActivityIndicators(props: { sessionID: string }) {
   const workerQuery = useWorkers(() => props.sessionID)
   // The session cache is intentionally bounded and starts nearly empty after a restart. Worker
   // ownership is durable instance state, so this shortcut reads the server projection directly.
-  const workers = createMemo(() => workerQuery.data ?? [])
+  // ⚠️ Already reference-stable across an unchanged poll (`context/workers.ts`) — which is what keeps
+  // the stop-reason field inside a row alive while the user is typing into it.
+  const workers = workerQuery.workers
 
   const shellQuery = createQuery(() => ({
     queryKey: ["session-running-shells", server.key, sdk().directory, props.sessionID],
@@ -57,7 +60,17 @@ export function SessionActivityIndicators(props: { sessionID: string }) {
     },
     refetchInterval: 2_000,
   }))
-  const shells = createMemo(() => shellQuery.data ?? [])
+  // 🔴 The same boundary as the worker list, for the same reason: `ShellListDialog` carries an
+  // `autofocus` stop-reason box inside its rows, and a poll handing `<For>` new objects every two
+  // seconds rebuilds them under the user's hands. `command` is what the row renders, so a job whose
+  // rendered fields are unchanged keeps its DOM.
+  const shells = createMemo(() =>
+    stableRows<{ id: string; sessionID: string; command: string; startedAt: number }>(() => shellQuery.data, {
+      key: (job) => job.id,
+      fields: (job) => ({ command: job.command, sessionID: job.sessionID, startedAt: job.startedAt }),
+      project: (job) => ({ id: job.id, sessionID: job.sessionID, command: job.command, startedAt: job.startedAt }),
+    })(),
+  )
   const href = (sessionID: string) => sessionHref(server.key, sessionID)
 
   const openWorkers = () => {
