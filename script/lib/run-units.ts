@@ -168,6 +168,29 @@ export type Pkg = {
   perSubdir?: boolean
   /** Override the hang backstop for a package whose HONEST runtime is close to the default. */
   wallclockMs?: number
+  /**
+   * A HARDER commit ceiling for one unit than `killCapMb` would derive, in MB.
+   *
+   * 🔴 **Why this exists, and it is not "core uses too much memory".** `killCapMb` anchors on twice
+   * the unit's own worst healthy run and bounds that by 62.5 % of the machine, so for `core` it lands
+   * near 20 GB on a 32 GB box. That arithmetic is only safe while the unit is the ONLY thing on the
+   * machine — which is not a condition any code here checks. Measured 2026-09-27: a `core` gate held
+   * ~10 GB, stayed comfortably inside its ~20 GB ceiling, and the HOST still reached 100 % commit, so
+   * Windows reaped the user's browser and editor. The per-unit cap measures the unit; the machine died
+   * of everything else, and the one control that watched the whole host is disarmed while a run is in
+   * flight (`heavy-guard.ts`, `ownWorkInFlight`).
+   *
+   * So this lowers the line for a unit that is KNOWN to be unsafe to let loose, trading a count this
+   * machine cannot produce anyway for a blast radius it can survive. `core` is not runnable whole here:
+   * an earlier gate committed ~31 GB and rebooted the box, and the runs since have been wall-clock
+   * killed with no readable summary. A fast, predictable kill beats a slow one that reaps the desktop.
+   *
+   * ⚠️ **It is a KILL line, not a throttle.** Nothing can make a run use less; this only decides where
+   * it stops. Sharding is what lets a unit actually FINISH inside a small ceiling, and that remains the
+   * MEMORY PLANNER's call (`test.ts` reads `plan.mode`/`plan.shards`) rather than a field here — a field
+   * the planner ignored would be exactly the decorative config this comment is complaining about.
+   */
+  memCapMb?: number
   /** Per-subdirectory override for an isolated full-only unit with a measured honest runtime. */
   subdirWallclockMs?: Readonly<Record<string, number>>
   /**
@@ -267,6 +290,19 @@ export const PACKAGES: Pkg[] = [
   // whole run room to finish. It is NOT a claim about how long `core` should take. Lower it only from a
   // measured whole run on a quiet box (`tmp/peak-series.jsonl` carries the duration), never from
   // preference — and if a run of it ever exceeds this, that IS the regression the old note asked for.
+  /**
+   * 🔴 `core` is the unit that made the machine unsafe, and it needs NO field here to be capped.
+   *
+   * The machine allowance (`commit-cap.ts`'s `MACHINE_ALLOWANCE_MB`, 8 GB) is what protects the box,
+   * and it applies to every unit — so `core` is covered by the same promise as everything else, and
+   * stating `memCapMb: 8_192` here as well would be one number written twice, free to drift.
+   *
+   * What core DOES need is the truth about its own cost: its recorded healthy peak is 10,822 MB, which
+   * is ABOVE the allowance, so a whole `core` run is killed here having produced no count. The note
+   * above this table records four SHARDED runs totalling 798 s–938 s, and sharding is the memory
+   * planner's call. The two mechanisms are complementary and neither suffices alone: the planner decides
+   * whether the unit is split, and the allowance decides what happens when it is not.
+   */
   { name: "core", dir: "packages/core", args: [], wallclockMs: 1_200_000 },
   { name: "app:unit", dir: "packages/app", args: ["--preload", "./happydom.ts", "./src"] },
   {

@@ -77,7 +77,7 @@
     "novaclaw test/*": 3
   },
   "counts": {
-    "script": 282,
+    "script": 284,
     "script-lib": 5,
     "schema": 61,
     "protocol": 36,

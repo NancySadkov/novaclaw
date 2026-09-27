@@ -208,6 +208,11 @@ type Job = {
   readonly dir: string
   readonly argv: string[]
   readonly wallclockMs: number
+  /**
+   * A unit's OWN tighter commit ceiling, in MB. Never a way to RAISE the line: `run` takes the minimum
+   * of this, the machine allowance and the box bound, so the worst a table entry can do is tighten.
+   */
+  readonly memCapMb?: number
   /** Position in the planned order, carried onto the result so the summary can be stably sorted. */
   readonly order: number
 }
@@ -956,15 +961,31 @@ async function run(job: Job, sharded: number | undefined, overlapped: () => bool
   // hunt caps a suspect without waiting for the box to notice.
   const forcedCap = Number(process.env.NOVACLAW_TEST_FORCE_MEM_CAP_MB)
   const forcedValid = Number.isFinite(forcedCap) && forcedCap > 0
+  // Precedence, and each step is a deliberate override of the one below it: the env knob (a person
+  // experimenting on a run they do not mind losing), then the unit's OWN declared ceiling, then the
+  // derived one. The unit's field is `min`, not a replacement — a unit may tighten its line but must
+  // not raise it above what the box can survive, or `memCapMb: 99999` would become a way to disable
+  // the guard by editing a table.
+  const derived = kind === "test" ? CommitCap.killCapMb(profileMb, commitLimitMb()) : undefined
+  const declared = job.memCapMb
   const capMb =
     forcedValid && forcedCap > 0
       ? Math.floor(forcedCap)
-      : kind === "test"
-        ? CommitCap.killCapMb(profileMb, commitLimitMb())
-        : undefined
+      : declared !== undefined
+        ? derived === undefined
+          ? declared
+          : Math.min(declared, derived)
+        : derived
+  // The ALLOWANCE is the machine's promise and the box bound can only tighten it. On a 32 GB laptop the
+  // fraction alone permitted ~20 GB for one run, which is the number that let a `core` gate sit inside
+  // its ceiling while the host paged and Windows reaped the user's apps (measured 2026-09-27).
+  const boxCap = capMb === undefined ? undefined : CommitCap.killCapMbForBox(profileMb, commitLimitMb())
+  const effectiveCap = capMb === undefined || boxCap === undefined ? capMb : Math.min(capMb, boxCap)
   const profile = profileMb ?? (forcedValid ? 0 : undefined)
   const memKill =
-    capMb !== undefined && profile !== undefined ? { capMb, profileMb: profile, forced: forcedValid } : undefined
+    effectiveCap !== undefined && profile !== undefined
+      ? { capMb: effectiveCap, profileMb: profile, forced: forcedValid }
+      : undefined
   const runs: Awaited<ReturnType<typeof spawnWithUpstreamRetry>>[] = []
   if (sharded)
     for (let i = 0; i < sharded; i++)
@@ -1116,12 +1137,20 @@ async function runSolo(job: Job) {
 }
 
 let jobIndex = 0
-const nextJob = (name: string, kind: Kind, dir: string, argv: string[], wallclockMs: number): Job => ({
+const nextJob = (
+  name: string,
+  kind: Kind,
+  dir: string,
+  argv: string[],
+  wallclockMs: number,
+  memCapMb?: number,
+): Job => ({
   name,
   kind,
   dir,
   argv,
   wallclockMs,
+  memCapMb,
   order: jobIndex++,
 })
 
@@ -1152,9 +1181,10 @@ for (const pkg of PACKAGES) {
           pkg.dir,
           argv(sub.args),
           pkg.subdirWallclockMs?.[sub.unit] ?? wallclock,
+          pkg.memCapMb,
         ),
       )
-  else testJobs.push(nextJob(pkg.name, "test", pkg.dir, argv(pkg.args), wallclock))
+  else testJobs.push(nextJob(pkg.name, "test", pkg.dir, argv(pkg.args), wallclock, pkg.memCapMb))
 }
 
 const CONCURRENCY = RunSchedule.concurrencyCap(os.cpus().length, process.env.NOVACLAW_TEST_CONCURRENCY)
