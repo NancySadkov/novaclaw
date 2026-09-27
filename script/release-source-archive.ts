@@ -29,7 +29,7 @@ function fail(message: string): never {
 }
 
 const [tarFile, outFile] = process.argv.slice(2)
-if (!tarFile || !outFile) fail("usage: release-source-archive.ts <source.tar> <source.zip>")
+if (!tarFile || !outFile) fail("usage: release-source-archive.ts <source.tar> <source.zip|source.7z>")
 if (!fs.existsSync(tarFile)) fail(`input tar does not exist: ${tarFile}`)
 // Refused rather than overwritten: a stale archive beside a fresh tar is how a release publishes
 // source that does not match its binary, and that is the exact failure the dirty-tree check above it
@@ -79,7 +79,12 @@ if (listed.status !== 0) {
     `${archiver.path} could not list the archive it just wrote (exit ${listed.status ?? "null"}):\n${listed.stdout ?? ""}${listed.stderr ?? ""}`,
   )
 }
-const audit = auditSourceListing(listed.stdout ?? "", path.basename(outFile, ".zip"))
+// The root folder name is the archive's basename MINUS its extension, and the extension is whatever
+// container was asked for. Hardcoding `.zip` here meant a `.7z` drop audited against a root called
+// `NovaClaw-x.y.z-source.7z` instead of `NovaClaw-x.y.z-source`, so the audit could never pass and the
+// public 7z release was unreachable without editing this line.
+const rootName = path.basename(outFile, path.extname(outFile))
+const audit = auditSourceListing(listed.stdout ?? "", rootName)
 if (!audit.ok) refuse(`the source drop is not releasable:\n${audit.problems.map((p) => `  - ${p}`).join("\n")}`)
 console.log(`audited ${audit.entries} entries: obligations present, no node_modules, no .git, no tmp`)
 
