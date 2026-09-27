@@ -97,9 +97,13 @@ agents should feel like operating machinery.`
  * and could not LOOK AT A FILE. A roster whose whole premise is user-created officers cannot have its
  * floor live in the built-ins' constructor.
  *
- * `officer` widens it by exactly one action: addressing a PEER. "Top level executive agents who can
- * communicate with each other" is the owner's sentence, and staffing stays Nova's alone — enforced by
- * `tool/colleague.ts` → `mayStaff`, independently of this dial.
+ * `officer` widens it by the SELF-SERVICE actions: spawning a helper that runs as itself, killing
+ * one, and driving the screen. It no longer widens `colleague` — addressing a peer is now everyone's
+ * floor, because the org chart is enforced by `ColleagueRoute.route` where the chart is actually
+ * known, and a dial in the floor could only ever refuse an officer the thing their job requires.
+ * "Top level executive agents who can communicate with each other" is the owner's sentence, and
+ * staffing stays Nova's alone — enforced by `tool/colleague.ts` → `mayStaff`, independently of this
+ * dial.
  */
 export const floor = (input: {
   readonly scratchDirs: readonly string[]
@@ -131,12 +135,27 @@ export const floor = (input: {
   // `evaluate("question", …)` ever happens — so they were removed rather than reconciled. **If a
   // question tool is ever proposed, principle 13 is the answer, and it is a structural rule, not a
   // permission default:** do not add a rule here and consider it handled.
-  // DENIED unless this is an officer, which is what keeps the hand-off tool OFF the horizon for
-  // agents that may not use it — `ToolRegistry.materialize` withdraws a wholly-denied tool rather
-  // than advertising it and refusing. Measured 2026-08-21: resident tool schemas were 32,822 bytes
-  // with `colleague` on every horizon and 30,744 without it — 2,078 bytes on every turn of every
-  // session. An officer pays them because delegation is its job; the machinery agents do not.
-  { action: "colleague", resource: "*", effect: input.officer ? "allow" : "deny" },
+  //
+  // **`colleague` is GRANTED TO EVERYONE, unconditionally — not `officer ? "allow" : "deny"`.**
+  //
+  // Owner, 2026-09-27, on a live instance: Sopitis tried to report to Nova and got
+  // `Deferred tool colleague is not callable in this session`. Measured on that instance's own store:
+  // Sopitis carried `deny colleague *` in its stored layer, so `ToolRegistry.materialize` withdrew
+  // the tool from its registry entirely and the model was told a name it could not use.
+  //
+  // ⚠️ **The deny arm was doing a job the tool already does, and doing it in the one place that cannot
+  // see the org chart.** `ColleagueRoute.route` (`session/colleague-route.ts`) enforces the whole
+  // invariant: a worker is redirected to its parent, Nova reaches anyone, self-address is refused, and
+  // anything off-tier is REDIRECTED TO THE SUPERIOR rather than delivered — which is AGENTS.md's
+  // "the chain of command is preserved" rule, already shipped. The deny arm sat above that as a
+  // blanket switch, so it could refuse an officer for a reason the router would have handled
+  // correctly, and it did.
+  //
+  // The prompt-budget argument for the deny (measured 2026-08-21: 32,822 bytes of resident schemas
+  // with `colleague` on every horizon versus 30,744 without — 2,078 bytes a turn) was real, and it is
+  // now handled where it belongs: `nativeDefinitions` keeps `colleague` disclosed without charging it
+  // to the budget, so the model still reads it and no agent is refused it.
+  { action: "colleague", resource: "*", effect: "allow" },
   // 🔴 AN OFFICER MAY STAFF ITSELF — the owner's metaphor names it: *"top level executive agents …
   // spawn the nameless sub-agents"*. Until 2026-08-22 nobody could: `spawn` is absent from
   // `AMBIENT_SAFE_BASELINE`, so it fell through to the evaluator's `ask` default — and asking was
@@ -293,26 +312,22 @@ export const Plugin = define({
         item.permissions.push(
           ...PermissionV2.merge(defaults, [
             { action: "plan_enter", resource: "*", effect: "allow" },
-            // 🔴 The CEO's own job, granted in the charter rather than asked for each time.
+            // Nova's explicit `colleague` grant is GONE (owner, 2026-09-27), and with it the
+            // paragraph that argued for it. The floor now grants `colleague` to every agent, so this
+            // line was a second copy of a value the floor already holds - and a second copy is how
+            // the floor and the charter drifted apart in the first place.
             //
-            // `colleague` is not in `AMBIENT_SAFE_BASELINE` and must not be: for an ordinary officer,
-            // addressing a peer spends someone else's model time and staffing the org creates
-            // capability. But routing and hiring are the whole of what Nova IS — a governing agent
-            // that must ask permission to do its only job is a CEO in name. The user is in the
-            // conversation when it happens, every hire appears immediately on the roster with a name
-            // and a brief they can read, and every retire is one click from a re-hire.
-            //
-            // ⚠️ It grants Nova nothing an officer could not be granted, and nothing beyond this
-            // action: no bash, no writes, no wider reach. The org chart limits who may staff
-            // (`tool/colleague.ts` → `mayStaff`); this only settles whether the one who may has to
-            // ask first.
-            { action: "colleague", resource: "*", effect: "allow" },
+            // The reasoning survives, restated by the floor: routing and hiring are what Nova IS, and
+            // a governing agent that must ask permission to do its only job is a CEO in name. That is
+            // now true of every officer rather than of one, which is the whole of the change. It still
+            // grants nothing beyond these actions - no bash, no writes, no wider reach - and the org
+            // chart still limits who may staff (`tool/colleague.ts` -> `mayStaff`).
             // …and the other half of the same sentence: *"executive agents who can communicate with
             // each other AND spawn the nameless sub-agents"*. Nova takes the non-officer floor (it is
-            // seeded in code, before any roster exists) and re-allows its own job here, exactly as it
-            // does for `colleague` above. `inherit` only — the child runs as Nova, under Nova's
-            // ruleset, so this creates a worker and not a privilege. The spawn tool has no named-agent
-            // override; changing roles remains an operator/org-chart operation.
+            // seeded in code, before any roster exists) and re-allows its own job here. `inherit`
+            // only - the child runs as Nova, under Nova's ruleset, so this creates a worker and not
+            // a privilege. The spawn tool has no named-agent override; changing roles remains an
+            // operator/org-chart operation.
             { action: "spawn", resource: "inherit", effect: "allow" },
             { action: "kill", resource: "*", effect: "allow" },
           ]),

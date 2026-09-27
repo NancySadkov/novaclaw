@@ -264,7 +264,7 @@ describe("tool_call recovers a near miss on a deferred name", () => {
     }),
   )
 
-  it.effect("a genuinely unknown name is still refused — and told what IS callable here", () =>
+  it.effect("a genuinely unknown name is refused, and named as INSTALLATION rather than session state", () =>
     Effect.gen(function* () {
       const service = yield* ToolRegistry.Service
       yield* registerHexTools(service)
@@ -273,23 +273,52 @@ describe("tool_call recovers a near miss on a deferred name", () => {
       const settled = yield* dispatch(materialized, "frobnicate")
       expect(settled.result.type).toBe("error")
       const text = String(settled.result.value)
-      expect(text).toContain("Deferred tool frobnicate is not callable in this session")
-      expect(text).toContain("Disclosed and callable through tool_call here: read-hex.")
+      // 🔴 The wording CHANGED, owner 2026-09-27, and the change is the point. This used to say
+      // `Deferred tool frobnicate is not callable in this session` and list the DISCLOSED set — which
+      // described a prompt-budget decision as a fact about the session, and so told a model that a
+      // tool the instance had installed was somehow not available to it. That is the sentence the
+      // owner was shown, twice, on two different live agents, and it is the reason the "not callable"
+      // level was deleted rather than softened. What is left says only what is true: no tool by that
+      // name is installed here, and here is what you can actually reach.
+      expect(text).toContain("No deferred tool called frobnicate is installed on this instance")
+      // Every INSTALLED deferred tool, not the disclosed subset. Under the old code this listed only
+      // what had been sent to the model, so a tool the instance could run was described as absent —
+      // the same inversion the removed sentence carried, just in list form.
+      expect(text).toContain("Callable through tool_call here: read-hex, write-hex.")
       // Never guess: nothing here is close to `frobnicate`, and a confidently wrong correction costs
       // more than no hint at all.
       expect(text).not.toContain("Did you mean")
+      // The removed level must be GONE, not merely unused: the phrase is what the owner read, and
+      // leaving it in the tree invites it back into a message.
+      expect(text).not.toContain("not callable in this session")
     }),
   )
 
-  it.effect("a near miss on an UNDISCLOSED tool says so by name instead of denying it exists", () =>
+  it.effect("🔴 an UNDISCLOSED tool is EXECUTED, not refused — the disclosure tier is gone", () =>
     Effect.gen(function* () {
       const service = yield* ToolRegistry.Service
       yield* registerHexTools(service)
+      // `discovered` is EMPTY: nothing was disclosed to the model this turn, so under the old code
+      // every deferred tool sat in the "not callable" tier. `read-hex` is installed, and it runs.
+      const materialized = yield* service.materialize([], () => true, new Set())
+
+      const settled = yield* dispatch(materialized, "read-hex")
+      expect(settled.result).toEqual({ type: "json", value: { ran: "read-hex" } })
+    }),
+  )
+  it.effect("🔴 a near miss on an UNDISCLOSED tool is RECOVERED AND RUNS, not described as withheld", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      yield* registerHexTools(service)
+      // `write-hex` is installed but was NOT disclosed, and the model typed `write_hex`. The old
+      // behaviour answered `Deferred tool write-hex is installed but its schema has not been
+      // disclosed` — a refusal whose entire content was a fact about the prompt budget. It is the
+      // third and last wording of this same defect, and the one that would have caught Sopitis had it
+      // reached this branch instead of the horizon one.
       const materialized = yield* service.materialize([], () => true, new Set(["read-hex"]))
 
-      const text = String((yield* dispatch(materialized, "write_hex")).result.value)
-      expect(text).toContain("Deferred tool write-hex is installed but its schema has not been disclosed")
-      expect(text).toContain("Nothing ran")
+      const settled = yield* dispatch(materialized, "write_hex")
+      expect(settled.result).toEqual({ type: "json", value: { ran: "write-hex" } })
     }),
   )
 
@@ -306,17 +335,33 @@ describe("tool_call recovers a near miss on a deferred name", () => {
     }),
   )
 
-  it.effect("NEGATIVE CONTROL: with nothing disclosed, the near miss does NOT resolve", () =>
+  it.effect("🔴 NEGATIVE CONTROL, INVERTED: with nothing disclosed, the near miss now RESOLVES", () =>
     Effect.gen(function* () {
-      // Recovery canonicalizes against the DISCLOSED set and can never invent a name outside it —
-      // discovery stays the gate, so this must refuse rather than run `read-hex`.
+      // This test asserted the exact opposite, and it is the clearest single statement of what the
+      // owner ruled against: *"Recovery canonicalizes against the DISCLOSED set … discovery stays the
+      // gate, so this must refuse rather than run `read-hex`."* Under the old code `materialize()` with
+      // no `discovered` set left every deferred tool in the withheld tier, so a correctly-spelled
+      // tool call on a fully installed tool was refused for a reason that had nothing to do with the
+      // instance. Owner, 2026-09-27: *"remove the entire `not callable in this session` permission
+      // check, so any tool, deferred or not, will be callable."*
+      //
+      // So it runs. What is worth keeping from the original is the property underneath it, and that
+      // survives: recovery canonicalizes against the INSTALLED set, so it still cannot invent a name
+      // the instance does not have. That is asserted below as the control it now is.
       const service = yield* ToolRegistry.Service
       yield* registerHexTools(service)
       const materialized = yield* service.materialize()
 
-      const text = String((yield* dispatch(materialized, "read_hex")).result.value)
-      expect(text).toContain("is installed but its schema has not been disclosed")
-      expect(text).not.toContain('"ran"')
+      expect((yield* dispatch(materialized, "read_hex")).result).toEqual({
+        type: "json",
+        value: { ran: "read-hex" },
+      })
+      // …and the guard that replaced it: a name with no near match is still refused, so
+      // canonicalization resolves WITHIN the instance rather than within the model's imagination.
+      // `read-hexx` would have been the wrong probe here — it is one character from `read-hex` and
+      // recovery is supposed to catch that, which is the feature the two tests above pin.
+      const invented = yield* dispatch(materialized, "frobnicate")
+      expect(String(invented.result.value)).toContain("No deferred tool called frobnicate is installed")
     }),
   )
 })

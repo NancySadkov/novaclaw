@@ -37,12 +37,40 @@ describe("the officer floor and the model's horizon", () => {
     expect(whollyDisabled("spawn", floorFor(false))).toBe(false)
   })
 
-  test("`colleague` DOES withdraw, which is what the difference looks like", () => {
-    // The same floor, one action apart. `colleague` denies non-officers on `*`, so the tool leaves
-    // their horizon entirely — 2,078 measured bytes a turn (see `plugin/agent.ts`). Reading these two
-    // side by side is the clearest statement of what a resource scope decides.
+  test("🔴 `colleague` is on EVERY horizon — officer, non-officer, and worker alike", () => {
+    // INVERTED, owner 2026-09-27, and the inversion is the finding.
+    //
+    // This used to read *"`colleague` DOES withdraw, which is what the difference looks like"* and
+    // assert `whollyDisabled("colleague", floorFor(false)) === true` — a deliberate, documented
+    // withdrawal of the hand-off tool from every non-officer. It was defended with a measured number
+    // (2,078 bytes a turn) and it was, on the live instance, the thing that stopped an officer from
+    // reporting to their superior.
+    //
+    // The denial was safe to remove because the org chart was never expressed in it.
+    // `ColleagueRoute.route` already redirected a worker's message to its parent, refused
+    // self-address, let Nova reach anyone, and redirected anything off-tier to the sender's superior.
+    // The deny arm could only refuse; it could never deliver, so it added a failure mode and no
+    // safety.
     expect(whollyDisabled("colleague", floorFor(true))).toBe(false)
-    expect(whollyDisabled("colleague", floorFor(false))).toBe(true)
+    expect(whollyDisabled("colleague", floorFor(false))).toBe(false)
+    // Asserted on the VERDICT as well as the horizon, because the two are different claims and only
+    // the first was ever the point: a tool can be on the horizon and still be refused on use.
+    expect(evaluate("colleague", "*", floorFor(false)).effect).toBe("allow")
+    // And the grant is unconditional rather than merely present, so no later layer can quietly turn
+    // an officer back into a non-officer for this one action.
+    expect(floorFor(false)).toContainEqual({ action: "colleague", resource: "*", effect: "allow" })
+  })
+
+  test("🔴 the `officer` dial no longer decides `colleague` — it is a FLOOR difference now", () => {
+    // The dial still widens `spawn`/`kill`/`computer`, and the negative control below still covers
+    // the predicate. What must not come back is `colleague` reading differently between the two
+    // floors, because that asymmetry is the whole defect.
+    const spread = (rules: readonly { action: string }[]) => new Set(rules.map((rule) => rule.action))
+    expect(spread(floorFor(false)).has("colleague")).toBe(true)
+    expect(spread(floorFor(true)).has("colleague")).toBe(true)
+    // …while the dial still means something, so this is not "the officer floor is gone".
+    expect(spread(floorFor(true)).has("spawn")).toBe(true)
+    expect(spread(floorFor(false)).has("spawn")).toBe(false)
   })
 
   // 🔴 THE NEGATIVE CONTROL, and the reason this file exists. Write the deny the way it was written

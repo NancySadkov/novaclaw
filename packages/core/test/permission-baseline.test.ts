@@ -242,17 +242,51 @@ describe("the built-in agents the plugin actually builds", () => {
     }),
   )
 
-  it.effect("only the governing agent may hand work to a colleague — and only it pays for the tool", () =>
+  it.effect("`colleague` is on every built-in's horizon — the staffing rule moved INTO the tool", () =>
     Effect.gen(function* () {
       const agents = yield* builtinAgents
-      // 🔴 This is a PROMPT-COST assertion as much as a permission one. `ToolRegistry.materialize`
-      // withdraws a wholly-denied tool from the horizon instead of advertising it and refusing, so
-      // `deny` here is what keeps `colleague`'s 2,078 resident bytes (measured 2026-08-21,
-      // `location-layer.test.ts`) out of every ordinary session's prompt. If this flips to `ask`,
-      // nothing refuses — but every agent starts paying for a tool it may not use.
-      for (const id of nonOfficerBuiltIns(agents))
-        expect({ id, effect: effectFor(agents.get(id)!, "colleague") }).toEqual({ id, effect: "deny" })
+      // 🔴 INVERTED, owner 2026-09-27. This asserted `deny` for every non-officer, and called the
+      // prompt cost out loud as the reason: *"This is a PROMPT-COST assertion as much as a permission
+      // one … `deny` here is what keeps `colleague`'s 2,078 resident bytes … out of every ordinary
+      // session's prompt."* The cost was real and measured. It was also, on the owner's live instance,
+      // the reason Sopitis could not report to Nova — an officer carrying a stale layer from a build
+      // that minted it down the non-officer path.
+      //
+      // The prompt cost is unchanged and still managed where it belongs: `nativeDefinitions` keeps
+      // `colleague` in `always`, so it is disclosed without being charged to the budget. That is a
+      // DISCLOSURE decision. This one was an AUTHORISATION decision wearing a cost argument, and it
+      // refused a constitutional capability.
+      for (const id of nonOfficerBuiltIns(agents)) {
+        // ⚠️ DERIVED, not listed, and the distinction is load-bearing. `compaction` and `explore` end
+        // their rulesets with a catch-all `{ "*", "*", deny }` and re-grant a specific handful of
+        // actions — they are internal machinery deliberately sandboxed to nothing, and `evaluate` is
+        // `findLast`, so the catch-all wins and `colleague` is refused. That is correct and it is not
+        // what this change reverted: a summariser has no colleagues to address. What changed is that
+        // the FLOOR no longer decides it — so the exception is now visible as the shape it is (a
+        // sandbox) rather than as a name on a deny list, and it cannot be lost by editing the floor.
+        const sandboxed = (agents.get(id) ?? []).some((rule) => rule.action === "*" && rule.effect === "deny")
+        expect({ id, sandboxed, effect: effectFor(agents.get(id)!, "colleague") }).toEqual({
+          id,
+          sandboxed,
+          effect: sandboxed ? "deny" : "allow",
+        })
+      }
       expect(effectFor(agents.get("nova")!, "colleague")).toBe("allow")
+      // Non-vacuity on BOTH sides. An empty loop would satisfy the line above without testing a
+      // single agent, and a roster emptied of sandboxed agents would silently stop covering the
+      // exception — which is how a rule like this decays.
+      expect(nonOfficerBuiltIns(agents).length).toBeGreaterThan(0)
+      expect(
+        nonOfficerBuiltIns(agents).filter(
+          (id) => (agents.get(id) ?? []).some((rule) => rule.action === "*" && rule.effect === "deny"),
+        ).length,
+        "no built-in is sandboxed any more",
+      ).toBeGreaterThan(0)
+      // The staffing rule is NOT gone — it moved to the only layer that knows the org chart.
+      // `mayStaff` (`tool/colleague.ts`) refuses `hire`/`retire` to anyone but Nova, independently of
+      // any floor. What changed is that ADDRESSING a peer no longer requires being the governor.
+      expect(AgentV2.mayStaff(AgentV2.NOVA_ID)).toBe(true)
+      expect(AgentV2.mayStaff("general")).toBe(false)
     }),
   )
 

@@ -14,10 +14,16 @@ import { bypassedPolicyGate, settleTool } from "./lib/tool"
 /**
  * 🔴 `colleague` IS DISCLOSED IN EVERY SESSION, WHATEVER THE BUDGET SAYS.
  *
- * Measured on the owner's instance, 2026-09-27: Sopitis called `colleague` and got
- * `Deferred tool colleague is not available in this session`, and on another turn the worse
- * `Unknown tool: colleague. Nothing ran. Available tools: define_tool, docs, js, memo_clear, ...`.
- * Owner: it "should always be available for all sessions."
+ * Measured on the owner's instance, 2026-09-27: Sopitis called `colleague` and was refused, and on
+ * another turn got the worse `Unknown tool: colleague. Nothing ran.`
+ *
+ * ⚠️ **Disclosure is no longer what makes the call WORK, and this file must not be read as saying it
+ * is.** It was the first fix, and it treated a symptom: the tool was refused because of a
+ * prompt-budget decision, so it was exempted from the budget. The refusal itself is now gone — an
+ * installed tool is callable whether or not it was disclosed — and so is the horizon withdrawal that
+ * actually withheld it from Sopitis. What this file pins is the narrower, still-true claim: a model
+ * can only USE what it can SEE, so the primary collaboration tool stays in every session's
+ * definitions rather than costing a `tool_search` round-trip to discover.
  *
  * ⚠️ WHY THIS NEEDS A TEST, because the first fix was wrong in a subtle way. Adding `colleague` to the
  * PRIORITY list changes only the ORDER the budget spends — the keep-condition exempted exactly two

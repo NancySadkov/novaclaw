@@ -47,23 +47,28 @@ export const nativeDefinitions = (definitions: ReadonlyArray<ToolDefinition>, bu
   )
     return [...definitions]
   /**
-   * The tools that must be DISCLOSED IN EVERY SESSION, whatever the budget says.
+   * The tools DISCLOSED IN EVERY SESSION, whatever the budget says.
    *
-   * Measured on the owner's instance, 2026-09-27: Sopitis called `colleague` and got
-   * `Deferred tool colleague is not available in this session`, and on another turn the worse
-   * `Unknown tool: colleague. Nothing ran. Available tools: define_tool, docs, js, memo_clear, ...`.
-   * Owner: it "should always be available for all sessions."
+   * ⚠️ **This set is no longer what makes `colleague` reachable, and it is important not to read it
+   * that way again.** It was invented on 2026-09-27 as a workaround: Sopitis called `colleague` and
+   * was refused, so the tool was exempted from the disclosure budget to stop it being dropped. The
+   * refusal itself is now gone — an installed tool is callable whether or not it was sent — so the
+   * exemption no longer decides anything about whether the call works.
+   *
+   * It stays for the reason any tool is disclosed rather than discovered: **the model can only use
+   * what it can see.** A tool that is merely installed is callable but invisible, and a model that
+   * has to run `tool_search` before it can ask a colleague its superior has already lost a turn. So
+   * this is a DISCLOSURE choice, on its own merits, and the two things are now independent.
    *
    * The first attempt at this was wrong in a way worth keeping recorded: adding `colleague` to
-   * `priority` only changes the ORDER the budget spends, because the keep-condition below exempted
-   * exactly two names. A tight budget still dropped it - and a tool that is "prioritised" but still
-   * droppable is not available, it is merely less likely to go. Priority is an ORDERING; only the
+   * `priority` only changes the ORDER the budget spends, because the keep-condition exempted
+   * exactly two names. A tight budget still dropped it — and a tool that is "prioritised" but still
+   * droppable is not disclosed, it is merely less likely to go. Priority is an ORDERING; only the
    * exemption is a GUARANTEE, and the two were being read as the same thing.
    *
    * The cost is real and is paid deliberately: `colleague`'s schema is not small, so this spends
-   * disclosure budget on EVERY turn, forever. It is the trade the owner asked for and the right one -
-   * a budget saved here is paid straight back as a turn that cannot do its job, which is exactly what
-   * `Deferred tool ... is not available` already was.
+   * budget on EVERY turn, forever — 2,078 bytes, measured 2026-08-21. It buys the absence of a wasted
+   * turn, which is the only currency that matters here.
    */
   const always = new Set(["tool_search", "tool_call", "colleague"])
   const priority = ["tool_search", "tool_call", "colleague", "spawn", "memo_set", "memo_clear", "exit"]
@@ -576,18 +581,19 @@ const registryLayer = Layer.effect(
         const deferredByName = new Map(
           deferred.map((source) => [source.definition.name, registrations.get(source.definition.name)!]),
         )
-        const callableDeferred = new Map([...deferredByName].filter(([name]) => discovered.has(name)))
-        // 🔴 THE HORIZON IS EVERY NAME THIS SESSION CAN ACTUALLY CALL, disclosed or not. The same
-        // inversion as the dispatch above, one level out: an `Available tools:` list that omitted the
-        // undisclosed tools would tell the model they do not exist, which is what it had already
-        // learned wrongly from the roster prose. A horizon narrower than reality is how a capable
-        // tool gets reported as unknown, and it made the "not callable" message the common case
-        // rather than the rare one. Disclosure still decides what is SENT; this decides what is
-        // honest to SAY.
+        // THE HORIZON IS EVERY NAME THIS SESSION CAN CALL, disclosed or not. A horizon narrower
+        // than reality is how a capable tool gets reported as unknown - and it used to be two
+        // horizons. `callableDeferred` (the disclosed subset), `callableDeferredNames` and
+        // `installedDeferredNames` are GONE, owner 2026-09-27: *"remove the entire `not callable in
+        // this session` permission check, so any tool, deferred or not, will be callable."*
+        //
+        // Disclosure is a PROMPT-BUDGET decision about what is SENT. It was being read as an
+        // AUTHORISATION boundary, which is the inversion: a model that legitimately learned a name
+        // from the roster prose, an earlier turn or a `tool_search` result was refused for calling
+        // something the instance has installed and can run. One list, one meaning.
         const callableNames = [...resident.keys(), ...deferredByName.keys()]
         const residentNames = [...resident.keys()]
-        const callableDeferredNames = [...callableDeferred.keys()]
-        const installedDeferredNames = [...deferredByName.keys()]
+        const deferredNames = [...deferredByName.keys()]
         return {
           // ⚠️ NOT SORTED, deliberately — see NC-PROMPT-CACHE-006. Sorting these would stabilise the
           // prefix (definitions render AHEAD of the system prompt, so an unstable order invalidates
@@ -599,35 +605,32 @@ const registryLayer = Layer.effect(
             definition(name, registration.tool, variantOf(name)),
           ),
           sideEffects: Object.fromEntries(
-            [...resident, ...callableDeferred].map(([name, registration]) => [name, sideEffect(registration.tool)]),
+            [...resident, ...deferredByName].map(([name, registration]) => [name, sideEffect(registration.tool)]),
           ),
           deferred,
           settle: (input) => {
             /**
-             * 🔴 AN INSTALLED TOOL IS EXECUTABLE, DISCLOSED OR NOT.
+             * AN INSTALLED TOOL IS EXECUTABLE. One map, no tiers.
              *
-             * Owner, 2026-09-27, on Sopitis: *"even if the tool is not listed in context, the calls to
-             * it should still be properly executed, instead of having some esoteric execution logic."*
-             * Measured: `Deferred tool colleague is not available in this session` and
-             * `Unknown tool: colleague. Nothing ran.`
+             * Owner, 2026-09-27, twice, on the same live instance. First: *"even if the tool is not
+             * listed in context, the calls to it should still be properly executed, instead of having
+             * some esoteric execution logic"* — measured as `Deferred tool colleague is not available
+             * in this session`. Then, once that was fixed, the sharper form: *"remove the entire `not
+             * callable in this session` permission check, so any tool, deferred or not, will be
+             * callable"*.
              *
-             * The disclosure set is a PROMPT-BUDGET device — `nativeDefinitions` decides what the model
-             * is TOLD about, to fit a context window. It was being read as an AUTHORISATION boundary,
-             * and that is the inversion: a model that legitimately learned a tool's name (from the
-             * roster prose, an earlier turn, or a `tool_search` result) was refused for calling
-             * something the instance has installed and can run.
+             * The middle tier — resident, disclosed-deferred, installed-deferred — WAS the "esoteric
+             * execution logic". It existed to answer one question: *was this name sent to the model
+             * this turn?* That is a PROMPT-BUDGET fact, and reading it as an AUTHORISATION one is the
+             * inversion that produced both messages. `resident` and `deferredByName` partition the
+             * same map, so a two-step lookup is all that survives.
              *
-             * ⚠️ This is deliberately NOT a permission change. `settleWith` below runs the same
-             * permission gate, the same policy screen and the same durable record, keyed on the tool
-             * that actually ran. The real authorisation boundary is unchanged: per-agent visibility
-             * (`mayStaff`, `addressable`) withholds a tool from an agent entirely, and THAT is still
-             * enforced — an agent that cannot see `colleague` does not get it here either, because
-             * this map only ever holds tools already filtered for this agent.
+             * ⚠️ The permission gate is untouched and still runs per call in `settleWith`. What decides
+             * whether an agent may use a tool is the ruleset `materialize` already filtered by — and
+             * for a tool that carries an org chart, the tool itself: `ColleagueRoute.route` decides who
+             * a message may reach, because that is the only layer that knows the hierarchy.
              */
-            const registration =
-              resident.get(input.call.name) ??
-              callableDeferred.get(input.call.name) ??
-              deferredByName.get(input.call.name)
+            const registration = resident.get(input.call.name) ?? deferredByName.get(input.call.name)
             // One latch per model tool call, closed over by both the outer settlement and every
             // nested deferred invocation it makes. A halt raised while `tool_call` dispatches an
             // inner tool therefore still reaches the drain, instead of being flattened into the
@@ -650,10 +653,10 @@ const registryLayer = Layer.effect(
              * it covers every future typo rather than three known names.
              *
              * Resolution order matters. Exact wins over near, and deferred over resident, because
-             * `resident`/`callableDeferred` partition one registration map: a name in one is never in
+             * `resident`/`deferredByName` partition one registration map: a name in one is never in
              * the other, and a LOOSE match must never outrank an EXACT one. `resolveToolName` is the
              * same whitelist-gated canonicalizer the provider seam spends on resident calls
-             * (`protocols/openai-chat.ts`), so it can only ever return a name already callable here —
+             * (`protocols/openai-chat.ts`), so it can only ever return a name already callable here -
              * it cannot invent one. When nothing resolves, the answer still distinguishes installed
              * from unknown and carries the near-miss clause the resident seam has always had.
              */
@@ -667,56 +670,49 @@ const registryLayer = Layer.effect(
                   }),
                 )
               if (resident.has(name)) return callDirectly(name)
-              const resolved = callableDeferred.has(name) ? name : resolveToolName(name, callableDeferredNames)
-              const target = resolved === undefined ? undefined : callableDeferred.get(resolved)
-              if (target === undefined || resolved === undefined) {
-                const nearResident = resolveToolName(name, residentNames)
-                if (nearResident !== undefined) return callDirectly(nearResident)
-                // Installed-but-undisclosed is a different answer from does-not-exist — the outer
-                // settlement below already draws that line, and a near miss has to reach it too or a
-                // one-character slip is told the tool does not exist at all.
-                const installed = resolveToolName(name, installedDeferredNames)
-                // 🔴 Installed-but-undisclosed is EXECUTED, not refused — same rule as the direct call
-                // above, and the same reason. A tool the instance has and can run must not be stopped by
-                // a prompt-budget decision; the permission gate runs either way, on the resolved name.
-                if (installed !== undefined) {
-                  const target = deferredByName.get(installed)
-                  if (target !== undefined)
-                    return settleRaw(
-                      { ...input, call: { type: "tool-call", id: input.call.id, name: installed, input: targetInput } },
-                      target.identity,
-                      deferred,
-                      undefined,
-                      halt,
-                    ).pipe(Effect.map((settled) => settled.output))
-                }
-                const hint = ToolRuntime.closestToolName(name, callableDeferredNames)
-                // Both branches are load-bearing, exactly as in the shared unknown-tool message: an
-                // empty list is not a horizon, and a dangling "callable here: ." would be a fault
-                // described falsely. Naming the set this dispatcher can actually reach is what turns
-                // a dead turn into a recoverable one.
-                const available =
-                  callableDeferredNames.length === 0
-                    ? "No deferred tool has been disclosed in this session yet."
-                    : `Disclosed and callable through tool_call here: ${boundedNameList(callableDeferredNames)}.`
-                return Effect.fail(
-                  new ToolFailure({
-                    message:
-                      `Deferred tool ${name} is not callable in this session. Nothing ran. ` +
-                      (hint === undefined ? "" : `Did you mean "${hint}"? `) +
-                      `${available} Call tool_search for any other capability and use an exact name it returns.`,
-                  }),
-                )
+              // 🔴 **THE `not callable in this session` REFUSAL IS GONE** (owner, 2026-09-27: *"remove
+              // the entire `not callable in this session` permission check, so any tool, deferred or
+              // not, and remove any machinery which existed solely to support this `not callable`
+              // permission level"*).
+              //
+              // It had already been hollowed out — the "installed but undisclosed is EXECUTED" branch
+              // below it meant the only names reaching the refusal were names the instance genuinely
+              // did not have, described as a session problem. What is left is one resolution against
+              // the one map of deferred tools, so there is no tier left to be on the wrong side of.
+              const resolved = resolveToolName(name, deferredNames)
+              const target = resolved === undefined ? undefined : deferredByName.get(resolved)
+              if (target !== undefined && resolved !== undefined) {
+                // The RESOLVED name travels on, so the permission gate, the policy screen and the
+                // durable record all see the tool that actually ran rather than what was typed.
+                return settleRaw(
+                  { ...input, call: { type: "tool-call", id: input.call.id, name: resolved, input: targetInput } },
+                  target.identity,
+                  deferred,
+                  undefined,
+                  halt,
+                ).pipe(Effect.map((settled) => settled.output))
               }
-              // The RESOLVED name travels on, so the permission gate, the policy screen and the
-              // durable record all see the tool that actually ran rather than what was typed.
-              return settleRaw(
-                { ...input, call: { type: "tool-call", id: input.call.id, name: resolved, input: targetInput } },
-                target.identity,
-                deferred,
-                undefined,
-                halt,
-              ).pipe(Effect.map((settled) => settled.output))
+              // A near miss on a RESIDENT name is a different mistake from a near miss on a deferred
+              // one, and it has a better answer: the tool is right there in this turn's definitions.
+              const nearResident = resolveToolName(name, residentNames)
+              if (nearResident !== undefined) return callDirectly(nearResident)
+              // Genuinely absent. The outer settlement draws the installed-from-unknown line, so this
+              // only has to be true and not misleading: name what this dispatcher can actually reach.
+              // An empty list is not a horizon, and a dangling "callable here: ." would be a fault
+              // described falsely.
+              const hint = ToolRuntime.closestToolName(name, deferredNames)
+              const available =
+                deferredNames.length === 0
+                  ? "This instance has no deferred tool to reach through tool_call."
+                  : `Callable through tool_call here: ${boundedNameList(deferredNames)}.`
+              return Effect.fail(
+                new ToolFailure({
+                  message:
+                    `No deferred tool called ${name} is installed on this instance. Nothing ran. ` +
+                    (hint === undefined ? "" : `Did you mean "${hint}"? `) +
+                    `${available} Call tool_search for any other capability and use an exact name it returns.`,
+                }),
+              )
             }
             if (registration) return settleWith(input, registration.identity, deferred, invokeDeferred, halt)
             if (deferredByName.has(input.call.name))

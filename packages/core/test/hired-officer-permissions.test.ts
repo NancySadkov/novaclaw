@@ -77,16 +77,30 @@ describe("a colleague the user hired", () => {
     Effect.gen(function* () {
       const roster = yield* rosterWith({ name: "Theron", mode: "primary" })
       const hired = roster.get("theron")!
-      const builtin = roster.get("build")!
-      // Compared against `build` rather than against a list of actions this file believes are
-      // ambient-safe: the membership of that baseline is not this file's claim, and a hand-copied
-      // list would go stale the day it changes.
+      // ⚠️ Was `build`, which was RETIRED on 2026-09-27 and no longer exists on the roster — so
+      // `roster.get("build")` returned `undefined` and `effectFor` threw three frames later. This file
+      // was not in the run that caught the retirement, which is the honest lesson: a roster change
+      // invalidates every test that names a member of it, and the sweep has to be by BEHAVIOUR
+      // ("a non-officer built-in") rather than by the id that happened to be there.
       //
-      // Three deliberate differences are excluded: `colleague` (an officer may address peers, `build`
-      // may not — its own test below), `plan_enter` (a colleague that switched the user's mode under
-      // them would be a surprise; the person has a mode picker, and `build` is the agent that picker
-      // drives), and `question` — denied for officers under principle 13, *the chat IS the channel*,
-      // while `build` keeps a grant for an action whose tool no longer exists.
+      // `messenger` is the right subject, and picking it took two attempts worth recording. It is a
+      // built-in standing on `floor({ officer: false })` plus exactly one grant, `plan_enter`, which is
+      // already excluded below. `general` was tried first and is wrong: it carries its own
+      // `todowrite: "deny"`, so comparing against it would have tested `general`'s bespoke rules
+      // rather than the floor. `compaction` and `explore` are worse still — both end in a catch-all
+      // deny. There is exactly one built-in that adds nothing, and a test that reached for the wrong
+      // one would have reported a floor difference that does not exist.
+      const builtin = roster.get("messenger")!
+      // Two deliberate differences are excluded. `plan_enter`: a colleague that switched the user's
+      // mode under them would be a surprise, and the person has a mode picker. `question`: denied for
+      // officers under principle 13, *the chat IS the channel*, while a built-in keeps a grant for an
+      // action whose tool no longer exists.
+      //
+      // ⭐ `colleague` is NO LONGER in that list, and its removal is the point. It used to be excluded
+      // with the note *"an officer may address peers, `build` may not - its own test below"*. The
+      // owner ruled on 2026-09-27 that an agent may always message its superior, subordinates and
+      // their colleagues, so the floor no longer draws that line — and a test that still excused
+      // `colleague` from this comparison would have hidden exactly the change being made.
       for (const action of [
         "read",
         "explore",
@@ -96,6 +110,7 @@ describe("a colleague the user hired", () => {
         "js",
         "kb",
         "external_directory_write",
+        "colleague",
       ])
         expect({ action, hired: effectFor(hired, action) }).toEqual({ action, hired: effectFor(builtin, action) })
     }),
@@ -197,14 +212,26 @@ describe("a colleague the user hired", () => {
     }),
   )
 
-  it.effect("nameless STAFF get the floor without the hand-off tool", () =>
+  it.effect("🔴 nameless STAFF can message their superior — the floor no longer withholds `colleague`", () =>
     Effect.gen(function* () {
-      // A config-defined sub-agent is staff, not a colleague: it should be able to read, and it has
-      // nobody to hand work to.
+      // INVERTED, owner 2026-09-27: *"agent should always be able to message its superior,
+      // subordinates and colleagues who are subordinates of its superior."* This asserted `deny` and
+      // justified it as *"staff, not a colleague: it should be able to read, and it has nobody to hand
+      // work to."* That justification is true and it is beside the point — the question is not who a
+      // worker can HAND WORK to, it is who it can REPORT to, and a worker reporting upward is the
+      // case the owner's sentence names first.
+      //
+      // A config-defined sub-agent is staff, and it absolutely has somebody: its spawning officer.
+      // `ColleagueRoute.route` redirects any message from a session with a `parentID` to that parent,
+      // so the worker's `colleague ask` is delivered to its superior by construction — the grant opens
+      // a door the router already points the right way, and it cannot open one to a peer.
       const roster = yield* rosterWith({ name: "Helper", mode: "subagent" })
       const staff = roster.get("theron")!
       expect(effectFor(staff, "read")).toBe("allow")
-      expect(effectFor(staff, "colleague")).toBe("deny")
+      expect(effectFor(staff, "colleague")).toBe("allow")
+      // …while STAFFING stays out of reach, because that is a different capability and the org chart
+      // still guards it: `mayStaff` is Nova's alone, independent of any floor.
+      expect(AgentV2.mayStaff("theron")).toBe(false)
     }),
   )
 
