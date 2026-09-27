@@ -8,18 +8,22 @@ import { State } from "./state"
 export const ID = Agent.ID
 export type ID = typeof ID.Type
 /**
- * The BUILD agent's id. Named for what it is, not for a role it no longer has: it was
- * `defaultID` while an unattributed chat ran as `build`, and one name for two ideas is how the
- * plugin's "configure the build agent" call and the runner's "who owns this chat" call drifted
- * into each other.
+ * 🔴 **`build` is a RETIRED agent id** (owner, 2026-09-27: *"get completely rid of build and plan both
+ * as colleagues and as machinery — we have completely retired the anonymous agents. So they are not
+ * just ghosts polluting NovaClaw."*).
+ *
+ * It is named here, as a constant, for the same reason {@link POSTURE_IDS} still exists: rows written
+ * before the retirement carry this id, and every reader needs one agreed spelling of it. A constant
+ * is the honest form of that agreement; a bare `"build"` in nine places is how the one-chat guard and
+ * the roster predicate drifted apart in the first place.
+ *
+ * ⚠️ **It is not a default, and there is deliberately no exported synonym for it.** It used to be
+ * reachable as `defaultID` — a deprecated alias kept "so an out-of-tree caller keeps compiling" — and
+ * that alias named the retirement's whole subject as the thing it was a synonym for. AGENTS.md: choose
+ * clean design over old support, so the alias is gone rather than deprecated a second time. What an
+ * unattributed chat belongs to is {@link DEFAULT_COLLEAGUE_ID}.
  */
 export const BUILD_ID = ID.make("build")
-
-/**
- * @deprecated Use {@link BUILD_ID} for the build agent, or {@link DEFAULT_COLLEAGUE_ID} for the
- * officer an unattributed chat belongs to. Kept so an out-of-tree caller keeps compiling.
- */
-export const defaultID = BUILD_ID
 
 /** The CEO of this instance's organization (AGENTS.md — the structural metaphor). */
 export const NOVA_ID = ID.make("nova")
@@ -223,9 +227,24 @@ export const resolveSuperior = (
 }
 
 /**
- * The POSTURE agents. `build` and `plan` are permission modes wearing an agent's shape (owner,
- * 2026-08-22), not people — and `build` is this instance's DEFAULT agent (see `defaultID` above), so
- * an ordinary chat that never named a colleague still carries `agent: "build"` on its row.
+ * The RETIRED agent ids: `build` and `plan`.
+ *
+ * They were POSTURE agents - permission modes wearing an agent's shape (owner, 2026-08-22) - and they
+ * are gone as agents (owner, 2026-09-27: *"get completely rid of build and plan both as colleagues and
+ * as machinery - we have completely retired the anonymous agents. So they are not just ghosts
+ * polluting NovaClaw."*). The plugin no longer declares them, and
+ * `20260927201500_retire_the_anonymous_agents` archives every live root that carried one.
+ *
+ * THE SET stays, and it is not a ghost of its own - it is the vocabulary for "this id was never a
+ * colleague". A retired id still appears on rows written before the retirement, so every reader
+ * asks the same question - *is this a retired posture?* - and the answer has to be the same answer in
+ * all nine places. Deleting the set would not delete the ids; it would scatter "is it build" as a
+ * fresh string test through each of them, and a second copy of that test is how the one-chat guard
+ * and the roster predicate drifted apart in the first place.
+ *
+ * What is gone is the AGENT: nothing creates a row for either id, `session_agent_live_root_idx` no
+ * longer exempts them, and a chat belongs to a colleague. `permissionMode: "plan"` - the live
+ * read-only mode - was never an agent and is untouched.
  */
 export const POSTURE_IDS: ReadonlySet<string> = new Set([ID.make("build"), ID.make("plan")])
 

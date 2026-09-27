@@ -9,7 +9,6 @@ import { useTabs } from "@/context/tabs"
 import { useLanguage } from "@/context/language"
 import { errorMessage } from "@/pages/layout/helpers"
 import { showToast } from "@/utils/toast"
-import { ComposerAgentControl } from "@/components/composer/agent-control"
 import type { AgentLike } from "@/apps/contacts"
 import { roster } from "@/apps/contacts"
 import { AgentV2 } from "@novaclaw/core/agent"
@@ -46,9 +45,9 @@ export function useNewAgentSpawn() {
   // works — its configured project, or its own scratch — so the client never joins a scratch path
   // itself, and "which folder does this chat run in" stops being a question the user answers twice.
   //
-  // ⚠️ The reuse probe below still needs a directory, so it is read from the roster row the chip is
-  // already holding rather than re-derived: the client knows where the colleague works because the
-  // chip had to show it.
+  // ⚠️ The reuse probe below still needs a directory, so it is read from the roster row the caller
+  // already holds rather than re-derived: the client knows where the colleague works because the bar
+  // had to resolve it to open their chat in the first place.
   async function spawn(agentID?: string, agentFolder?: string, agentName?: string) {
     /** The colleague's name, falling back to their id so a chat is never titled `undefined`. */
     const agentTitle = (id: string) => agentName?.trim() || id
@@ -159,16 +158,15 @@ export function NewAgentBar() {
     return current ? global.ensureServerCtx(current) : undefined
   })
   const spawning = agent.spawning
-  const [chosenAgent, setChosenAgent] = createSignal<string | undefined>()
-  // 🔴 The server context's ONE shared roster (review D8), which also carries the `.catch` this
+  // The server context's ONE shared roster (review D8), which also carries the `.catch` this
   // call site was missing (D1/H1). It matters most here: this component is mounted unconditionally
   // by the home screen, which is the app's BOOT ROUTE, and a rejected resource read from the eager
   // memo below reached the root ErrorBoundary and replaced the launcher with the error page.
   const agents = () => barCtx()?.agents.list()
   const agentsLoading = () => barCtx()?.agents.loading() ?? true
-  // The roster, as the chip needs it: who, and where each one works. `folderFor` is resolved here
-  // ONLY for the reuse probe and the chip's own label — the session's actual folder is decided by the
-  // server, so the two can never disagree about a colleague the client has not re-read.
+  // The roster, as the bar needs it: who they are, and where each one works. `folderFor` is resolved
+  // here ONLY for the reuse probe - the session's actual folder is decided by the server, so the two
+  // can never disagree about a colleague the client has not re-read.
   const agentOptions = createMemo(() =>
     roster(agents() ?? []).map((view) => {
       const row = (agents() ?? []).find((item: AgentLike) => item.id === view.id)
@@ -186,25 +184,51 @@ export function NewAgentBar() {
     }),
   )
   /**
-   * 🔴 **Nova, by NAME — not "whoever the roster happens to sort first".**
+   * ONE FRONT DOOR, AND IT IS NOVA (owner, 2026-09-27: *"make the text `Ask Nova anything...`, and
+   * make it always send to Nova"*).
    *
-   * Owner, 2026-08-24: *"the [bar] at the bottom defaults to Nova itself, while the user can only
-   * speak with the officers."* It already landed on Nova, but only because `roster()` sorts the
-   * governing agent first — so the owner's rule was being satisfied by a SORT ORDER, and any change
-   * to that ordering would have moved the default silently, with nothing to notice.
+   * This used to be a DEFAULT - `chosenAgent() ?? defaultOfficerID()` - with a chip beside it, so
+   * every click was a small decision the user had to make and the placeholder did not say who would
+   * answer. The selector is gone; the label names the one destination.
    *
-   * ⚠️ Falls back to the first officer rather than to nothing: an instance whose Nova is paused or
-   * hidden still has a working launcher. It never falls back to a posture — `agentOptions` is built
-   * from `roster()`, which excludes them, which is the point of the ruling.
+   * It already landed on Nova, but only because `roster()` sorts the governing agent first - so the
+   * earlier ruling was satisfied by a SORT ORDER, and any change to that ordering would have moved
+   * the default silently, with nothing to notice. This asks by NAME, which cannot drift.
+   *
+   * Falls back to the first officer rather than to nothing, and that is a FAULT path rather than a
+   * feature: Nova is `isProtected` and can never be retired, so a roster without one is a roster that
+   * is not answering, and a working launcher on the wrong officer beats one that reports success and
+   * opens nothing. It can never fall back to a posture - `roster()` excludes them, which is what the
+   * retirement of the anonymous agents enforced.
    */
   const defaultOfficerID = () =>
     agentOptions().find((option) => option.id === AgentV2.DEFAULT_COLLEAGUE_ID)?.id ?? agentOptions()[0]?.id
+  /**
+   * The officer this bar always opens, and the WORDS the placeholder speaks.
+   *
+   * ⚠️ The name comes from the roster row, NOT from the id, and that is the whole reason this memo
+   * exists rather than `defaultOfficerID()` alone. The id is `nova` — lowercase, and a fixed string:
+   * a user who renamed their CEO would read "Ask nova anything..." forever, which is both ugly and a
+   * lie about who answers. The roster carries the name the owner actually gave them, so the bar
+   * greets them by it. Probed: with `name: "Nova"` this renders "Ask Nova anything...", and with
+   * `name: "Wren"` it renders "Ask Wren anything...".
+   *
+   * The id is the fallback, and the constant behind that, so the label can never render the literal
+   * `{{name}}` — `resolveTranslation` leaves an unfilled placeholder in place rather than blanking it,
+   * which is the right behaviour for a miss elsewhere and would be a visible bug here.
+   */
+  const officer = createMemo(() => {
+    const id = defaultOfficerID()
+    const shown = agentOptions().find((option) => option.id === id)?.name?.trim()
+    return { id, name: shown || id || AgentV2.DEFAULT_COLLEAGUE_ID }
+  })
   const chosenFolder = () => {
-    const id = chosenAgent() ?? defaultOfficerID()
+    const id = officer().id
+    if (id === undefined) return undefined
     const row = (agents() ?? []).find((entry: AgentLike) => entry.id === id)
     const configured = row?.config?.["shortChat"] === true ? undefined : row?.config?.["directory"]
     if (typeof configured === "string" && configured.trim() !== "") return configured
-    // ⚠️ Then the colleague's OWN workspace, read off the roster row rather than joined here:
+    // Then the colleague's OWN workspace, read off the roster row rather than joined here:
     // `Scratch.forAgent` lives in `core` behind `node:path` + `Global.Path.data`, so the client
     // cannot compute it, and a second copy of that rule is how the client and the server end up
     // disagreeing about where a chat lives. The roster response stamps it (`agent-list.ts:53`).
@@ -212,24 +236,23 @@ export function NewAgentBar() {
     return workspace ? workspace : undefined
   }
   const canSpawn = createMemo(() => (chosenFolder() ? !!conn() : agent.ready()))
-  // Owner call 2026-07-14: the CLICK creates the chat — no typing here. The bar sits at the
+  // Owner call 2026-07-14: the CLICK creates the chat - no typing here. The bar sits at the
   // bottom of the launcher, the same screen position as the chat composer, so activating it
   // transitions straight into the new chat's composer without the input appearing to move.
   const activate = () => {
     if (spawning()) return
-    // ⚠️ A click while the ROSTER is still in flight used to spawn `spawn(undefined, undefined)` —
+    // A click while the ROSTER is still in flight used to spawn `spawn(undefined, undefined)` -
     // an agent-less chat in the shared scratch root, which then sat there as the thing every later
-    // click reused (review D4). The chip shows a colleague; the click must create that colleague's
-    // chat or nothing.
+    // click reused (review D4). The click must create a named colleague's chat or nothing.
     //
-    // 🔴 **The "degraded instance keeps its escape hatch" clause is GONE** (owner, 2026-08-28:
-    // *"Clicking `Start new chat` at home creates a ghost session `New session in scratch` — that
-    // shouldn't be possible at all, since can't have sessions without any agents"*). A settled roster
+    // The "degraded instance keeps its escape hatch" clause is GONE (owner, 2026-08-28:
+    // "Clicking `Start new chat` at home creates a ghost session `New session in scratch` - that
+    // shouldn't be possible at all, since can't have sessions without any agents"). A settled roster
     // with nobody in it used to fall through here on purpose. It is not an escape hatch: it is the
     // one input that can mint an ownerless chat, and it fired exactly when the instance was already
-    // broken — so the app answered a fault by creating a session that belongs to no one and that no
-    // roster can ever show. An empty roster is now a FAULT at the source (`apps/agent-list.ts`), and
-    // this refuses rather than papering over it.
+    // broken - so the app answered a fault by creating a session that belongs to no one and that no
+    // roster can ever show. An empty roster is a FAULT at the source (`apps/agent-list.ts`), and this
+    // refuses rather than papering over it.
     if (agentsLoading()) {
       showToast({
         title: language.t("common.requestFailed"),
@@ -246,9 +269,9 @@ export function NewAgentBar() {
       })
       return
     }
-    const id = chosenAgent() ?? defaultOfficerID()
+    const id = officer().id
     if (id === undefined) {
-      // Says WHICH fact is wrong — that Nova cannot be missing — rather than "not ready", which
+      // Says WHICH fact is wrong - that Nova cannot be missing - rather than "not ready", which
       // invites the user to wait for something that is never going to arrive.
       showToast({
         variant: "error",
@@ -257,24 +280,23 @@ export function NewAgentBar() {
       })
       return
     }
-    void agent.spawn(id, chosenFolder(), agentOptions().find((option) => option.id === id)?.name)
+    void agent.spawn(id, chosenFolder(), officer().name)
   }
-
   return (
     <div
       data-slot="home-new-agent"
       class="flex w-full items-center gap-2 rounded-[8px] bg-v2-background-bg-layer-01 px-3.5 py-3 ring-1 ring-v2-border-border-base transition-shadow focus-within:ring-2 focus-within:ring-[var(--v2-border-border-focus)]"
     >
-      {/* Gold lead-in glyph — the skin's command bar opens with a gold mark (one accent, spent on
+      {/* Gold lead-in glyph - the skin's command bar opens with a gold mark (one accent, spent on
           the primary action; the hero + this bar are the home screen's two gold anchors). */}
       <Icon name="edit" size="normal" class="shrink-0 text-v2-icon-icon-accent" />
-      {/* 🔴 A BUTTON, because that is what it does (review H7). It used to be a `readonly` text
-          input with `preventDefault()` on pointerdown: a screen reader announced a text field the
-          user could not type into, the preventDefault suppressed focus so a mouse user never
-          focused the control they had just activated, and the Enter handler only ever reached
-          people who tabbed to it. Nothing is typed here — the click creates the chat and the real
-          composer is where words go (owner call 2026-07-14) — so the element says so. The input's
-          look is kept verbatim; only the semantics changed. */}
+      {/* A BUTTON, because that is what it does (review H7). It used to be a readOnly text input with
+          preventDefault() on pointerdown: a screen reader announced a text field the user could not
+          type into, the preventDefault suppressed focus so a mouse user never focused the control they
+          had just activated, and the Enter handler only ever reached people who tabbed to it. Nothing
+          is typed here - the click creates the chat and the real composer is where words go (owner
+          call 2026-07-14) - so the element says so. The input's look is kept verbatim; only the
+          semantics changed. */}
       <button
         data-slot="home-new-agent-input"
         type="button"
@@ -282,23 +304,15 @@ export function NewAgentBar() {
         disabled={spawning()}
         onClick={() => activate()}
       >
-        {language.t("home.newAgent.placeholder")}
+        {language.t("home.newAgent.placeholder", { name: officer().name })}
       </button>
       <Show when={spawning()}>
         <Spinner class="size-4 shrink-0 text-v2-icon-icon-muted" />
       </Show>
-      {/* 🔴 WHO, not where (owner, 2026-08-21). The folder chip that stood here asked which directory
-          a new chat should run in — a question the user answered again for every conversation, and
-          one that left a named officer with no project of its own. The folder is part of the
-          colleague's configuration now, so this asks the question that is actually left. */}
-      <ComposerAgentControl
-        state={{
-          options: agentOptions(),
-          selectedID: chosenAgent(),
-          working: spawning(),
-          onSelect: setChosenAgent,
-        }}
-      />
+      {/* NO OFFICER SELECTOR, and the words beside this glyph now say who (owner, 2026-09-27). The
+          chip that stood here asked WHICH officer to open, on a bar whose only action is to open
+          Nova's chat - so it made the common case a decision and hid the fact that there was a
+          default at all. One front door, named in the words on it. */}
     </div>
   )
 }

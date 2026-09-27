@@ -29,7 +29,11 @@ const withFloor = (needs: "smart" | "usual" | "fast" | undefined) =>
   Effect.gen(function* () {
     const agents = yield* AgentV2.Service
     yield* agents.transform((draft) => {
-      draft.update(AgentV2.defaultID, (item) => {
+      // Re-pointed off `AgentV2.defaultID` on 2026-09-27, when the anonymous agents were retired and
+      // that deprecated alias was deleted. It named `build`, which no longer exists, so `draft.update`
+      // had no target: the helper became a no-op and every test below it would have kept passing
+      // while testing nothing. A re-point that silently stops configuring is worse than a red test.
+      draft.update(AgentV2.NOVA_ID, (item) => {
         item.needsTaxonomy = needs
       })
     })

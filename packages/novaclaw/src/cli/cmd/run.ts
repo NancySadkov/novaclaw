@@ -657,6 +657,17 @@ export const RunCommand = effectCmd({
           UI.error(`could not run as agent "${name}": it is a subagent, not a primary agent`)
           process.exit(1)
         }
+        // The anonymous agents are retired (owner, 2026-09-27), so this refuses rather than quietly
+        // running as a mode that no longer has a roster row. Named here because the roster lookup
+        // above cannot: a REMOTE older than the retirement still lists `build`, and the two doors
+        // would then answer differently about the same id.
+        if (AgentV2.POSTURE_IDS.has(name)) {
+          UI.error(
+            `could not run as agent "${name}": that agent is retired. A run belongs to a colleague - ` +
+              `name one with --agent, or omit it to run as ${AgentV2.DEFAULT_COLLEAGUE_ID}.`,
+          )
+          process.exit(1)
+        }
         return name
       }
 
@@ -684,6 +695,15 @@ export const RunCommand = effectCmd({
 
         if (agent.mode === "subagent") {
           UI.error(`could not run as agent "${name}": it is a subagent, not a primary agent`)
+          process.exit(1)
+        }
+        // The same retired-agent refusal as the local door above, and for the same reason: an
+        // unretired remote still lists `build`, and a run bound to a mode is a chat with no owner.
+        if (AgentV2.POSTURE_IDS.has(name)) {
+          UI.error(
+            `could not run as agent "${name}": that agent is retired. A run belongs to a colleague - ` +
+              `name one with --agent, or omit it to run as ${AgentV2.DEFAULT_COLLEAGUE_ID}.`,
+          )
           process.exit(1)
         }
 

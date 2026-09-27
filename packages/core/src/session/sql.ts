@@ -126,15 +126,22 @@ export const SessionTable = sqliteTable(
     //     worker would collide with its officer and the fleet would be one session.
     //   · `time_archived IS NULL` — "Clear chat" ARCHIVES rather than deletes, which is precisely how
     //     a fresh chat is asked for. An archived chat must not block its own successor.
-    //   · `agent NOT IN ('build','plan')` — those are POSTURES, not colleagues (`AgentV2.POSTURE_IDS`).
-    //     `agent` means "the agent this session RUNS AS", and measured 2026-08-24 the owner's own
-    //     instances hold 55–98 live `build` roots and 76 `plan`: without this clause the index would
-    //     collapse the mode most chats run as into a single conversation.
+    //
+    // 🔴 **The `agent NOT IN ('build','plan')` EXEMPTION IS GONE** (owner, 2026-09-27: *"get completely
+    // rid of build and plan both as colleagues and as machinery"*). Those were POSTURE agents — a
+    // permission mode wearing an agent's shape — and the exemption is what let 55–98 live `build`
+    // roots and 76 `plan` accumulate on the owner's own instances, measured 2026-08-24. It was
+    // defending a state nobody wanted: a mode, holding the index hostage so it could never be a real
+    // colleague with a real chat.
+    //
+    // ⚠️ **This predicate and the migration that must accompany it are ONE change.** Every live posture
+    // root is archived by `20260927201500_retire_the_anonymous_agents` before it drops and rebuilds
+    // this index; recreating it with posture roots still live is precisely what SQLite would refuse.
+    // A fresh install never had them, so it skips straight to the plain uniqueness this was always
+    // meant to be.
     uniqueIndex("session_agent_live_root_idx")
       .on(table.agent)
-      .where(
-        sql`${table.parent_id} IS NULL AND ${table.time_archived} IS NULL AND ${table.agent} IS NOT NULL AND ${table.agent} NOT IN ('build', 'plan')`,
-      ),
+      .where(sql`${table.parent_id} IS NULL AND ${table.time_archived} IS NULL AND ${table.agent} IS NOT NULL`),
   ],
 )
 

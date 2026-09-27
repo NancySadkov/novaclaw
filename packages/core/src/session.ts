@@ -524,7 +524,19 @@ const guardOneChat = (
   db: Database.Interface["db"],
 ) =>
   Effect.gen(function* () {
-    if (session.agent === agent || AgentV2.POSTURE_IDS.has(agent)) return
+    // 🔴 **The `|| AgentV2.POSTURE_IDS.has(agent)` clause that stood here is GONE** (owner, 2026-09-27,
+    // with the retirement of the anonymous agents). It read *"a posture may hold many chats, so the
+    // one-chat rule does not apply to it"* — true only while a posture was an agent, which is exactly
+    // what stopped being true. Leaving it would have been the worst kind of leftover: the application
+    // guard would wave through a second `build` root and the database would then refuse it, so the
+    // caller would learn about the retirement from a `UNIQUE constraint failed` instead of from the
+    // rule that now states it. A guard and the index it fronts must agree, or the front one is
+    // decoration.
+    //
+    // The rest of this file still asks `POSTURE_IDS.has(...)` seven times, and every one of those is a
+    // DIFFERENT question — "is this a colleague?", which a retired id still answers no to, for legacy
+    // rows. This was the only site asking "is this EXEMPT?", and the exemption had no referent left.
+    if (session.agent === agent) return
     const live = yield* liveRootFor(db, agent)
     if (live && live.id !== String(sessionID) && session.parentID === undefined)
       return yield* new OperationUnavailableError({ operation: "switchAgent" })
@@ -551,6 +563,11 @@ const guardOneChat = (
  * *"New session"* — silently deleting the folder naming this function exists for, in exactly the case
  * it was written for. The premise above is the test: is this row attributable to SOMEONE? A posture
  * says how the chat runs, not whose it is.
+ * Since 2026-09-27 this is a LEGACY FALLBACK rather than a live case: a root can no longer be created
+ * as a posture - neither id has an agent, and `guardOneChat` no longer exempts them. It is kept
+ * deliberately rather than deleted, because the alternative is worse. A pre-retirement row re-titled
+ * "New session" loses the one piece of information it still carries about itself, and a title is not
+ * a permission, so nothing on this path can grant the authority the retirement removed.
  */
 const defaultTitle = (input: CreateInput): string => {
   if (input.agent !== undefined && !AgentV2.POSTURE_IDS.has(input.agent)) return "New session"
@@ -801,17 +818,6 @@ export const createSessionRecord = (
   })
 
 /**
- * THE POSTURE A CHAT RUNS AS WHEN ITS COLLEAGUE IS GONE.
- *
- * A restored chat must run as SOMETHING. `undefined` is the one value that cannot be used: it is
- * exactly the ghost NC-SEC-020 abolished, where every turn re-derives an owner from whatever the
- * current default officer happens to be, so the chat's identity — and its private memory cabinet —
- * changes under it between turns. `build` is the posture most chats already run as and the one the
- * composer falls back to, so it is the honest default here rather than a new concept.
- */
-const RESTORED_CHAT_POSTURE = AgentV2.ID.make("build")
-
-/**
  * The pieces every caller that needs a colleague's chat already has, named once so the seam below
  * can be reached from `colleague-handoff.ts`, `agent/reassignment.ts` and the memory endpoint
  * without each of them re-deriving a deps object.
@@ -858,11 +864,16 @@ export interface LiveChatDeps {
  */
 export const ensureLiveChat = (deps: LiveChatDeps, agent: AgentV2.ID): Effect.Effect<SessionSchema.ID | undefined> =>
   Effect.gen(function* () {
-    // A POSTURE is not a colleague. `build` and `plan` are how a chat runs, not whose it is, and they
-    // may hold many chats — so there is no single "the" chat to hand back, and handing back whichever
-    // is newest would be the second answer to "which chat is this" that the canonical id exists to
-    // remove.
-    if (AgentV2.POSTURE_IDS.has(agent)) return undefined
+    // A POSTURE is not a colleague, and that is the whole reason for the early return. `build` and
+    // `plan` are how a chat runs, not whose it is, so there is no single "the" chat to hand back, and
+    // handing back whichever is newest would be the second answer to "which chat is this" that the
+    // canonical id exists to remove.
+    //
+    // This clause became LOAD-BEARING on 2026-09-27. It used to read that a posture "may hold many
+    // chats" - true while a posture was an agent, which is exactly what the retirement ended. It is
+    // now what makes `resolveFiledChat` route an unowned prompt to the governing officer: a retired id
+    // answers `undefined` HERE, so the caller has a real second answer to consult instead of reviving
+    // a ghost root under a name that can never answer.    if (AgentV2.POSTURE_IDS.has(agent)) return undefined
     // ⚠️ The live chat is looked up FIRST, before any existence test, and the order is load-bearing:
     // a colleague that already has one is answered without consulting the roster at all. Gating the
     // lookup on the config store would make a chat the user can see unreachable because a config row
@@ -901,27 +912,37 @@ export const ensureLiveChat = (deps: LiveChatDeps, agent: AgentV2.ID): Effect.Ef
  * chat is history, and history is not a place work happens. So the address is resolved through the
  * entity that owns it rather than refused back to a caller who cannot act on the refusal.
  *
- * Two outcomes, and there is no third:
+ * TWO TIES, both resolved against the vision on 2026-09-27 when the anonymous agents were retired.
+ * The third path this function used to have - un-file the named chat and re-stamp it onto a posture -
+ * is GONE, and that is the interesting half.
  *
- *   · **A live colleague owns it** — the prompt goes to that colleague's chat, which
- *     {@link ensureLiveChat} guarantees exists. This is the ordinary case, and the one the owner hit:
- *     reassignment or Clear chat replaced the chat under a tab that had not caught up, and the user's
- *     words were refused by a chat that was merely superseded.
+ *   - A live colleague owns it: the prompt goes to that colleague's chat, which {@link ensureLiveChat}
+ *     guarantees exists. This is the ordinary case, and the one the owner hit - reassignment or Clear
+ *     chat replaced the chat under a tab that had not caught up, and the user's words were refused by
+ *     a chat that was merely superseded.
  *
- *   · **Nobody live owns it** — a retired colleague's transcript, an archived posture chat, or a
- *     legacy root with no owner at all. There is no entity to resolve through, so the chat the caller
- *     NAMED is the address, and it is brought back: filed is a state the user put it in, and typing
- *     into it is the user asking for it not to be. The owner is re-stamped to a POSTURE, never left
- *     as a retired colleague's id — a live root under a retired id is a transcript the next holder of
- *     that name would open into, which is exactly the bleed `agent/retire.ts` archives chats to stop.
+ *   - Nobody live owns it: a retired colleague's transcript, an archived posture chat, or a legacy root
+ *     with no owner at all. There is no entity to resolve through, so the instance's GOVERNING officer
+ *     is - an unattributed request is exactly what the CEO exists to absorb, and it is the same
+ *     answer the home launcher gives. The named chat stays filed: it is the user's history, and
+ *     reviving it under a new owner is how a transcript ends up in a memory cabinet that has nothing
+ *     to do with it.
  *
- * ⚠️ **Retired ids are never materialised**, only reused chats are. `ensureLiveChat` on a retired id
- * would create a fresh live chat under a name the pool can hand out again, which is the same bleed
- * from the other side.
+ * It used to re-stamp `build` onto the revived chat, and that was the LAST WRITER of a retired agent.
+ * The reasoning it was built on - "a restored chat must run as SOMETHING, and `undefined` is the ghost
+ * NC-SEC-020 abolished" - is sound and is preserved exactly: the prompt is still DELIVERED, into a
+ * chat that has a real owner, a stable identity and its own private memory scope. What changed is that
+ * the owner is a COLLEAGUE rather than a permission mode, so a retired id can no longer acquire a live
+ * root on the way back in. (NC-SEC-020's actual subject was an owner re-derived per turn; nothing here
+ * re-derives anything.)
  *
- * ⚠️ The resolution is invisible to the caller except in the answer: the returned `Admitted` carries
- * the session that took the prompt, so a client that wants to follow can — and a client that does not
- * still gets its words delivered, which is the property being bought here.
+ * Retired ids are never materialised, only reused chats are: `ensureLiveChat` on a retired id would
+ * create a fresh live chat under a name the pool can hand out again, which is the same bleed from the
+ * other side.
+ *
+ * The resolution is invisible to the caller except in the answer: the returned `Admitted` carries the
+ * session that took the prompt, so a client that wants to follow can - and a client that does not still
+ * gets its words delivered, which is the property being bought here.
  */
 const resolveFiledChat = (
   deps: LiveChatDeps,
@@ -931,35 +952,20 @@ const resolveFiledChat = (
   Effect.gen(function* () {
     const owner = target.agent
     // The ONE existence test on this path, and it is the same one every other caller uses.
-    // `ensureLiveChat` answers `undefined` for a posture, for an id nobody holds any more, and for
-    // nothing else — a second test here would be the second answer to "is this a colleague" that the
+    // `ensureLiveChat` answers `undefined` for a retired id, for an id nobody holds any more, and for
+    // nothing else - a second test here would be the second answer to "is this a colleague" that the
     // seam exists to remove.
     if (owner !== undefined) {
       const live = yield* ensureLiveChat(deps, AgentV2.ID.make(owner))
       if (live !== undefined) return live
     }
-
-    yield* SessionPatch.patchSessionRecord(
-      { db: deps.db, events: deps.events },
-      requestedID,
-      (info) =>
-        SessionSchema.Info.make({
-          ...info,
-          /**
-           * ⚠️ A ROOT gets the posture; a CHILD is left as it is. `agent` on a root is who owns it,
-           * so a retired id there is the bleed; on a child it is an override the chain walk would
-           * otherwise fill, and stamping a posture onto a worker would change how the thread runs
-           * rather than who owns it. Children are not reached by `chatFor` (it requires a null
-           * parent), so leaving one alone cannot open a returning name into anything.
-           */
-          ...(info.parentID === undefined ? { agent: RESTORED_CHAT_POSTURE } : {}),
-          time: { ...info.time, archived: undefined },
-        }),
-      { clearArchived: true },
-    )
-    return requestedID
+    // Nobody live owns it, so the governing officer takes it - the same answer the home launcher
+    // gives an unattributed request, and the reason a prompt is never lost. `isProtected` is what
+    // makes this total: Nova is never retired, so `ensureLiveChat` always has a chair for them, and
+    // the `requestedID` fallback below is unreachable in a healthy instance rather than load-bearing.
+    const governing = yield* ensureLiveChat(deps, AgentV2.DEFAULT_COLLEAGUE_ID)
+    return governing ?? requestedID
   })
-
 /**
  * Remove a session RECORD tree from CYCLE-FREE primitives (the `createSessionRecord` seam
  * pattern): run the injected `interrupt` first (the SessionV2 layer passes the execution

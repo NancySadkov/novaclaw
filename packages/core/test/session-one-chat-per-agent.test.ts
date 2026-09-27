@@ -329,22 +329,47 @@ describe("one chat per colleague", () => {
     }),
   )
 
-  it.effect("a POSTURE is not a person — `build` chats are never collapsed", () =>
+  it.effect("a RETIRED id is under the one-chat rule too - the exemption had no referent left", () =>
     Effect.gen(function* () {
       const d = yield* deps
-      // 🔴 The regression this test exists for, found in LIVE DATA rather than by reasoning. Scanned
-      // the owner's own stores 2026-08-23: `novaclaw.db` held `build` × 54 and `nova` × 2 live root
-      // chats. `build` is this instance's DEFAULT agent (`AgentV2.defaultID`), so an ordinary chat
-      // that never named a colleague still carries `agent: "build"` on its row — and a guard keyed
-      // on `agent !== undefined` would have merged all 54 of those into a single conversation.
-      // `build` and `plan` are permission modes wearing an agent's shape, not people.
+      // THIS TEST INVERTED, and the inversion is the finding. It used to read "a POSTURE is not a
+      // person, so `build` chats are never collapsed" and assert TWO live `build` roots, on the
+      // strength of a measured regression: scanning the owner's own stores on 2026-08-23 found
+      // `build` x 54 and `nova` x 2 live root chats, and a guard keyed on `agent !== undefined` would
+      // have merged all 54 into one conversation. That reasoning was correct, and the fix it drove -
+      // key the guard on "is this a COLLEAGUE" - was correct.
+      //
+      // What it left behind was the mirror-image defect: an EXEMPTION rather than a distinction. The
+      // `||` in `guardOneChat` then read that a posture is exempt from the rule, and the DB index
+      // said the same thing by listing `build`/`plan` in its WHERE clause. So 55-98 live posture roots
+      // accumulated on the owner's own instances - measured again 2026-08-24 - which is the very
+      // collapse this test was written to prevent, arriving by the other door.
+      //
+      // The distinction and the exemption are not the same thing, and only the first survives a
+      // retirement: a posture is still not a COLLEAGUE (six other readers in `session.ts` still ask
+      // exactly that, for pre-retirement rows), but nothing grants it a chat of its own any more.
+      // One live root, same as everyone.
       yield* seedChat(d.db, { id: "ses_build_1", agent: "build" })
 
-      const created = yield* createSessionRecord(d, { agent: "build", location: { directory: here() } } as never)
-
-      expect(String(created.id)).not.toBe("ses_build_1")
-      const roots_build = yield* rootsFor(d.db, "build")
-      expect(roots_build.length).toBe(2)
+      const refused = yield* Effect.exit(
+        createSessionRecord(d, { agent: "build", location: { directory: here() } } as never),
+      )
+      expect(Exit.isFailure(refused), "a second live root was minted for a retired id").toBe(true)
+      // ...and the first one is still there, untouched. The rule is one-per-agent, not none.
+      expect((yield* rootsFor(d.db, "build")).length).toBe(1)
+      // The genuine distinction still holds where it always did: a COLLEAGUE is one-per-agent too.
+      //
+      // ⚠️ And the control asserts ONE ROOT, not a REFUSAL, because the two arrive by different
+      // doors and conflating them would have been a test that passes for the wrong reason. A
+      // colleague's second create is IDEMPOTENT - `createSessionRecord` mints the canonical
+      // `ses_<agent>` seat and the insert is `onConflictDoNothing`, so it returns the existing chat
+      // rather than erroring. The posture case above has no canonical seat to land on (the seeded row
+      // is `ses_build_1`), so the same rule has to stop it some other way, and the way it stops it is
+      // `guardOneChat`. Same invariant, two mechanisms - which is why only the count is asserted here.
+      yield* seedChat(d.db, { id: "ses_theron", agent: "theron" })
+      const again = yield* createSessionRecord(d, { agent: "theron", location: { directory: here() } } as never)
+      expect(String(again.id)).toBe("ses_theron")
+      expect((yield* rootsFor(d.db, "theron")).length).toBe(1)
     }),
   )
 

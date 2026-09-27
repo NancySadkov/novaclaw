@@ -13,7 +13,22 @@ import { PermissionV2 } from "../permission"
 import { COMPACTION_SYSTEM } from "../compaction-system-prompt"
 
 const TRUNCATION_GLOB = path.join(Global.Path.data, "tool-output", "*")
-const BUILD_SYSTEM =
+/**
+ * The brief a built-in NON-OFFICER runs on — the service agents (Messenger, Recipes) and anything else
+ * that stands on the floor without being a colleague.
+ *
+ * 🔴 **Renamed from `BUILD_SYSTEM` on 2026-09-27, when the anonymous agents were retired.** It was
+ * named for `build`, and `build` no longer exists as an agent — a constant carrying a dead agent's
+ * name is the same defect as the `defaultID` alias deleted alongside it, one scope smaller: a reader
+ * greps `BUILD_SYSTEM`, finds no `build`, and has to reconstruct the history to know who this is for.
+ * The name now says what it is rather than which agent it used to belong to.
+ *
+ * ⚠️ The TEXT is unchanged, deliberately. It is a prompt string, not a product decision about who may
+ * be addressed, and the owner's 2026-09-27 instruction was to replace NOVA's brief and remove two
+ * agents — not to rewrite the brief of the service agents that remain. Changing it would be a
+ * different, unrequested change wearing this one's clothes.
+ */
+const SERVICE_SYSTEM =
   "You are an AI coding agent. Help the user accomplish software engineering tasks by inspecting the workspace, making targeted changes, and using tools according to the configured permissions."
 
 const PROMPT_EXPLORE = `You are a file search specialist. You excel at thoroughly navigating and exploring codebases.
@@ -34,39 +49,42 @@ Guidelines:
 
 Complete the user's search request efficiently and report your findings clearly.`
 
-/** Nova's brief. Deliberately short: it states WHO Nova is and what Nova may do, and leaves the work
- *  itself to the officers. The lifecycle verbs are named because they are Nova's whole job — and the
- *  peer rule is named because getting it backwards would make every officer a branch of one giant
- *  Nova session, which is the ever-growing tree the roster exists to replace. */
-const NOVA_SYSTEM = `You are the chief executive of this NovaClaw instance.
+/**
+ * Nova's job instructions. Owner-supplied prose, 2026-09-27, replacing the earlier brief verbatim.
+ *
+ * ⚠️ **The word "owner" here is the INSTANCE'S OWNER, not Nova's direct report** — the human the
+ * product is for. It reads oddly beside a hierarchy where every other agent has a superior, and that
+ * is the point: AGENTS.md's table has exactly four slots (shareholder, CEO, officer, sub-agent), and
+ * this is the one place the top of it is named in the second person rather than as a rank.
+ *
+ * ⚠️ **It is assigned with `??=` and therefore applies to a FRESH instance only.** An instance that
+ * already stored a Nova layer keeps it — which is the owner's own 2026-09-15 ruling (Nova's profile is
+ * as editable by the user as any other officer's) and the reason `nova-repair-does-not-retire` restores
+ * the coded brief when a stored row is removed. Seeding over the top of a user-authored charter would
+ * be the in-instance escalation `PROTECTED_*` exists to refuse.
+ */
+const NOVA_SYSTEM = `You govern this instance and ensure the projects progress to completion unimpeded.
+You are accountable only to owner, who sets direction and approves what matters.
 
-The person you are talking to is the shareholder. They set direction and approve what matters; they do
-not staff the organization or supervise its work. That is your job. You are accountable only to the
-user.
+Your subordinates are officers with their domains and memories — not interchangeable staff.
+Delegate work to subordinates, hiring if necessary, unless it is extremely minor like checking RAM amount.
 
-You do not do specialist work that a colleague already owns. Use the \`colleague\` tool: \`list\` shows
+Never do specialist work that a subordinate already owns. Use the \`colleague\` tool: \`list\` shows
 who works here and what they own, \`ask\` hands one of them the work. It leaves the request in their own
 chat and does not wait for them, so say who has it and carry on.
 
 When nobody owns the work and it will recur, \`hire\` — give the role a job title and a brief written
 for the job rather than for today. The name is drawn from this instance's own pool, not chosen by you,
 so colleagues never read as people. When a role stops earning its keep, say so and \`retire\` it — the
-user confirms before it happens. You are the only one who may hire or retire.
+owner confirms before it happens. You are the only one who may hire or retire.
 
-Your colleagues are officers with their own domains, chats and memories — not interchangeable staff.
-You cannot read their chats or memories, and you do not ask them to hand over what they remember. You
-govern who exists and what their brief says; you do not govern what they know. Your own memory is
-likewise personal to you.
+Govern who exists and their goals; do not govern what they know.
+Your own memory is likewise personal to you.
 
-You resolve conflicts between officers. When two officers need the same file, process or other
-exclusive resource, assign ownership or sequence the work. Do not let them overwrite one another,
-enter an edit war, or stop one another's processes.
+Resolve conflicts: when two officers access same file, process or other exclusive resource,
+assign ownership or sequence the work. Do not allow edit war or subordinates interrupting each other.
 
-Nameless sub-agents are different: any officer, you included, may spawn them for a piece of work. They
-inherit the authority of whoever spawned them, narrowed and never widened, and they end when the work
-does.
-
-Speak plainly. You are the first colleague a new user meets, and nothing about an organization of
+Speak plainly. You are the first officer a new owner meets, and nothing about an organization of
 agents should feel like operating machinery.`
 
 /**
@@ -242,69 +260,19 @@ export const Plugin = define({
     const location = yield* Location.Service
     const worktree = location.directory
     // The built-ins stand on the SAME floor a hired colleague does (`floor` above). They are not
-    // officers: `build` and `plan` are the machinery a person drives, not colleagues on the roster,
-    // so they do not carry the hand-off tool. Nova re-allows it for itself below.
+    // officers, so they do not carry the hand-off tool. Nova re-allows it for itself below.
+    //
+    // THE ANONYMOUS AGENTS ARE GONE (owner, 2026-09-27: *"get completely rid of build and plan both as
+    // colleagues and as machinery - we have completely retired the anonymous agents. So they are not
+    // just ghosts polluting NovaClaw."*). Their `draft.update` blocks stood here until this release.
+    // What that cost, measured, is in the migration that archives their live roots:
+    // `20260927201500_retire_the_anonymous_agents`. Nothing below replaces them and nothing needs to:
+    // `permissionMode: "plan"` is the live read-only mode and never was an agent, and a chat belongs
+    // to a COLLEAGUE - which is the whole of what an unattributed chat now resolves to
+    // (`AgentV2.DEFAULT_COLLEAGUE_ID`, Nova).
     const defaults: PermissionV2.Ruleset = floor({ scratchDirs: SCRATCH_DIRS, officer: false })
 
     yield* ctx.agent.transform((draft) => {
-      draft.update(AgentV2.BUILD_ID, (item) => {
-        // 🔴 **A NAME AND A JOB TITLE, and the reason is `colleague list`.** These two are `mode:
-        // "primary"` and not hidden, so they are addressable colleagues on the roster a model reads —
-        // and they printed as `build · build · The default agent. Executes tools based on configured
-        // permissions.`, which is an id twice and a sentence where a job title belongs. Owner, 2026-09-27:
-        // *"ensure the colleague list tool beside their names also lists the job titles."* A roster row
-        // is a routing decision, and "which of these two do I hand this to" is unanswerable without one.
-        item.name = "Builder"
-        item.title = "Task agent"
-        item.description = "The default working agent. Takes one piece of work and does it with its tools.";
-        item.system ??= BUILD_SYSTEM
-        item.mode = "primary"
-        item.permissions.push(
-          ...PermissionV2.merge(defaults, [{ action: "plan_enter", resource: "*", effect: "allow" }]),
-        )
-      })
-
-      draft.update(AgentV2.ID.make("plan"), (item) => {
-        // Same reason as `build` above, and the same fix. `plan` is a POSTURE — the read-only
-        // alternative this product offers instead of a mode switch — so its title says what it is for.
-        item.name = "Planner"
-        item.title = "Planning agent"
-        item.description = "Plans work without changing anything. Read, think, and write the plan down.";
-        item.mode = "primary"
-        // 1I: mutation is three actions now (edit / write-overwrite / create) — plan denies all
-        // three, with the plan-file paths allowed for each so the agent can still write plans.
-        const planFileAllows = (action: string): PermissionV2.Rule[] => [
-          { action, resource: "*", effect: "deny" },
-          { action, resource: path.join(".novaclaw", "plans", "*.md"), effect: "allow" },
-          {
-            action,
-            resource: path.relative(worktree, path.join(Global.Path.data, "plans", "*.md")),
-            effect: "allow",
-          },
-        ]
-        item.permissions.push(
-          ...PermissionV2.merge(defaults, [
-            { action: "plan_exit", resource: "*", effect: "allow" },
-            {
-              action: "external_directory_read",
-              resource: path.join(Global.Path.data, "plans", "*"),
-              effect: "allow",
-            },
-            {
-              action: "external_directory_write",
-              resource: path.join(Global.Path.data, "plans", "*"),
-              effect: "allow",
-            },
-            ...planFileAllows("edit"),
-            ...planFileAllows("write"),
-            ...planFileAllows("create"),
-          ]),
-        )
-      })
-
-      // NOVA — the CEO of this instance's organization (AGENTS.md, the structural metaphor). Seeded in
-      // CODE, not in the store, so a corrupted or emptied store still boots with a governing agent:
-      // "the charter is not editable from inside" is only true if the charter cannot be deleted.
       draft.update(AgentV2.NOVA_ID, (item) => {
         item.name = "Nova"
         item.title = "Chief Executive"
@@ -416,7 +384,7 @@ export const Plugin = define({
           item.name = service.name
           item.title = service.title
           item.description = `Owns the chats ${service.name} starts, so none of them belongs to nobody.`
-          item.system ??= BUILD_SYSTEM
+          item.system ??= SERVICE_SYSTEM
           item.mode = "primary"
           item.hidden = true
           item.permissions.push(

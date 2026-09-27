@@ -784,8 +784,15 @@ export const dict = {
     "Open All Officers and talk to Nova. Return Home with the logo at the top left, and reopen this tour from Help whenever you like.",
   "common.remove": "Remove",
   // ⚠️ The copy changed WITH the control (AGENTS.md principle 12): this was a fake text input whose
+  // The copy changed WITH the control (AGENTS.md principle 12): this was a fake text input whose
   // label said "Enter opens its chat", which described typing that never happened. It is a button.
-  "home.newAgent.placeholder": "Ask anything...",
+  //
+  // It now NAMES the officer, because the selector beside it is gone and this bar always starts a
+  // chat with Nova (owner, 2026-09-27). "Ask anything..." was accurate only while the user chose who
+  // to ask; with one destination a label that does not name it is a control you have to read to
+  // understand. The name is interpolated from the roster row, so a user who RENAMED Nova reads their
+  // own name for it.
+  "home.newAgent.placeholder": "Ask {{name}} anything...",
   "home.newAgent.notReady": "Still connecting to your workspace — try again in a moment.",
   "session.control.reverted":
     "{{control}} could not be changed on the server, so it has been put back. The chat is still running with the previous setting.",

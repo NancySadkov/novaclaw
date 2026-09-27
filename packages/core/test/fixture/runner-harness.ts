@@ -925,10 +925,15 @@ export function makeRunnerHarness(script: RunnerScript = {}) {
     // and wiping everything would break it in a way that looks like the feature failing.
     //
     // ⚠️ **The scopes are DERIVED from the store, not hand-listed.** The previous version cleared
-    // `agent:${AgentV2.defaultID}` — and `defaultID` is `build`, while a harness session actually runs
+    // `agent:${AgentV2.defaultID}` — and that symbol was `build`, while a harness session actually runs
     // as **nova**, so compaction's archived passages sat in `agent:nova` and were never touched. The
     // leak this whole comment describes therefore still happened, silently, for four days. A list of
     // scopes kept by hand beside a value that decides them is the same defect twice; ask the store.
+    //
+    // ⭐ The hand-listed version is now UNREACHABLE rather than merely wrong: `AgentV2.defaultID` was
+    // deleted on 2026-09-27 with the retirement of the anonymous agents, because a deprecated alias
+    // whose entire content was "the id a chat runs as when nobody chose" was the retirement's own
+    // subject. A scope list cannot drift onto a value that no longer exists.
     const world = WorldMemory.client(yield* WorldMemory.node.service)
     const worldResident = yield* world
       .list({ limit: 500 })

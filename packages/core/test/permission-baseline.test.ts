@@ -56,6 +56,38 @@ const effectFor = (agentRules: PermissionV2.Ruleset, action: string, resource = 
     ...MODE_RULES[EFFECTIVE_CONFIG_DEFAULTS.permissionMode],
   ]).effect
 
+/**
+ * ⭐ **THE FLOOR, read from the plugin that builds it — this file's stand-in for "an agent with no
+ * grants beyond the floor", which until 2026-09-27 was spelled `build`.**
+ *
+ * Eight separate tests in this file reached for the `build` row as that stand-in, and two more listed
+ * `build`/`plan` by name in id loops. That is eight hand-kept references to one agent id, and when the
+ * anonymous agents were retired it broke all ten at once — several silently, behind a `!` that turned
+ * a missing row into `undefined` and a TypeError three frames later.
+ *
+ * The fix is not another id. `AgentPlugin.floor` IS the function every built-in is constructed from,
+ * so it is the more faithful read, not a hand-copied fixture in the sense this file's header warns
+ * about: nothing here restates a rule, and a change to the floor's membership is a change to the value
+ * these tests evaluate. What it does lose is the indirection through a real agent, so that is pinned
+ * explicitly by the test directly below — a substitution that is not pinned is an assumption.
+ */
+const theFloor: PermissionV2.Ruleset = AgentPlugin.floor({
+  scratchDirs: AgentPlugin.SCRATCH_DIRS,
+  officer: false,
+})
+
+/**
+ * Every built-in that is NOT Nova, DERIVED from the roster rather than listed.
+ *
+ * The two loops that used this spelled out `["build", "plan", "explore", "general", "compaction"]` and
+ * `["build", "plan", "general"]`. A hand-kept list is the same defect as a hand-kept floor: it names
+ * the agents that existed when it was written, and the retirement of two of them made it silently
+ * shorter. Deriving it means a NEW built-in joins the assertion for free, which is the direction a
+ * safety ratchet has to fail in.
+ */
+const nonOfficerBuiltIns = (agents: ReadonlyMap<string, PermissionV2.Ruleset>) =>
+  [...agents.keys()].filter((id) => id !== String(AgentV2.NOVA_ID)).sort()
+
 // ─────────────────────────────────────────────────────────────────────────────
 // The authored permission dict is an OPEN namespace, and that is B4c's premise rather than laxity.
 //
@@ -141,7 +173,6 @@ describe("the built-in agents the plugin actually builds", () => {
       const agents = yield* builtinAgents
       // The full set, asserted by name so a NEW built-in agent cannot join without being looked at.
       expect([...agents.keys()].sort()).toEqual([
-        "build",
         "compaction",
         "explore",
         "general",
@@ -154,11 +185,12 @@ describe("the built-in agents the plugin actually builds", () => {
          * owning a subsystem's chats grants no ambient authority over what may be run.
          */
         "messenger",
-        // The CEO (AGENTS.md — the structural metaphor). Same ruleset as `build` plus the two
-        // interactive grants: Nova talks to the user and routes work, it does not carry authority
-        // its officers lack.
+        // The CEO (AGENTS.md — the structural metaphor). The same floor as every other built-in plus
+        // the two interactive grants: Nova talks to the user and routes work, it does not carry
+        // authority its officers lack. The floor was pinned through `build` and `plan` until the
+        // anonymous agents were retired (2026-09-27); it is now read from `AgentPlugin.floor` directly,
+        // and pinned as actually-applied by the test immediately after this one.
         "nova",
-        "plan",
         "recipe",
       ])
       for (const [id, rules] of agents) {
@@ -167,15 +199,46 @@ describe("the built-in agents the plugin actually builds", () => {
     }),
   )
 
+  /**
+   * 🔴 **THE FLOOR IS NOT ONLY A FUNCTION — A REAL BUILT-IN STILL RECEIVES IT.**
+   *
+   * This is what makes the re-point above a measurement rather than an assumption. Ten tests in this
+   * file used to reach the floor *through* a real agent row; they now read `AgentPlugin.floor` directly,
+   * which is more faithful to the definition but no longer proves the definition is the thing agents
+   * get. A plugin that stopped applying its own floor to its agents would leave all ten of them
+   * passing, happily evaluating a ruleset nothing runs on.
+   *
+   * So this asserts the join: every rule in the floor is present in a real built-in's ruleset. Set
+   * membership rather than a prefix, because `PermissionV2.merge` is free to reorder and dedupe, and
+   * a test that pins an order would fail on a change that changed nothing. Checked against Nova AND
+   * against a non-officer, because the floor is the same function for both and the one place they
+   * differ is exactly where a conditional application would hide.
+   */
+  it.effect("a real built-in RECEIVES the floor, so the tests above evaluate what agents run", () =>
+    Effect.gen(function* () {
+      const agents = yield* builtinAgents
+      const key = (rule: PermissionV2.Ruleset[number]) => JSON.stringify([rule.action, rule.resource, rule.effect])
+      for (const id of [String(AgentV2.NOVA_ID), "explore"]) {
+        const rules = agents.get(id)
+        expect(rules, `${id} is not a built-in`).toBeDefined()
+        // Non-vacuity: an empty floor would satisfy a subset test trivially, and emptying the floor is
+        // a change this file exists to notice.
+        expect(theFloor.length, "the floor emptied — the subset check below would pass vacuously").toBeGreaterThan(0)
+        const held = new Set((rules ?? []).map(key))
+        for (const rule of theFloor)
+          expect(held.has(key(rule)), `${id} is missing floor rule ${JSON.stringify(rule)}`).toBe(true)
+      }
+    }),
+  )
+
   it.effect("the ambient-safe floor is present and effective on the default agent", () =>
     Effect.gen(function* () {
-      const build = (yield* builtinAgents).get("build")!
       for (const action of ["read", "explore", "todowrite", "resource_status"])
-        expect(effectFor(build, action)).toBe("allow")
+        expect(effectFor(theFloor, action)).toBe("allow")
       // Filenames do not create hidden read prompts. Users can still author an explicit deny rule.
-      expect(effectFor(build, "read", "packages/core/.env")).toBe("allow")
-      expect(effectFor(build, "read", ".env.local")).toBe("allow")
-      expect(effectFor(build, "read", ".env.example")).toBe("allow")
+      expect(effectFor(theFloor, "read", "packages/core/.env")).toBe("allow")
+      expect(effectFor(theFloor, "read", ".env.local")).toBe("allow")
+      expect(effectFor(theFloor, "read", ".env.example")).toBe("allow")
     }),
   )
 
@@ -187,7 +250,7 @@ describe("the built-in agents the plugin actually builds", () => {
       // `deny` here is what keeps `colleague`'s 2,078 resident bytes (measured 2026-08-21,
       // `location-layer.test.ts`) out of every ordinary session's prompt. If this flips to `ask`,
       // nothing refuses — but every agent starts paying for a tool it may not use.
-      for (const id of ["build", "plan", "explore", "general", "compaction"])
+      for (const id of nonOfficerBuiltIns(agents))
         expect({ id, effect: effectFor(agents.get(id)!, "colleague") }).toEqual({ id, effect: "deny" })
       expect(effectFor(agents.get("nova")!, "colleague")).toBe("allow")
     }),
@@ -210,32 +273,46 @@ describe("the built-in agents the plugin actually builds", () => {
       expect(effectFor(agents.get("nova")!, "spawn", "build")).toBe("ask")
       expect(effectFor(agents.get("nova")!, "spawn", "*")).toBe("ask")
 
-      // The machinery a person drives is not an officer and does not staff itself. ⚠️ Unlike
-      // `colleague`, the floor adds no DENY for them — it simply grants nothing, so spawn keeps the
-      // verdict it had before officers were granted anything: `ask`, which the assert path refuses.
-      // A `*` deny would additionally take the tool off their horizon, and would also take it off
-      // `build` — the agent a person drives — which is a product change, not this one's.
-      // `agent-floor-horizon.test.ts` drives that distinction.
-      for (const id of ["build", "plan", "general"])
+      // The machinery a person drives is not an officer and does not staff itself.
+      //
+      // 🔴 **CLASSIFIED BY MECHANISM, over the DERIVED roster.** This used to be a hand-kept
+      // `["build", "plan", "general"]` asserting the exact verdict `ask`, plus a separate by-name
+      // assertion that `explore` answers `deny`. Two defects in that shape, both found by running it:
+      // the retirement of two of its three members silently shortened the list, and the exact-`ask`
+      // assertion was one notch too specific — `compaction` carries an explicit `spawn: "deny"` and was
+      // simply absent from it, so a real third category had no assertion at all.
+      //
+      // The invariant is not "every non-officer asks". It is "ONLY an officer may staff", and a
+      // `deny` satisfies that more strongly than an `ask` does. So the split is now derived from each
+      // agent's OWN rules — silent by absence (no `spawn` rule at all) versus denied on purpose (one) —
+      // which is a statement about the mechanism and cannot go stale when an agent is added, retired
+      // or granted something.
+      const silent = nonOfficerBuiltIns(agents).filter(
+        (id) => !(agents.get(id) ?? []).some((rule) => Wildcard.match("spawn", rule.action)),
+      )
+      const denied = nonOfficerBuiltIns(agents).filter((id) => !silent.includes(id))
+      for (const id of silent)
         expect({ id, effect: effectFor(agents.get(id)!, "spawn", "inherit") }).toEqual({ id, effect: "ask" })
-      // ⚠️ `explore` answers DENY rather than `ask`, and the difference is its own and pre-existing:
-      // it opens with a catch-all `{ *, *, deny }` and re-grants exactly the search pair, because a
-      // read-only search agent's floor is "nothing unless named". Folding it into the loop above
-      // would have hidden which agents are silent-by-absence and which are denied on purpose.
-      expect(effectFor(agents.get("explore")!, "spawn", "inherit")).toBe("deny")
+      for (const id of denied)
+        expect({ id, effect: effectFor(agents.get(id)!, "spawn", "inherit") }).toEqual({ id, effect: "deny" })
+      // The strict reading, which the derived roster is what makes possible: nothing but Nova is allowed.
+      for (const id of nonOfficerBuiltIns(agents))
+        expect(effectFor(agents.get(id)!, "spawn", "inherit"), `${id} may staff itself`).not.toBe("allow")
+      // Non-vacuity: both categories are populated, so neither loop above can pass by finding nothing.
+      expect(silent.length, "no non-officer is silent by absence any more").toBeGreaterThan(0)
+      expect(denied.length, "no non-officer is denied on purpose any more").toBeGreaterThan(0)
     }),
   )
 
   it.effect("a DEFAULT install is unchanged for the mutation/exec cluster — the mode grants it now", () =>
     Effect.gen(function* () {
-      const build = (yield* builtinAgents).get("build")!
       // These five are absent from the floor on purpose: `MODE_RULES.bypass` (the shipped default
       // mode) allows them, so inverting the baseline did not make a fresh install ask about edits.
-      for (const action of ["edit", "write", "create", "trash", "bash"]) expect(effectFor(build, action)).toBe("allow")
+      for (const action of ["edit", "write", "create", "trash", "bash"]) expect(effectFor(theFloor, action)).toBe("allow")
       // ...and the posture is now load-bearing rather than decorative: under Analyze the same
       // actions are refused, which was already true, and under Ask they are consent-gated.
       const under = (mode: keyof typeof MODE_RULES, action: string) =>
-        PermissionV2.evaluate(action, "src/x.ts", [...build, ...MODE_RULES[mode]]).effect
+        PermissionV2.evaluate(action, "src/x.ts", [...theFloor, ...MODE_RULES[mode]]).effect
       expect(under("plan", "edit")).toBe("deny")
       expect(under("ask", "edit")).toBe("ask")
     }),
@@ -243,7 +320,6 @@ describe("the built-in agents the plugin actually builds", () => {
 
   it.effect("every gate the catch-all used to grant itself now ASKS on the default agent", () =>
     Effect.gen(function* () {
-      const build = (yield* builtinAgents).get("build")!
       // The list the v0.2.0 ledger names, plus the two shapes no compiled rule can ever mention:
       // an MCP tool (its action IS the remote tool's name) and an ad-hoc tool a model invents at
       // runtime via `tool/define-tool.ts`. Those two are why growing `MODE_RULES` could not fix it.
@@ -262,7 +338,7 @@ describe("the built-in agents the plugin actually builds", () => {
         "my_deploy_tool",
       ]
       for (const action of wasSilentlyAllowed)
-        expect({ action, effect: effectFor(build, action) }).toEqual({
+        expect({ action, effect: effectFor(theFloor, action) }).toEqual({
           action,
           effect: "ask",
         })
@@ -271,13 +347,12 @@ describe("the built-in agents the plugin actually builds", () => {
 
   it.effect("web fetch, web search and inline JavaScript are available by default", () =>
     Effect.gen(function* () {
-      const build = (yield* builtinAgents).get("build")!
-      expect(effectFor(build, "webfetch", "https://example.com/")).toBe("allow")
-      expect(effectFor(build, "js", "1 + 1")).toBe("allow")
+      expect(effectFor(theFloor, "webfetch", "https://example.com/")).toBe("allow")
+      expect(effectFor(theFloor, "js", "1 + 1")).toBe("allow")
       // 🔴 The reported defect: this was "deny" on a default install, so "what is the current price
       // of gold" came back as a permission refusal. `webfetch` above is the strictly more powerful
       // egress and was already allowed.
-      expect(effectFor(build, "websearch", "price of gold")).toBe("allow")
+      expect(effectFor(theFloor, "websearch", "price of gold")).toBe("allow")
     }),
   )
 
@@ -286,8 +361,7 @@ describe("the built-in agents the plugin actually builds", () => {
       // The assertion above measures the BASELINE and nothing else — restore the one rule B4c
       // removed, in the position it used to hold, and every gate reverts to granting itself. This
       // is the regression the check at the top of this describe block is there to catch.
-      const build = (yield* builtinAgents).get("build")!
-      const preB4c: PermissionV2.Ruleset = [{ action: "*", resource: "*", effect: "allow" }, ...build]
+      const preB4c: PermissionV2.Ruleset = [{ action: "*", resource: "*", effect: "allow" }, ...theFloor]
       for (const action of ["js", "spawn", "skill", "webfetch", "define_tool", "messenger.send", "my_deploy_tool"])
         expect({ action, effect: effectFor(preB4c, action) }).toEqual({ action, effect: "allow" })
       expect(PermissionV2.catchAllAllowRules(preB4c)).toHaveLength(1)
@@ -300,17 +374,16 @@ describe("the built-in agents the plugin actually builds", () => {
       // `MODE_RULES` still enumerates literal action names and still cannot mention a tool the model
       // invented at runtime — but it no longer has to, because the thing that used to answer for
       // that name (the catch-all) is gone and the fall-through is `ask` in every mode.
-      const build = (yield* builtinAgents).get("build")!
       for (const mode of ["plan", "ask", "surgical", "bypass"] as const)
         expect({
           mode,
-          effect: PermissionV2.evaluate("my_deploy_tool", "anything", [...build, ...MODE_RULES[mode]]).effect,
+          effect: PermissionV2.evaluate("my_deploy_tool", "anything", [...theFloor, ...MODE_RULES[mode]]).effect,
         }).toEqual({ mode, effect: "ask" })
       // `yolo` is the ONE deliberate way out and stays one — it is the documented "everything"
       // posture, and its overlay still names only the classes it names, so an ad-hoc tool asks
       // there too. Recorded rather than asserted as a guarantee: if yolo ever grows a catch-all,
       // that is a decision, and this line is where the next reader meets it.
-      expect(PermissionV2.evaluate("my_deploy_tool", "anything", [...build, ...MODE_RULES.yolo]).effect).toBe("ask")
+      expect(PermissionV2.evaluate("my_deploy_tool", "anything", [...theFloor, ...MODE_RULES.yolo]).effect).toBe("ask")
     }),
   )
 
@@ -351,7 +424,6 @@ describe("the built-in floor's scratch dirs are writable, and nothing else is", 
   it.effect("both scratch dirs allow external read AND write", () =>
     Effect.gen(function* () {
       const agents = yield* builtinAgents
-      const build = agents.get(String(AgentV2.BUILD_ID))!
       // Non-vacuity: the loop below asserts nothing if the list is ever emptied, and emptying it is
       // exactly the regression this block exists to catch.
       expect(AgentPlugin.SCRATCH_DIRS.length, "the scratch list emptied — the loop below would pass vacuously").toBe(2)
@@ -360,8 +432,8 @@ describe("the built-in floor's scratch dirs are writable, and nothing else is", 
         // a real call arrives with a path. Asserting the glob against itself would pass on a rule
         // that matches nothing else.
         const resource = dir.replace(/\*$/, "probe.txt")
-        expect(effectFor(build, "external_directory_read", resource), `read ${resource}`).toBe("allow")
-        expect(effectFor(build, "external_directory_write", resource), `write ${resource}`).toBe("allow")
+        expect(effectFor(theFloor, "external_directory_read", resource), `read ${resource}`).toBe("allow")
+        expect(effectFor(theFloor, "external_directory_write", resource), `write ${resource}`).toBe("allow")
       }
     }),
   )
@@ -369,10 +441,9 @@ describe("the built-in floor's scratch dirs are writable, and nothing else is", 
   it.effect("an arbitrary outside path is readable but NOT writable — 1I's classed access", () =>
     Effect.gen(function* () {
       const agents = yield* builtinAgents
-      const build = agents.get(String(AgentV2.BUILD_ID))!
-      expect(effectFor(build, "external_directory_read", outside)).toBe("allow")
+      expect(effectFor(theFloor, "external_directory_read", outside)).toBe("allow")
       // `ask`, and asking resolves to a refusal — what matters here is that it is not `allow`.
-      expect(effectFor(build, "external_directory_write", outside)).not.toBe("allow")
+      expect(effectFor(theFloor, "external_directory_write", outside)).not.toBe("allow")
     }),
   )
 
@@ -391,16 +462,15 @@ describe("the built-in floor's scratch dirs are writable, and nothing else is", 
   it.effect("a skill or reference directory is NOT writable — it is instruction, not scratch", () =>
     Effect.gen(function* () {
       const agents = yield* builtinAgents
-      const build = agents.get(String(AgentV2.BUILD_ID))!
       // The shapes `config/plugin/skill.ts` really registers: `<config dir>/skill` and `/skills`.
       const dirs = ["skill", "skills", "reference"].map((name) =>
         nodePath.join(Global.Path.config, name, "note.md").replaceAll("\\", "/"),
       )
       for (const resource of dirs) {
         // Reading stays allowed — 1I's ambient read baseline, asserted above for an arbitrary path.
-        expect(effectFor(build, "external_directory_read", resource), `read ${resource}`).toBe("allow")
+        expect(effectFor(theFloor, "external_directory_read", resource), `read ${resource}`).toBe("allow")
         // `ask`, which the assert path refuses. What matters is that it is never `allow`.
-        expect(effectFor(build, "external_directory_write", resource), `write ${resource}`).not.toBe("allow")
+        expect(effectFor(theFloor, "external_directory_write", resource), `write ${resource}`).not.toBe("allow")
       }
     }),
   )
@@ -408,11 +478,10 @@ describe("the built-in floor's scratch dirs are writable, and nothing else is", 
   it.effect("NEGATIVE CONTROL: the unsuffixed action grants nothing, which is why the key was retired", () =>
     Effect.gen(function* () {
       const agents = yield* builtinAgents
-      const build = agents.get(String(AgentV2.BUILD_ID))!
       const scratch = AgentPlugin.SCRATCH_DIRS[0]!.replace(/\*$/, "probe.txt")
       // If this ever starts returning `allow`, someone has re-added a bare `external_directory`
       // rule to the floor and collapsed the read/write class distinction 1I exists to keep.
-      expect(effectFor(build, "external_directory", scratch)).not.toBe("allow")
+      expect(effectFor(theFloor, "external_directory", scratch)).not.toBe("allow")
     }),
   )
 })

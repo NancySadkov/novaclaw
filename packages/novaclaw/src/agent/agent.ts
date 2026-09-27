@@ -221,44 +221,13 @@ export const layer = Layer.effect(
         }))
 
         const agents: Record<string, Info> = {
-          build: {
-            name: "build",
-            description: "The default agent. Executes tools based on configured permissions.",
-            options: {},
-            permission: Permission.merge(
-              defaults,
-              Permission.fromConfig({
-                question: "allow",
-                plan_enter: "allow",
-              }),
-              user,
-            ),
-            mode: "primary",
-            native: true,
-          },
-          plan: {
-            name: "plan",
-            description: "Plan mode. Disallows all edit tools.",
-            options: {},
-            permission: Permission.merge(
-              defaults,
-              Permission.fromConfig({
-                question: "allow",
-                plan_exit: "allow",
-                task: {
-                  general: "deny",
-                },
-                edit: {
-                  "*": "deny",
-                  [path.join(".novaclaw", "plans", "*.md")]: "allow",
-                  [path.relative(ctx.worktree, path.join(Global.Path.data, path.join("plans", "*.md")))]: "allow",
-                },
-              }),
-              user,
-            ),
-            mode: "primary",
-            native: true,
-          },
+          // THE ANONYMOUS AGENTS ARE RETIRED (owner, 2026-09-27). `build` and `plan` stood here as
+          // the first two entries of this legacy projection until this release, and their being FIRST is
+          // what made the composer's `list()[0]` resolve to `build` and mint posture-owned chats - see
+          // `context/local.tsx`. The kernel declares them no more and the migration archives their live
+          // roots, so a projection that re-declared them here would be the last place they still exist.
+          // What a chat runs as is `permissionMode` (`Permission.merge` below carries the per-mode
+          // rules), and a chat BELONGS to a colleague.
           general: {
             name: "general",
             description: `General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel.`,

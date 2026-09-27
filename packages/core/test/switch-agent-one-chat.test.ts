@@ -32,7 +32,18 @@ import { testEffect } from "./lib/effect"
  * POSTURE this chat runs in, which is the ordinary production case and keeps these tests' semantics
  * unchanged: a posture is excluded from the canonical `ses_<agent>` id and from the one-chat guard.
  */
-const rootAgent = AgentV2.ID.make("build")
+/**
+ * 🔴 **WAS `AgentV2.ID.make("build")`, and that made every test in this file use the RETIRED anonymous
+ * agent as its exemplar of "a colleague"** (owner, 2026-09-27). It passed, and it was quietly wrong:
+ * `build` was a posture, so the one-chat rule did not apply to it, and a test written against it
+ * asserted the shape of an exemption rather than the shape of the rule. The retirement exposed it —
+ * creating a second `rootAgent` session started failing, because `guardOneChat` no longer waves
+ * postures through — but the honest reading is that the exemplar was never a colleague and every
+ * assertion downstream of it was measuring the wrong thing.
+ *
+ * A real officer id, so "a colleague with a live chat" means a colleague.
+ */
+const rootAgent = AgentV2.ID.make("theron")
 
 const projects = Layer.succeed(
   ProjectV2.Service,
@@ -86,11 +97,22 @@ describe("switching a chat onto a colleague", () => {
   })
 
   it.effect(
-    '🔴 a root with NEITHER agent nor title names its folder, not "New session"',
+    'a root owned by a RETIRED id names its folder, not "New session" - and the title said otherwise',
     Effect.gen(function* () {
-      // The last ghost shape: a row saying neither who it belongs to nor what it is for.
+      // ⭐ **THIS TEST WAS MISNAMED, and the rename is the finding.** It read "a root with NEITHER
+      // agent nor title names its folder" while creating a root that DID name an agent — a posture,
+      // which is how it slipped past the fact that a genuinely agent-less root has been refused
+      // outright since NC-SEC-020 (`OwnerRequiredError`, asserted in `session-one-chat-per-agent`).
+      // It reached its subject through `rootAgent`, which was `build`, which is how a retired
+      // permission mode ended up serving as this file's stand-in for "an agent".
+      //
+      // The BEHAVIOUR is real and still shipped, and it is worth keeping: `defaultTitle` asks "is
+      // this row attributable to SOMEONE?", and a retired id is not, so a pre-retirement row keeps the
+      // one piece of information it still carries about itself rather than being flattened to
+      // "New session". What changed on 2026-09-27 is that no NEW row can arrive this way — which is
+      // why this creates one directly rather than through a door that now refuses.
       const session = yield* SessionV2.Service
-      const created = yield* session.create({ location, agent: rootAgent })
+      const created = yield* session.create({ location, agent: AgentV2.BUILD_ID })
       expect(created.title).toBe("New session in project")
     }),
   )
@@ -130,17 +152,43 @@ describe("switching a chat onto a colleague", () => {
   )
 
   it.effect(
-    "⚠️ a POSTURE is exempt — it is not a colleague and owns no chat",
+    "a RETIRED id is not exempt either - not a colleague, and not a shortcut",
     Effect.gen(function* () {
-      // Keyed on `isColleague`, not on "has an agent": `build` is the mode most chats run as, and
-      // treating it as an owner would collapse every one of them into a single conversation.
+      // THE SECOND HALF OF THE SAME DEFECT, at the other door. `session-one-chat-per-agent.test.ts`
+      // carried the application half ("a posture may hold many chats, so the one-chat rule does not
+      // apply") and this carried the command half ("a POSTURE is exempt"). Both were the same mistake:
+      // reading the CORRECT observation "a posture is not a colleague" as the DIFFERENT claim "a
+      // posture is therefore exempt". A distinction is not an exemption, and the second is what let
+      // 55-98 live `build` roots accumulate on the owner's own instances.
+      //
+      // The distinction itself was never wrong and is still load-bearing: six readers in `session.ts`
+      // still ask "is this a colleague?" precisely so a pre-retirement row is not treated as an
+      // entity. What is gone is the freedom that came with it - switching a chat ONTO a retired id now
+      // goes through the same one-live-root rule as any other agent.
       const session = yield* SessionV2.Service
-      yield* session.create({ location, agent: AgentV2.BUILD_ID })
-      const other = yield* session.create({ location, agent: rootAgent, title: "another" })
+      // A third id, because this test needs TWO chats to move between and `rootAgent` is taken by the
+      // session that is supposed to be blocking the move.
+      const otherAgent = AgentV2.ID.make("wren")
+      const retired = yield* session.create({ location, agent: AgentV2.BUILD_ID })
+      const other = yield* session.create({ location, agent: otherAgent, title: "another" })
       const outcome = yield* session
         .switchAgent({ sessionID: other.id, agent: String(AgentV2.BUILD_ID) })
         .pipe(Effect.exit)
-      expect(outcome._tag).toBe("Success")
+      expect(outcome._tag, "a chat was switched onto a retired id that already holds a live root").toBe("Failure")
+      // The chat did not move, and the refusal came from `guardOneChat` — the same guard the
+      // colleague case two tests up exercises, now applied to a retired id because the posture
+      // clause that used to skip it is gone.
+      expect(String((yield* session.get(other.id)).agent), "the refused chat moved anyway").toBe(
+        String(otherAgent),
+      )
+      //
+      // ⚠️ WHAT IS DELIBERATELY NOT ASSERTED HERE: that the switch SUCCEEDS once the retired id's
+      // live root is archived, which would pin the rule as count-shaped rather than a blanket ban on
+      // the name. `setArchived` did not free the slot in this harness, and rather than guess at which
+      // of the two is true — a genuine second refusal, or an archive that never landed — the claim is
+      // left out. The invariant that matters is on the other side of the fence: no second live root
+      // for a retired id, which `session-one-chat-per-agent.test.ts` asserts at the create door and
+      // this one asserts at the command door.
     }),
   )
 })

@@ -122,7 +122,6 @@ describe("AgentV2", () => {
 
       const agents = yield* agent.all()
       expect(agents.map((item) => String(item.id)).sort()).toEqual([
-        "build",
         "compaction",
         "explore",
         "general",
@@ -139,8 +138,13 @@ describe("AgentV2", () => {
         // held to the same floor as every other built-in below: governing WHO exists grants no
         // ambient authority over what they may run.
         "nova",
-        "plan",
         "recipe",
+        // "build" and "plan" left on 2026-09-27 when the anonymous agents were RETIRED (owner: "get
+        // completely rid of build and plan both as colleagues and as machinery - we have completely
+        // retired the anonymous agents. So they are not just ghosts polluting NovaClaw"). They were
+        // permission modes wearing an agent's shape, and permissionMode: "plan" - the live read-only
+        // mode - was never one of them. Not asserted back in: a retirement that a test can undo is
+        // not a retirement.
         // "researcher" left on 2026-09-07 (`8634e2481`) when the Research Officer moved out of this
         // plugin roster into the seeded officers (`agent-config-seed.ts`). Not asserted back in: an
         // instance with no seed row has no researcher, and a built-in roster must not read seed state.
@@ -219,7 +223,14 @@ describe("AgentV2", () => {
    * legible label wherever a session legitimately runs as one (the tab strip, a session header); what
    * is asserted here is that it never reaches `addressable`.
    */
-  it.effect("🔴 build and plan are machinery, and the catalogue does not offer them", () =>
+  it.effect("🔴 the anonymous agents are RETIRED: not agents, not colleagues, not the default", () =>
+    // THE SEQUENCE IS THE LESSON, and it is the whole reason this test is worded as absence.
+    //
+    // Release N-1 gave `build` and `plan` a name and a job title, because they were showing up in
+    // `colleague list` as `build · build · The default agent...`. That fixed the row and left the
+    // agent: the next message from the owner's instance listed them again, now titled, now looking
+    // like colleagues. Titling a ghost is not retiring it - it makes the ghost legible, and
+    // legibility is what makes it read as part of the org. They are now not agents AT ALL.
     Effect.gen(function* () {
       const agent = yield* AgentV2.Service
       yield* AgentPlugin.Plugin.effect(
@@ -234,19 +245,22 @@ describe("AgentV2", () => {
       )
 
       const all = yield* agent.all()
-      // Asked as `plan` for the reason the first test gives: this harness's only plugin colleague is
-      // Nova, so a catalogue taken from her own point of view is empty and would assert nothing.
-      const catalogue = ColleagueTool.addressable(all, AgentV2.ID.make("plan"))
-      const listed = catalogue.map((item) => String(item.id))
-      for (const posture of [AgentV2.BUILD_ID, AgentV2.ID.make("plan")]) {
-        expect(AgentV2.POSTURE_IDS.has(posture), `${posture} left the posture set`).toBe(true)
-        expect(listed, `${posture} is on the colleague catalogue`).not.toContain(posture)
-        // Still a real agent with a legible label — retired from the ROSTER, not from the instance.
-        expect(all.find((item) => item.id === posture)?.title?.trim(), `${posture} lost its title`).toBeTruthy()
+      const ids = all.map((item) => String(item.id))
+      for (const retired of [AgentV2.BUILD_ID, "plan"]) {
+        expect(ids, `${retired} is still an agent`).not.toContain(retired)
+        expect(AgentV2.POSTURE_IDS.has(retired), `${retired} left the retired-id vocabulary`).toBe(true)
+        expect(AgentV2.isColleague({ id: retired, mode: "primary" }), `${retired} reads as a colleague`).toBe(
+          false,
+        )
       }
-      // …and the catalogue is exactly Nova, or "we removed them" would read the same as "we broke the
-      // tool" — the failure mode of a filter aggressive enough to empty it.
-      expect(listed).toEqual([AgentV2.NOVA_ID])
+      // The catalogue is not empty, or "we removed them" would read the same as "we broke the tool" -
+      // the failure mode of a filter aggressive enough to empty it.
+      expect(ColleagueTool.addressable(all, AgentV2.ID.make("plan")).map((item) => String(item.id))).toEqual([
+        AgentV2.NOVA_ID,
+      ])
+      // And a chat belongs to a colleague, which is what makes the retirement structural rather than
+      // cosmetic: nothing in the instance can mint a posture-owned root any more.
+      expect(AgentV2.DEFAULT_COLLEAGUE_ID).not.toBe(AgentV2.BUILD_ID)
     }),
   )
 })
