@@ -11,6 +11,7 @@ import {
 import * as Socket from "effect/unstable/socket/Socket"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import { WorkProjects } from "@novaclaw/core/work-project/store"
 import { NudgeService } from "@novaclaw/core/nudge-service"
 import { ConfigSeedStartup } from "@novaclaw/core/config-seed-startup"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
@@ -257,6 +258,7 @@ const app = LayerNode.group([
   FSUtil.node,
   Global.node,
   AgentConfigStore.node,
+  WorkProjects.node,
   NudgeService.node,
   CatalogStore.node,
   CommandConfigStore.node,

@@ -36,6 +36,7 @@ import * as ComputerTool from "./deferred/computer.gen"
 import { WebFetchTool } from "./webfetch"
 import { WebSearchTool } from "./websearch"
 import { ColleagueTool } from "./colleague"
+import { ProjectsTool } from "./projects"
 import { SpawnTool } from "./spawn"
 import * as CommunityTool from "./deferred/community.gen"
 import { ExitTool } from "./exit"
@@ -93,6 +94,7 @@ export const node = makeLocationNode({
     WriteTool.node,
     WriteHexTool.node,
     ColleagueTool.node,
+    ProjectsTool.node,
     SpawnTool.node,
     CommunityTool.node,
     ExitTool.node,

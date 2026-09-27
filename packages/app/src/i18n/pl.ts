@@ -3,6 +3,8 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "home.app.projects.name": "Projekty",
+  "home.app.projects.subtitle": "Cele, plany i oficerowie, którzy je realizują",
   "command.category.suggested": "Sugerowane",
   "command.category.view": "Widok",
   "command.category.session": "Sesja",

@@ -1,5 +1,6 @@
 export * as SessionRunnerLLM from "./llm"
 
+import { WorkProjects } from "../../work-project/store"
 import {
   LLM,
   LLMClient,
@@ -2379,6 +2380,7 @@ export const layer = Layer.effect(
         }),
         (name) =>
           ShortChat.offered(config.shortChat, name) &&
+          (name !== "projects" || (config.agent === AgentV2.NOVA_ID && session.parentID === undefined)) &&
           // The officer's own horizon, applied AFTER routing and therefore narrowing only:
           // `false` denies for this officer's sessions, `true` restores a routing-withdrawn
           // tool — never a permission-withdrawn one, because this predicate only ever sees
@@ -4463,6 +4465,10 @@ export const layer = Layer.effect(
         yield* Log.event("session.control.operator", { "session.id": input.sessionID })
         return
       }
+      if (!ShortChat.enabled(handoff.shortChat)) {
+        yield* WorkProjects.primeContext(db, events, input.sessionID)
+        hasSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
+      }
       // Targeted ambient hooks are evaluated only when this drain already has work. They never wake
       // an idle colleague just because the clock moved or the host crossed a pressure line.
       const now = new Date()
@@ -4653,6 +4659,7 @@ export const layer = Layer.effect(
         let step = 1
         let brokenResponseAttempts = 0
         while (needsContinuation) {
+          if (yield* WorkProjects.held(db, input.sessionID)) return
           // ⚠️ THE per-turn read (B7 tier-1 / ruling 3). One `config.entries()` per turn, threaded
           // through everything this turn does — the system prompt, the compactor, the sampling
           // overlay, the introspection judge, the quality gate. Deriving per USE instead would let a
@@ -4664,6 +4671,7 @@ export const layer = Layer.effect(
           const introspectionOn =
             !ShortChat.enabled(handoff.shortChat) && (handoff.introspection ?? harness.introspection.enabled)
           const result = yield* runTurn(input.sessionID, harness, promotion, step)
+          if (yield* WorkProjects.held(db, input.sessionID)) return
           needsContinuation = result.needsContinuation
           if (result.policyHalted) {
             policyHalted = true
@@ -5452,6 +5460,7 @@ export const layer = Layer.effect(
               // (Switching TO Unattended needs no probe: we only sleep as goal-oriented, and the next
               // `runTurn` rebuilds the prompt with the goal block.)
               const awake = yield* store.get(input.sessionID).pipe(Effect.orElseSucceed(() => undefined))
+              if (yield* WorkProjects.held(db, input.sessionID)) return
               const awakeOfficer =
                 awake?.agent === undefined ? undefined : yield* agents.get(AgentV2.ID.make(awake.agent))
               if (

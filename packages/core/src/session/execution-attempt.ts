@@ -19,6 +19,21 @@ import { SystemContext } from "../system-context/index"
 import { SessionMessage } from "./message"
 
 export type State = "starting" | "busy" | "recovering" | "paused" | "failed" | "interrupted" | "settled"
+
+export const pause = (db: Database.Interface["db"], lease: Lease) =>
+  db
+    .update(SessionExecutionTable)
+    .set({ state: "paused", time_updated: Date.now() })
+    .where(
+      and(
+        eq(SessionExecutionTable.session_id, lease.sessionID),
+        eq(SessionExecutionTable.attempt_id, lease.attemptID),
+        eq(SessionExecutionTable.generation, lease.generation),
+        inArray(SessionExecutionTable.state, ["starting", "busy", "recovering"]),
+      ),
+    )
+    .run()
+    .pipe(Effect.orDie, Effect.asVoid)
 export type Phase = "drain" | "provider" | "tool" | "maintenance"
 
 /**

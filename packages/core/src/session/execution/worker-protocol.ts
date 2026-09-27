@@ -1,6 +1,7 @@
 export * as SessionWorkerProtocol from "./worker-protocol"
 
 import { Schema } from "effect"
+import { WorkProject } from "@novaclaw/schema/work-project"
 import { NonNegativeInt, PositiveInt } from "../../schema"
 import { SessionSchema } from "../schema"
 import { SPAWN_LIMIT_REASONS } from "../spawn-limit-reason"
@@ -25,6 +26,22 @@ const Identity = {
   attemptID: Schema.String,
   generation: PositiveInt,
 }
+
+export const ProjectResult = Schema.Struct({
+  ...Identity,
+  type: Schema.Literal("project-result"),
+  requestID: Schema.String,
+  outcome: Schema.Literals(["ok", "refused", "rejected"]),
+  snapshot: Schema.optional(WorkProject.Snapshot),
+  reason: Schema.optional(Schema.String),
+})
+
+export const ProjectRequest = Schema.Struct({
+  ...Identity,
+  type: Schema.Literal("project-request"),
+  requestID: Schema.String,
+  input: WorkProject.Command,
+})
 
 export const Start = Schema.Struct({
   ...Identity,
@@ -312,6 +329,7 @@ export const HostMessage = Schema.Union([
   DriveStateResult,
   SpawnResultMessage,
   ColleagueResultMessage,
+  ProjectResult,
   AwaitChildResult,
   ExecutionResult,
 ]).annotate({ identifier: "SessionWorker.HostMessage" })
@@ -729,6 +747,7 @@ export const WorkerMessage = Schema.Union([
   DriveStateRequest,
   SpawnChild,
   ColleagueRequest,
+  ProjectRequest,
   AwaitChild,
   ExecutionAdvance,
   ExecutionToolDispatched,

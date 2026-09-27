@@ -87,14 +87,14 @@ export interface Input {
   readonly onInteractionRequest?: (
     message: Extract<
       SessionWorkerProtocol.WorkerMessage,
-      { readonly type: "permission-assert" | "spawn-child" | "await-child" | "colleague-request" }
+      { readonly type: "permission-assert" | "spawn-child" | "await-child" | "colleague-request" | "project-request" }
     >,
     signal: AbortSignal,
   ) => Promise<
     Extract<
       SessionWorkerProtocol.HostMessage,
       {
-        readonly type: "permission-result" | "spawn-result" | "await-child-result" | "colleague-result"
+        readonly type: "permission-result" | "spawn-result" | "await-child-result" | "colleague-result" | "project-result"
       }
     >
   >
@@ -228,6 +228,7 @@ const ORDERED_RPC = {
   "permission-assert": false,
   "spawn-child": false,
   "colleague-request": false,
+  "project-request": false,
   "await-child": false,
   "device-admit": false,
   "device-release": false,
@@ -480,6 +481,7 @@ export function spawn(input: Input): Handle {
       // A colleague hand-off rides this channel for the same reason spawn does: it needs the host's
       // LOCATION services, and this is the one worker→host path already resolved inside `runLocated`.
       case "colleague-request":
+      case "project-request":
       case "spawn-child": {
         if (!ready) {
           finish({ type: "protocol-error", detail: "interaction request arrived before ready" })
@@ -488,7 +490,10 @@ export function spawn(input: Input): Handle {
         const request = input.onInteractionRequest
         if (!request) {
           send(
-            message.type === "colleague-request"
+            message.type === "project-request"
+              ? { version: SessionWorkerProtocol.VERSION, type: "project-result", sessionID: input.lease.sessionID,
+                attemptID: input.lease.attemptID, generation: input.lease.generation, requestID: message.requestID, outcome: "rejected" }
+              : message.type === "colleague-request"
               ? {
                   version: SessionWorkerProtocol.VERSION,
                   type: "colleague-result",

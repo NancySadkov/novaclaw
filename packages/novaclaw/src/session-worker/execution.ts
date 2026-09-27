@@ -56,6 +56,7 @@ import { WorkerRegistry } from "@/storage/worker-registry"
 import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
 import { ToolDeadline } from "@novaclaw/core/tool-deadline"
 import { ShortChat } from "@novaclaw/core/session/runner/short-chat"
+import { WorkProjects } from "@novaclaw/core/work-project/store"
 
 /**
  * Render ONE worker outcome as the sentence a person reads under *"Technical detail:"*.
@@ -193,6 +194,18 @@ export const layer = Layer.effect(
     // The runner's cross-drain facts. THIS process outlives a drain, so the store is here; a worker
     // reaches it by RPC and the drain below pins the session for the worker's whole life.
     const driveState = yield* SessionDriveState.Service
+    const workProjects = yield* WorkProjects.Service
+    const held = (sessionID: SessionSchema.ID) =>
+      Effect.gen(function* () {
+        const agent = yield* WorkProjects.owner(database.db, sessionID)
+        const config =
+          agent === undefined ? undefined : AgentConfigStore.fold((yield* agentConfig.agents())[agent] ?? [])
+        if (!config?.disabled && !(yield* WorkProjects.held(database.db, sessionID))) return false
+        const attempt = yield* attempts.get(sessionID)
+        if (attempt) yield* SessionExecutionAttempt.pause(database.db, attempt)
+        yield* events.publish(SessionStatusEvent.Status, { sessionID, status: { type: "idle" } }).pipe(Effect.ignore)
+        return true
+      })
     const ownerID = `server_${crypto.randomUUID()}`
     const liveWorkers = new Map<
       SessionSchema.ID,
@@ -237,6 +250,7 @@ export const layer = Layer.effect(
         // queued input, a nudge, a recovery adoption — must not resurrect it, or the archive leaves a
         // ghost the user cannot see. Restoring unarchives, and the next prompt runs normally.
         if (stored.time?.archived !== undefined) return
+        if (yield* held(sessionID)) return
 
         // 🔴 **Degrade, don't die: a session whose working folder has gone runs in a scratch folder.**
         // Before this the worker refused to start and the session was ISOLATED — legible but stopped,
@@ -299,6 +313,7 @@ export const layer = Layer.effect(
                   : "batch",
           },
           Effect.gen(function* () {
+            if (yield* held(sessionID)) return
             const located = locations.get(session.location)
             // Location identity is DERIVED substrate state, including for the scratch fallback. Do not
             // fabricate a second identity here: a non-repository scratch folder resolves to origin
@@ -327,8 +342,9 @@ export const layer = Layer.effect(
               yield* publishStatus({ type: latest?.result === undefined ? "idle" : "exited" })
             })
 
-            let resumeForced = force
+            let resumeForced = force || (yield* attempts.get(sessionID))?.state === "paused"
             for (;;) {
+              if (yield* held(sessionID)) return
               const lease = yield* attempts.start(sessionID, ownerID)
               const maxToolTimeoutMs =
                 (yield* effectiveConfig.resolve(sessionID)).maxToolTimeoutMs ?? ToolDeadline.DEFAULT_MAX_TOOL_TIMEOUT_MS
@@ -376,6 +392,13 @@ export const layer = Layer.effect(
                       // "resolved inside the handler".
                       const roster = yield* AgentV2.Service
                       return yield* SessionWorkerInteractionBridge.handle({
+                        projects: workProjects,
+                        projectActor: () =>
+                          store
+                            .get(sessionID)
+                            .pipe(
+                              Effect.map((session) => (session?.parentID === undefined ? session?.agent : undefined)),
+                            ),
                         permission: yield* PermissionV2.Service,
                         // Location-scoped, exactly like the two above — which is why spawn rides this
                         // channel rather than getting one of its own.
@@ -424,7 +447,11 @@ export const layer = Layer.effect(
                           refresh: roster.reload(),
                           roster: roster.all(),
                           paused: (colleague) =>
-                            roster.all().pipe(Effect.map((all) => all.find((one) => String(one.id) === colleague)?.paused === true)),
+                            roster
+                              .all()
+                              .pipe(
+                                Effect.map((all) => all.find((one) => String(one.id) === colleague)?.paused === true),
+                              ),
                           takenNames: roster
                             .all()
                             .pipe(Effect.map((all) => all.flatMap((one) => [String(one.id), one.name ?? ""]))),
@@ -579,6 +606,7 @@ export const layer = Layer.effect(
               }
 
               if (outcome.type === "settled") {
+                if (yield* held(sessionID)) return
                 const completionMode = ShortChat.enabled((yield* effectiveConfig.resolve(sessionID)).shortChat)
                   ? "chat-reply"
                   : "accepted-exit"
@@ -629,16 +657,25 @@ export const layer = Layer.effect(
               })
               if (!decision) return
               resumeForced = true
-              if (outcome.type === "no-token-timeout" ||
-                  (outcome.type === "failed" && outcome.classification === "unfinished-settlement")) {
-                yield* events.publish(SessionEvent.Synthetic, {
-                  sessionID,
-                  messageID: SessionMessage.ID.create(),
-                  timestamp: yield* DateTime.now,
-                  text: outcome.type === "no-token-timeout"
-                    ? noTokenTimeoutNotice(outcome.limitMs)
-                    : "The session stopped before its exit was accepted. NovaClaw is recovering the session.",
-                }, { location }).pipe(Effect.ignore)
+              if (
+                outcome.type === "no-token-timeout" ||
+                (outcome.type === "failed" && outcome.classification === "unfinished-settlement")
+              ) {
+                yield* events
+                  .publish(
+                    SessionEvent.Synthetic,
+                    {
+                      sessionID,
+                      messageID: SessionMessage.ID.create(),
+                      timestamp: yield* DateTime.now,
+                      text:
+                        outcome.type === "no-token-timeout"
+                          ? noTokenTimeoutNotice(outcome.limitMs)
+                          : "The session stopped before its exit was accepted. NovaClaw is recovering the session.",
+                    },
+                    { location },
+                  )
+                  .pipe(Effect.ignore)
               }
               const info = yield* attempts.get(sessionID)
               const failureCount = info?.failureCount ?? 1
@@ -733,5 +770,6 @@ export const node = makeGlobalNode({
     // never core's inert default (whose `ensure` is a no-op that would leave every worker modelless).
     LocalModelRuntime.managerNode,
     SessionDriveState.node,
+    WorkProjects.node,
   ],
 })

@@ -137,6 +137,17 @@ export function useBuiltinApps(): () => HomeApp[] {
       source: "builtin",
       open: () => navigate("/files"),
     },
+    {
+      id: "projects",
+      get title() { return name("projects") },
+      get subtitle() { return sub("projects") },
+      icon: "checklist",
+      tile: "/assets/skin/glyphs/projects.svg",
+      tileNeedsFrame: true,
+      accent: "#9b8acb",
+      source: "builtin",
+      open: () => navigate("/projects"),
+    },
     // Processes RETIRED (uix-improvement slice 6): Chats absorbed the user-facing view (threads
     // tree, status pills-as-attention, tokens in the info sheet). The Developer `ps` — kill /
     // suspend, scheduler snapshot, raw ids — lands in the future Debug app (todo.md → Make UIX

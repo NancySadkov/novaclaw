@@ -13,6 +13,29 @@ const identity = {
 }
 
 describe("SessionWorkerProtocol", () => {
+  test("round-trips project commands and structured project snapshots", () => {
+    const request = {
+      ...identity,
+      type: "project-request" as const,
+      requestID: "rpc_project",
+      input: { op: "assign" as const, officer: "iris", projectID: "prj_one" },
+    }
+    expect(SessionWorkerProtocol.decodeWorkerLine(SessionWorkerProtocol.encodeLine(request).trim())).toEqual({
+      ok: true,
+      message: request,
+    })
+    const reply = {
+      ...identity,
+      type: "project-result" as const,
+      requestID: "rpc_project",
+      outcome: "ok" as const,
+      snapshot: { projects: [], officers: [] },
+    }
+    expect(SessionWorkerProtocol.decodeHostLine(SessionWorkerProtocol.encodeLine(reply).trim())).toEqual({
+      ok: true,
+      message: reply,
+    })
+  })
   test("round-trips lifecycle messages through newline framing", () => {
     const start = {
       ...identity,
@@ -27,10 +50,9 @@ describe("SessionWorkerProtocol", () => {
     const heartbeat = {
       ...identity,
       type: "heartbeat" as const,
-      phase: "provider" as const,
       at: 1234,
       rssBytes: 128 * 1024 * 1024,
-    }
+    } satisfies typeof SessionWorkerProtocol.Heartbeat.Type
     expect(SessionWorkerProtocol.decodeWorkerLine(SessionWorkerProtocol.encodeLine(heartbeat).trimEnd())).toEqual({
       ok: true,
       message: heartbeat,
@@ -268,8 +290,8 @@ describe("SessionWorkerProtocol", () => {
     for (const value of [
       { ...identity, type: "invented" },
       { ...identity, version: 2, type: "settled" },
-      { ...identity, type: "heartbeat", phase: "invented", at: 1 },
-      { ...identity, type: "heartbeat", phase: "drain", at: 1, rssBytes: -1 },
+      { ...identity, type: "heartbeat", at: "invented" },
+      { ...identity, type: "heartbeat", at: 1, rssBytes: -1 },
     ])
       expect(SessionWorkerProtocol.decodeWorkerLine(JSON.stringify(value))).toEqual({
         ok: false,

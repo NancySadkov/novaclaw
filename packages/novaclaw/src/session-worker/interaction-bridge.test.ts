@@ -43,6 +43,37 @@ const colleagueStub = {
   killWorker: () => Effect.die("unused"),
 } as ColleagueHandoff.Interface
 
+test("project commands require the host's Nova identity and a current worker fence", async () => {
+  let calls = 0
+  const projects = {
+    execute: () =>
+      Effect.sync(() => {
+        calls++
+        return { projects: [], officers: [] }
+      }),
+  }
+  const request = { ...base, type: "project-request" as const, requestID: "projects", input: { op: "list" as const } }
+  const run = (actor: string | undefined, generation = lease.generation) =>
+    Effect.runPromise(
+      SessionWorkerInteractionBridge.handle({
+        permission: unusedPermission,
+        spawner: spawnerStub,
+        join: joinStub,
+        colleague: colleagueStub,
+        projects,
+        projectActor: () => Effect.succeed(actor),
+        lease,
+        message: { ...request, generation },
+      }),
+    )
+  expect(await run("iris")).toMatchObject({ outcome: "refused", reason: expect.stringContaining("Only Nova") })
+  expect(await run(undefined)).toMatchObject({ outcome: "refused" })
+  expect(await run("nova", 4)).toMatchObject({ outcome: "rejected" })
+  expect(calls).toBe(0)
+  expect(await run("nova")).toMatchObject({ outcome: "ok", snapshot: { projects: [], officers: [] } })
+  expect(calls).toBe(1)
+})
+
 test("worker controls derive the parent from the fenced lease", async () => {
   const calls: string[] = []
   const worker = {

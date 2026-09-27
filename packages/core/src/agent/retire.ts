@@ -12,6 +12,8 @@ import * as MemoryAccess from "../kb-graph/memory-access"
 import { AgentUsage } from "./usage"
 import { GraphRegistry } from "./graph-registry"
 import { AgentRetirement } from "./retirement"
+import { eq } from "drizzle-orm"
+import { ProjectNoticeTable, ProjectOfficerTable } from "../work-project/sql"
 
 // What it MEANS to retire a colleague — in one place, because there are two doors.
 //
@@ -132,6 +134,8 @@ export const everything = (input: {
 }): Effect.Effect<void> =>
   Effect.gen(function* () {
     yield* AgentUsage.forget(input.db, input.agent)
+    yield* input.db.delete(ProjectOfficerTable).where(eq(ProjectOfficerTable.agent, input.agent)).run().pipe(Effect.orDie)
+    yield* input.db.delete(ProjectNoticeTable).where(eq(ProjectNoticeTable.agent, input.agent)).run().pipe(Effect.orDie)
     // The CHAT goes too — archived, exactly as "Clear chat" archives it, and for the same reason
     // scaled up. `RosterChat.chatFor` finds a colleague's chat by AGENT ID and ignores nothing else,
     // so a live root session left behind is a transcript the next holder of that id would open into:

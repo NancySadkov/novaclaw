@@ -71,7 +71,7 @@ export const nativeDefinitions = (definitions: ReadonlyArray<ToolDefinition>, bu
    * turn, which is the only currency that matters here.
    */
   const always = new Set(["tool_search", "tool_call", "colleague"])
-  const priority = ["tool_search", "tool_call", "colleague", "spawn", "memo_set", "memo_clear", "exit"]
+  const priority = ["tool_search", "tool_call", "colleague", "projects", "spawn", "memo_set", "memo_clear", "exit"]
   const rank = (name: string) => (priority.includes(name) ? priority.indexOf(name) : priority.length)
   const selected = new Set<string>()
   let used = 2

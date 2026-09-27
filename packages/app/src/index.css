@@ -14,6 +14,7 @@
    the ones still doing that, shrink-only. These come AFTER the `@novaclaw/ui` imports above so that
    within `components` an app rule still beats a ui-package one. */
 @import "./components/brand.css" layer(components);
+@import "./pages/projects.css" layer(components);
 @import "./components/dialog-select-directory-v2.css" layer(components);
 @import "./components/titlebar.css" layer(components);
 @import "./components/titlebar-tab-nav.css" layer(components);

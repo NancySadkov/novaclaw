@@ -24,6 +24,7 @@ import { MessengerGroup } from "./groups/messenger"
 import { makeScheduleGroup } from "./groups/schedule"
 import { RecipeGroup } from "./groups/recipe"
 import { AppGroup } from "./groups/app"
+import { WorkProjectGroup } from "./groups/work-project"
 import { ConfigGroup } from "./groups/config"
 import { LogGroup } from "./groups/log"
 
@@ -68,6 +69,7 @@ const makeApiFromGroup = <
     .add(makeScheduleGroup(locationMiddleware))
     .add(RecipeGroup)
     .add(AppGroup)
+    .add(WorkProjectGroup)
     .add(FileSystemGroup.middleware(locationMiddleware))
     .add(DirectoryBrowseGroup)
     .add(CommandGroup.middleware(locationMiddleware))
@@ -140,7 +142,8 @@ type ApiFromGroup<
       | typeof MessengerGroup
       | ReturnType<typeof makeScheduleGroup<LocationId, LocationService>>
       | typeof RecipeGroup
-      | typeof AppGroup
+  | typeof AppGroup
+  | typeof WorkProjectGroup
       | HttpApiGroup.AddMiddleware<typeof FileSystemGroup, LocationId>
       | typeof DirectoryBrowseGroup
       | HttpApiGroup.AddMiddleware<typeof CommandGroup, LocationId>

@@ -111,6 +111,7 @@ export const BUILTIN_APP_LABELS = {
     subtitle: "The colleagues this NovaClaw employs, and what each one remembers",
   },
   recipes: { name: "Recipes", subtitle: "Ready-made prompts your agents can cook" },
+  projects: { name: "Projects", subtitle: "Objectives, plans and the officers bringing them to life" },
   files: { name: "Files", subtitle: "Browse folders and ask AI to work on them" },
   terminal: { name: "Terminal", subtitle: "A shell, for when you want one" },
   debug: { name: "Debug", subtitle: "Connection, error log, sessions — under the hood" },

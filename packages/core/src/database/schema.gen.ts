@@ -742,6 +742,30 @@ export default {
           CONSTRAINT \`tool_catalogue_pk\` PRIMARY KEY(\`scope\`, \`name\`)
         );
       `)
+      yield* tx.run(`
+        CREATE TABLE \`project_notice\` (
+          \`agent\` text PRIMARY KEY,
+          \`id\` text NOT NULL,
+          \`text\` text NOT NULL
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`project_officer\` (
+          \`agent\` text PRIMARY KEY,
+          \`project_id\` text NOT NULL,
+          CONSTRAINT \`fk_project_officer_project_id_work_project_id_fk\` FOREIGN KEY (\`project_id\`) REFERENCES \`work_project\`(\`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`work_project\` (
+          \`id\` text PRIMARY KEY,
+          \`name\` text NOT NULL,
+          \`objective\` text NOT NULL,
+          \`phases\` text NOT NULL,
+          \`paused\` integer DEFAULT false NOT NULL,
+          \`revision\` integer DEFAULT 1 NOT NULL
+        );
+      `)
       yield* tx.run(
         `CREATE INDEX \`agent_retirement_agent_at_idx\` ON \`agent_retirement\` (\`agent\`,\`retired_at\`);`,
       )
@@ -829,6 +853,7 @@ export default {
       yield* tx.run(`CREATE INDEX \`todo_snapshot_attempt_idx\` ON \`todo_snapshot\` (\`attempt_id\`);`)
       yield* tx.run(`CREATE INDEX \`todo_session_idx\` ON \`todo\` (\`session_id\`);`)
       yield* tx.run(`CREATE INDEX \`tool_catalogue_scope_server_idx\` ON \`tool_catalogue\` (\`scope\`,\`server\`);`)
+      yield* tx.run(`CREATE INDEX \`project_officer_project_idx\` ON \`project_officer\` (\`project_id\`);`)
     })
   },
 } satisfies Omit<DatabaseMigration.Migration, "id">

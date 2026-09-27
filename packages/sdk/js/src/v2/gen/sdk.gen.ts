@@ -4088,6 +4088,40 @@ class ApiV2App extends NovaClawApiClient {
   }
 }
 
+class ApiV2WorkProject extends NovaClawApiClient {
+  /**
+   * List projects and assigned officers
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<T.V2WorkProjectListResponses, T.V2WorkProjectListErrors, ThrowOnError>({
+      url: "/api/projects",
+      ...options,
+    })
+  }
+
+  /**
+   * Manage a project or its officer assignments
+   */
+  public execute<ThrowOnError extends boolean = false>(
+    parameters: {
+      workProjectCommand: T.WorkProjectCommand
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const body = parameters?.["workProjectCommand"]
+    return (options?.client ?? this.client).post<
+      T.V2WorkProjectExecuteResponses,
+      T.V2WorkProjectExecuteErrors,
+      ThrowOnError
+    >({
+      url: "/api/projects",
+      ...options,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+}
+
 class ApiV2Fs extends NovaClawApiClient {
   /**
    * Read file
@@ -4923,6 +4957,11 @@ class ApiV2 extends NovaClawApiClient {
   private _app?: ApiV2App
   get app(): ApiV2App {
     return (this._app ??= new ApiV2App({ client: this.client }))
+  }
+
+  private _workProject?: ApiV2WorkProject
+  get workProject(): ApiV2WorkProject {
+    return (this._workProject ??= new ApiV2WorkProject({ client: this.client }))
   }
 
   private _fs?: ApiV2Fs

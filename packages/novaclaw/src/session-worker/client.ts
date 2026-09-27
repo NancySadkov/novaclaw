@@ -21,6 +21,7 @@ export type Request = Extract<
       | "spawn-child"
       | "await-child"
       | "colleague-request"
+      | "project-request"
       | "memory-request"
       | "local-model-request"
       | "drive-state-request"
@@ -55,6 +56,7 @@ export type Reply = Extract<
       | "spawn-result"
       | "await-child-result"
       | "colleague-result"
+      | "project-result"
       | "memory-result"
       | "local-model-result"
       | "drive-state-result"
@@ -77,6 +79,7 @@ const replyTypes: Record<Request["type"], ReadonlySet<Reply["type"]>> = {
   "spawn-child": new Set(["spawn-result"]),
   "await-child": new Set(["await-child-result"]),
   "colleague-request": new Set(["colleague-result"]),
+  "project-request": new Set(["project-result"]),
   "memory-request": new Set(["memory-result"]),
   "local-model-request": new Set(["local-model-result"]),
   "drive-state-request": new Set(["drive-state-result"]),

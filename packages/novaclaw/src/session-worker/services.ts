@@ -7,6 +7,7 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { SessionSpawner } from "@novaclaw/core/session/spawner"
 import { ColleagueHandoff } from "@novaclaw/core/session/colleague-handoff"
+import { WorkProjects } from "@novaclaw/core/work-project/store"
 import { SessionJoin } from "@novaclaw/core/session/join"
 import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { LocalModelManager } from "@novaclaw/core/local-model-manager"
@@ -49,6 +50,7 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
   readonly spawner: SessionSpawner.Interface
   readonly join: SessionJoin.Interface
   readonly colleague: ColleagueHandoff.Interface
+  readonly projects: WorkProjects.Interface
   readonly worldMemory: MemoryClient.Interface
   readonly localModel: LocalModelManager.Interface
   readonly driveState: SessionDriveState.Interface
@@ -601,12 +603,29 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
     unpin: () => Effect.void,
   }
 
-  return { events, permission, scheduler, spawner, join, colleague, worldMemory, localModel, driveState }
+  const projects: WorkProjects.Interface = {
+    execute: (command) =>
+      Effect.tryPromise({
+        try: () => capabilities.projects(command),
+        catch: () => new WorkProjects.Error({ message: "Could not reach the project service. Retry when the connection recovers." }),
+      }).pipe(
+        Effect.flatMap((reply) =>
+          reply.outcome === "ok" && reply.snapshot
+            ? Effect.succeed(reply.snapshot)
+            : Effect.fail(new WorkProjects.Error({ message: reply.reason ?? "This project operation was rejected." })),
+        ),
+      ),
+  }
+  return { events, permission, scheduler, spawner, join, colleague, worldMemory, localModel, driveState, projects }
 }
 
 export function replacements(capabilities: SessionWorkerCapabilities.Capabilities): LayerNode.Replacements {
   const services = make(capabilities)
   return [
+    [
+      WorkProjects.node,
+      makeGlobalNode({ service: WorkProjects.Service, layer: Layer.succeed(WorkProjects.Service, services.projects), deps: [] }),
+    ],
     [
       EventV2.node,
       makeGlobalNode({ service: EventV2.Service, layer: Layer.succeed(EventV2.Service, services.events), deps: [] }),

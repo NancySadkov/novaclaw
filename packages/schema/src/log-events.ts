@@ -2877,6 +2877,13 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/run-coordinator.ts",
   },
+  "project.delivery.retry": {
+    level: "warn",
+    message: "project assignment notification queued for retry",
+    attributes: { "project.fault": "fault" },
+    content: "user",
+    file: "packages/core/src/work-project/store.ts",
+  },
 
   /** No snapshot was taken for this turn, so revert has no restore point for it. */
   "snapshot.capture.failed": {

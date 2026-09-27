@@ -21575,6 +21575,336 @@
         ]
       }
     },
+    "/api/projects": {
+      "get": {
+        "tags": ["novaclaw HttpApi"],
+        "operationId": "v2.workProject.list",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "projects": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 160
+                          },
+                          "objective": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 16000
+                          },
+                          "phases": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 160
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": ["pending", "complete"]
+                                }
+                              },
+                              "required": ["id", "name", "status"],
+                              "additionalProperties": false
+                            },
+                            "maxItems": 256
+                          },
+                          "paused": {
+                            "type": "boolean"
+                          },
+                          "revision": {
+                            "type": "integer"
+                          },
+                          "completedPhases": {
+                            "type": "integer"
+                          },
+                          "totalPhases": {
+                            "type": "integer"
+                          },
+                          "workingOfficers": {
+                            "type": "integer"
+                          },
+                          "totalOfficers": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "objective",
+                          "phases",
+                          "paused",
+                          "revision",
+                          "completedPhases",
+                          "totalPhases",
+                          "workingOfficers",
+                          "totalOfficers"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "officers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "paused": {
+                            "type": "boolean"
+                          },
+                          "working": {
+                            "type": "boolean"
+                          },
+                          "projectID": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": ["id", "name", "title", "paused", "working", "projectID"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["projects", "officers"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List projects and assigned officers",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.workProject.list({\n  ...\n})"
+          }
+        ]
+      },
+      "post": {
+        "tags": ["novaclaw HttpApi"],
+        "operationId": "v2.workProject.execute",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "projects": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 160
+                          },
+                          "objective": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 16000
+                          },
+                          "phases": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 160
+                                },
+                                "status": {
+                                  "type": "string",
+                                  "enum": ["pending", "complete"]
+                                }
+                              },
+                              "required": ["id", "name", "status"],
+                              "additionalProperties": false
+                            },
+                            "maxItems": 256
+                          },
+                          "paused": {
+                            "type": "boolean"
+                          },
+                          "revision": {
+                            "type": "integer"
+                          },
+                          "completedPhases": {
+                            "type": "integer"
+                          },
+                          "totalPhases": {
+                            "type": "integer"
+                          },
+                          "workingOfficers": {
+                            "type": "integer"
+                          },
+                          "totalOfficers": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "objective",
+                          "phases",
+                          "paused",
+                          "revision",
+                          "completedPhases",
+                          "totalPhases",
+                          "workingOfficers",
+                          "totalOfficers"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "officers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "paused": {
+                            "type": "boolean"
+                          },
+                          "working": {
+                            "type": "boolean"
+                          },
+                          "projectID": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": ["id", "name", "title", "paused", "working", "projectID"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["projects", "officers"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Manage a project or its officer assignments",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkProjectCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.workProject.execute({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/fs/read/*": {
       "get": {
         "tags": ["filesystem"],
@@ -44204,6 +44534,194 @@
         "required": ["slug", "name", "directory", "verdict", "checks", "summary", "at"],
         "additionalProperties": false
       },
+      "WorkProjectCommand": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": ["list"]
+              }
+            },
+            "required": ["op"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": ["create"]
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "objective": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16000
+              },
+              "phases": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": ["pending", "complete"]
+                    }
+                  },
+                  "required": ["id", "name", "status"],
+                  "additionalProperties": false
+                },
+                "maxItems": 256
+              }
+            },
+            "required": ["op", "name", "objective", "phases"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": ["edit"]
+              },
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "objective": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 16000
+              },
+              "phases": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 160
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": ["pending", "complete"]
+                    }
+                  },
+                  "required": ["id", "name", "status"],
+                  "additionalProperties": false
+                },
+                "maxItems": 256
+              }
+            },
+            "required": ["op", "id", "revision", "name", "objective", "phases"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": ["pause"]
+              },
+              "id": {
+                "type": "string"
+              },
+              "paused": {
+                "type": "boolean"
+              }
+            },
+            "required": ["op", "id", "paused"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": ["phase"]
+              },
+              "id": {
+                "type": "string"
+              },
+              "phaseID": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": ["pending", "complete"]
+              }
+            },
+            "required": ["op", "id", "phaseID", "status"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": ["assign"]
+              },
+              "officer": {
+                "type": "string"
+              },
+              "projectID": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": ["op", "officer", "projectID"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": ["delete"]
+              },
+              "id": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer"
+              }
+            },
+            "required": ["op", "id", "revision"],
+            "additionalProperties": false
+          }
+        ]
+      },
       "TicketAccessToken": {
         "type": "object",
         "properties": {
@@ -50383,6 +50901,10 @@
     {
       "name": "home apps",
       "description": "Launcher tiles an agent or a plugin contributed. Instance-global; built-in tiles are code."
+    },
+    {
+      "name": "novaclaw HttpApi",
+      "description": "The instance's `/api/*` contract: sessions, agents, models, memory and the rest of the OS surface."
     },
     {
       "name": "filesystem",

@@ -7,15 +7,17 @@ import { ColleagueHandoff } from "@novaclaw/core/session/colleague-handoff"
 import { SessionJoin } from "@novaclaw/core/session/join"
 import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
 import type { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
+import { WorkProjects } from "@novaclaw/core/work-project/store"
+import { AgentV2 } from "@novaclaw/core/agent"
 
 export type Request = Extract<
   SessionWorkerProtocol.WorkerMessage,
-  { readonly type: "permission-assert" | "spawn-child" | "await-child" | "colleague-request" }
+  { readonly type: "permission-assert" | "spawn-child" | "await-child" | "colleague-request" | "project-request" }
 >
 export type Reply = Extract<
   SessionWorkerProtocol.HostMessage,
   {
-    readonly type: "permission-result" | "spawn-result" | "await-child-result" | "colleague-result"
+    readonly type: "permission-result" | "spawn-result" | "await-child-result" | "colleague-result" | "project-result"
   }
 >
 
@@ -33,6 +35,8 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
   readonly spawner: SessionSpawner.Interface
   readonly join: SessionJoin.Interface
   readonly colleague: ColleagueHandoff.Interface
+  readonly projects?: WorkProjects.Interface
+  readonly projectActor?: () => Effect.Effect<string | undefined>
   readonly worker?: {
     readonly message: (input: {
       readonly parentID: SessionExecutionAttempt.Lease["sessionID"]
@@ -48,21 +52,53 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
   readonly message: Request
 }) {
   const reject = () =>
-    input.message.type === "colleague-request"
-      ? ({ ...identity(input.message), type: "colleague-result" as const, outcome: "rejected" as const } as Reply)
-      : input.message.type === "await-child"
-        ? ({
-            ...identity(input.message),
-            type: "await-child-result" as const,
-            outcome: "rejected" as const,
-            generatedAnyTokens: false,
-            generatedTokens: 0,
-            providerErrors: [],
-          } as Reply)
-        : input.message.type === "spawn-child"
-          ? ({ ...identity(input.message), type: "spawn-result" as const, outcome: "rejected" as const } as Reply)
-          : ({ ...identity(input.message), type: "permission-result" as const, outcome: "rejected" as const } as Reply)
+    input.message.type === "project-request"
+      ? ({ ...identity(input.message), type: "project-result" as const, outcome: "rejected" as const } as Reply)
+      : input.message.type === "colleague-request"
+        ? ({ ...identity(input.message), type: "colleague-result" as const, outcome: "rejected" as const } as Reply)
+        : input.message.type === "await-child"
+          ? ({
+              ...identity(input.message),
+              type: "await-child-result" as const,
+              outcome: "rejected" as const,
+              generatedAnyTokens: false,
+              generatedTokens: 0,
+              providerErrors: [],
+            } as Reply)
+          : input.message.type === "spawn-child"
+            ? ({ ...identity(input.message), type: "spawn-result" as const, outcome: "rejected" as const } as Reply)
+            : ({
+                ...identity(input.message),
+                type: "permission-result" as const,
+                outcome: "rejected" as const,
+              } as Reply)
   if (!SessionWorkerProtocol.owns(input.lease, input.message)) return reject()
+  if (input.message.type === "project-request") {
+    if (!input.projects || !input.projectActor) return reject()
+    if ((yield* input.projectActor()) !== AgentV2.NOVA_ID)
+      return {
+        ...identity(input.message),
+        type: "project-result" as const,
+        outcome: "refused" as const,
+        reason: "Only Nova manages projects. Report your request to your superior.",
+      }
+    return yield* input.projects.execute(input.message.input).pipe(
+      Effect.map((snapshot) => ({
+        ...identity(input.message),
+        type: "project-result" as const,
+        outcome: "ok" as const,
+        snapshot,
+      })),
+      Effect.catch((error) =>
+        Effect.succeed({
+          ...identity(input.message),
+          type: "project-result" as const,
+          outcome: "refused" as const,
+          reason: error.message,
+        }),
+      ),
+    )
+  }
 
   /**
    * 🔴 The whole reason this message exists. `spawn` creates a child session record and admits the

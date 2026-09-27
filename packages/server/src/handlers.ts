@@ -20,6 +20,7 @@ import { MessengerHandler } from "./handlers/messenger"
 import { ScheduleHandler } from "./handlers/schedule"
 import { RecipeHandler } from "./handlers/recipe"
 import { AppHandler } from "./handlers/app"
+import { WorkProjectHandler } from "./handlers/work-project"
 import { ConfigHandler } from "./handlers/config"
 import { LogHandler } from "./handlers/log"
 import { QualityHandler } from "./handlers/quality"
@@ -39,6 +40,7 @@ type HandlerLayers =
   | typeof ScheduleHandler
   | typeof RecipeHandler
   | typeof AppHandler
+  | typeof WorkProjectHandler
   | typeof FileSystemHandler
   | typeof DirectoryBrowseHandler
   | typeof CommandHandler
@@ -69,6 +71,7 @@ export const handlers: Layer.Layer<
   ScheduleHandler,
   RecipeHandler,
   AppHandler,
+  WorkProjectHandler,
   FileSystemHandler,
   DirectoryBrowseHandler,
   CommandHandler,

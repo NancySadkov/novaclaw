@@ -6307,6 +6307,54 @@ export type RecipeVerifyResult = {
   cookState?: "ran" | "blocked" | "stopped"
 }
 
+export type WorkProjectCommand =
+  | {
+      op: "list"
+    }
+  | {
+      op: "create"
+      name: string
+      objective: string
+      phases: Array<{
+        id: string
+        name: string
+        status: "pending" | "complete"
+      }>
+    }
+  | {
+      op: "edit"
+      id: string
+      revision: number
+      name: string
+      objective: string
+      phases: Array<{
+        id: string
+        name: string
+        status: "pending" | "complete"
+      }>
+    }
+  | {
+      op: "pause"
+      id: string
+      paused: boolean
+    }
+  | {
+      op: "phase"
+      id: string
+      phaseID: string
+      status: "pending" | "complete"
+    }
+  | {
+      op: "assign"
+      officer: string
+      projectID: string | null
+    }
+  | {
+      op: "delete"
+      id: string
+      revision: number
+    }
+
 export type TicketAccessToken = {
   ticket: string
   expires_in: number
@@ -17718,6 +17766,114 @@ export type V2AppRemoveResponses = {
 }
 
 export type V2AppRemoveResponse = V2AppRemoveResponses[keyof V2AppRemoveResponses]
+
+export type V2WorkProjectListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/projects"
+}
+
+export type V2WorkProjectListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorkProjectListError = V2WorkProjectListErrors[keyof V2WorkProjectListErrors]
+
+export type V2WorkProjectListResponses = {
+  /**
+   * Success
+   */
+  200: {
+    projects: Array<{
+      id: string
+      name: string
+      objective: string
+      phases: Array<{
+        id: string
+        name: string
+        status: "pending" | "complete"
+      }>
+      paused: boolean
+      revision: number
+      completedPhases: number
+      totalPhases: number
+      workingOfficers: number
+      totalOfficers: number
+    }>
+    officers: Array<{
+      id: string
+      name: string
+      title: string
+      paused: boolean
+      working: boolean
+      projectID: string | null
+    }>
+  }
+}
+
+export type V2WorkProjectListResponse = V2WorkProjectListResponses[keyof V2WorkProjectListResponses]
+
+export type V2WorkProjectExecuteData = {
+  body: WorkProjectCommand
+  path?: never
+  query?: never
+  url: "/api/projects"
+}
+
+export type V2WorkProjectExecuteErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2WorkProjectExecuteError = V2WorkProjectExecuteErrors[keyof V2WorkProjectExecuteErrors]
+
+export type V2WorkProjectExecuteResponses = {
+  /**
+   * Success
+   */
+  200: {
+    projects: Array<{
+      id: string
+      name: string
+      objective: string
+      phases: Array<{
+        id: string
+        name: string
+        status: "pending" | "complete"
+      }>
+      paused: boolean
+      revision: number
+      completedPhases: number
+      totalPhases: number
+      workingOfficers: number
+      totalOfficers: number
+    }>
+    officers: Array<{
+      id: string
+      name: string
+      title: string
+      paused: boolean
+      working: boolean
+      projectID: string | null
+    }>
+  }
+}
+
+export type V2WorkProjectExecuteResponse = V2WorkProjectExecuteResponses[keyof V2WorkProjectExecuteResponses]
 
 export type V2FsReadData = {
   body?: never

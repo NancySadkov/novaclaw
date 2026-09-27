@@ -7,8 +7,10 @@ import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-p
 import { SessionProviderRecovery } from "@novaclaw/schema/session-provider-recovery"
 import { DateTime, Effect } from "effect"
 import type { Client, Reply } from "./client"
+import type { WorkProject } from "@novaclaw/schema/work-project"
 
 export interface Capabilities {
+  readonly projects: (input: WorkProject.Command) => Promise<Extract<Reply, { readonly type: "project-result" }>>
   readonly publishEvent: (
     eventType: string,
     data: unknown,
@@ -294,6 +296,11 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
         args,
       })
       if (reply.type !== "drive-state-result") throw new Error(`unexpected ${reply.type} reply to drive-state-request`)
+      return reply
+    },
+    projects: async (request) => {
+      const reply = rejected(await input.client.request({ ...identity, type: "project-request", requestID: requestID(), input: request }))
+      if (reply.type !== "project-result") throw new Error(`unexpected ${reply.type} reply to project-request`)
       return reply
     },
     colleague: async (request) => {

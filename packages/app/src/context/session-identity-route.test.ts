@@ -36,7 +36,7 @@ const ALLOWED = new Set([join("pages", "session", "session-layout.ts"), join("pa
  * reading the failure message; never add an entry to silence it.
  */
 const KNOWN = new Set([
-  "app.tsx:115",
+  "app.tsx:116",
   join("components", "dialog-fork.tsx") + ":43",
   join("context", "comments.tsx") + ":234",
   join("context", "file.tsx") + ":64",
