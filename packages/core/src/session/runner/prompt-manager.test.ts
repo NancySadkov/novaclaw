@@ -34,7 +34,9 @@ describe("PromptManager — the one system prompt", () => {
     expect(text).toContain("Your superior is Nova")
     expect(text).toContain("Your subordinates are Theron.")
     expect(text).toContain("Job Instructions: Review the manuscript.")
-    expect(text).toContain("C:/data/scratch/iris is your private workspace")
+    expect(text).toContain(
+      "C:/data/scratch/iris is your private intermediate files workspace; don't litter project's folder.",
+    )
     // The personality block is gone (owner, 2026-09-17).
     expect(text).not.toContain("personality and standing instructions")
   })
@@ -98,7 +100,9 @@ describe("PromptManager — the one system prompt", () => {
       workLog: "C:\\Users\\nangl\\.local\\share\\novaclaw\\scratch\\geryon\\tmp\\oldlog-1.json",
     })
     expect(text).toContain("Shell: C:/Users/nangl/.local/bin/bash.exe")
-    expect(text).toContain("C:/Users/nangl/.local/share/novaclaw/scratch/geryon is your private workspace")
+    expect(text).toContain(
+      "C:/Users/nangl/.local/share/novaclaw/scratch/geryon is your private intermediate files workspace; don't litter project's folder.",
+    )
     expect(text).toContain("Your project is C:/Users/nangl/.local/share/novaclaw")
     expect(text).toContain(
       "Earlier work-log: C:/Users/nangl/.local/share/novaclaw/scratch/geryon/tmp/oldlog-1.json",

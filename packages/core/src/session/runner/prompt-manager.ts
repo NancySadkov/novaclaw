@@ -159,7 +159,7 @@ export const generate = (input: Input): string => {
   )
   if (input.scratch !== undefined && input.scratch.trim().length > 0)
     blocks.push(
-      `${displayPath(input.scratch)} is your private workspace — use for intermediate files, instead of littering project's folder.`,
+      `${displayPath(input.scratch)} is your private intermediate files workspace; don't litter project's folder.`,
     )
   if (input.unattended && (input.goal?.trim() ?? "").length > 0)
     blocks.push(`Your durable goal, set for you by whoever assigned this work:\n\n${input.goal!.trim()}`)
