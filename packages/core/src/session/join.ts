@@ -1,10 +1,11 @@
 export * as SessionJoin from "./join"
 
-import { Context, Effect, Layer, Stream } from "effect"
+import { Context, Duration, Effect, Layer, Stream } from "effect"
 import { Database } from "../database/database"
 import { EventV2 } from "../event"
 import { makeLocationNode } from "../effect/app-node"
 import { SessionEvent } from "./event"
+import { SessionExecutionAttempt } from "./execution-attempt"
 import type { SessionSchema } from "./schema"
 import { SessionStore } from "./store"
 export { JOIN_TIMEOUT_MS } from "./join-deadline"
@@ -29,6 +30,14 @@ export interface Outcome {
   readonly generatedAnyTokens: boolean
   /** Provider/API failures observed after that same head, deduplicated without losing counts. */
   readonly providerErrors: ReadonlyArray<ProviderError>
+  /**
+   * 🔴 The child reached a terminal execution state WITHOUT completing, and this is that state.
+   *
+   * Absent means "still working" (or "already completed"), never "the wait gave up". The distinction
+   * is the whole point: a caller told only `completed: false` cannot tell a dead child from a slow
+   * one, and answers the slow case by waiting again for seven minutes.
+   */
+  readonly halted?: SessionExecutionAttempt.HaltedState
 }
 
 /**
@@ -79,7 +88,37 @@ export interface Parts {
   readonly session: (childID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info | undefined>
   /** Aggregate head sampled BEFORE the row, closing the read/subscribe race. */
   readonly sequence: (childID: SessionSchema.ID) => Effect.Effect<number>
+  /**
+   * The child's current execution attempt — the liveness signal, and REQUIRED.
+   *
+   * 🔴 **Without it a join can only learn that a child FINISHED, never that it DIED**, and the two
+   * are indistinguishable until the seven-minute bound expires. Measured: the user pressed Stop on a
+   * worker, `requestInterrupt` wrote `interrupted`, and the parent's `wait` sat on a `Completed`
+   * event that was never coming for the rest of its bound — the transcript row said "Waiting for
+   * worker" over a worker that had been dead in front of them, and the tool then told the model the
+   * child "may still be working".
+   *
+   * Optional-with-a-fallback was the alternative and it is the defect again: a graph that omitted it
+   * would be correct until the first stop, which is the one case anybody notices.
+   */
+  readonly attempt: (childID: SessionSchema.ID) => Effect.Effect<SessionExecutionAttempt.Info | undefined>
 }
+
+/**
+ * How often the join re-reads the attempt row while it waits.
+ *
+ * 🔴 **A poll, on purpose, and the durable stream is still what ends a COMPLETION.** The completion
+ * side is an event because a completion is a fact about the aggregate; a halt is a fact about the
+ * execution ledger, which has no event of its own, and inventing one would mean every terminal
+ * transition wrote a durable row the projection then had to learn to ignore. One indexed primary-key
+ * read every two seconds, for a wait bounded at seven minutes, against a table with at most one row
+ * per live session.
+ *
+ * The interval is what "immediately" costs. A second would catch a stop sooner and cost 420 reads
+ * per wait; a heartbeat is already five seconds (`execution/local.ts`), so nothing legitimate turns
+ * over faster than this anyway.
+ */
+export const HALT_POLL_INTERVAL = Duration.seconds(2)
 
 const render = (result: unknown): string =>
   typeof result === "string" ? result : result === undefined ? "" : JSON.stringify(result)
@@ -167,12 +206,54 @@ export const fromParts = (parts: Parts): Interface => ({
         Stream.takeUntil((event) => event.type === SessionEvent.Completed.type),
         Stream.runForEach((event) => Effect.sync(() => consume(event))),
       )
-      // A timeout is a legitimate ANSWER, not a failure: the child may simply still be working.
-      yield* stream.pipe(Effect.timeoutOrElse({ duration: timeoutMs, orElse: () => Effect.void }))
+      /**
+       * 🔴 **The liveness predicate is consulted WHILE the wait runs, not only at its edges.**
+       *
+       * Reading the attempt row before subscribing and again after the bound was the original defect:
+       * between those two reads a child can die, and dying emits no `Completed` event, so the wait
+       * could only end by timeout. `raceFirst` interrupts the loser, so a halt ends the join at once
+       * and a completion ends the halt watch at once — neither pays for the other.
+       */
+      const watchForHalt = Effect.gen(function* () {
+        while (true) {
+          const attempt = yield* parts.attempt(childID)
+          if (attempt !== undefined && SessionExecutionAttempt.halted(attempt.state)) return attempt.state
+          yield* Effect.sleep(HALT_POLL_INTERVAL)
+        }
+      })
+      const wake = yield* Effect.raceFirst(
+        stream.pipe(Effect.as({ kind: "completed" } as const)),
+        watchForHalt.pipe(Effect.map((state) => ({ kind: "halted", state }) as const)),
+      ).pipe(
+        // A timeout is a legitimate ANSWER, not a failure: the child may simply still be working.
+        Effect.timeoutOrElse({
+          duration: timeoutMs,
+          orElse: () => Effect.succeed({ kind: "timed-out" } as const),
+        }),
+      )
       const diagnostics = { generatedTokens, generatedAnyTokens, providerErrors: [...failures.values()] }
-      return completed === undefined
-        ? ({ completed: false, ...diagnostics } satisfies Outcome)
-        : ({ completed: true, result: render(completed.data.result), ...diagnostics } satisfies Outcome)
+      if (wake.kind !== "halted")
+        return completed === undefined
+          ? ({ completed: false, ...diagnostics } satisfies Outcome)
+          : ({ completed: true, result: render(completed.data.result), ...diagnostics } satisfies Outcome)
+
+      /**
+       * The halt watch can win a race the completion already won: `settle` runs in the drain's
+       * `onExit`, and a child that called `exit()` and settled in the same tick is terminal by both
+       * facts. So the same head-then-row-then-delta order the entry path uses is replayed here before
+       * a child is called dead — a false death is the one answer a supervisor must never give.
+       */
+      const through = yield* parts.sequence(childID)
+      const settledRow = yield* parts.session(childID)
+      if (settledRow?.result !== undefined)
+        return { completed: true, result: render(settledRow.result), ...diagnostics } satisfies Outcome
+      yield* durable.pipe(
+        Stream.take(Math.max(0, through - after)),
+        Stream.runForEach((event) => Effect.sync(() => consume(event))),
+      )
+      if (completed !== undefined)
+        return { completed: true, result: render(completed.data.result), ...diagnostics } satisfies Outcome
+      return { completed: false, halted: wake.state, ...diagnostics } satisfies Outcome
     }).pipe(Effect.orDie),
 })
 
@@ -183,12 +264,14 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const events = yield* EventV2.Service
     const sessions = yield* SessionStore.Service
+    const attempts = yield* SessionExecutionAttempt.Service
     const { db } = yield* Database.Service
     return Service.of(
       fromParts({
         events,
         session: (childID) => sessions.get(childID),
         sequence: (childID) => EventV2.latestSequence(db, childID),
+        attempt: (childID) => attempts.get(childID),
       }),
     )
   }),
@@ -197,5 +280,5 @@ export const layer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [EventV2.node, SessionStore.node, Database.node],
+  deps: [EventV2.node, SessionStore.node, Database.node, SessionExecutionAttempt.node],
 })

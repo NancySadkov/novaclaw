@@ -27,6 +27,27 @@ test("an already-halted worker is classified before the blocking join", () => {
   expect(join).toBeGreaterThan(precheck)
 })
 
+/**
+ * 🔴 **The pre-check above was not enough, and this is the ledger for the difference.**
+ *
+ * Measured 2026-09-27: the user pressed Stop on a worker from the chat's workers list. The pre-check
+ * had already run and said "alive" — correctly, because at that moment it was — and then the worker
+ * died inside the seven-minute join, which emitted no `Completed` event to wake on. The parent's
+ * transcript row read "Waiting for worker" over a worker that was dead in front of them.
+ *
+ * A pre-check can only ever be right about the instant it runs, so the classification has to be
+ * consulted WHILE the wait is blocked. `SessionJoin` does that now and reports it as `halted`; this
+ * tool consumes that field. Dropping it restores the strand, and nothing else in this file would
+ * notice — the join tests would still pass, because the join is the thing that now carries the fact.
+ */
+test("the tool consumes the join's halt report, not only its own pre-check", () => {
+  const source = readFileSync(new URL("./wait.ts", import.meta.url), "utf8")
+  expect(source).toContain("joined.halted ??")
+  // And the ledger it consults is the one beside the vocabulary, not a list kept here.
+  expect(source).toContain("SessionExecutionAttempt.halted(state)")
+  expect(source).not.toContain("HALTED_STATES")
+})
+
 test("a durable exit result outranks the runner's settled attempt state", () => {
   expect(completionAwareDeadChildMessage("ses_child", "settled", "finished")).toBeUndefined()
   expect(completionAwareDeadChildMessage("ses_child", "settled", "")).toBeUndefined()

@@ -32,6 +32,17 @@ const SEEDED_OFFICERS: ReadonlyArray<{
   readonly id: string
   readonly name: string
   readonly title: string
+  /**
+   * 🔴 **What they OWN, in one line — and never their own name or job title back.**
+   *
+   * This used to be authored as `` `${officer.name}, ${officer.title}.` `` , which is the two fields
+   * beside it in the roster row repeated: `colleague list` printed
+   * `daedalus · Daedalus · Engineer — Daedalus, Engineer.` Owner, 2026-09-27: *"ensure the colleague
+   * list tool beside their names also lists the job titles"* — the title was technically there and
+   * unreadable, buried in a restatement of the name in front of it. A description earns its place on
+   * the row by saying something the name and title do not.
+   */
+  readonly owns: string
   readonly brief?: string
   /**
    * The pure local Chat stance (`ConfigAgent.shortChat`): no project access, memory, tools, or
@@ -57,6 +68,7 @@ const SEEDED_OFFICERS: ReadonlyArray<{
     id: "owner",
     name: "Owner",
     title: "Instance Owner",
+    owns: "The person this instance works for. A human, so no turn ever runs on their behalf.",
     kind: "human",
     hidden: true,
   },
@@ -70,12 +82,14 @@ const SEEDED_OFFICERS: ReadonlyArray<{
     // "simple agent" mechanism beside it.
     //
     title: "Companion",
+    owns: "Plain conversation with the model itself. No tools, no memory, no project files.",
     shortChat: true,
   },
   {
     id: "daedalus",
     name: "Daedalus",
     title: "Engineer",
+    owns: "Software: reading it, writing it, and repairing it.",
     brief:
       "You write, read and repair software. Work in small verified steps: read before " +
       "you edit, run what you changed, and say what you actually observed rather than what should be " +
@@ -87,6 +101,7 @@ const SEEDED_OFFICERS: ReadonlyArray<{
     id: "myron",
     name: "Myron",
     title: "Artist",
+    owns: "Images: composition, colour, type and layout.",
     brief:
       "You work in images: composition, colour, type and layout. Ask what the piece is " +
       "FOR and who will see it before proposing anything, because a poster and an icon are not the same " +
@@ -98,6 +113,7 @@ const SEEDED_OFFICERS: ReadonlyArray<{
     id: "researcher",
     name: "Researcher",
     title: "Researcher",
+    owns: "Finding things out, and saying how sure anyone is of it.",
     // 🔴 The research doctrine IS this officer's job brief (owner, 2026-09-17). It shipped as a
     // bundled skill; the doctrine now lives here as one document, so the officer's own prompt is the
     // single source of what it does rather than a second, model-addressable copy that can drift.
@@ -169,7 +185,7 @@ export const seedFromDirectory = (globalConfigDir: string) =>
             ...(officer.brief === undefined
               ? {}
               : { system: `${OfficerPrompt.DEFAULT_OFFICER_PROMPT}\n\n${officer.brief}` }),
-            description: `${officer.name}, ${officer.title}.`,
+            description: officer.owns,
             // A chat stance (and any human) carries no memory: recall is the other half of what makes
             // a companion turn slow, and `shortChat` already denies the tools that would use it.
             memory: officer.shortChat || officer.kind === "human" ? "none" : "own",

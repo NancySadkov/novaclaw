@@ -3,6 +3,7 @@ export * as SessionWorkerProtocol from "./worker-protocol"
 import { Schema } from "effect"
 import { NonNegativeInt, PositiveInt } from "../../schema"
 import { SessionSchema } from "../schema"
+import { SPAWN_LIMIT_REASONS } from "../spawn-limit-reason"
 import type { SessionExecutionAttempt } from "../execution-attempt"
 import { EventV2 } from "../../event"
 import { Permission } from "@novaclaw/schema/permission"
@@ -125,9 +126,18 @@ export const AwaitChildResult = Schema.Struct({
   ...Identity,
   type: Schema.Literal("await-child-result"),
   requestID: Schema.String,
-  outcome: Schema.Literals(["completed", "timeout", "rejected"]),
+  outcome: Schema.Literals(["completed", "halted", "timeout", "rejected"]),
   /** The child's rendered `exit(result)`; present only when `outcome` is "completed". */
   result: Schema.String.pipe(Schema.optional),
+  /**
+   * 🔴 The child's terminal execution state, present only when `outcome` is "halted".
+   *
+   * A separate outcome rather than a flavour of `timeout` because the two demand OPPOSITE next moves
+   * from the model: a timeout says call `wait` again, a halt says the work was never done and must be
+   * re-issued. Folding them into one answer is what made a stopped worker read as a slow one for the
+   * whole bound, on both sides of this boundary.
+   */
+  state: Schema.String.pipe(Schema.optional),
   generatedAnyTokens: Schema.Boolean,
   generatedTokens: NonNegativeInt,
   providerErrors: Schema.Array(
@@ -211,12 +221,13 @@ export const SpawnResultMessage = Schema.Struct({
   /** Whether the child was handed to a live executor — `SpawnResult.started`. */
   started: Schema.Boolean.pipe(Schema.optional),
   /** Present only when `outcome` is "limit": which quota, and the numbers behind it. */
-  // ⚠️ MUST match `SessionSpawner.SpawnLimitError.reason`. This is the fourth link the reason travels
-  // (guard -> error -> worker protocol -> host handler), and the typechecker is the only thing that
-  // notices when one of them is left behind: adding `pressure` on the kernel side alone made the
-  // WORKER boundary reject it, which surfaced as an unrelated-looking handler-signature error in
-  // `session-worker/execution.ts`.
-  reason: Schema.Literals(["depth", "children", "rate", "pressure"]).pipe(Schema.optional),
+  // 🔴 **`SPAWN_LIMIT_REASONS` is the SPAWNER'S list, imported — not a copy of it.** This used to be
+  // written out here, and the comment recorded what that cost: adding `pressure` on the kernel side
+  // alone made this boundary reject it, and the failure surfaced as an unrelated-looking
+  // handler-signature error in `session-worker/execution.ts` — three files from the change. The reason
+  // travels guard -> error -> worker protocol -> host handler -> model wording, and it is now one
+  // literal in a leaf module, so a new reason cannot leave a link behind.
+  reason: Schema.Literals(SPAWN_LIMIT_REASONS).pipe(Schema.optional),
   depth: Schema.Finite.pipe(Schema.optional),
   limit: Schema.Finite.pipe(Schema.optional),
 }).annotate({ identifier: "SessionWorker.SpawnResult" })

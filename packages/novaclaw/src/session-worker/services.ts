@@ -406,6 +406,19 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
                     providerErrors: reply.providerErrors,
                   } satisfies SessionJoin.Outcome),
             )
+          // 🔴 The host's own answer about liveness, carried across rather than re-derived here. A
+          // worker that dropped it answered "timeout", and the tool then told the model its stopped
+          // worker "may still be working" — the boundary hiding a fact both ends already had.
+          if (reply.outcome === "halted")
+            return Effect.succeed({
+              completed: false,
+              ...(reply.state === undefined
+                ? {}
+                : { halted: reply.state as SessionJoin.Outcome["halted"] }),
+              generatedAnyTokens: reply.generatedAnyTokens,
+              generatedTokens: reply.generatedTokens,
+              providerErrors: reply.providerErrors,
+            } satisfies SessionJoin.Outcome)
           // A timeout is the honest answer, not a fault: the child may still be working.
           if (reply.outcome === "timeout")
             return Effect.succeed({

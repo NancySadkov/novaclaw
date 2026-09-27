@@ -72,6 +72,29 @@ describe("the colleagues that ship", () => {
   test("they are distinct — three colleagues, not one name three times", () => {
     expect(new Set(SEEDED).size).toBe(SEEDED.length)
   })
+
+  /**
+   * 🔴 **Every seeded colleague is TITLED, and says what it owns rather than repeating its own name**
+   * (owner, 2026-09-27: *"ensure the colleague list tool beside their names also lists the job titles"*).
+   *
+   * `colleague list` prints `id · name · title — description`, so the description is what a routing
+   * model reads to choose between two colleagues. It was authored as `` `${name}, ${title}.` `` — the
+   * two fields already on the row — which printed `daedalus · Daedalus · Engineer — Daedalus, Engineer.`
+   * The title was technically present and unreadable, pushed to the end of a restatement of the name in
+   * front of it. `owns` is required on the literal now, which is the door closing on the old shape.
+   */
+  test("🔴 each carries a job title, and a description that is not its own name back", () => {
+    const literalsEnd = SEED_SOURCE.indexOf("export const seedFromDirectory")
+    expect(literalsEnd).toBeGreaterThan(0)
+    for (const id of [...SEEDED, "owner"]) {
+      const block = SEED_SOURCE.slice(SEED_SOURCE.indexOf(`id: "${id}"`), literalsEnd)
+      const next = SEED_SOURCE.indexOf("id: \"", SEED_SOURCE.indexOf(`id: "${id}"`) + 1)
+      const scoped = next === -1 || next > literalsEnd ? block : SEED_SOURCE.slice(SEED_SOURCE.indexOf(`id: "${id}"`), next)
+      expect(scoped, `${id} has no job title`).toMatch(/title: "[^"]+"/)
+      expect(scoped, `${id} says nothing about what it owns`).toMatch(/owns: "[^"]+"/)
+      expect(scoped, `${id} restates its name and title in the description`).not.toContain("${officer.name}")
+    }
+  })
 })
 
 /**

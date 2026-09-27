@@ -74,11 +74,15 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
    * itself and of nothing else, and that is structural — there is no field to forge.
    */
   /**
-   * ⚠️ The only request that BLOCKS. The host tails the child's durable stream until it completes or
-   * the kernel's seven-minute bound elapses; a timeout is a normal answer, because the child may
-   * still be working. The request carries no timeout, so a worker cannot change this invariant.
-   * The direct-child authorisation check is NOT here — it stays in `tool/wait.ts`, where the session
-   * store is readable on both sides of the boundary.
+   * ⚠️ The only request that BLOCKS. The host tails the child's durable stream until it completes, the
+   * child's execution goes terminal, or the kernel's seven-minute bound elapses; a timeout is a normal
+   * answer, because the child may still be working. The request carries no timeout, so a worker cannot
+   * change this invariant. The direct-child authorisation check is NOT here — it stays in
+   * `tool/wait.ts`, where the session store is readable on both sides of the boundary.
+   *
+   * 🔴 `halted` is its OWN outcome, not a `timeout`: the host join watches the child's execution ledger
+   * while it waits, so a worker stopped from under the call ends the join at once and says which state
+   * it stopped in. Reporting that as a timeout is what made a dead worker read as a slow one.
    */
   if (input.message.type === "await-child") {
     const joined = yield* input.join
@@ -90,20 +94,28 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
       generatedTokens: joined.value.generatedTokens,
       providerErrors: [...joined.value.providerErrors],
     }
-    return joined.value.completed
-      ? {
-          ...identity(input.message),
-          type: "await-child-result" as const,
-          outcome: "completed" as const,
-          ...diagnostics,
-          ...(joined.value.result === undefined ? {} : { result: joined.value.result }),
-        }
-      : {
-          ...identity(input.message),
-          type: "await-child-result" as const,
-          outcome: "timeout" as const,
-          ...diagnostics,
-        }
+    if (joined.value.completed)
+      return {
+        ...identity(input.message),
+        type: "await-child-result" as const,
+        outcome: "completed" as const,
+        ...diagnostics,
+        ...(joined.value.result === undefined ? {} : { result: joined.value.result }),
+      }
+    if (joined.value.halted !== undefined)
+      return {
+        ...identity(input.message),
+        type: "await-child-result" as const,
+        outcome: "halted" as const,
+        state: joined.value.halted,
+        ...diagnostics,
+      }
+    return {
+      ...identity(input.message),
+      type: "await-child-result" as const,
+      outcome: "timeout" as const,
+      ...diagnostics,
+    }
   }
 
   if (input.message.type === "spawn-child") {

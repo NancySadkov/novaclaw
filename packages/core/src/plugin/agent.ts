@@ -4,6 +4,7 @@ import path from "path"
 import { define } from "./internal"
 import { Effect } from "effect"
 import { AgentV2 } from "../agent"
+import { AgentWorkerCapacity } from "../agent/worker-capacity"
 import { Scratch } from "../scratch"
 import { ownScratchGrants, scratchDirectoryGrants } from "../agent/scratch-grants"
 import { Global } from "../global"
@@ -247,7 +248,15 @@ export const Plugin = define({
 
     yield* ctx.agent.transform((draft) => {
       draft.update(AgentV2.BUILD_ID, (item) => {
-        item.description = "The default agent. Executes tools based on configured permissions."
+        // 🔴 **A NAME AND A JOB TITLE, and the reason is `colleague list`.** These two are `mode:
+        // "primary"` and not hidden, so they are addressable colleagues on the roster a model reads —
+        // and they printed as `build · build · The default agent. Executes tools based on configured
+        // permissions.`, which is an id twice and a sentence where a job title belongs. Owner, 2026-09-27:
+        // *"ensure the colleague list tool beside their names also lists the job titles."* A roster row
+        // is a routing decision, and "which of these two do I hand this to" is unanswerable without one.
+        item.name = "Builder"
+        item.title = "Task agent"
+        item.description = "The default working agent. Takes one piece of work and does it with its tools.";
         item.system ??= BUILD_SYSTEM
         item.mode = "primary"
         item.permissions.push(
@@ -256,7 +265,11 @@ export const Plugin = define({
       })
 
       draft.update(AgentV2.ID.make("plan"), (item) => {
-        item.description = "Plan mode. Disallows all edit tools."
+        // Same reason as `build` above, and the same fix. `plan` is a POSTURE — the read-only
+        // alternative this product offers instead of a mode switch — so its title says what it is for.
+        item.name = "Planner"
+        item.title = "Planning agent"
+        item.description = "Plans work without changing anything. Read, think, and write the plan down.";
         item.mode = "primary"
         // 1I: mutation is three actions now (edit / write-overwrite / create) — plan denies all
         // three, with the plan-file paths allowed for each so the agent can still write plans.
@@ -295,6 +308,15 @@ export const Plugin = define({
       draft.update(AgentV2.NOVA_ID, (item) => {
         item.name = "Nova"
         item.title = "Chief Executive"
+        // 🔴 **Nova ships with NO worker budget, and the value is READ from the ceiling's own table**
+        // rather than written as a literal. Two copies of "0" is how the Settings screen and the
+        // spawner end up disagreeing: the record is what the dialog renders, the config store is what
+        // `SessionSpawner` asks, and a literal here would only ever reach the first of them.
+        // Overridable — `ConfigAgentPlugin` is registered AFTER this one, so a stored
+        // `max_workers` lands on top of it.
+        ;(item as unknown as Record<string, unknown>)["maxWorkers"] = AgentWorkerCapacity.SHIPPED_MAX_WORKERS[
+          AgentV2.NOVA_ID
+        ]
         item.description =
           "Nova, the CEO. Talk to Nova about what you want done; Nova routes it to the colleague who owns that work, or hires one when nobody does."
         item.system ??= NOVA_SYSTEM

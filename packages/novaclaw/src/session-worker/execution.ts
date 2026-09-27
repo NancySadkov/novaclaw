@@ -383,10 +383,14 @@ export const layer = Layer.effect(
                         // ⚠️ NOT `yield* SessionJoin.Service` — see join.ts. Resolving a service
                         // that is not already in the location graph inside this per-request
                         // handler abandons every tool-call turn. `events` is already built.
+                        // `attempt` rides it because a join that cannot see the execution ledger
+                        // cannot tell a STOPPED child from a slow one, and a worker's `wait` is
+                        // exactly the call that has to make that distinction.
                         join: SessionJoin.fromParts({
                           events,
                           session: (id) => store.get(id),
                           sequence: (id) => EventV2.latestSequence(database.db, id),
+                          attempt: (id) => attempts.get(id),
                         }),
                         // ⚠️ Built from parts, NOT `yield* ColleagueHandoff.Service` — the same trap the
                         // line above names for `SessionJoin`: resolving a service that is not already in

@@ -22,7 +22,34 @@ test("both activity shortcuts open list dialogs from authoritative live stores",
 test("a restart-empty browser cache cannot hide durable workers from the prompt", () => {
   expect(activity).not.toContain("workersOf(sync().data.session")
   expect(activity).toContain("useWorkers(() => props.sessionID)")
-  expect(activity).toContain("const workers = createMemo(() => workerQuery.data ?? [])")
+  // The rows come from the query, but never as the query's own objects: `useWorkers` is where the
+  // poll's identity is repaired, and this component must not re-map them into fresh ones.
+  expect(activity).toContain("const workers = workerQuery.workers")
+  expect(activity).not.toMatch(/workers\(\)\.map\(/)
+})
+
+/**
+ * 🔴 **The polled lists must reach `<For>` as reference-stable rows, and this is the ledger for it.**
+ *
+ * Owner, 2026-09-27: typing a stop reason in the workers dialog, "something keeps stealing the input
+ * focus". `@tanstack/solid-query` sets `structuralSharing = false`, so each 2-second poll is a new
+ * array of new objects, and Solid's `<For>` (`mapArray`) reuses a row only on reference equality —
+ * every row was destroyed and recreated on every tick, taking the `<textarea autofocus>` with it.
+ * Measured, both directions, in `test-browser/session-activity-dialogs.test.tsx`.
+ *
+ * The worker list's repair lives in `useWorkers`; the shells query is inline here, so it is repaired
+ * here. A future edit that hands either list to `<For>` raw reads as a one-line simplification and is
+ * exactly this bug returning.
+ */
+test("both polled lists are handed to <For> as reference-stable rows", () => {
+  const workers = readFileSync(new URL("../../context/workers.ts", import.meta.url), "utf8")
+  expect(workers).toContain("stableRows<{ id: string; title?: string; state?: string; startedAt?: number }>")
+  // `state` is on the wire and absent from the row; including it in the identity fields would rebuild
+  // the row the moment a worker goes `queued → busy`.
+  expect(workers).toContain("fields: (worker) => ({ title: worker.title, startedAt: worker.startedAt })")
+  expect(workers).not.toContain("state: worker.state")
+  expect(activity).toContain("stableRows<{ id: string; sessionID: string; command: string; startedAt: number }>")
+  expect(activity).toContain("fields: (job) => ({ command: job.command, sessionID: job.sessionID, startedAt: job.startedAt })")
 })
 
 test("a worker stop requires a reason and sends it through the execution API", () => {
