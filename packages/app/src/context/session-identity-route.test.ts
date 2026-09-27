@@ -40,7 +40,11 @@ const KNOWN = new Set([
   join("components", "dialog-fork.tsx") + ":43",
   join("context", "comments.tsx") + ":234",
   join("context", "file.tsx") + ":64",
-  join("context", "local.tsx") + ":107",
+  // ⚠️ `:107` → `:108` when the agent list below it gained the posture filter and the governing
+  // officer (owner, 2026-09-27, the `build` ghost). This ledger is a CEILING, not a permission slip —
+  // the inventory is read off line numbers, so an edit ABOVE a known instance is expected churn and
+  // the honest fix is to re-point the entry, never to widen the set.
+  join("context", "local.tsx") + ":108",
   join("context", "notification.tsx") + ":169",
   join("context", "prompt.tsx") + ":278",
   join("context", "tabs.tsx") + ":585",

@@ -184,8 +184,14 @@ describe("AgentV2", () => {
         ),
       )
 
-      const roster = ColleagueTool.addressable(yield* agent.all(), AgentV2.NOVA_ID)
-      expect(roster.length).toBeGreaterThan(0)
+      // ⚠️ **Asked as `plan`, not as `nova`, and the emptiness below is correct rather than a fault.**
+      // This harness builds the AGENT PLUGIN alone. The shipped colleagues are CONFIG rows
+      // (`agent-config-seed.ts`) precisely so retiring one sticks, so the plugin roster's only
+      // colleague is Nova — and asked about herself, a catalogue is legitimately empty. Asking as a
+      // posture instead leaves Nova, the service agents are `hidden`, and `general`/`explore` are
+      // staff: so exactly one row, which is what makes the per-row assertions below mean something.
+      const roster = ColleagueTool.addressable(yield* agent.all(), AgentV2.ID.make("plan"))
+      expect(roster.map((item) => String(item.id))).toEqual([AgentV2.NOVA_ID])
       for (const colleague of roster) {
         const id = String(colleague.id)
         expect(colleague.name?.trim(), `${id} has no display name`).toBeTruthy()
@@ -196,9 +202,51 @@ describe("AgentV2", () => {
         const restated = `${colleague.name}, ${colleague.title}.`
         expect(colleague.description?.trim(), `${id} restates its name and title`).not.toBe(restated)
       }
-      // The two that had none, named, because they are the rows the owner was reading.
-      expect(roster.find((item) => item.id === AgentV2.BUILD_ID)?.title).toBe("Task agent")
-      expect(roster.find((item) => item.id === AgentV2.ID.make("plan"))?.title).toBe("Planning agent")
+    }),
+  )
+
+  /**
+   * 🔴 **The two postures are NOT on the catalogue, and titling them is what made that necessary.**
+   *
+   * Owner, 2026-09-27: *"get completely rid of build and plan … they are not just ghosts polluting
+   * NovaClaw"*, after a listing showed `build · build · The default agent…` again.
+   *
+   * ⭐ **THE SEQUENCE IS THE LESSON, and this test is here so it cannot recur.** The previous slice
+   * gave `build` and `plan` a name and a job title. That was the right fix for the two rows the owner
+   * could see — but it did not stop them being ADDRESSABLE, so they came back looking like colleagues.
+   * **Titling a ghost is not the same as retiring it**: it makes the ghost legible, and legibility is
+   * what makes it read as part of the org. The names and titles stay, because a posture still needs a
+   * legible label wherever a session legitimately runs as one (the tab strip, a session header); what
+   * is asserted here is that it never reaches `addressable`.
+   */
+  it.effect("🔴 build and plan are machinery, and the catalogue does not offer them", () =>
+    Effect.gen(function* () {
+      const agent = yield* AgentV2.Service
+      yield* AgentPlugin.Plugin.effect(
+        host({
+          agent: agentHost(agent),
+        }),
+      ).pipe(
+        Effect.provideService(
+          Location.Service,
+          Location.Service.of(location({ directory: AbsolutePath.make("/project") })),
+        ),
+      )
+
+      const all = yield* agent.all()
+      // Asked as `plan` for the reason the first test gives: this harness's only plugin colleague is
+      // Nova, so a catalogue taken from her own point of view is empty and would assert nothing.
+      const catalogue = ColleagueTool.addressable(all, AgentV2.ID.make("plan"))
+      const listed = catalogue.map((item) => String(item.id))
+      for (const posture of [AgentV2.BUILD_ID, AgentV2.ID.make("plan")]) {
+        expect(AgentV2.POSTURE_IDS.has(posture), `${posture} left the posture set`).toBe(true)
+        expect(listed, `${posture} is on the colleague catalogue`).not.toContain(posture)
+        // Still a real agent with a legible label — retired from the ROSTER, not from the instance.
+        expect(all.find((item) => item.id === posture)?.title?.trim(), `${posture} lost its title`).toBeTruthy()
+      }
+      // …and the catalogue is exactly Nova, or "we removed them" would read the same as "we broke the
+      // tool" — the failure mode of a filter aggressive enough to empty it.
+      expect(listed).toEqual([AgentV2.NOVA_ID])
     }),
   )
 })

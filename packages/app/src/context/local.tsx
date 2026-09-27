@@ -1,5 +1,6 @@
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { base64Encode } from "@novaclaw/core/util/encode"
+import { AgentV2 } from "@novaclaw/core/agent"
 import { useParams } from "@solidjs/router"
 import { batch, createEffect, createMemo, createSignal, startTransition } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -105,7 +106,32 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const models = useModels()
 
     const id = createMemo(() => params.id || undefined)
-    const list = createMemo(() => sync().data.agent.filter((item) => item.mode !== "subagent" && !item.hidden))
+    /**
+     * 🔴 **THE GHOST, AT ITS LAST WRITER.** This filter was `mode !== "subagent" && !hidden`, and the
+     * legacy roster projection lists `build` FIRST — so `list()[0]` was `build`, `store.current` was
+     * initialised to it, and `prompt-input/submit.ts` sent `agent: "build"` for every chat the
+     * composer created. Owner, 2026-09-27: *"they are not just ghosts polluting NovaClaw."*
+     *
+     * ⚠️ **The posture clause is the kernel's, and it is not cosmetic.** `AgentV2.isColleague` has
+     * excluded `POSTURE_IDS` since 2026-08-22 — measured against 54 live `build` chats on the owner's
+     * own instance — and every other surface already reads it. A chat bound to a posture is bound to a
+     * permission mode, not to anyone, which is why the kernel refuses an agent-less root outright
+     * rather than defaulting one (`DEFAULT_COLLEAGUE_ID` is Nova, never `build`).
+     *
+     * ⚠️ **The governing officer LEADS, so this door and the home launcher's agree.** Both answer
+     * "whose chat is a new one", and they answered differently: the launcher picked
+     * `DEFAULT_COLLEAGUE_ID`, this picked whatever sorted first. Two doors onto one question with
+     * different answers is the defect the roster already paid for once.
+     */
+    const list = createMemo(() => {
+      const colleagues = sync().data.agent.filter(
+        (item) => item.mode !== "subagent" && !item.hidden && !AgentV2.POSTURE_IDS.has(item.name),
+      )
+      const governing = colleagues.find((item) => item.name === AgentV2.DEFAULT_COLLEAGUE_ID)
+      return governing === undefined
+        ? colleagues
+        : [governing, ...colleagues.filter((item) => item !== governing)]
+    })
     const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
 
     const [saved, setSaved] = persisted(

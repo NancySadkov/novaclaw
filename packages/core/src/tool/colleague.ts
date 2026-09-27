@@ -136,7 +136,26 @@ export const toModelOutput = (output: ModelOutput) => [
     : [{ type: "file" as const, data: output.portrait.data, mime: output.portrait.mime, name: "colleague-portrait" }]),
 ]
 
-/** One line per colleague: who they are and what they own, which is what routing needs. */
+/**
+ * One line per colleague: **the id, and the job** (owner, 2026-09-27: *"the catalogue should list
+ * entries in plain format, like `geryon - Engineer`"*).
+ *
+ * 🔴 **The name and the description are GONE, and both were noise the model had to read past.**
+ *
+ * The listing used to be `id · name · title — description`, and on a real instance it printed
+ * `xenia · Xenia · Companion — Xenia, Companion.`: the name beside the id it restates, the title
+ * pushed to the end of a description that restates it too. Every token after the title was a copy of
+ * something already on the line. `id - title` is what `ask` actually takes and what routing actually
+ * reads, and the job title IS the "who owns this" signal.
+ *
+ * ⚠️ That duplication was authored, not incidental: the seed wrote every officer's description as
+ * `` `${name}, ${title}.` ``. Fixing the seed does not help an instance that already stored it — the
+ * rows are the user's config and a re-seed is gated on an empty store — so the duplication is dropped
+ * HERE, at the read, which fixes every install at once.
+ *
+ * The fallback chain matters for a colleague with no title: an empty segment (`id · `) reads as a
+ * broken list, so it degrades to the name and then the id rather than printing a hole.
+ */
 export const formatRoster = (
   agents: ReadonlyArray<{
     readonly id: string
@@ -151,8 +170,7 @@ export const formatRoster = (
   if (rows.length === 0) return "You have no colleagues yet. Ask the user whether to hire one, or do the work yourself."
   return rows
     .map((agent) => {
-      const name = agent.name?.trim() || agent.id
-      const role = [agent.title?.trim(), agent.description?.trim()].filter(Boolean).join(" — ")
+      const role = agent.title?.trim() || agent.name?.trim() || agent.id
       // 🔴 MARKED, not hidden. A paused colleague cannot act — `permission.ts` answers deny `*` — so
       // asking one spends a hop on a message that will never come back, and `colleague-stall.ts`
       // then has to report the silence 30 minutes later. But HIDING them would be worse: the roster
@@ -160,7 +178,7 @@ export const formatRoster = (
       // the paused one's name and cabinet — the exact collateral that pausing replaced removal to
       // avoid. The user sees the same fact as a badge on the Contacts row.
       const state = agent.paused === true ? " · PAUSED (set aside; cannot answer until resumed)" : ""
-      return `${agent.id} · ${name}${role ? ` · ${role}` : ""}${state}`
+      return `${agent.id} - ${role}${state}`
     })
     .join("\n")
 }
@@ -176,9 +194,30 @@ export const formatRoster = (
  */
 export const mayStaff = (selfID: string): boolean => AgentV2.mayStaff(selfID)
 
-/** Colleagues you can address: the roster, minus the staff and the machinery, minus yourself. */
+/**
+ * 🔴 **The catalogue is a ROSTER, and a roster is `isColleague` — not a hand-rolled subset of it.**
+ *
+ * Owner, 2026-09-27, on a live listing: `build · build · The default agent…`, `plan · plan · Plan
+ * mode…`, and `xenia · Xenia · Companion — Xenia, Companion.`
+ *
+ * This function WAS the weaker copy: `mode !== "subagent" && !hidden && id !== selfID`, which drops
+ * the two clauses that matter. `AgentV2.isColleague` has excluded `POSTURE_IDS` since 2026-08-22 —
+ * measured, 54 live `build` chats on the owner's own instance — and every UI surface already reads it,
+ * so the tool was the one door offering to `ask` a permission mode wearing an agent's shape. A posture
+ * has no `colleague` tool, so a hand-off to one is a message nobody can answer.
+ *
+ * ⚠️ **`kindOf === "agent"` is the other half, and it is why Xenia was listed.** A Chat-only colleague
+ * (`shortChat`, or the newer `kind: "chat"`) runs with no tools, no memory and no harness prompt — it
+ * is a place to talk to the model, not an officer that can be handed work. And the instance's owning
+ * human is `kind: "human"`, a profile row rather than something a message reaches. The server already
+ * applies exactly this pair for the team-chat projection (`agent/team-chat.ts`); the catalogue did not,
+ * so a model could address a companion and wait for a reply that is structurally impossible.
+ */
 export const addressable = (agents: ReadonlyArray<AgentV2.Info>, selfID: string): ReadonlyArray<AgentV2.Info> =>
-  agents.filter((agent) => agent.mode !== "subagent" && !agent.hidden && agent.id !== selfID)
+  agents.filter(
+    (agent) =>
+      AgentV2.isColleague(agent) && AgentV2.kindOf(agent) === "agent" && String(agent.id) !== selfID,
+  )
 
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {

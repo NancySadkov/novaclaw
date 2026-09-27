@@ -32,17 +32,134 @@ describe("who can be addressed", () => {
     // an infinite regress the model cannot see it is starting.
     expect(ColleagueTool.addressable(roster, "theron").map((a) => String(a.id))).toEqual(["nova"])
   })
+
+  /**
+   * 🔴 **The postures are not colleagues, and this tool used to offer them** (owner, 2026-09-27, on a
+   * live listing: `build · build · The default agent…` and `plan · plan · Plan mode…`).
+   *
+   * `AgentV2.isColleague` has excluded `POSTURE_IDS` since 2026-08-22 — measured against 54 live
+   * `build` chats on the owner's own instance — and every UI surface reads it. This function was a
+   * hand-rolled subset that kept only the `subagent` and `hidden` clauses, so the `colleague` tool was
+   * the one door offering to hand work to a permission mode. That is worse than noise: a posture has
+   * no `colleague` tool, so `ask` spends a hop on a message nothing can answer.
+   */
+  test("🔴 build and plan are NOT colleagues, whatever their mode says", () => {
+    const postures = [
+      agent({ id: "build", name: "Builder", title: "Task agent", mode: "primary" }),
+      agent({ id: "plan", name: "Planner", title: "Planning agent", mode: "primary" }),
+    ]
+    // `mode: "primary"` and not hidden — the exact shape that leaked.
+    expect(ColleagueTool.addressable(postures, "nova")).toEqual([])
+    // ⚠️ Through `addressable`, not straight into `formatRoster`. `formatRoster` is a FORMATTER: it
+    // prints whatever it is handed, and the two are separate seams on purpose. Feeding it postures
+    // directly would be asserting that a filter the tool does not own lives in the printer — and the
+    // leak the owner pasted was exactly that filter being absent at the call site.
+    expect(ColleagueTool.formatRoster(ColleagueTool.addressable(postures, "nova"), "nova")).toContain(
+      "no colleagues yet",
+    )
+  })
+
+  /**
+   * 🔴 **A CHAT-ONLY colleague is not an officer, and Xenia was in the listing** (owner, 2026-09-27:
+   * `xenia · Xenia · Companion — Xenia, Companion.`). She runs with no tools, no memory and no harness
+   * prompt: a place to talk to the model, not someone work can be handed to. The owning human is
+   * `kind: "human"` and is hidden already; this is the arm that survives a user unhiding them.
+   *
+   * `shortChat` is honoured too, because that is the older spelling and rows written before `kind`
+   * existed still carry it — the classification has ONE reader (`AgentV2.kindOf`) precisely so a second
+   * hand-written stance fallback cannot appear beside it.
+   */
+  test("🔴 a chat-only colleague and a human are not addressable", () => {
+    const notOfficers = [
+      agent({ id: "xenia", name: "Xenia", title: "Companion", shortChat: true }),
+      agent({ id: "mirror", name: "Mirror", title: "Companion", kind: "chat" }),
+      agent({ id: "owner", name: "Owner", title: "Instance Owner", kind: "human" }),
+    ]
+    expect(ColleagueTool.addressable(notOfficers, "nova")).toEqual([])
+  })
+
+  test("…and the control: a full officer of the same kinds is still addressable", () => {
+    // Without this, a `kindOf` typo that returned "chat" for everything would pass every case above.
+    const officer = agent({ id: "daedalus", name: "Daedalus", title: "Engineer" })
+    expect(ColleagueTool.addressable([officer], "nova").map((a) => String(a.id))).toEqual(["daedalus"])
+  })
+
+  /**
+   * ⭐ **The predicate is the KERNEL'S, and this is the ratchet that keeps it that way.** Every other
+   * roster surface reads `AgentV2.isColleague`; when this one stopped, the tool became the single place
+   * a posture or a companion was still offered. A future clause added to the kernel's definition must
+   * reach here, and the cheapest proof is that this function stops being a list of its own.
+   */
+  test("⭐ the catalogue filters by the kernel's own roster predicate", () => {
+    const source = readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "tool", "colleague.ts"),
+      "utf8",
+    )
+    const body = source.slice(source.indexOf("export const addressable"), source.indexOf("/**", source.indexOf("export const addressable")))
+    expect(body).toContain("AgentV2.isColleague(agent)")
+    expect(body).toContain('AgentV2.kindOf(agent) === "agent"')
+    // The hand-rolled clauses that let the ghosts through.
+    expect(body).not.toContain('agent.mode !== "subagent"')
+    expect(body).not.toContain("!agent.hidden")
+  })
 })
 
+/**
+ * 🔴 **The catalogue is PLAIN: `id - Job`** (owner, 2026-09-27: *"the catalogue should list entries in
+ * plain format, like `geryon - Engineer`"*).
+ *
+ * What it used to print, on the owner's own live instance:
+ *
+ *     xenia · Xenia · Companion — Xenia, Companion.
+ *     geryon · Geryon · Engineer — Geryon, Engineer.
+ *
+ * Every token after the id was a copy of something already on the line — the name beside the id it
+ * restates, the title pushed to the end of a description that restates it too — so the model read past
+ * two duplications to reach the one fact, the job. And the duplication was AUTHORED: the seed wrote
+ * every officer's description as `` `${name}, ${title}.` ``. Changing the seed does not help an
+ * instance that already stored it (the rows are the user's config, and re-seeding is gated on an empty
+ * store), which is why the copy is dropped at the READ rather than at the source.
+ */
 describe("what the roster looks like to a model routing work", () => {
-  test("id first, then who they are and what they own", () => {
-    // The id is what `ask` takes, so it leads; the rest is what makes routing a decision rather than
-    // a guess.
+  test("🔴 one line per colleague: the id, and the job", () => {
     const listing = ColleagueTool.formatRoster(
       [{ id: "theron", name: "Theron", title: "Bookkeeper", description: "Owns the ledger" }],
       "nova",
     )
-    expect(listing).toBe("theron · Theron · Bookkeeper — Owns the ledger")
+    expect(listing).toBe("theron - Bookkeeper")
+  })
+
+  test("🔴 the duplication the owner pasted is gone, from either end", () => {
+    // Both halves, because a fix that dropped the name and kept the restatement would still print the
+    // title twice, and one that dropped the description and kept the name would still print the id twice.
+    const listing = ColleagueTool.formatRoster(
+      [{ id: "geryon", name: "Geryon", title: "Engineer", description: "Geryon, Engineer." }],
+      "nova",
+    )
+    expect(listing).toBe("geryon - Engineer")
+    expect(listing).not.toContain("Geryon, Engineer.")
+    expect(listing.match(/Engineer/g)).toHaveLength(1)
+  })
+
+  test("a job title is the only thing after the id — no description column survives", () => {
+    // The control for "they just removed the description": a colleague whose description says something
+    // a title cannot must NOT leak it back in.
+    const listing = ColleagueTool.formatRoster(
+      [{ id: "myron", name: "Myron", title: "Artist", description: "Composition, colour, type." }],
+      "nova",
+    )
+    expect(listing).toBe("myron - Artist")
+    expect(listing).not.toContain("Composition")
+  })
+
+  test("a colleague with NO title degrades to the name, then to the id — never an empty slot", () => {
+    // `id · ` reads as a broken list, and a roster with holes is a list nobody routes from.
+    expect(ColleagueTool.formatRoster([{ id: "build", name: "Builder" }], "nova")).toBe("build - Builder")
+    expect(ColleagueTool.formatRoster([{ id: "build" }], "nova")).toBe("build - build")
+    // A title of whitespace is no title, and must not print as one.
+    expect(ColleagueTool.formatRoster([{ id: "build", name: "Builder", title: "   " }], "nova")).toBe(
+      "build - Builder",
+    )
   })
 
   test("an empty roster says what to do instead of returning nothing", () => {
@@ -51,17 +168,14 @@ describe("what the roster looks like to a model routing work", () => {
     expect(ColleagueTool.formatRoster([], "nova")).toContain("no colleagues yet")
   })
 
-  test("a nameless colleague still lists under its id", () => {
-    expect(ColleagueTool.formatRoster([{ id: "build" }], "nova")).toBe("build · build")
-  })
-
   test("🔴 a PAUSED colleague is marked, not hidden", () => {
     // Marked, because asking one spends a hop on a message that never comes back — `permission.ts`
     // answers deny `*` for a paused agent — and the silence only surfaces 30 minutes later as a
     // stall notice.
+    // ⚠️ With the description gone, the name is the only handle left between the id and a blank — so
+    // the marker has to survive the simplification, or hiding one becomes impossible.
     const listing = ColleagueTool.formatRoster([{ id: "wren", name: "Wren", paused: true }], "nova")
-    expect(listing).toContain("wren")
-    expect(listing).toContain("PAUSED")
+    expect(listing).toBe("wren - Wren · PAUSED (set aside; cannot answer until resumed)")
   })
 
   test("…and HIDING one would be worse than listing it", () => {
