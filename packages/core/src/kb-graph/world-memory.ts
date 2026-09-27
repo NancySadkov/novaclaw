@@ -346,7 +346,23 @@ export const serviceNode = makeGlobalNode({
 export const node = LayerNode.capability(serviceNode, {
   name: "world-memory",
   service: Service,
-  timeout: "30 seconds",
+  // 🔴 THIS MUST OUTLAST A COLD OPEN, and 30 s did not. The capability deadline wraps the whole
+  // `open()` — the fixed ~1.3 GB `WasmMemory.open` arena, measured today at 419 MB resident for an
+  // empty store — while the supervisor's own budget for that same `open` is 60 s
+  // (`isolated-engine.ts`). A deadline SHORTER than the operation it wraps cannot succeed: the outer
+  // timer fired while the inner one was still waiting, so the caller got
+  // `memory worker timed out in list` and a 30-second hang rather than a list.
+  //
+  // Measured 2026-09-27, twice, and it is a real user path rather than a build artefact: memory became
+  // OPT-IN, so a fresh instance no longer opens the graph at boot, which makes the FIRST memory
+  // request a cold one — and the first thing a user does after switching memory on is ask it
+  // something. Opt-in made the cold path the common path, and the cold path could not finish.
+  //
+  // ⚠️ 180 s is a bound, not a target: a real open is seconds, and anything past this is reported as
+  // itself rather than waited on forever. It must stay ABOVE the supervisor's 60 s open budget, or
+  // the inner timer wins the race and the failure is reported as a worker fault instead of the
+  // deadline it actually is.
+  timeout: "180 seconds",
   repair: ["runtime_flags.NOVACLAW_WORLD_MEMORY"],
 })
 

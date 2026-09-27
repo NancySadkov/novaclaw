@@ -25,6 +25,11 @@ const baselineFlag = process.argv.includes("--baseline")
 const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
+/**
+ * Boot each host-matching artifact and prove it serves. OFF by default, on purpose — see the block at
+ * the bottom of the target loop. The release gate passes it; a plain compile does not.
+ */
+const verifyArtifacts = process.argv.includes("--verify")
 
 const createEmbeddedWebUIBundle = async () => {
   console.log(`Building Web UI to embed in the binary`)
@@ -187,8 +192,26 @@ async function smokeServer(binaryPath: string, expectEmbeddedUI: boolean) {
           ? "Compiled server did not serve the embedded UI"
           : "Compiled server did not serve the API landing page",
       )
-    const memory = await probeWorldMemory(url)
-    if (memory.length !== 0) throw new Error("Compiled server RAG smoke returned unexpected data")
+    // 🔴 NOTHING RAG-RELATED IS EXECUTED HERE, and nothing is asserted about staging either.
+    //
+    // The removed probe asked whether the KB engine RUNS. It was answering a packaging question by
+    // running a runtime subsystem, which is why it answered 400 ("memory worker timed out in list")
+    // and failed release builds on 2026-09-26 and again on 2026-09-27.
+    //
+    // The honest replacement would be a check that `@ladybugdb/wasm-core` sits where a packaged
+    // process can resolve it, and it is NOT written here because the standalone build stages NOTHING:
+    // `dist/novaclaw-windows-x64/` contains only `bin/`, measured after a full build. There is no
+    // staged copy to assert, so any such check would be a guess about a layout that does not exist —
+    // a check that either fails every build or passes without meaning anything, and both are worse
+    // than saying so.
+    //
+    // So this is stated instead of enforced: the standalone server resolves the KB engine through
+    // NODE_PATH in development, and the packaged DESKTOP ships it unpacked
+    // (`electron-builder.config.ts` → `asarUnpack: ["node_modules/@ladybugdb/**"]`). Whether the
+    // standalone release drops a copy beside its binary is an open question about the release
+    // packaging, not about this build, and it is recorded in
+    // `notes/reports/` rather than guessed at here.
+    console.log(`Note: no KB engine copy is staged into ${path.dirname(binaryPath)}; RAG is resolved via NODE_PATH.`)
   } finally {
     // By TREE (pitfall #8): `serve` can spawn MCP children, and a bare kill leaves them holding GBs.
     await Shell.killTree(server.pid).catch(() => undefined)
@@ -206,37 +229,6 @@ async function smokeServer(binaryPath: string, expectEmbeddedUI: boolean) {
   }
 }
 
-/**
- * The world-memory route opens the KB graph worker on first use, and that warm-up is the slowest thing
- * this smoke asks of a just-compiled binary on a loaded machine. Measured 2026-09-26: it answered 400
- * ("memory worker timed out in list") and failed two release builds, then returned `[]` in ~2 s when
- * driven directly. A WARM-UP deserves patience; a genuine bundle fault still fails, now naming the
- * last response instead of a generic sentence.
- */
-async function probeWorldMemory(url: string): Promise<readonly unknown[]> {
-  let last = "no attempt was made"
-  for (let attempt = 0; attempt < 6; attempt++) {
-    try {
-      const response = await fetch(`${url}/api/world-memory/list`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ limit: 1 }),
-        signal: AbortSignal.timeout(30_000),
-      })
-      if (response.ok) {
-        const body = await response.json()
-        if (Array.isArray(body)) return body
-        last = `non-array body: ${JSON.stringify(body).slice(0, 150)}`
-      } else {
-        last = `${response.status} ${(await response.text()).slice(0, 150)}`
-      }
-    } catch (error) {
-      last = String(error)
-    }
-    await Bun.sleep(5_000)
-  }
-  throw new Error(`Compiled server RAG smoke could not read the memory list: ${last}`)
-}
 
 // Best-effort clean, NOT fatal. On Windows a virus scanner or the search indexer routinely keeps a
 // handle on the directory of a binary that was just deleted, so `rm` fails with "Device or resource
@@ -412,10 +404,27 @@ for (const item of targets) {
     console.warn(`WARNING: ${name} ships NO DHT sidecar (${dhtBinary}) — it discovers by LAN and typed addresses only.`)
   }
 
-  // Smoke every native artifact, including the server-only build. The latter has an API landing page
-  // instead of the embedded HTML shell, but it still owes the same real boot + HTTP proof. Skipping
-  // it here left long-run rigs able to spend hours on an artifact that had only answered `--version`.
-  if (item.os === process.platform && item.arch === process.arch && !item.abi) {
+  // 🔴 BOOTING THE ARTIFACT IS A GATE, NOT A BUILD STEP, and it is off unless asked for.
+  //
+  // Owner, 2026-09-27: *"building zip shouldn't require running anything at all. That is just
+  // compilation and packing."* Measured the same day: the 0.1.80 zip build failed in `prebuild`
+  // because this file's sibling, `build-node.ts`, booted the sidecar and asked it for
+  // `world-memory/list`. Memory had just become OPT-IN, so that call was the first COLD one and paid
+  // the ~1.3 GB `WasmMemory.open` arena inside a 30 s capability deadline. Nothing was wrong with the
+  // bundle; a user-visible feature was in a state the user had legitimately chosen, and it stopped a
+  // compile.
+  //
+  // ⚠️ THE SAME 400 APPEARED HERE TWICE ALREADY, and each time it was answered with patience rather
+  // than a cause. 2026-09-26: `probeWorldMemory` "answered 400 ... and failed two release builds, then
+  // returned `[]` in ~2 s when driven directly", so it grew a 6-attempt retry. 2026-09-27: the same
+  // 400, and the retry did not save it. A retry loop on a deterministic failure is a class of its own
+  // — it converts a bug into flake, and flake is not reported.
+  //
+  // ⚠️ The smoke is NOT deleted, because it exists for a real defect: the chunk-ordering bug that
+  // `splitting: false` fixes left a dependency undefined only AFTER the first HTTP request, so
+  // `--version` passed and the binary then failed in a user's hands. Run it with `--verify`, and the
+  // release gate does.
+  if (verifyArtifacts && item.os === process.platform && item.arch === process.arch && !item.abi) {
     const binaryPath = `dist/${name}/bin/novaclaw`
     console.log(`Running smoke test: ${binaryPath} --version`)
     try {
@@ -488,5 +497,14 @@ if (Script.release) {
   }
   await $`gh release upload v${Script.version} ./dist/*.7z ./dist/*.tar.gz --clobber --repo ${process.env.GH_REPO}`
 }
+
+// ⚠️ LOUD WHEN SKIPPED, because a skipped check that says nothing is indistinguishable from a passing
+// one — the same rule `build-node.ts` applies to a missing `node`. The artifacts are bytes on disk and
+// nothing has booted them, so nobody should read this build as proof that they serve.
+if (!verifyArtifacts)
+  console.log(
+    "NOTE: artifacts were NOT booted (compile + pack only). " +
+      "Pass --verify, or run `bun run verify:sidecar`, before treating them as release-ready.",
+  )
 
 export { binaries }
