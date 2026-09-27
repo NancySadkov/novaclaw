@@ -29,7 +29,27 @@ for await (const line of createInterface({ input: process.stdin, crlfDelay: Infi
         request.args.map((arg) => arg === null ? undefined : arg),
       )
     }
-    const response = JSON.stringify({ id, ok: true, value, publishBlocked: engine?.publishBlocked }) + "\n"
+    const response =
+      JSON.stringify({
+        id,
+        ok: true,
+        value,
+        publishBlocked: engine?.publishBlocked,
+        // 🔴 The worker reports its OWN footprint on every reply, because the supervisor cannot
+        // measure it any other way and this is the number that decides the recycle.
+        //
+        // Measured 2026-09-27: `WasmMemory.open` costs ~1.3 GB resident for a store holding ZERO
+        // memories (871 MB external, 433 MB of it ArrayBuffer) — a fixed arena inside the Wasm
+        // module, not a function of the data. It never shrinks, `close()` does not release it, and
+        // the only thing that returns it is process exit. A live idle worker measured 2.8 GB; one
+        // that had been working reached 15.6 GB and starved the machine (it was holding ~10 GB of
+        // commit by itself when it took the 2026-09-27 `core` gate to 100 % and reaped the user's
+        // browser and editor).
+        //
+        // So the supervisor needs this to know when to recycle, and it is the only portable way for
+        // a parent to learn a child's real cost: `process.memoryUsage()` inside the child.
+        rssBytes: process.memoryUsage().rss,
+      }) + "\n"
     if (Buffer.byteLength(response) > MAX_FRAME_BYTES) throw new Error("memory worker result is too large")
     process.stdout.write(response)
     if (request.method === "close") break
