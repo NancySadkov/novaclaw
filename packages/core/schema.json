@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "78a43bfd-e6b7-4ff0-a862-d0be5fd6936a",
+  "id": "6bf4d867-a1bf-4a98-95cc-55c0708b8af0",
   "prevIds": [
-    "5b3864ee-b9de-4ed0-8327-27a6aef4dfaf"
+    "78a43bfd-e6b7-4ff0-a862-d0be5fd6936a"
   ],
   "ddl": [
     {
@@ -52,6 +52,10 @@
     },
     {
       "name": "session_nudge_delivery",
+      "entityType": "tables"
+    },
+    {
+      "name": "agent_scratch_horizon",
       "entityType": "tables"
     },
     {
@@ -977,6 +981,66 @@
       "name": "fired_at",
       "entityType": "columns",
       "table": "session_nudge_delivery"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "agent",
+      "entityType": "columns",
+      "table": "agent_scratch_horizon"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "session_id",
+      "entityType": "columns",
+      "table": "agent_scratch_horizon"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "completed_at",
+      "entityType": "columns",
+      "table": "agent_scratch_horizon"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "cycle_at",
+      "entityType": "columns",
+      "table": "agent_scratch_horizon"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "horizon_days",
+      "entityType": "columns",
+      "table": "agent_scratch_horizon"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "phase",
+      "entityType": "columns",
+      "table": "agent_scratch_horizon"
     },
     {
       "type": "text",
@@ -4760,6 +4824,21 @@
     },
     {
       "columns": [
+        "session_id"
+      ],
+      "tableTo": "session",
+      "columnsTo": [
+        "id"
+      ],
+      "onUpdate": "NO ACTION",
+      "onDelete": "CASCADE",
+      "nameExplicit": false,
+      "name": "fk_agent_scratch_horizon_session_id_session_id_fk",
+      "entityType": "fks",
+      "table": "agent_scratch_horizon"
+    },
+    {
+      "columns": [
         "active_account_id"
       ],
       "tableTo": "account",
@@ -5158,6 +5237,15 @@
       "nameExplicit": false,
       "name": "model_prefix_cache_pk",
       "table": "model_prefix_cache",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "agent"
+      ],
+      "nameExplicit": false,
+      "name": "agent_scratch_horizon_pk",
+      "table": "agent_scratch_horizon",
       "entityType": "pks"
     },
     {
@@ -6200,7 +6288,7 @@
         }
       ],
       "isUnique": true,
-      "where": "\"session\".\"parent_id\" IS NULL AND \"session\".\"time_archived\" IS NULL AND \"session\".\"agent\" IS NOT NULL AND \"session\".\"agent\" NOT IN ('build', 'plan')",
+      "where": "\"session\".\"parent_id\" IS NULL AND \"session\".\"time_archived\" IS NULL AND \"session\".\"agent\" IS NOT NULL",
       "origin": "manual",
       "name": "session_agent_live_root_idx",
       "entityType": "indexes",

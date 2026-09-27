@@ -127,6 +127,17 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`agent_scratch_horizon\` (
+          \`agent\` text PRIMARY KEY,
+          \`session_id\` text NOT NULL,
+          \`completed_at\` integer,
+          \`cycle_at\` integer NOT NULL,
+          \`horizon_days\` integer NOT NULL,
+          \`phase\` text NOT NULL,
+          CONSTRAINT \`fk_agent_scratch_horizon_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`session_compaction_request\` (
           \`session_id\` text PRIMARY KEY,
           \`requested_at\` integer NOT NULL

@@ -72,6 +72,7 @@ describe("every field the wire schema declares is accounted for", () => {
       color: "amber",
       steps: 4,
       archiveChats: true,
+      horizonDays: 7,
       toolLabels: true,
       shortChat: true,
       kind: "chat",

@@ -24,6 +24,7 @@ import { chatFor, chatToClear } from "@/apps/roster-live"
 import { GOVERNING_ID, displayName, isColleague, memoryKey, superiorCandidates, type AgentLike } from "@/apps/contacts"
 import { ownerRoute } from "@/apps/memory-owner"
 import { worldMemoryClearScopeVerified } from "@/utils/memory-api"
+import { DEFAULT_HORIZON_DAYS } from "@novaclaw/schema/scratch-horizon"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { AgentPortrait } from "@/components/agent-portrait"
 import { AGENT_AVATAR_TYPES, removeAgentAvatar, uploadAgentAvatar } from "@/apps/agent-avatar"
@@ -163,6 +164,7 @@ export function OfficerSettingsScreen(props: {
   const [avatarRemoved, setAvatarRemoved] = createSignal(false)
   const [memory, setMemory] = createSignal<"own" | "none" | undefined>()
   const [archive, setArchive] = createSignal<boolean | undefined>()
+  const [horizonDays, setHorizonDays] = createSignal<string | undefined>()
   const [model, setModel] = createSignal<string | undefined>()
   const [reasoningModel, setReasoningModel] = createSignal<string | undefined>()
   const [workerModel, setWorkerModel] = createSignal<string | undefined>()
@@ -638,6 +640,11 @@ export function OfficerSettingsScreen(props: {
     const parsed = Number(runtimeHeartbeatMinutesValue())
     return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : Number.NaN
   }
+  const horizonDaysValue = () => integerValue(horizonDays(), "horizonDays", DEFAULT_HORIZON_DAYS)
+  const parsedHorizonDays = () => {
+    const value = Number(horizonDaysValue())
+    return Number.isSafeInteger(value) && value > 0 ? value : Number.NaN
+  }
   const reasoningBudgetValue = () => {
     const chosen = reasoningBudget()
     if (chosen !== undefined) return chosen
@@ -710,6 +717,7 @@ export function OfficerSettingsScreen(props: {
     title() !== undefined ||
     job() !== undefined ||
     memory() !== undefined ||
+    horizonDays() !== undefined ||
     directory() !== undefined ||
     posture() !== undefined ||
     permissionMode() !== undefined ||
@@ -1245,6 +1253,7 @@ export function OfficerSettingsScreen(props: {
             ...(title() === undefined && agent()?.title === undefined ? {} : { title: titleValue() }),
             ...(job() === undefined && agent()?.system === undefined ? {} : { system: jobValue() }),
             memory: memoryValue(),
+            ...(horizonDays() === undefined ? {} : { horizonDays: parsedHorizonDays() }),
             // Sent as `""` when cleared, which the config decoder stores as "no folder" — the field is
             // optional, so an empty string is how a UI says "unset" through a merge patch.
             // A pure Chat role has no project component. Clear an old assignment even when this
@@ -1337,6 +1346,7 @@ export function OfficerSettingsScreen(props: {
       setAvatarFile(undefined)
       setAvatarRemoved(false)
       setMemory(undefined)
+      setHorizonDays(undefined)
       setDirectory(undefined)
       setPosture(undefined)
       setPermissionMode(undefined)
@@ -1488,6 +1498,7 @@ export function OfficerSettingsScreen(props: {
               Number.isNaN(parsedMaxWorkers()) ||
               Number.isNaN(parsedSpawnDepth()) ||
               Number.isNaN(parsedRuntimeHeartbeatMinutes()) ||
+              Number.isNaN(parsedHorizonDays()) ||
               saving() ||
               busy() !== undefined ||
               agent() === undefined
@@ -2520,6 +2531,27 @@ export function OfficerSettingsScreen(props: {
                   <SettingsScheduleV2 agentID={id} />
                 </section>
               )}
+            </Show>
+
+            <Show when={postureValue() === "agent"}>
+              <section class="agent-settings-card" data-settings-tab="memory" data-section="scratch-horizon">
+                <label class="flex items-center justify-between gap-3 text-xs">
+                  <span>{language.t("agentConfig.horizonLength")}</span>
+                  <span class="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      class="w-20 rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1 text-v2-text-text-base"
+                      aria-label={language.t("agentConfig.horizonLength")}
+                      value={horizonDaysValue()}
+                      onInput={(event) => setHorizonDays(event.currentTarget.value)}
+                    />
+                    {language.t("agentConfig.horizonDays")}
+                  </span>
+                </label>
+                <p class="mt-2 text-[11px] text-v2-text-text-faint">{language.t("agentConfig.horizonHelp")}</p>
+              </section>
             </Show>
 
             <section class="agent-settings-card" data-settings-tab="memory">

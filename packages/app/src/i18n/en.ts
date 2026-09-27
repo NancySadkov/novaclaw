@@ -2161,6 +2161,10 @@ export const dict = {
   "agentConfig.portraitChoose": "Choose image",
   "agentConfig.portraitNone": "No image chosen",
   "agentConfig.memory": "What it remembers",
+  "agentConfig.horizonLength": "Horizon Length",
+  "agentConfig.horizonDays": "days",
+  "agentConfig.horizonHelp":
+    "How often this officer reviews old scratch files. Each review lists files unchanged for this many days in trash-list.txt and posts a folded chat notice. At the next review, listed files still that old are deleted. Touch files to keep them, or delete the list to keep all of them. Project files are outside this cleanup.",
   "agentConfig.memoryRag": "Persistent Agent Memory (RAG)",
   "agentConfig.mind": "Model",
   // Said when the mode was saved onto the colleague but the chat ON SCREEN could not be switched with

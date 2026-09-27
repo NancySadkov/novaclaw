@@ -137,6 +137,7 @@ export const migrations = (
     import("./migration/20260924180000_portable_instance_paths"),
     import("./migration/20260925165054_agent_retirement_ledger"),
     import("./migration/20260927201500_retire_the_anonymous_agents"),
+    import("./migration/20260927214353_add_scratch_horizon"),
     import("./migration/20260928093000_colleague_is_always_reachable"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

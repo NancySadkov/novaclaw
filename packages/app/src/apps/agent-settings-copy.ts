@@ -53,6 +53,7 @@ export const NOT_COPIED = {
   memory: "the cabinet stays with the target — memory scope is identity",
   /** Whether the target archives its own chats — the cabinet's policy, not tuning. */
   archiveChats: "the cabinet's policy stays with the target",
+  horizonDays: "the scratch retention policy stays with the target",
   /** The roster dot is decoration on the identity, not tuning. */
   color: "the face is identity — the target keeps its own color",
   /** The role summary shown in the roster describes the job, which stays. */

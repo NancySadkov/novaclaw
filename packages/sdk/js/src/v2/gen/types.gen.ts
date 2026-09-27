@@ -3809,6 +3809,7 @@ export type ConfigV2Agent = {
   superior?: string
   avatar?: string
   memory?: "own" | "none"
+  horizonDays?: number
   archiveChats?: boolean
   toolLabels?: boolean
   needsTaxonomy?: "smart" | "usual" | "fast"
@@ -4610,6 +4611,7 @@ export type AgentV2Info = {
   superior?: string
   avatar?: string
   memory?: AgentMemory
+  horizonDays?: number
   archiveChats?: boolean
   toolLabels?: boolean
   needsTaxonomy?: "smart" | "usual" | "fast"

@@ -100,6 +100,7 @@ function applyFields(agent: AgentRecord, agentID: AgentV2.ID, item: ConfigAgent.
   if (item.superior !== undefined) agent.superior = AgentV2.ID.make(item.superior)
   if (item.avatar !== undefined) agent.avatar = item.avatar
   if (item.memory !== undefined) agent.memory = item.memory
+  if (item.horizonDays !== undefined) agent.horizonDays = item.horizonDays
   if (item.archiveChats !== undefined) agent.archiveChats = item.archiveChats
   if (item.toolLabels !== undefined) agent.toolLabels = item.toolLabels
   if (item.needsTaxonomy !== undefined) agent.needsTaxonomy = item.needsTaxonomy

@@ -36557,6 +36557,10 @@
             "type": "string",
             "enum": ["own", "none"]
           },
+          "horizonDays": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
           "archiveChats": {
             "type": "boolean"
           },
@@ -38891,6 +38895,10 @@
           },
           "memory": {
             "$ref": "#/components/schemas/AgentMemory"
+          },
+          "horizonDays": {
+            "type": "integer",
+            "exclusiveMinimum": 0
           },
           "archiveChats": {
             "type": "boolean"

@@ -877,6 +877,40 @@ describe("Officer Settings screen renders", () => {
   })
 })
 
+test("Memory shows the three-day horizon and saves a positive whole-day override", async () => {
+  const writes: unknown[] = []
+  mount({ agents: [AGENT], write: (patch) => writes.push(patch) })
+  await settle()
+  const section = document.querySelector('[data-section="scratch-horizon"]')!
+  expect(section.getAttribute("data-settings-tab")).toBe("memory")
+  const input = section.querySelector("input")!
+  expect(input.value).toBe("3")
+  expect(input.getAttribute("aria-label")).toBe("agentConfig.horizonLength")
+  for (const invalid of ["0", "-1", "1.5", ""]) {
+    input.value = invalid
+    input.dispatchEvent(new Event("input", { bubbles: true }))
+    expect(saveButton()!.disabled).toBe(true)
+  }
+  input.value = "7"
+  input.dispatchEvent(new Event("input", { bubbles: true }))
+  expect(saveButton()!.disabled).toBe(false)
+  saveButton()!.click()
+  await settle()
+  expect((writes[0] as { agents: { theron: Record<string, unknown> } }).agents.theron.horizonDays).toBe(7)
+})
+
+test("Memory reloads the stored horizon for Nova too", async () => {
+  mount({ agentID: "nova", agents: [{ ...AGENT, id: "nova", config: { horizonDays: 12 } }] })
+  await settle()
+  expect(document.querySelector<HTMLInputElement>('[data-section="scratch-horizon"] input')!.value).toBe("12")
+})
+
+test("pure Chat has no scratch cleanup control", async () => {
+  mount({ agents: [{ ...AGENT, kind: "chat", config: { kind: "chat" } }] })
+  await settle()
+  expect(document.querySelector('[data-section="scratch-horizon"]')).toBeNull()
+})
+
 test("the class a colleague may REQUIRE never offers Special", async () => {
   // 🔴 The two vocabularies are deliberately different lengths. `special` marks a model the harness
   // must not route to by itself, so "this role requires a Special model" is a contradiction the server

@@ -3,6 +3,7 @@ import type { SessionMessage } from "@novaclaw/sdk/v2"
 import { MarkedContext } from "@novaclaw/ui/context/marked"
 import { createSignal } from "solid-js"
 import { render } from "solid-js/web"
+import { applySteerProvenance } from "@novaclaw/core/session/steer-provenance"
 
 // Bun does not apply Vite's `?worker&url` transform. Resolve the same canonical module before the
 // transcript import so this browser test reaches the shipped Solid component, not a copied shell.
@@ -435,6 +436,22 @@ describe("native transcript remount", () => {
     ;(host.querySelector('[data-slot="basic-tool-v2-trigger"]') as HTMLElement).click()
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(host.querySelectorAll('[data-slot="native-todo"]')).toHaveLength(2)
+  })
+
+  test("scratch cleanup warnings remain visible as folded notices with preservation instructions", () => {
+    const text = 'Scratch cleanup: "C:/scratch/iris/trash-list.txt" lists files older than 3 days. ' +
+      "If you still need any of these files, touch them. If you need most of them, delete the ones you don't need " +
+      "and then delete trash-list.txt."
+    const host = mount(undefined, { messages: [{
+      id: "msg_cleanup", type: "user", text: applySteerProvenance(text), time: { created: 1 },
+    }] as SessionMessage[], status: { type: "idle" } })
+    expect(host.querySelector('[data-slot="native-user"]')).toBeNull()
+    const fold = host.querySelector<HTMLDetailsElement>('[data-slot="native-notice"][data-kind="steer"]')!
+    expect(fold).not.toBeNull()
+    expect(fold.open).toBe(false)
+    fold.open = true
+    expect(fold.querySelector('[data-slot="native-notice-body"]')!.textContent).toContain(text)
+    expect(fold.textContent).not.toContain("not a message from your user")
   })
 
   test("🔴 a stall notice is FOLDED — the instance is reporting silence, not the user speaking", async () => {

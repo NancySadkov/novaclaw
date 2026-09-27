@@ -2,6 +2,7 @@ export * as ConfigAgent from "./agent"
 
 import { Schema } from "effect"
 import { Permission } from "@novaclaw/schema/permission"
+import { HorizonDays } from "@novaclaw/schema/scratch-horizon"
 import { ConfigProvider } from "./provider"
 import { NonNegativeInt, PositiveInt } from "../schema"
 import { ModelV2 } from "../model"
@@ -87,6 +88,7 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   /** The roster face: an emoji or a short glyph token. Colour stays in `color`. */
   avatar: Schema.String.pipe(Schema.optional),
   memory: Memory.pipe(Schema.optional),
+  horizonDays: HorizonDays.pipe(Schema.optional),
   /** Keep compacted conversations in this colleague's own memory, so it can search them later when
    *  recall is not enough. Default ON (`undefined` = on) — the owner's rule is "unless the officer's
    *  settings disable it". Ignored for a throwaway, which keeps nothing by definition. */

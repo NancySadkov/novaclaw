@@ -7,6 +7,7 @@ import { Permission } from "./permission"
 import { Provider } from "./provider"
 import { Quality } from "./quality"
 import { NonNegativeInt, PositiveInt, statics } from "./schema"
+import { HorizonDays } from "./scratch-horizon"
 
 export const ID = Schema.String.pipe(Schema.brand("AgentV2.ID"))
 export type ID = typeof ID.Type
@@ -43,6 +44,7 @@ export const Info = Schema.Struct({
   avatar: Schema.String.pipe(optional),
   /** `own` = private `agent:<id>` scope + `global`; `none` = a throwaway with no memory at all. */
   memory: Memory.pipe(optional),
+  horizonDays: HorizonDays.pipe(optional),
   /** Keep compacted conversations in this agent's own memory (default on). */
   archiveChats: Schema.Boolean.pipe(optional),
   /** Caption each shell/spawn tool call with a generated title (default on). Costs a model call per

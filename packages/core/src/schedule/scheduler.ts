@@ -15,6 +15,7 @@ import { SessionV2 } from "../session"
 import { SessionSchema } from "../session/schema"
 import { SessionTable } from "../session/sql"
 import { NudgeService } from "../nudge-service"
+import { ScratchHorizon } from "../scratch/horizon"
 import type { EpochMillis } from "./recurrence"
 import { ScheduleStore } from "./store"
 import { Log } from "@novaclaw/schema/log"
@@ -170,6 +171,21 @@ export const layer = Layer.effect(Service, Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis
     yield* tick(db, deliver, superiorOf, now)
     yield* ColleagueStall.sweep(db, events, now)
+    yield* ScratchHorizon.sweep(db, yield* agents.agents(), (notice) => nudges.deliverScheduled({
+      sessionID: notice.sessionID,
+      sessionEpoch: notice.sessionEpoch,
+      scheduleID: `scratch-horizon:${notice.agent}`,
+      occurrence: String(notice.cycleAt),
+      text: notice.text,
+      admittedAt: now,
+      admit: (messageID, text) => sessions.prompt({
+        id: messageID,
+        sessionID: notice.sessionID,
+        prompt: { text },
+        delivery: "steer",
+        resume: true,
+      }).pipe(Effect.map((admitted) => admitted.sessionID)),
+    }), now)
   }).pipe(
     Effect.catchCause((cause) => Log.event("instance.schedule.tick.failed", { "instance.cause": Log.fault(cause) })),
     Effect.repeat(Schedule.spaced(Duration.seconds(TICK_INTERVAL_SECONDS))),
