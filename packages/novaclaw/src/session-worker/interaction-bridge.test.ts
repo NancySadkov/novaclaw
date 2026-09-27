@@ -366,6 +366,57 @@ test("🔴 a timeout is a normal ANSWER, not a rejection", async () => {
   expect((reply as { result?: string }).result).toBeUndefined()
 })
 
+test("🔴 a HALTED child is its own outcome, and names the state it stopped in", async () => {
+  // 🔴 Measured 2026-09-27: the user pressed Stop on a worker, and the parent's `wait` reported it as
+  // a TIMEOUT — "it may still be working — this is not an error". The two answers demand opposite
+  // next moves from the model (call `wait` again, versus re-issue the slice), so folding a halt into a
+  // timeout is not a wording problem: it is the model duplicating or abandoning work.
+  const join: SessionJoin.Interface = {
+    awaitCompletion: () =>
+      Effect.succeed({
+        completed: false,
+        halted: "interrupted",
+        generatedAnyTokens: true,
+        generatedTokens: 4,
+        providerErrors: [],
+      }),
+  }
+  const reply = await Effect.runPromise(
+    SessionWorkerInteractionBridge.handle({
+      permission: unusedPermission,
+      spawner: spawnerStub,
+      join,
+      colleague: colleagueStub,
+      lease,
+      message: awaitRequest,
+    }),
+  )
+  expect(reply).toMatchObject({
+    type: "await-child-result",
+    outcome: "halted",
+    state: "interrupted",
+    generatedAnyTokens: true,
+    generatedTokens: 4,
+  })
+  // 🔴 And the negative control: a plain slow child must NOT acquire a state it never had.
+  const slow: SessionJoin.Interface = {
+    awaitCompletion: () =>
+      Effect.succeed({ completed: false, generatedAnyTokens: false, generatedTokens: 0, providerErrors: [] }),
+  }
+  const slowReply = await Effect.runPromise(
+    SessionWorkerInteractionBridge.handle({
+      permission: unusedPermission,
+      spawner: spawnerStub,
+      join: slow,
+      colleague: colleagueStub,
+      lease,
+      message: awaitRequest,
+    }),
+  )
+  expect(slowReply).toMatchObject({ outcome: "timeout" })
+  expect((slowReply as { state?: string }).state).toBeUndefined()
+})
+
 test("a stale lease is refused before the join is attempted", async () => {
   let called = false
   const join: SessionJoin.Interface = {

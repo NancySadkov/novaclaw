@@ -125,9 +125,18 @@ export const AwaitChildResult = Schema.Struct({
   ...Identity,
   type: Schema.Literal("await-child-result"),
   requestID: Schema.String,
-  outcome: Schema.Literals(["completed", "timeout", "rejected"]),
+  outcome: Schema.Literals(["completed", "halted", "timeout", "rejected"]),
   /** The child's rendered `exit(result)`; present only when `outcome` is "completed". */
   result: Schema.String.pipe(Schema.optional),
+  /**
+   * 🔴 The child's terminal execution state, present only when `outcome` is "halted".
+   *
+   * A separate outcome rather than a flavour of `timeout` because the two demand OPPOSITE next moves
+   * from the model: a timeout says call `wait` again, a halt says the work was never done and must be
+   * re-issued. Folding them into one answer is what made a stopped worker read as a slow one for the
+   * whole bound, on both sides of this boundary.
+   */
+  state: Schema.String.pipe(Schema.optional),
   generatedAnyTokens: Schema.Boolean,
   generatedTokens: NonNegativeInt,
   providerErrors: Schema.Array(

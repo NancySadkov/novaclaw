@@ -20,6 +20,47 @@ import { SessionMessage } from "./message"
 
 export type State = "starting" | "busy" | "recovering" | "paused" | "failed" | "interrupted" | "settled"
 export type Phase = "drain" | "provider" | "tool" | "maintenance"
+
+/**
+ * 🔴 **A DEAD session must not read as a slow one.** Every reader that has to decide "can this session
+ * still move without a human?" asks it here, and it is asked WHILE a long operation is in flight, not
+ * only at its boundaries.
+ *
+ * `wait` was the measured failure: it read the attempt row before subscribing and again after a
+ * seven-minute join, so a worker the user stopped mid-wait emitted no `Completed` event and the join
+ * timed out exactly like one still working — after which the ordinary timeout sentence told the parent
+ * *"this is not an error and does not mean it failed"*. The classification lived in `tool/wait.ts`,
+ * which is a caller, so nothing could be enforced on the wait itself.
+ *
+ * ⚠️ **Only a state that CANNOT recover counts as halted.** `recovering`, `starting` and `busy` are
+ * alive; calling any of those dead would send a parent to duplicate work a live child is doing — the
+ * opposite error, and an expensive one on a device this fan-out is meant to saturate. An ABSENT
+ * attempt row is also not halted: it means the session has not started yet, or the row was pruned.
+ *
+ * 🔴 **The criterion is NOT "did something go wrong" — it is *will anything move this session without
+ * a human?*** Those are different questions, and reading the first one is what put `paused` on the
+ * live side of this predicate for as long as it existed. Current process-loss recovery never writes
+ * `paused`, but an older database can still contain that state. Nothing automatically leaves such a
+ * legacy row; only `authorizeRetry` — an operator action — does. So a parent told *"it may still be
+ * working"* about a paused child waits seven minutes a lap, forever.
+ *
+ * ⭐ **The classification is EXHAUSTIVE over {@link State}, by construction.** A predicate that lists
+ * the states it acts on silently ignores the next one somebody adds, and the ignored default here is
+ * *"alive"* — the direction that strands a parent. `Unclassified` below is a type error the moment a
+ * state is added to the union without an answer to the question above.
+ */
+export const HALTED_STATES = ["failed", "interrupted", "paused", "settled"] as const
+export const PROGRESSING_STATES = ["starting", "busy", "recovering"] as const
+export type HaltedState = (typeof HALTED_STATES)[number]
+type Classified = HaltedState | (typeof PROGRESSING_STATES)[number]
+type Unclassified = Exclude<State, Classified>
+const _everyAttemptStateIsClassified: [Unclassified] extends [never]
+  ? true
+  : ["classify this attempt state in execution-attempt.ts", Unclassified] = true
+void _everyAttemptStateIsClassified
+
+export const halted = (state: string | undefined): state is HaltedState =>
+  HALTED_STATES.includes(state as HaltedState)
 export type ToolSideEffect = "read" | "idempotent-write" | "non-idempotent" | "external-unknown"
 
 export interface Lease {

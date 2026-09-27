@@ -5,6 +5,7 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Database } from "@novaclaw/core/database/database"
 import { EventV2 } from "@novaclaw/core/event"
 import { SessionEvent } from "@novaclaw/core/session/event"
+import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { SessionJoin } from "@novaclaw/core/session/join"
 import { SessionInput } from "@novaclaw/core/session/input"
 import { SessionMessage } from "@novaclaw/core/session/message"
@@ -44,7 +45,14 @@ import { testEffect } from "./lib/effect"
 
 const it = testEffect(
   AppNodeBuilder.build(
-    LayerNode.group([Database.node, EventV2.node, SessionProjector.node, SessionStore.node, SessionJoin.node]),
+    LayerNode.group([
+      Database.node,
+      EventV2.node,
+      SessionProjector.node,
+      SessionStore.node,
+      SessionExecutionAttempt.node,
+      SessionJoin.node,
+    ]),
   ),
 )
 
@@ -79,6 +87,7 @@ describe("awaiting a child", () => {
     const join = SessionJoin.fromParts({
       sequence: () => Effect.succeed(sequenceReads++ === 0 ? -1 : 2),
       session: () => Effect.succeed({ result: "raced" } as SessionSchema.Info),
+      attempt: () => Effect.succeed(undefined),
       events: {
         durable: () =>
           Stream.fromIterable([
@@ -105,6 +114,7 @@ describe("awaiting a child", () => {
     const join = SessionJoin.fromParts({
       sequence: () => Effect.succeed(-1),
       session: () => Effect.succeed(undefined),
+      attempt: () => Effect.succeed(undefined),
       events: {
         durable: () =>
           Stream.fromIterable([
@@ -302,6 +312,121 @@ describe("awaiting a child", () => {
       expect(yield* join.awaitCompletion({ childID: reopened, timeoutMs: 1_000 })).toEqual({
         completed: true,
         result: "second answer",
+        generatedAnyTokens: false,
+        generatedTokens: 0,
+        providerErrors: [],
+      })
+    }),
+  )
+})
+
+/**
+ * 🔴 **A DEAD child must not read as a slow one — the fifth shape, and the one a user hits.**
+ *
+ * Measured 2026-09-27: the owner pressed Stop on a worker from the chat's workers list. The stop wrote
+ * `interrupted` to the worker's attempt row, which emits no `Completed` event, so the parent's join
+ * had nothing to wake on and sat out its whole seven-minute bound. The transcript row read "Waiting
+ * for worker" over a worker that had been dead in front of them, and the tool then told the model
+ * *"it may still be working — this is not an error"*.
+ *
+ * The defect was the SHAPE, not the state: the liveness predicate was read at the two edges of the
+ * wait and nowhere inside it, so anything that happened between them was invisible for the rest of
+ * the bound. These four tests pin the interior watch, the false-death control it needs, and the race
+ * it creates against a completion landing in the same instant.
+ */
+describe("awaiting a child that stopped instead of finishing", () => {
+  const event = (type: string, data: Record<string, unknown>) => ({ type, data }) as EventV2.Payload
+  /**
+   * A durable stream that stays OPEN and never yields — a child that will not complete.
+   * ⚠️ Not `Stream.fromIterable([])`: an empty stream ENDS, which ends the join as a plain timeout
+   * and would make the halt arm untested while the test read as a pass.
+   */
+  const silent = () => Stream.never as Stream.Stream<EventV2.Payload>
+
+  it.live("🔴 a worker the user stopped ends the wait at once, naming the state", () =>
+    Effect.gen(function* () {
+      // The real ledger, not a stub: `requestInterrupt` is the exact write the chat's Stop button
+      // causes, so this is the reported sequence rather than an approximation of it.
+      const attempts = yield* SessionExecutionAttempt.Service
+      const stopped = "ses_join_stopped" as SessionSchema.ID
+      yield* create(stopped)
+      yield* attempts.start(stopped, "host_test")
+      yield* attempts.requestInterrupt(stopped)
+      expect((yield* attempts.get(stopped))?.state).toBe("interrupted")
+
+      const outcome = yield* (yield* SessionJoin.Service).awaitCompletion({ childID: stopped, timeoutMs: 60_000 })
+      // A bound of a full minute, and it came back in milliseconds: the wait ended on the ledger, not
+      // on the clock. A test that passed by timing out would assert nothing.
+      expect(outcome).toEqual({
+        completed: false,
+        halted: "interrupted",
+        generatedAnyTokens: false,
+        generatedTokens: 0,
+        providerErrors: [],
+      })
+    }),
+  )
+
+  it.live("🔴 a BUSY child is still working, and is never called dead", () =>
+    Effect.gen(function* () {
+      // The control for the arm above, and the expensive direction: telling a parent its live child
+      // died sends it to re-issue a slice a live worker is already doing.
+      const attempts = yield* SessionExecutionAttempt.Service
+      const live = "ses_join_busy" as SessionSchema.ID
+      yield* create(live)
+      yield* attempts.start(live, "host_test")
+
+      const outcome = yield* (yield* SessionJoin.Service).awaitCompletion({ childID: live, timeoutMs: 1_500 })
+      expect(outcome).toEqual({
+        completed: false,
+        generatedAnyTokens: false,
+        generatedTokens: 0,
+        providerErrors: [],
+      })
+      expect(outcome.halted).toBeUndefined()
+    }),
+  )
+
+  test("🔴 a child with NO attempt row is not dead — it has not started", async () => {
+    // An absent row means "not started yet, or pruned", never "gone". Reading it as death is how a
+    // just-spawned worker gets reported lost.
+    const join = SessionJoin.fromParts({
+      sequence: () => Effect.succeed(-1),
+      session: () => Effect.succeed(undefined),
+      attempt: () => Effect.succeed(undefined),
+      events: { durable: () => silent() } as unknown as EventV2.Interface,
+    })
+    const outcome = await Effect.runPromise(join.awaitCompletion({ childID: CHILD, timeoutMs: 700 }))
+    expect(outcome.completed).toBe(false)
+    expect(outcome.halted).toBeUndefined()
+  })
+
+  it.live("🔴 a completion landing in the same instant still reads as COMPLETED, not dead", () =>
+    // 🔴 The race the interior watch CREATES, and the reason `join.ts` re-reads the head, the row and
+    // the durable delta before it may call a child dead. `settle` runs in the drain's `onExit`, so a
+    // worker that called `exit()` and settled together is terminal by both facts — and a supervisor
+    // told "DID NOT FINISH" about a worker that handed in its result is the worst answer here.
+    Effect.gen(function* () {
+      let sessionReads = 0
+      let durableReads = 0
+      const join = SessionJoin.fromParts({
+        sequence: () => Effect.succeed(durableReads === 0 ? 0 : 1),
+        session: () => Effect.succeed(sessionReads++ === 0 ? undefined : ({ result: "in time" } as SessionSchema.Info)),
+        attempt: () => Effect.succeed({ state: "settled" } as SessionExecutionAttempt.Info),
+        events: {
+          durable: () => {
+            durableReads++
+            return durableReads === 1
+              ? silent()
+              : Stream.fromIterable([event(SessionEvent.Completed.type, { result: "in time" })])
+          },
+        } as unknown as EventV2.Interface,
+      })
+
+      const outcome = yield* join.awaitCompletion({ childID: CHILD, timeoutMs: 5_000 })
+      expect(outcome).toEqual({
+        completed: true,
+        result: "in time",
         generatedAnyTokens: false,
         generatedTokens: 0,
         providerErrors: [],

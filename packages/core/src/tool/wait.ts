@@ -16,52 +16,39 @@ import { SessionJoin } from "../session/join"
 
 // wait(sessionID) — join on a DIRECT child session's completion (architecture.md step 5), the
 // complement to spawn/exit. The durable aggregate stream closes the read/subscribe race: it replays a
-// completion that already landed, then tails future durable events without polling SQLite every two
-// seconds. Blocking within the turn is intended (like bash's long timeouts).
+// completion that already landed, then tails future durable events. Blocking within the turn is
+// intended (like bash's long timeouts).
+//
+// ⚠️ **…and it tails the execution ledger too**, on `SessionJoin.HALT_POLL_INTERVAL`. Completion is an
+// event about the aggregate; a child that was STOPPED emits none, so a join that watched only for
+// completion could not tell a dead child from a slow one for the whole of its bound. That is why the
+// completion path still streams while the liveness path polls one primary-key row: neither fact has
+// the other's carrier.
 
 /**
- * 🔴 **A DEAD child must not read as a slow one.** `awaitCompletion` waits for a `Completed` event,
- * so a child that crashed, failed or was interrupted emits nothing and times out exactly like one
- * still working — and the ordinary timeout message then tells the parent, truthfully for the live
- * case and disastrously for the dead one, that *"this is not an error and does not mean it failed"*.
+ * 🔴 **A DEAD child must not read as a slow one.** A child that crashed, failed, was stopped or was
+ * interrupted emits no `Completed` event, so a join that watched only for completion could not tell
+ * it from one still working — and the ordinary timeout message below then told the parent, truthfully
+ * for the live case and disastrously for the dead one, that *"this is not an error and does not mean
+ * it failed"*.
  *
  * Measured 2026-08-27 on a delegated 100-file run: `spawn:10` against `wait:9` and `exit:9`. One
  * child was launched and never accounted for, the run completed anyway, and nothing surfaced it.
  * ⭐ **That is the shape that matters: nine slices of ten merge into a plausible,
- * complete-looking, WRONG answer**, and the nine successes are exactly what hide the tenth.
+ * complete-looking, WRONG answer**, and the nine successes are exactly what hide the tenth. Measured
+ * again 2026-09-27 from the other side: the user pressed Stop on a worker and its parent's
+ * "Waiting for worker" row sat there for the rest of the seven-minute bound, over a worker that had
+ * been dead in front of them.
  *
- * ⚠️ **Only a state that CANNOT recover counts as dead.** `recovering`, `starting` and `busy` are
- * alive; calling any of those dead would send the parent to duplicate work a live child is doing —
- * the opposite error, and an expensive one on a device this fan-out is meant to saturate. An ABSENT
- * attempt row is also not dead: it means the child has not started yet, or the row was pruned.
- *
- * 🔴 **The criterion is NOT "did something go wrong" — it is *will anything move this child without
- * a human?*** Those are different questions, and reading the first one is what put `paused` on the
- * live side of this predicate for as long as it existed. Current process-loss recovery never writes
- * `paused`, but an older database can still contain that state. Nothing automatically leaves such a
- * legacy row; only `authorizeRetry` — an operator action — does. So a parent told *"it may still be
- * working"* about a paused child waits seven minutes a lap, forever.
+ * ⚠️ **The join now watches liveness while it waits**, and says so in its outcome; this module words
+ * the answer and keeps the post-timeout re-read, which is the only place a state change inside the
+ * final interval can still be seen. The states themselves are classified by
+ * {@link SessionExecutionAttempt.halted} — beside the vocabulary they classify, not in a caller,
+ * because a second copy of that list is how a state somebody adds next gets ignored, and the ignored
+ * default is "alive".
  */
-/**
- * ⭐ **The classification is EXHAUSTIVE over `SessionExecutionAttempt.State`, by construction.** A
- * predicate that lists the states it acts on silently ignores the next one somebody adds, and the
- * ignored default here is *"alive"* — the direction that strands a parent. `Unclassified` below is
- * a type error the moment a state is added to the union without an answer to the question above.
- */
-const HALTED_STATES = ["failed", "interrupted", "paused", "settled"] as const
-const PROGRESSING_STATES = ["starting", "busy", "recovering"] as const
-type Classified = (typeof HALTED_STATES)[number] | (typeof PROGRESSING_STATES)[number]
-type Unclassified = Exclude<SessionExecutionAttempt.State, Classified>
-const _everyAttemptStateIsClassified: [Unclassified] extends [never]
-  ? true
-  : ["classify this attempt state in wait.ts", Unclassified] = true
-void _everyAttemptStateIsClassified
-
-const isHalted = (state: string | undefined): state is (typeof HALTED_STATES)[number] =>
-  HALTED_STATES.includes(state as (typeof HALTED_STATES)[number])
-
 export const deadChildMessage = (childID: string, state: string | undefined): string | undefined => {
-  if (!isHalted(state)) return undefined
+  if (!SessionExecutionAttempt.halted(state)) return undefined
   // ⚠️ Paused gets its OWN sentence rather than being folded into the failure wording. The parent's
   // next move differs: a failed slice is re-issued, a paused one has a durable attempt row a person
   // must look at, and telling the model "it failed" about a parked child invites it to silently
@@ -309,12 +296,17 @@ export const layer = Layer.effectDiscard(
                *
                * The attempt row is the liveness signal — a live child heartbeats, a dead one is `failed`
                * or `interrupted`. Re-read after an incomplete join because the child may have halted
-               * while this call was subscribed.
+               * while this call was subscribed — but the predicate is no longer read ONLY here:
+               * `SessionJoin` watches the row while this call is blocked and reports `halted`, and
+               * this re-read is the backstop for the one change that cannot report — the bound
+               * elapsing in the same instant. Reading it at the edges alone was the defect: a child
+               * stopped from under a live `wait` sat here for the rest of the seven minutes, its
+               * parent's transcript row reading "Waiting for worker" over a worker already dead.
                */
               const attempt = joined.completed
                 ? undefined
                 : yield* attempts.get(childID).pipe(Effect.orElseSucceed(() => undefined))
-              const dead = joined.completed ? undefined : deadChildMessage(childID, attempt?.state)
+              const dead = joined.completed ? undefined : deadChildMessage(childID, joined.halted ?? attempt?.state)
               if (dead)
                 return {
                   completed: false,

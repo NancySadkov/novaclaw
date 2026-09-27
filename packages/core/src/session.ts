@@ -2022,13 +2022,16 @@ export const layer = Layer.effect(
         if (existing.result !== undefined) return
         // ⚠️ `fromParts`, and built from what this layer ALREADY holds — never `yield* SessionJoin.Service`.
         // `join.ts` records why: resolving that tag inside a per-request scope forced its layer to
-        // build there and abandoned every tool-call turn. The parts are the same three the join's own
+        // build there and abandoned every tool-call turn. The parts are the same four the join's own
         // layer passes, and `sequence` is what makes this join the CURRENT epoch rather than the first
         // completion in the child's lifetime — replaying from zero returned the first answer forever.
+        // `attempt` is the liveness signal: without it this door can only learn that a child finished,
+        // so a stopped one reads as slow for the whole seven minutes. See `Parts.attempt`.
         const joined = yield* SessionJoin.fromParts({
           events,
           session: (childID) => store.get(childID),
           sequence: (childID) => EventV2.latestSequence(db, childID),
+          attempt: (childID) => attempts.get(childID),
         }).awaitCompletion({
           childID: sessionID,
           timeoutMs: SessionJoin.JOIN_TIMEOUT_MS,
