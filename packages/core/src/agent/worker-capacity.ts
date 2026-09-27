@@ -16,15 +16,45 @@ import { SessionStore } from "../session/store"
 import { SessionTable } from "../session/sql"
 import { WorkerControl } from "../session/worker-control"
 import { WorkerPurpose } from "../session/worker-purpose"
+import { AgentV2 } from "../agent"
 import { GraphRegistry } from "./graph-registry"
 
 export const DEFAULT_MAX_WORKERS = 100
 
-export const limitOf = (config: { readonly maxWorkers?: number } | undefined): number =>
-  config?.maxWorkers ?? DEFAULT_MAX_WORKERS
+/**
+ * 🔴 **The SHIPPED worker ceiling, per officer — and it is not the same number for all of them.**
+ *
+ * Owner, 2026-09-27: *"ensure that Nova by default can spawn 0 workers (it can't spawn), since its job
+ * is delegating to named agents."* `NOVA_SYSTEM` already says so in prose — *"You do not do
+ * specialist work that a colleague already owns"* — and the ceiling contradicted it: a flat 100 let
+ * the CEO fan out nameless sub-agents instead of routing to the organization it is chartered to run.
+ *
+ * ⚠️ **This lives here, and not only on Nova's record, because there were TWO readers and only one of
+ * them could see it.** `SessionSpawner` asks `currentLimit`, which folds the CONFIG STORE; the roster
+ * record (`AgentV2.Info`, which the settings dialog and `officer-capabilities.ts` read) is built by the
+ * agent plugin. A value written only into the draft is a number the spawner cannot see — a Settings
+ * screen showing 0 beside a spawner allowing 100, which is the exact disagreement this removes. One
+ * constant, read by both.
+ *
+ * ⚠️ **A user setting still wins.** `plugin/internal.ts` adds `AgentPlugin` BEFORE
+ * `ConfigAgentPlugin`, so the built-in draft is applied first and a stored `max_workers` overwrites the
+ * 0 here. The user can give the CEO a worker budget; what ships is that it has none.
+ */
+export const SHIPPED_MAX_WORKERS: Readonly<Record<string, number>> = { [AgentV2.NOVA_ID]: 0 }
+
+/**
+ * The effective ceiling for one officer: what the user configured, else what shipped for that
+ * officer, else the instance default.
+ *
+ * ⚠️ Takes the agent id and not just the config, because the shipped table is keyed by officer — a
+ * one-argument `limitOf(config)` could only ever express *"everybody gets the same default"*, which is
+ * the assumption this table exists to remove.
+ */
+export const limitFor = (agentID: string, config: { readonly maxWorkers?: number } | undefined): number =>
+  config?.maxWorkers ?? SHIPPED_MAX_WORKERS[agentID] ?? DEFAULT_MAX_WORKERS
 
 export const currentLimit = (configs: AgentConfigStore.Interface, agentID: string): Effect.Effect<number> =>
-  Effect.map(configs.agents(), (stored) => limitOf(AgentConfigStore.fold(stored[agentID] ?? [])))
+  Effect.map(configs.agents(), (stored) => limitFor(agentID, AgentConfigStore.fold(stored[agentID] ?? [])))
 
 const locks = new WeakMap<object, KeyedMutex.KeyedMutex<string>>()
 
@@ -200,9 +230,15 @@ export const node = makeGlobalNode({
           }),
       }
       yield* register((change) => enforce(change, runtime, db))
+      // ⚠️ Only agents the STORE names. An officer whose ceiling comes from `SHIPPED_MAX_WORKERS` and
+      // has no stored row is deliberately not reconciled here: this sweep exists to enforce a limit
+      // that CHANGED, and nothing changed for Nova — this is simply the first release in which it
+      // ships with no worker budget. Reconciling it would silently stop a live delegated worker on
+      // every boot of an upgraded instance, which is a worse answer than letting it finish and
+      // refusing the next spawn. Raising the ceiling is a deliberate act, and it announces.
       const stored = yield* configs.agents()
       for (const agentID of Object.keys(stored))
-        yield* enforce({ agentID, limit: limitOf(AgentConfigStore.fold(stored[agentID] ?? [])) }, runtime, db)
+        yield* enforce({ agentID, limit: limitFor(agentID, AgentConfigStore.fold(stored[agentID] ?? [])) }, runtime, db)
     }),
   ),
   deps: [AgentConfigStore.node, Database.node, EventV2.node, SessionExecution.node, SessionStore.node],

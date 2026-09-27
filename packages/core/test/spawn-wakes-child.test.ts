@@ -347,6 +347,68 @@ describe("SessionSpawner quotas use durable session facts", () => {
     }),
   )
 
+  /**
+   * 🔴 **A ceiling of ZERO is a POLICY, and the refusal must say so** (owner, 2026-09-27: Nova's job
+   * is delegating to named agents, so it ships with no worker budget).
+   *
+   * ⚠️ `0 >= 0` was already true before this test existed, so the spawn was refused — with the
+   * `children` sentence, *"already has 0 unfinished workers (max 0)"*. That is a cap the model is AT,
+   * and the standard recovery for a cap is to wait; here nothing about waiting changes anything, so
+   * the sentence is an invitation to a loop. Hence a distinct `disabled` reason, tested through the
+   * spawner rather than through the tool's wording.
+   */
+  it.live("a zero ceiling refuses as a POLICY, not as a reached cap", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const configs = yield* AgentConfigStore.Service
+      const parent = yield* session.create({ location, agent: rootAgent })
+      yield* configs.setLayers(String(rootAgent), [ConfigAgent.Info.make({ maxWorkers: 0 })])
+
+      const error = yield* spawnChildEffect(parent.id, location).pipe(Effect.flip)
+      expect(error._tag).toBe("SessionSpawner.LimitError")
+      if (error._tag !== "SessionSpawner.LimitError") return
+      expect(error.reason).toBe("disabled")
+      expect(error.limit).toBe(0)
+    }),
+  )
+
+  /**
+   * The NEGATIVE CONTROL for the arm above, and the reason the two cases are separate: a ceiling of
+   * one that HAS been reached is still a cap, and must still be reported as one the model can wait out.
+   */
+  it.live("…and a ceiling that was REACHED is still `children`", () =>
+    Effect.gen(function* () {
+      const location = yield* workspace
+      const session = yield* SessionV2.Service
+      const configs = yield* AgentConfigStore.Service
+      const parent = yield* session.create({ location, agent: rootAgent })
+      yield* session.create({ location, parentID: parent.id, title: "First task" })
+      yield* configs.setLayers(String(rootAgent), [ConfigAgent.Info.make({ maxWorkers: 1 })])
+
+      const error = yield* spawnChildEffect(parent.id, location).pipe(Effect.flip)
+      expect(error._tag).toBe("SessionSpawner.LimitError")
+      if (error._tag !== "SessionSpawner.LimitError") return
+      expect(error.reason).toBe("children")
+      expect(error.depth).toBe(1)
+    }),
+  )
+
+  /**
+   * 🔴 **Nova's shipped record, read through the plugin the product actually builds.** The spawner
+   * folds the CONFIG STORE, so a zero written only into this record would be invisible to it — which
+   * is why `SHIPPED_MAX_WORKERS` is the single constant both read. This asserts the record half, and
+   * `worker-capacity.test.ts` asserts the store half.
+   */
+  test("Nova's roster record carries the shipped ceiling, and a stored value overrides it", () => {
+    const source = readFileSync(new URL("../src/plugin/agent.ts", import.meta.url), "utf8")
+    // A literal `= 0` here is exactly the drift: it would reach the Settings dialog and not the
+    // spawner, which is a screen showing 0 beside a quota of 100.
+    expect(source).toContain("AgentWorkerCapacity.SHIPPED_MAX_WORKERS[")
+    expect(AgentWorkerCapacity.SHIPPED_MAX_WORKERS[AgentV2.NOVA_ID]).toBe(0)
+    expect(AgentWorkerCapacity.limitFor(AgentV2.NOVA_ID, { maxWorkers: 3 })).toBe(3)
+  })
+
   it.live("counts unfinished descendants across sibling branches against the officer's total", () =>
     Effect.gen(function* () {
       const location = yield* workspace

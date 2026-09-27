@@ -157,6 +157,11 @@ export const layer = Layer.effectDiscard(
                         limited: true,
                         message: {
                           depth: `Spawn refused: the session chain is already ${error.depth} deep (max ${error.limit}). Do the sub-task in this session instead of spawning deeper.`,
+                          // 🔴 A POLICY, not a cap this session reached — so the sentence must not
+                          // invite a wait. Waiting is what a model does with a quota, and nothing here
+                          // is ever going to change; retrying is a loop. The route out is named instead:
+                          // the `colleague` tool, which is how this officer is meant to delegate.
+                          disabled: `Spawn refused: this officer is set to use NO workers — their work goes to the colleagues who already own it. Use the colleague tool (list, then ask) to hand this over, or do the sub-task here yourself. Do not retry spawn: nothing about waiting will change this.`,
                           children: `Spawn refused: this officer's worker tree already has ${error.depth} unfinished workers (max ${error.limit}). Reuse, kill, or wait on existing workers instead of spawning more.`,
                           rate: `Spawn refused: ${error.depth} spawns in the last minute (max ${error.limit}). Slow down — wait on the children you already spawned.`,
                           // ⚠️ Says the HOST is short, not that the model misbehaved — the other

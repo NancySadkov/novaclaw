@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Exit } from "effect"
+import { AgentV2 } from "../agent"
 import { AgentWorkerCapacity } from "./worker-capacity"
 import { SessionSchema } from "../session/schema"
 import { WorkerPurpose } from "../session/worker-purpose"
@@ -53,6 +54,40 @@ describe("officer worker capacity", () => {
     const live = row("live", ancestor.id, 2)
     const completed = row("done", root, 3, "done")
     expect(AgentWorkerCapacity.activeDescendants(root, [ancestor, live, completed])).toEqual([live])
+  })
+
+  /**
+   * 🔴 **The SHIPPED ceiling is per officer, and Nova's is zero** (owner, 2026-09-27: *"ensure that
+   * Nova by default can spawn 0 workers (it can't spawn), since its job is delegating to named
+   * agents"*).
+   *
+   * ⚠️ The order of these four IS the contract, and each case is the one that would pass if the next
+   * `??` were written in the wrong place. A test that only asserted `limitFor("nova", undefined) === 0`
+   * would still be green with the user override dropped on the floor, and the user override is the half
+   * that makes this a default rather than a cage.
+   */
+  describe("the effective ceiling", () => {
+    test("NOVA ships with NO worker budget", () => {
+      expect(AgentWorkerCapacity.SHIPPED_MAX_WORKERS[AgentV2.NOVA_ID]).toBe(0)
+      expect(AgentWorkerCapacity.limitFor(AgentV2.NOVA_ID, undefined)).toBe(0)
+    })
+
+    test("a user setting WINS over the shipped value — this is a default, not a cage", () => {
+      expect(AgentWorkerCapacity.limitFor(AgentV2.NOVA_ID, { maxWorkers: 4 })).toBe(4)
+      // Including zero: an operator who wants the CEO to have no workers after having had some must be
+      // able to say so, and a `||` instead of `??` here would silently keep the old value.
+      expect(AgentWorkerCapacity.limitFor(AgentV2.NOVA_ID, { maxWorkers: 0 })).toBe(0)
+    })
+
+    test("every OTHER officer still gets the instance default", () => {
+      // The control: a shipped table must not become a global default in disguise.
+      expect(AgentWorkerCapacity.limitFor("daedalus", undefined)).toBe(AgentWorkerCapacity.DEFAULT_MAX_WORKERS)
+      expect(AgentWorkerCapacity.limitFor("daedalus", { maxWorkers: 2 })).toBe(2)
+      // And an id nobody ships a ceiling for is not a special case — including one that looks like Nova.
+      expect(AgentWorkerCapacity.limitFor("nova-clone", undefined)).toBe(
+        AgentWorkerCapacity.DEFAULT_MAX_WORKERS,
+      )
+    })
   })
 
   test("a failed stop reports workers already terminated and does not spin", async () => {

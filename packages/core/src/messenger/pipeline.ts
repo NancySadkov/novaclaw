@@ -3,6 +3,7 @@ export * as MessengerPipeline from "./pipeline"
 import type { Messenger } from "@novaclaw/schema/messenger"
 import type { Origin } from "@novaclaw/schema/prompt"
 import type { InboundEvent } from "./driver"
+import type { SpawnLimitReason } from "../session/spawn-limit-reason"
 import { escapeRegExp as escapeRegex } from "@novaclaw/schema/text"
 
 // Pure helpers for the gateway's inbound/outbound pipeline —
@@ -125,8 +126,15 @@ export const DISPATCH_ACK = "🚀 On it — I'll report back here when it's done
  * Phrased for a chat, not for a model: it says what to DO next, because the operator cannot read a
  * `reason` field. The agent-facing wording for the same three cases lives in `tool/spawn.ts`.
  */
+/**
+ * ⭐ **The `reason` union is the SPAWNER'S, imported from the shared leaf — not a copy of it.** This
+ * used to be a hand-written `"depth" | "children" | "rate" | "pressure"`, and the compiler caught the
+ * moment a fifth reason was added, which is the only reason it is worth stating: a copy of a tagged
+ * union is a list that silently stops covering, and the failure mode here is a refusal with NO
+ * SENTENCE AT ALL, delivered to an operator as `undefined`.
+ */
 export const spawnLimitReply = (limit: {
-  reason: "depth" | "children" | "rate" | "pressure"
+  reason: SpawnLimitReason
   depth: number
   limit: number
 }): string =>
@@ -139,6 +147,9 @@ export const spawnLimitReply = (limit: {
     // chose. It is also the one refusal that is nobody's fault, so it does not ask the person to
     // change what they did.
     pressure: `This machine is low on memory right now, so I didn't start another task. Give the running ones a moment and ask again.`,
+    // A POLICY rather than a cap, so — like `pressure` — it quotes nothing and asks for no change to
+    // what the operator did. "Ask again later" would be a lie: nothing about waiting alters it.
+    disabled: `This console isn't set up to start its own tasks — that work goes to its colleagues. Ask one of them directly.`,
   })[limit.reason]
 
 /** How long a dispatched task may run before it is worth saying "on it" at all. An answer that

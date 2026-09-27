@@ -933,7 +933,10 @@ const agentWorkerLimits = (
     const limits = new Map<string, number>()
     if (names.length === 0) return limits
     const stored = yield* (yield* AgentConfigStore.Service).agents()
-    for (const name of names) limits.set(name, AgentWorkerCapacity.limitOf(AgentConfigStore.fold(stored[name] ?? [])))
+    // ⚠️ `limitFor(name, …)`, not the bare config: an officer with no stored `maxWorkers` falls back to
+    // what SHIPPED for it, and a "before" of 100 against an "after" of 100 would announce nothing when
+    // the user's real change was to 0. The id is the argument for the same reason.
+    for (const name of names) limits.set(name, AgentWorkerCapacity.limitFor(name, AgentConfigStore.fold(stored[name] ?? [])))
     return limits
   })
 

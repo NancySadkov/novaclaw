@@ -5,6 +5,7 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { Location } from "@novaclaw/core/location"
 import { AgentPlugin } from "@novaclaw/core/plugin/agent"
 import { AbsolutePath } from "@novaclaw/core/schema"
+import { ColleagueTool } from "@novaclaw/core/tool/colleague"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
 import { agentHost, host } from "./plugin/host"
@@ -150,6 +151,54 @@ describe("AgentV2", () => {
       for (const item of agents) {
         expect(item.permissions.some((rule) => rule.action === "bash" && rule.effect !== "deny")).toBe(false)
       }
+    }),
+  )
+
+  /**
+   * 🔴 **EVERY colleague the roster can print carries a job title** (owner, 2026-09-27: *"ensure the
+   * colleague list tool beside their names also lists the job titles"*).
+   *
+   * `formatRoster` prints `id · name · title — description`, and it printed it faithfully — but `build`
+   * and `plan` had neither a name nor a title, so their rows were an id twice followed by a sentence
+   * where a job title belongs. A roster is a routing decision, and "which of these do I hand this to"
+   * is unanswerable from `build · build · The default agent. Executes tools based on configured
+   * permissions.`
+   *
+   * ⚠️ This asserts on the roster `colleague list` actually builds, through `addressable`, so a built-in
+   * that is made addressable later cannot join it untitled. A description that merely restates the name
+   * and title is the same defect wearing a hat: it pushes the title to the end of a repetition of what
+   * is already on the row, so the title is present and unreadable — which is what the seeded officers
+   * did (`daedalus · Daedalus · Engineer — Daedalus, Engineer.`).
+   */
+  it.effect("every addressable built-in is nameable, titled, and says something the title does not", () =>
+    Effect.gen(function* () {
+      const agent = yield* AgentV2.Service
+      yield* AgentPlugin.Plugin.effect(
+        host({
+          agent: agentHost(agent),
+        }),
+      ).pipe(
+        Effect.provideService(
+          Location.Service,
+          Location.Service.of(location({ directory: AbsolutePath.make("/project") })),
+        ),
+      )
+
+      const roster = ColleagueTool.addressable(yield* agent.all(), AgentV2.NOVA_ID)
+      expect(roster.length).toBeGreaterThan(0)
+      for (const colleague of roster) {
+        const id = String(colleague.id)
+        expect(colleague.name?.trim(), `${id} has no display name`).toBeTruthy()
+        expect(colleague.title?.trim(), `${id} has no job title`).toBeTruthy()
+        // The name must differ from the id, or the row leads with the same two tokens.
+        expect(colleague.name?.trim(), `${id} is displayed under its own id`).not.toBe(id)
+        // …and the description must not be the name and title handed back.
+        const restated = `${colleague.name}, ${colleague.title}.`
+        expect(colleague.description?.trim(), `${id} restates its name and title`).not.toBe(restated)
+      }
+      // The two that had none, named, because they are the rows the owner was reading.
+      expect(roster.find((item) => item.id === AgentV2.BUILD_ID)?.title).toBe("Task agent")
+      expect(roster.find((item) => item.id === AgentV2.ID.make("plan"))?.title).toBe("Planning agent")
     }),
   )
 })

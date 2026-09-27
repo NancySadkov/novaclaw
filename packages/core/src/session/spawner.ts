@@ -24,6 +24,7 @@ import { FileAttachment, Prompt } from "./prompt"
 import { Log } from "@novaclaw/schema/log"
 import { WorkerProfile } from "./worker-profile"
 import { WorkerPurpose } from "./worker-purpose"
+import { SPAWN_LIMIT_REASONS } from "./spawn-limit-reason"
 
 // Location-scoped seam that lets a running session (a location tool) SPAWN a child session — the OS
 // `fork` (architecture.md Phase 3 step 6). It deliberately depends ONLY on the cycle-free primitives
@@ -55,9 +56,20 @@ export const MAX_SPAWN_CHILDREN = DEFAULT_MAX_WORKERS
 export const MAX_SPAWNS_PER_MINUTE = 10
 const RATE_WINDOW_MS = 60_000
 
-/** Raised when a spawn quota trips (depth / children / rate) — surfaced to the model, not fatal. */
+/**
+ * Raised when a spawn quota trips — surfaced to the model, not fatal.
+ *
+ * ⚠️ **`disabled` is its own reason, not `children` with a limit of zero.** The other four are caps
+ * this session *reached*: there is a next call to make once a worker finishes. A ceiling of zero is a
+ * POLICY — this officer does not spawn workers at all — and the `children` sentence ("already has 0
+ * unfinished workers (max 0)") tells a model it is at a limit it can wait out, which is a loop with no
+ * end. Nova ships at zero because its job is delegating to named colleagues, so this is the sentence
+ * it will meet most often in the product.
+ */
 export class SpawnLimitError extends Schema.TaggedErrorClass<SpawnLimitError>()("SessionSpawner.LimitError", {
-  reason: Schema.Literals(["depth", "children", "rate", "pressure"]),
+  // ⚠️ From the shared leaf, not a literal here: the worker protocol names the same reasons and the
+  // two used to be hand-kept copies of each other.
+  reason: Schema.Literals(SPAWN_LIMIT_REASONS),
   depth: Schema.Number,
   limit: Schema.Number,
 }) {}
@@ -237,6 +249,13 @@ export const layer = Layer.effect(
               ownerID === undefined
                 ? DEFAULT_MAX_WORKERS
                 : yield* AgentWorkerCapacity.currentLimit(agentConfigs, String(ownerID))
+            // 🔴 Zero first, and as its OWN reason. `0 >= 0` would fall out of the comparison below
+            // and be reported as "already has 0 unfinished workers (max 0)" — a cap the model is at,
+            // and therefore one it can wait out. It is not a cap; it is this officer not spawning.
+            if (maxWorkers === 0)
+              return yield* Effect.fail(
+                new SpawnLimitError({ reason: "disabled", depth: activeWorkers, limit: maxWorkers }),
+              )
             if (activeWorkers >= maxWorkers)
               return yield* Effect.fail(
                 new SpawnLimitError({ reason: "children", depth: activeWorkers, limit: maxWorkers }),
