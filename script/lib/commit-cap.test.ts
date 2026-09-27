@@ -1,80 +1,41 @@
 import { describe, expect, test } from "bun:test"
-import {
-  KILL_FACTOR,
-  killCapMb,
-  killCapMbForBox,
-  MACHINE_ALLOWANCE_MB,
-  MAX_KILL_CAP_FRACTION_OF_COMMIT,
-  MIN_KILL_CAP_MB,
-} from "./commit-cap"
+import { MACHINE_ALLOWANCE_MB, MIN_KILL_CAP_MB, unitCapMb } from "./commit-cap"
 
-describe("killCapMb", () => {
-  test("caps at twice the unit's worst healthy run", () => {
-    // A unit small enough that 2× its peak is under BOTH bounds, so the anchor is what binds.
-    expect(killCapMb(3000)).toBe(KILL_FACTOR * 3000)
-    // …and one so small that even 2× is under the floor, which exists so a first measurement cannot
-    // produce a hair-trigger.
-    expect(killCapMb(1000)).toBe(MIN_KILL_CAP_MB)
-    expect(killCapMb(1000, undefined)).toBe(MIN_KILL_CAP_MB)
+describe("unitCapMb", () => {
+  test("small profiles tighten the ceiling", () => {
+    expect(unitCapMb({ profilePeakMb: 3000 })).toBe(6000)
+    expect(unitCapMb({ profilePeakMb: 100 })).toBe(MIN_KILL_CAP_MB)
   })
 
-  test("a tiny profile still gets a real ceiling, not a hair-trigger", () => {
-    expect(killCapMb(100, undefined)).toBe(MIN_KILL_CAP_MB)
-    expect(killCapMb(100, 32768)).toBe(MIN_KILL_CAP_MB)
+  test("large profiles and large machines cannot raise the allowance", () => {
+    expect(unitCapMb({ profilePeakMb: 10822, commitLimitMb: 131072 })).toBe(8192)
+    expect(MACHINE_ALLOWANCE_MB).toBe(8192)
   })
 
-  test("🔴 the MACHINE ALLOWANCE binds before the profile anchor does", () => {
-    // This is the whole point, and it is the number that was wrong on 2026-09-27. core's recorded
-    // healthy peak is 10,822 MB, so its anchor is 21,644 MB — which on a 32 GB laptop was permitted in
-    // full, because the bound used to be a FRACTION of the machine (0.625 × 32,768 = 20,480 MB). The
-    // run then held ~10 GB, stayed inside that ceiling, and the host still hit 100 % commit.
-    //
-    // The cap is now absolute, so the allowance decides and the anchor cannot buy its way past it.
-    const cap = killCapMb(10822)!
-    expect(cap).toBe(MACHINE_ALLOWANCE_MB)
-    expect(cap).toBeLessThan(KILL_FACTOR * 10822)
-    expect(MACHINE_ALLOWANCE_MB).toBe(8_192)
+  test("unprofiled units remain bounded", () => {
+    expect(unitCapMb({})).toBe(8192)
+    expect(unitCapMb({ commitLimitMb: 32768 })).toBe(8192)
   })
 
-  test("the allowance does NOT grow with the machine", () => {
-    // A fraction is the wrong shape: it scales with the box, and the thing being protected is the
-    // user's session rather than the silicon. The allowance is ABSOLUTE, so a 128 GB machine gets the
-    // same 8 GB promise — the box bound in `killCapMbForBox` can only tighten it, never raise it.
-    expect(killCapMb(10822)).toBe(MACHINE_ALLOWANCE_MB)
-    expect(killCapMbForBox(10822, 131_072)).toBe(MACHINE_ALLOWANCE_MB)
-    expect(MACHINE_ALLOWANCE_MB).toBeLessThan(MAX_KILL_CAP_FRACTION_OF_COMMIT * 131_072)
+  test("invalid profiles never remove protection", () => {
+    for (const profilePeakMb of [0, -5, NaN, Infinity]) expect(unitCapMb({ profilePeakMb })).toBe(8192)
   })
 
-  test("no profile means no enforcement — measurement precedes the kill", () => {
-    expect(killCapMb(undefined)).toBeUndefined()
-    expect(killCapMbForBox(undefined, 32768)).toBeUndefined()
+  test("test overrides and declared ceilings can only tighten", () => {
+    expect(unitCapMb({ requestedCapMb: 128 })).toBe(128)
+    expect(unitCapMb({ requestedCapMb: 99999 })).toBe(8192)
+    expect(unitCapMb({ profilePeakMb: 100, requestedCapMb: 99999 })).toBe(MIN_KILL_CAP_MB)
   })
 
-  test("garbage in is no cap, never a zero cap that kills everything", () => {
-    expect(killCapMb(0)).toBeUndefined()
-    expect(killCapMb(-5)).toBeUndefined()
-    expect(killCapMb(NaN)).toBeUndefined()
-    // A nonsense allowance is IGNORED rather than honoured: it must never become a way to remove the cap.
-    expect(killCapMb(10822, 0)).toBe(MACHINE_ALLOWANCE_MB)
-    expect(killCapMb(10822, NaN)).toBe(MACHINE_ALLOWANCE_MB)
+  test("invalid overrides retain the fixed allowance", () => {
+    for (const requestedCapMb of [0, -5, NaN, Infinity]) expect(unitCapMb({ requestedCapMb })).toBe(8192)
   })
 
-  test("the box bound can only TIGHTEN the allowance, never loosen it", () => {
-    // On a small box the fraction is below the allowance and becomes the binding line — which is the
-    // correct direction: the machine is the constraint.
-    expect(killCapMbForBox(10822, 8192)).toBe(Math.floor(MAX_KILL_CAP_FRACTION_OF_COMMIT * 8192))
-    // On a large box the allowance is the binding line, so the fraction is ignored.
-    expect(killCapMbForBox(10822, 131_072)).toBe(MACHINE_ALLOWANCE_MB)
-    expect(killCapMbForBox(10822, undefined)).toBe(MACHINE_ALLOWANCE_MB)
+  test("small machines tighten the cap", () => {
+    expect(unitCapMb({ commitLimitMb: 8192 })).toBe(5120)
   })
 
-  test("yesterday's arithmetic, corrected: core dies at 8 GB, not ~20 GB", () => {
-    // The old assertion was `cap < limit - 6000 && cap > 10822` — i.e. it ASSERTED the ~20 GB figure
-    // was safe, and passed, while the host paged and Windows reaped the user's browser and editor. A
-    // test that pins the dangerous number as correct is worse than no test, so this one now pins the
-    // opposite: the line is BELOW core's own healthy peak, which is the whole trade.
-    const cap = killCapMb(10822)!
-    expect(cap).toBeLessThan(10822)
-    expect(cap).toBe(MACHINE_ALLOWANCE_MB)
+  test("invalid machine readings retain the fixed allowance", () => {
+    for (const commitLimitMb of [0, -5, NaN, Infinity]) expect(unitCapMb({ commitLimitMb })).toBe(8192)
   })
 })

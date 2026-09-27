@@ -51,6 +51,7 @@
  * `▶ <unit>` line still prints when a unit STARTS and each finished unit's output arrives under a
  * banner naming it, so both "what is running" and "who said this" survive.
  */
+import "./test-preload"
 import { spawn, spawnSync, type ChildProcess } from "node:child_process"
 import { readFileSync } from "node:fs"
 import os from "node:os"
@@ -58,11 +59,19 @@ import { join } from "node:path"
 
 import * as Arguments from "./lib/arguments"
 import { writeDiagnostic } from "./lib/diagnostic"
-import { check, commitLimitMb, hostCommitPct, memoryHeadroom, topConsumers, type MemoryHeadroom } from "./lib/heavy-guard"
+import {
+  check,
+  commitLimitMb,
+  hostCommitPct,
+  memoryHeadroom,
+  topConsumers,
+  type MemoryHeadroom,
+} from "./lib/heavy-guard"
 import { sweepStrayServers } from "./lib/stray-servers"
 import * as LedgerDrift from "./lib/ledger-drift"
 import * as CommitPressure from "./lib/commit-pressure"
 import * as CommitCap from "./lib/commit-cap"
+import { boundedTestHeadroom } from "./lib/test-memory"
 import * as MemWatch from "./lib/mem-watch"
 import * as ChildExit from "./lib/child-exit"
 import * as MemoryPlan from "./lib/memory-plan"
@@ -434,7 +443,7 @@ function demandOf(name: string, kind: Kind): MemoryPlan.Demand {
 /** Fail closed, exactly as `requireMeasurement` does: an unmeasurable host is not a safe one. */
 function headroomOrRefuse(name: string, kind: Kind): MemoryHeadroom {
   const headroom = memoryHeadroom()
-  if (headroom !== undefined) return headroom
+  if (headroom !== undefined) return boundedTestHeadroom(headroom)
   abort(
     2,
     `\n\x1b[31mRefusing to start ${kind} unit ${name}: host memory could not be measured.\x1b[0m\n` +
@@ -950,41 +959,20 @@ async function run(job: Job, sharded: number | undefined, overlapped: () => bool
   // sharded rung exists to lower a unit's memory demand; running its shards at once would restore
   // exactly the demand it was reached for. Concurrency is between INDEPENDENT units, which is where
   // the budget can actually account for it.
-  // 🔴 THE MEMORY KILL's anchor (owner, 2026-09-26). One cap per UNIT, enforced per SPAWN: shards
-  // run sequentially, so each shard gets the same ceiling — a single shard crossing twice the
-  // unit's worst healthy run IS the balloon by definition. Unprofiled units get no cap; enforcement
-  // follows measurement, never precedes it (`lib/commit-cap.ts`).
   const profileMb = peakProfiles.commit[name]
-  // A forcing knob, same shape as NOVACLAW_TEST_FORCE_COMMIT_PCT: a kill line nobody has crossed
-  // is a line nobody has seen work. Set it and the next test unit dies at that many MB of its own
-  // tree commit — that is how the MEMORY KILL path is exercised at all, and how a future allocator
-  // hunt caps a suspect without waiting for the box to notice.
   const forcedCap = Number(process.env.NOVACLAW_TEST_FORCE_MEM_CAP_MB)
   const forcedValid = Number.isFinite(forcedCap) && forcedCap > 0
-  // Precedence, and each step is a deliberate override of the one below it: the env knob (a person
-  // experimenting on a run they do not mind losing), then the unit's OWN declared ceiling, then the
-  // derived one. The unit's field is `min`, not a replacement — a unit may tighten its line but must
-  // not raise it above what the box can survive, or `memCapMb: 99999` would become a way to disable
-  // the guard by editing a table.
-  const derived = kind === "test" ? CommitCap.killCapMb(profileMb, commitLimitMb()) : undefined
-  const declared = job.memCapMb
-  const capMb =
-    forcedValid && forcedCap > 0
-      ? Math.floor(forcedCap)
-      : declared !== undefined
-        ? derived === undefined
-          ? declared
-          : Math.min(declared, derived)
-        : derived
-  // The ALLOWANCE is the machine's promise and the box bound can only tighten it. On a 32 GB laptop the
-  // fraction alone permitted ~20 GB for one run, which is the number that let a `core` gate sit inside
-  // its ceiling while the host paged and Windows reaped the user's apps (measured 2026-09-27).
-  const boxCap = capMb === undefined ? undefined : CommitCap.killCapMbForBox(profileMb, commitLimitMb())
-  const effectiveCap = capMb === undefined || boxCap === undefined ? capMb : Math.min(capMb, boxCap)
-  const profile = profileMb ?? (forcedValid ? 0 : undefined)
   const memKill =
-    effectiveCap !== undefined && profile !== undefined
-      ? { capMb: effectiveCap, profileMb: profile, forced: forcedValid }
+    kind === "test"
+      ? {
+          capMb: CommitCap.unitCapMb({
+            profilePeakMb: profileMb,
+            commitLimitMb: commitLimitMb(),
+            requestedCapMb: forcedValid ? Math.min(forcedCap, job.memCapMb ?? Infinity) : job.memCapMb,
+          }),
+          profileMb: profileMb ?? 0,
+          forced: forcedValid,
+        }
       : undefined
   const runs: Awaited<ReturnType<typeof spawnWithUpstreamRetry>>[] = []
   if (sharded)
@@ -1584,43 +1572,43 @@ if (unmeasured.length) {
       // not the cap: the cap is twice the unit's own worst healthy run.
       r.peakStatus === "capped"
         ? `  ${r.name.padEnd(30)} \x1b[33mCAPPED\x1b[0m  tree-killed at ${r.sampledMb ?? "?"} MB over its commit cap —\n` +
-          `  ${" ".repeat(30)} see its MEMORY KILL note above for the cap arithmetic. The peak is\n` +
-          `  ${" ".repeat(30)} withheld, so it can neither fail the ratchet nor be promoted into "peaks".\n`
+            `  ${" ".repeat(30)} see its MEMORY KILL note above for the cap arithmetic. The peak is\n` +
+            `  ${" ".repeat(30)} withheld, so it can neither fail the ratchet nor be promoted into "peaks".\n`
         : // 🔴 The FOURTH null, and the one that is a DESIGN DECISION rather than an instrument problem.
-      // Attribution is by process birth time, so a neighbour's `bun` lands inside this unit's window
-      // too and the reading is the pool's. Withholding it is what keeps a neighbour's memory out of
-      // `test-baseline.json`'s `peaks`, which is the input to the sharding ladder.
-      r.peakStatus === "concurrent"
-        ? `  ${r.name.padEnd(30)} \x1b[33mCONCURRENT\x1b[0m  ${r.sampledMb ?? "?"} MB sampled across the POOL, not this unit —\n` +
+          // Attribution is by process birth time, so a neighbour's `bun` lands inside this unit's window
+          // too and the reading is the pool's. Withholding it is what keeps a neighbour's memory out of
+          // `test-baseline.json`'s `peaks`, which is the input to the sharding ladder.
+          r.peakStatus === "concurrent"
+          ? `  ${r.name.padEnd(30)} \x1b[33mCONCURRENT\x1b[0m  ${r.sampledMb ?? "?"} MB sampled across the POOL, not this unit —\n` +
             `  ${" ".repeat(30)} another run unit was in flight, and birth-time attribution cannot separate\n` +
             `  ${" ".repeat(30)} them. Re-measure a unit with \`--only=${r.name.split(" ")[0]}\` or\n` +
             `  ${" ".repeat(30)} NOVACLAW_TEST_CONCURRENCY=1 before touching its "peaks" entry.\n`
-        : // 🔴 The FIFTH null, and the one that used to be recorded as a measurement — which put it in
-          // front of the armed peak ratchet and could fail a memory-poor gate on its own mitigation.
-          // Shards run sequentially, so each window carries the previous shard's unreclaimed memory:
-          // `core` reads a median 10,117 / max 17,833 MB split against a 10,822 whole-run maximum.
-          r.peakStatus === "sharded"
-          ? `  ${r.name.padEnd(30)} \x1b[33mSHARDED\x1b[0m  ${r.sampledMb ?? "?"} MB sampled across ${r.shards} sequential shards,\n` +
-            `  ${" ".repeat(30)} which reads HIGH — the previous shard's memory is not yet reclaimed inside\n` +
-            `  ${" ".repeat(30)} the next shard's window. The peak is withheld, so it can neither fail the\n` +
-            `  ${" ".repeat(30)} ratchet nor be promoted into "peaks". Re-measure whole on a quiet box.\n`
-          : r.peakStatus === "discarded"
-            ? `  ${r.name.padEnd(30)} \x1b[33mDISCARDED\x1b[0m  sampled ${r.sampledMb} MB, over the ` +
-              `${IMPLAUSIBLE_PEAK_MB} MB ceiling` +
-              `${peakProfiles.commit[r.name] === undefined ? "" : ` (profile ${peakProfiles.commit[r.name]})`}\n` +
-              `  ${" ".repeat(30)} the sampler WORKED — this is a reading, not an absence, and it is now\n` +
-              `  ${" ".repeat(30)} attributed: only processes this unit itself created are in it.\n`
-            : // ⚠️ `unsampled` is itself two different facts, not one, and attribution added the second:
-              // "the unit owned no tick" is the benign case that used to be reported as a 43 MB
-              // measurement, so it must not now be reported as an instrument failure either. Say which.
-              (r.ownTicks ?? 0) > 0
-              ? `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  sampled ${r.sampledMb} MB across ${r.ownTicks} owning tick(s);\n` +
-                `  ${" ".repeat(30)} fewer than ${PeakSeries.MIN_RECORDED_OWN_TICKS} observations is a lower bound, not a peak, so the number was withheld.\n`
-              : (r.ticks ?? 0) > 0
-                ? `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  ${r.ticks} tick(s) landed here and this unit owned\n` +
-                  `  ${" ".repeat(30)} none of them — its process fit between two 200 ms heartbeats. The\n` +
-                  `  ${" ".repeat(30)} instrument is fine; the unit is too short to measure this way.\n`
-                : `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  no timeline row landed in this unit's window at all\n`,
+          : // 🔴 The FIFTH null, and the one that used to be recorded as a measurement — which put it in
+            // front of the armed peak ratchet and could fail a memory-poor gate on its own mitigation.
+            // Shards run sequentially, so each window carries the previous shard's unreclaimed memory:
+            // `core` reads a median 10,117 / max 17,833 MB split against a 10,822 whole-run maximum.
+            r.peakStatus === "sharded"
+            ? `  ${r.name.padEnd(30)} \x1b[33mSHARDED\x1b[0m  ${r.sampledMb ?? "?"} MB sampled across ${r.shards} sequential shards,\n` +
+              `  ${" ".repeat(30)} which reads HIGH — the previous shard's memory is not yet reclaimed inside\n` +
+              `  ${" ".repeat(30)} the next shard's window. The peak is withheld, so it can neither fail the\n` +
+              `  ${" ".repeat(30)} ratchet nor be promoted into "peaks". Re-measure whole on a quiet box.\n`
+            : r.peakStatus === "discarded"
+              ? `  ${r.name.padEnd(30)} \x1b[33mDISCARDED\x1b[0m  sampled ${r.sampledMb} MB, over the ` +
+                `${IMPLAUSIBLE_PEAK_MB} MB ceiling` +
+                `${peakProfiles.commit[r.name] === undefined ? "" : ` (profile ${peakProfiles.commit[r.name]})`}\n` +
+                `  ${" ".repeat(30)} the sampler WORKED — this is a reading, not an absence, and it is now\n` +
+                `  ${" ".repeat(30)} attributed: only processes this unit itself created are in it.\n`
+              : // ⚠️ `unsampled` is itself two different facts, not one, and attribution added the second:
+                // "the unit owned no tick" is the benign case that used to be reported as a 43 MB
+                // measurement, so it must not now be reported as an instrument failure either. Say which.
+                (r.ownTicks ?? 0) > 0
+                ? `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  sampled ${r.sampledMb} MB across ${r.ownTicks} owning tick(s);\n` +
+                  `  ${" ".repeat(30)} fewer than ${PeakSeries.MIN_RECORDED_OWN_TICKS} observations is a lower bound, not a peak, so the number was withheld.\n`
+                : (r.ticks ?? 0) > 0
+                  ? `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  ${r.ticks} tick(s) landed here and this unit owned\n` +
+                    `  ${" ".repeat(30)} none of them — its process fit between two 200 ms heartbeats. The\n` +
+                    `  ${" ".repeat(30)} instrument is fine; the unit is too short to measure this way.\n`
+                  : `  ${r.name.padEnd(30)} \x1b[33mUNSAMPLED\x1b[0m  no timeline row landed in this unit's window at all\n`,
     )
 }
 

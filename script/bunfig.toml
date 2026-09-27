@@ -6,4 +6,5 @@
 # This file re-opens the root for THIS directory only. `bun test` picks up the bunfig in its cwd, so
 # `script/test.ts`'s `script` run unit runs from here and scans `lib/` alone.
 [test]
+preload = ["./test-preload.ts"]
 root = "./lib"
