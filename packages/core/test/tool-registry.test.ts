@@ -259,7 +259,17 @@ describe("ToolRegistry settlement of an unadvertised name", () => {
 
       expect(before.definitions.map((definition) => definition.name)).toEqual(["tool_call", "read"])
       expect(before.deferred.map((source) => [source.definition.name, source.server])).toEqual([["rare", "core"]])
-      expect(message(yield* before.settle(call("rare")))).toContain("schema has not been disclosed")
+      // 🔴 CONTRACT CHANGED, deliberately, on the owner's instruction (2026-09-27): *"even if the tool
+      // is not listed in context, the calls to it should still be properly executed, instead of having
+      // some esoteric execution logic."* This case used to assert `schema has not been disclosed` here.
+      //
+      // What is UNCHANGED is the half that matters: `rare` is still out of the resident array, so its
+      // schema still costs nothing in the request until `tool_search` discloses it. `withDeferred` is
+      // prompt economy and nothing else ("Keep a rarely used schema out of every provider request"),
+      // so refusing a call to an installed tool let a budget decision act as an authorisation
+      // boundary — which is the inversion. Authorisation is `withPermission` plus per-agent
+      // visibility, and both still run on this path.
+      expect((yield* before.settle(call("rare"))).result).toEqual({ type: "json", value: { ok: true } })
 
       const after = yield* service.materialize([], () => true, new Set(["rare"]))
       const settled = yield* after.settle({
@@ -294,7 +304,10 @@ describe("ToolRegistry settlement of an unadvertised name", () => {
       const before = yield* service.materialize([], undefined, undefined, undefined, 820)
       expect(before.definitions.map((tool) => tool.name)).toEqual(["tool_search", "tool_call"])
       expect(before.deferred.map((tool) => tool.definition.name)).toEqual(["bulky"])
-      expect(message(yield* before.settle(call("bulky")))).toContain("schema has not been disclosed")
+      // Contract changed with the case above: an installed tool is executed whether or not its schema
+      // has been disclosed. The DENY case below is the part that must not move, and it does not — a
+      // `deny`d tool is withdrawn from the map entirely, so it is refused as unknown rather than run.
+      expect((yield* before.settle(call("bulky"))).result).toEqual({ type: "json", value: { ok: true } })
       const after = yield* service.materialize([], undefined, new Set(["bulky"]), undefined, 820)
       expect((yield* after.settle(call("bulky"))).result).toEqual({ type: "json", value: { ok: true } })
       const denied = yield* service.materialize(

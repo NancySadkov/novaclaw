@@ -46,13 +46,33 @@ export const nativeDefinitions = (definitions: ReadonlyArray<ToolDefinition>, bu
     !definitions.some((tool) => tool.name === "tool_call")
   )
     return [...definitions]
-  const priority = ["tool_search", "tool_call", "spawn", "memo_set", "memo_clear", "exit"]
+  /**
+   * The tools that must be DISCLOSED IN EVERY SESSION, whatever the budget says.
+   *
+   * Measured on the owner's instance, 2026-09-27: Sopitis called `colleague` and got
+   * `Deferred tool colleague is not available in this session`, and on another turn the worse
+   * `Unknown tool: colleague. Nothing ran. Available tools: define_tool, docs, js, memo_clear, ...`.
+   * Owner: it "should always be available for all sessions."
+   *
+   * The first attempt at this was wrong in a way worth keeping recorded: adding `colleague` to
+   * `priority` only changes the ORDER the budget spends, because the keep-condition below exempted
+   * exactly two names. A tight budget still dropped it - and a tool that is "prioritised" but still
+   * droppable is not available, it is merely less likely to go. Priority is an ORDERING; only the
+   * exemption is a GUARANTEE, and the two were being read as the same thing.
+   *
+   * The cost is real and is paid deliberately: `colleague`'s schema is not small, so this spends
+   * disclosure budget on EVERY turn, forever. It is the trade the owner asked for and the right one -
+   * a budget saved here is paid straight back as a turn that cannot do its job, which is exactly what
+   * `Deferred tool ... is not available` already was.
+   */
+  const always = new Set(["tool_search", "tool_call", "colleague"])
+  const priority = ["tool_search", "tool_call", "colleague", "spawn", "memo_set", "memo_clear", "exit"]
   const rank = (name: string) => (priority.includes(name) ? priority.indexOf(name) : priority.length)
   const selected = new Set<string>()
   let used = 2
   for (const tool of [...definitions].sort((a, b) => rank(a.name) - rank(b.name))) {
     const cost = Token.estimateStructured(tool)
-    if (tool.name === "tool_search" || tool.name === "tool_call" || used + cost <= budget) {
+    if (always.has(tool.name) || used + cost <= budget) {
       used += cost
       selected.add(tool.name)
     }
@@ -557,7 +577,14 @@ const registryLayer = Layer.effect(
           deferred.map((source) => [source.definition.name, registrations.get(source.definition.name)!]),
         )
         const callableDeferred = new Map([...deferredByName].filter(([name]) => discovered.has(name)))
-        const callableNames = [...resident.keys(), ...callableDeferred.keys()]
+        // 🔴 THE HORIZON IS EVERY NAME THIS SESSION CAN ACTUALLY CALL, disclosed or not. The same
+        // inversion as the dispatch above, one level out: an `Available tools:` list that omitted the
+        // undisclosed tools would tell the model they do not exist, which is what it had already
+        // learned wrongly from the roster prose. A horizon narrower than reality is how a capable
+        // tool gets reported as unknown, and it made the "not callable" message the common case
+        // rather than the rare one. Disclosure still decides what is SENT; this decides what is
+        // honest to SAY.
+        const callableNames = [...resident.keys(), ...deferredByName.keys()]
         const residentNames = [...resident.keys()]
         const callableDeferredNames = [...callableDeferred.keys()]
         const installedDeferredNames = [...deferredByName.keys()]
@@ -576,7 +603,31 @@ const registryLayer = Layer.effect(
           ),
           deferred,
           settle: (input) => {
-            const registration = resident.get(input.call.name) ?? callableDeferred.get(input.call.name)
+            /**
+             * 🔴 AN INSTALLED TOOL IS EXECUTABLE, DISCLOSED OR NOT.
+             *
+             * Owner, 2026-09-27, on Sopitis: *"even if the tool is not listed in context, the calls to
+             * it should still be properly executed, instead of having some esoteric execution logic."*
+             * Measured: `Deferred tool colleague is not available in this session` and
+             * `Unknown tool: colleague. Nothing ran.`
+             *
+             * The disclosure set is a PROMPT-BUDGET device — `nativeDefinitions` decides what the model
+             * is TOLD about, to fit a context window. It was being read as an AUTHORISATION boundary,
+             * and that is the inversion: a model that legitimately learned a tool's name (from the
+             * roster prose, an earlier turn, or a `tool_search` result) was refused for calling
+             * something the instance has installed and can run.
+             *
+             * ⚠️ This is deliberately NOT a permission change. `settleWith` below runs the same
+             * permission gate, the same policy screen and the same durable record, keyed on the tool
+             * that actually ran. The real authorisation boundary is unchanged: per-agent visibility
+             * (`mayStaff`, `addressable`) withholds a tool from an agent entirely, and THAT is still
+             * enforced — an agent that cannot see `colleague` does not get it here either, because
+             * this map only ever holds tools already filtered for this agent.
+             */
+            const registration =
+              resident.get(input.call.name) ??
+              callableDeferred.get(input.call.name) ??
+              deferredByName.get(input.call.name)
             // One latch per model tool call, closed over by both the outer settlement and every
             // nested deferred invocation it makes. A halt raised while `tool_call` dispatches an
             // inner tool therefore still reaches the drain, instead of being flattened into the
@@ -625,14 +676,20 @@ const registryLayer = Layer.effect(
                 // settlement below already draws that line, and a near miss has to reach it too or a
                 // one-character slip is told the tool does not exist at all.
                 const installed = resolveToolName(name, installedDeferredNames)
-                if (installed !== undefined)
-                  return Effect.fail(
-                    new ToolFailure({
-                      message:
-                        `Deferred tool ${installed} is installed but its schema has not been disclosed in this session. ` +
-                        `Nothing ran. Call tool_search for the capability you need, then invoke the exact name it returns.`,
-                    }),
-                  )
+                // 🔴 Installed-but-undisclosed is EXECUTED, not refused — same rule as the direct call
+                // above, and the same reason. A tool the instance has and can run must not be stopped by
+                // a prompt-budget decision; the permission gate runs either way, on the resolved name.
+                if (installed !== undefined) {
+                  const target = deferredByName.get(installed)
+                  if (target !== undefined)
+                    return settleRaw(
+                      { ...input, call: { type: "tool-call", id: input.call.id, name: installed, input: targetInput } },
+                      target.identity,
+                      deferred,
+                      undefined,
+                      halt,
+                    ).pipe(Effect.map((settled) => settled.output))
+                }
                 const hint = ToolRuntime.closestToolName(name, callableDeferredNames)
                 // Both branches are load-bearing, exactly as in the shared unknown-tool message: an
                 // empty list is not a horizon, and a dangling "callable here: ." would be a fault
@@ -666,9 +723,17 @@ const registryLayer = Layer.effect(
               return Effect.succeed({
                 result: {
                   type: "error",
+                  // 🔴 This branch used to say "installed but its schema has not been disclosed" and
+                  // tell the model to go through `tool_search` — which was the refusal that started
+                  // all of this, and after the dispatch above it is reachable only by a different
+                  // route: `deferredByName` is built with a non-null assertion, so the key can be
+                  // present with NO REGISTRATION behind it. That is a wiring fault in whoever
+                  // registered the source, and calling it a disclosure problem would send the model
+                  // off to `tool_search` for a tool that has nothing to disclose. Name the fault.
                   value:
-                    `Tool ${input.call.name} is installed but its schema has not been disclosed in this session. ` +
-                    `Nothing ran. Call tool_search for the capability you need, then invoke an exact returned name through tool_call.`,
+                    `Tool ${input.call.name} is listed as installed but has no registration behind it, ` +
+                    `which is a fault in this instance's tool wiring rather than a capability you lack. ` +
+                    `Nothing ran. Available tools: ${boundedNameList(callableNames)}.`,
                 },
               })
             return Effect.succeed({
