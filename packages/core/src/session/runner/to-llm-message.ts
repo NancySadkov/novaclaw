@@ -17,6 +17,7 @@ import type { FileAttachment } from "../prompt"
 import { ArchiveAttachment } from "./archive-attachment"
 import { OldContext } from "../old-context"
 import { stripAutomatedEcho } from "../automated-echo"
+import { applyHarnessProvenance } from "../steer-provenance"
 
 const media = (file: FileAttachment): ContentPart => ({
   type: "media",
@@ -636,7 +637,21 @@ function toLLMMessage(
       ]
     }
     case "synthetic":
-      return [Message.make({ id: message.id, role: "user", content: message.text, metadata: message.metadata })]
+      // 🔴 A `synthetic` message is ALWAYS harness-authored, and it lowers to the `user` role
+      // because there is no other role a provider will accept mid-conversation (AGENTS.md: the system
+      // prompt is one immutable monolithic message, so a dynamic fact cannot go there). The role
+      // therefore says nothing about authorship, and the text has to — unmarked, the model reads the
+      // harness's own notice as the owner having just typed it, and `isRealUserMessage` below
+      // classifies it as a real user turn. Owner, 2026-09-27: the model-switch notice was surfacing
+      // "as if the user said it".
+      return [
+        Message.make({
+          id: message.id,
+          role: "user",
+          content: applyHarnessProvenance(message.text),
+          metadata: message.metadata,
+        }),
+      ]
     case "system":
       return [Message.system(message.text)]
     case "shell":

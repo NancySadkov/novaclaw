@@ -4,13 +4,17 @@ import path from "node:path"
 
 import { Message } from "@novaclaw/llm"
 import {
+  applyHarnessProvenance,
   applySteerProvenance,
   firstRealUserText,
+  HARNESS_NOTICE_PREFIX,
+  isHarnessNoticeText,
   isRealUserTurn,
   isSteerText,
   lastRealUserIndex,
   lastRealUserText,
   lastRealUserTurn,
+  stripHarnessProvenance,
   stripSteerProvenance,
   STEER_PROVENANCE_PREFIX,
 } from "@novaclaw/core/session/steer-provenance"
@@ -202,6 +206,59 @@ describe("the consumers that already filtered still do, through the shared predi
   })
 })
 
+/**
+ * 🔴 A `synthetic` message lowers to the wire as `role: "user"`, and it is ALWAYS harness-authored.
+ *
+ * Owner, 2026-09-27, on a model-switch notice that read as if the owner had typed it. The transcript
+ * predicate was never wrong about these — `type` is `"synthetic"` — so nothing failed, and nothing
+ * caught it either: the two twins disagreed about the same message and only the wrong one was asked.
+ *
+ * These are the assertions that would have caught it. The round trip, the twin, and the downgrade
+ * through `to-llm-message` are pinned separately on purpose: the marker could be added to the
+ * predicate while the lowering stopped applying it (a notice the model still reads as the owner), or
+ * applied while the predicate ignored it (a notice auto-extraction turns into a durable memory).
+ * Either one compiles green and ships silently.
+ */
+describe("harness notices are not the user speaking", () => {
+  /** The substitution notice, as `runner/model.ts` words it. */
+  const SUBSTITUTION =
+    "This turn ran on `provider-a/flash`. Your assigned model `provider-b/big` could not be reached, " +
+    "so the harness is retrying it in the background and will return to it when it answers."
+
+  const synthetic = (text: string): SessionMessage.Message =>
+    ({ type: "synthetic", text }) as unknown as SessionMessage.Message
+
+  test("round-trips: apply → detect → strip, and plain user text is never mistaken for a notice", () => {
+    const tagged = applyHarnessProvenance(SUBSTITUTION)
+    expect(isHarnessNoticeText(tagged)).toBe(true)
+    expect(stripHarnessProvenance(tagged)).toBe(SUBSTITUTION)
+    expect(isHarnessNoticeText(SUBSTITUTION)).toBe(false)
+    expect(isHarnessNoticeText("")).toBe(false)
+  })
+
+  test("a steer is not marked twice, and a notice is not mistaken for a steer", () => {
+    const steered = applySteerProvenance(NUDGE)
+    expect(applyHarnessProvenance(steered)).toBe(steered)
+    expect(applyHarnessProvenance(applyHarnessProvenance(SUBSTITUTION))).toBe(applyHarnessProvenance(SUBSTITUTION))
+    expect(isSteerText(HARNESS_NOTICE_PREFIX + NUDGE)).toBe(false)
+  })
+
+  test("the wire twin rejects a marked notice that it would otherwise call a real user turn", () => {
+    // The two halves of the fix, asserted as one question. Unmarked this is a live misclassification:
+    // auto-extraction anchors a durable memory on it, auto-recall searches with it, Strict takes it
+    // as the task. All three ask the WIRE twin, because all three read messages off a request.
+    expect(isRealUserMessage(Message.user(applyHarnessProvenance(SUBSTITUTION)))).toBe(false)
+    expect(isRealUserMessage(Message.user("fix the parser"))).toBe(true)
+  })
+
+  test("the transcript predicate and the wire twin agree about the same message", () => {
+    // The disagreement itself, pinned: one message, two shapes, one answer. The `synthetic` case is
+    // the one that was wrong, because the transcript knows the `type` and the wire does not.
+    expect(isRealUserTurn(synthetic(SUBSTITUTION))).toBe(false)
+    expect(isRealUserMessage(Message.user(applyHarnessProvenance(SUBSTITUTION)))).toBe(false)
+  })
+})
+
 // ── layer 2: the source ledger ──────────────────────────────────────────────────────────────────
 //
 // The behaviour tests above pin the six call sites that exist TODAY. This layer is what makes a
@@ -254,10 +311,14 @@ const UNFILTERED_USER_ROLE_READS = new Map<string, string>([
   // harness instruction text was attributed to the user inside the DURABLE compaction summary. It
   // now relabels steers via `isSteerText`/`stripSteerProvenance` — covered by
   // `test/session-compaction.test.ts`, and the stale-row test below is what deleted this entry.
-  [
-    "runner/to-llm-message.ts",
-    "DELIBERATE: lowering to the wire, not a read of what the user said — the model MUST see the steer",
-  ],
+  //
+  // ⚠️ `runner/to-llm-message.ts` was here too, exempted as "lowering to the wire, not a read of
+  // what the user said — the model MUST see the steer". The exemption was right and it was also a
+  // hole: the file lowered a `synthetic` to a bare `user` message with no marker at all, so the
+  // wire twin `isRealUserMessage` called the harness's own model-switch notice a real user turn. It
+  // now marks harness text via `applyHarnessProvenance` and so routes through the shared vocabulary,
+  // which is what the stale-row test caught — the exemption was only ever load-bearing for the
+  // steer case, and the notice case was riding it unnoticed.
   // ⚠️ This entry is a CORRECTION to the guard's coverage, not a new gap. `runner/strict-drain.ts` owns
   // this read all along — `context.findLast(m => m.type === "user" && m.text.trim() === task)`,
   // re-finding by id the message `SessionStrict.lastUserText(context)` has ALREADY chosen. The

@@ -20,6 +20,38 @@ export const isSteerText = (text: string) => text.startsWith(STEER_PROVENANCE_PR
 export const stripSteerProvenance = (text: string) =>
   text.startsWith(STEER_PROVENANCE_PREFIX) ? text.slice(STEER_PROVENANCE_PREFIX.length) : text
 
+// ─────────────────────────────────────────────────────────────────────────────
+// HARNESS NOTICES — the same question, asked about a different kind of harness text.
+//
+// 🔴 Owner, 2026-09-27, on a model-switch notice reading as if the owner had typed it: *"This turn ran
+// on X. Your assigned model Y could not be reached…"*. The defect is NOT cosmetic and it is the same
+// one the 1N prefix above was written for, reached by a route the prefix did not cover.
+//
+// A `synthetic` message is authored by the HARNESS in every case — a failure notice, a nudge, the
+// model-fit warning, the substitution notice — and `runner/to-llm-message.ts` lowers it to the wire as
+// `role: "user"` with its text untouched. So `isRealUserMessage`, the wire-shaped twin of
+// `isRealUserTurn` below, answered TRUE for it: auto-extraction would anchor a durable memory on
+// "your assigned model could not be reached", auto-recall would search memory with that sentence as
+// the query, Strict would take it as the task and the session title as a seed — exactly the B2
+// failure, one message type further out. The transcript-shaped predicate was never wrong (`type` is
+// `"synthetic"`, not `"user"`), which is why nothing caught it: the two twins disagreed and only one
+// of them was consulted.
+//
+// The marker goes on AT THE WIRE (`to-llm-message.ts`), not on the stored text: the transcript is
+// rendered from `type`, so it needs no marker, and a prefix in the durable text would leak into the
+// chat box, the export and the compaction summary for the sake of a consumer that reads the wire.
+
+export const HARNESS_NOTICE_PREFIX = "[NovaClaw harness note — not a message from your user.] "
+
+/** Mark harness-authored text so the model does not read it as the owner speaking. */
+export const applyHarnessProvenance = (text: string) =>
+  isSteerText(text) || isHarnessNoticeText(text) ? text : HARNESS_NOTICE_PREFIX + text
+
+export const isHarnessNoticeText = (text: string) => text.startsWith(HARNESS_NOTICE_PREFIX)
+
+export const stripHarnessProvenance = (text: string) =>
+  isHarnessNoticeText(text) ? text.slice(HARNESS_NOTICE_PREFIX.length) : text
+
 export { stripAutomatedEcho } from "./automated-echo"
 
 // ─────────────────────────────────────────────────────────────────────────────

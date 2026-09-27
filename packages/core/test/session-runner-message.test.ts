@@ -5,6 +5,7 @@ import { ModelV2 } from "@novaclaw/core/model"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { SessionOrigin } from "@novaclaw/core/session/origin"
+import { applyHarnessProvenance } from "@novaclaw/core/session/steer-provenance"
 import { AgentAttachment, FileAttachment } from "@novaclaw/core/session/prompt"
 import { budgetImages, freshImageCount, toLLMMessages } from "@novaclaw/core/session/runner/to-llm-message"
 import { SessionV2 } from "@novaclaw/core/session"
@@ -156,7 +157,14 @@ describe("toLLMMessages", () => {
     expect(JSON.stringify(messages.slice(2, 4))).toContain("Incoming answer from colleague Nova")
     expect(JSON.stringify(messages.slice(2, 4))).not.toContain('"role":"user"')
     expect(messages.slice(4).map((message) => message.content)).toEqual([
-      [{ type: "text", text: "Synthetic context" }],
+      // 🔴 A `synthetic` is ALWAYS harness-authored, and it lowers to the `user` role because no
+      // other role is accepted mid-conversation. The role therefore says nothing about authorship and
+      // the text must, or the model reads the harness's own notice as the owner having typed it —
+      // owner, 2026-09-27, on a model-switch notice that surfaced "as if the user said it". Marked at
+      // the wire and not in the stored text: the transcript renders from `type`, and a prefix in the
+      // durable text would leak into the chat box and the compaction summary for a wire-only
+      // consumer. The predicate half is pinned in `test/steer-provenance.test.ts`.
+      [{ type: "text", text: applyHarnessProvenance("Synthetic context") }],
       [{ type: "text", text: "Shell command: pwd\n\n/project" }],
       [
         {

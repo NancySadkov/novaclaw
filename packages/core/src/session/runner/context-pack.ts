@@ -25,7 +25,7 @@ import { SystemPart } from "@novaclaw/llm"
 import type { LLMRequest, ToolDefinition, ToolResultPart, ToolResultValue } from "@novaclaw/llm"
 import type { SessionMessage } from "@novaclaw/schema/session-message"
 import { Token } from "../../util/token"
-import { applySteerProvenance, isSteerText } from "../steer-provenance"
+import { applySteerProvenance, isHarnessNoticeText, isSteerText } from "../steer-provenance"
 import { OldContext } from "../old-context"
 import { ContextRedundancy } from "./context-redundancy"
 import { ContextBudget } from "./context-budget"
@@ -191,16 +191,23 @@ const firstTextPart = (message: Message): string | undefined => {
 }
 
 /**
- * A REAL user message — not a harness steer (A1 provenance prefix) riding the user role. The
- * anchor pass and the "since last user message" semantics both key off this.
+ * A REAL user message — not a harness steer (A1 provenance prefix) or a harness notice riding the
+ * user role. The anchor pass and the "since last user message" semantics both key off this.
  *
  * This is the WIRE-shaped twin of `session/steer-provenance.ts`'s `isRealUserTurn`: the same
  * question asked of an `@novaclaw/llm` message, whose text lives in parts rather than a flat field.
- * It delegates to the shared `isSteerText` (B2) so only one place knows what a steer looks like.
+ * It delegates to the shared predicates (B2) so only one place knows what harness text looks like.
  * Deliberately does NOT require non-empty text — an image-only user message still anchors.
+ *
+ * 🔴 It also asks the NOTICE question, and it is the only one of the two twins that had to. A
+ * `synthetic` message carries `type: "synthetic"`, so `isRealUserTurn` was already right about it —
+ * but the wire has no `type`, and the lowering in `to-llm-message.ts` is a `user` message. The two
+ * twins therefore disagreed about the same message and only the wrong one was consulted.
  */
-export const isRealUserMessage = (message: Message): boolean =>
-  message.role === "user" && !isSteerText(firstTextPart(message) ?? "")
+export const isRealUserMessage = (message: Message): boolean => {
+  const text = firstTextPart(message) ?? ""
+  return message.role === "user" && !isSteerText(text) && !isHarnessNoticeText(text)
+}
 
 const localToolCallIds = (message: Message): string[] =>
   message.role === "assistant"
