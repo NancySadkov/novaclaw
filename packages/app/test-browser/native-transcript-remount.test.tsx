@@ -79,6 +79,111 @@ function mount(
 }
 
 describe("native transcript remount", () => {
+  const toolStep = (id: string, names: string[], prose?: string) =>
+    ({
+      id,
+      type: "assistant",
+      agent: "iris",
+      model: { providerID: "test", id: "test" },
+      time: { created: 1, completed: 2 },
+      content: [
+        ...(prose ? [{ id: `${id}:text`, type: "text", text: prose }] : []),
+        ...names.map((name, index) => ({
+          id: `${id}:${index}`,
+          type: "tool",
+          name,
+          time: { created: 1, completed: 2 },
+          state: {
+            status: "completed",
+            input: { path: `${name}-${index}.txt`, command: "echo probe" },
+            structured: {},
+            content: [],
+            outputPaths: [],
+            result: "ok",
+          },
+        })),
+      ],
+    }) as unknown as SessionMessage
+
+  test("folds consecutive tools across steps with per-tool counts and no single-use count", async () => {
+    const host = mount(undefined, {
+      messages: [
+        toolStep("count-a", ["read", "read", "write"]),
+        toolStep("count-b", ["read", "read", "read", "write", "write", "bash"]),
+      ],
+      status: { type: "idle" },
+    })
+    const fold = host.querySelector<HTMLDetailsElement>('[data-slot="native-tool-run"]')!
+    expect(host.querySelectorAll('[data-slot="native-tool-run"]')).toHaveLength(1)
+    expect(fold.open).toBe(false)
+    expect(fold.querySelector("summary")?.textContent).toBe("Used tools Read 5x, Write 3x, Bash")
+    fold.querySelector("summary")!.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(fold.open).toBe(true)
+    expect(fold.querySelectorAll('[data-component="basic-tool-v2"]')).toHaveLength(9)
+  })
+
+  test("keeps intervening prose outside the tool folds and leaves a single command ungrouped", () => {
+    const host = mount(undefined, {
+      messages: [
+        toolStep("before-prose", ["read", "read"]),
+        toolStep("after-prose", ["write", "write"], "The files are ready."),
+        toolStep("single-command", ["bash"], "Now run the check."),
+      ],
+      status: { type: "idle" },
+    })
+    expect(host.querySelectorAll('[data-slot="native-tool-run"]')).toHaveLength(2)
+    for (const prose of host.querySelectorAll('[data-slot="native-assistant-text"]'))
+      expect(prose.closest('[data-slot="native-tool-run"]')).toBeNull()
+    expect(host.querySelectorAll('[data-component="basic-tool-v2"]')).toHaveLength(5)
+  })
+
+  test("preserves an explicitly opened tool run through new steps and chat remount", async () => {
+    const foldStateKey = "tool-run-expansion"
+    const firstMessages = [toolStep("open-a", ["read", "read"])]
+    const first = mount(undefined, { messages: firstMessages, foldStateKey, status: { type: "idle" } })
+    first.querySelector<HTMLElement>('[data-slot="native-tool-run"] > summary')!.click()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    dispose?.()
+    dispose = undefined
+    first.remove()
+    const next = mount(undefined, {
+      messages: [...firstMessages, toolStep("open-b", ["write"])],
+      foldStateKey,
+      status: { type: "idle" },
+    })
+    const fold = next.querySelector<HTMLDetailsElement>('[data-slot="native-tool-run"]')!
+    expect(fold.open).toBe(true)
+    expect(fold.querySelector("summary")?.textContent).toBe("Used tools Read 2x, Write")
+  })
+
+  test("updates the summary and tool details when a streamed tool settles", async () => {
+    const initial = toolStep("live-run", ["read", "write"]) as Extract<SessionMessage, { type: "assistant" }>
+    const live = structuredClone(initial)
+    const active = live.content[1] as Extract<(typeof live.content)[number], { type: "tool" }>
+    active.state = { status: "running", input: { path: "live.txt" }, structured: {}, content: [] }
+    const [items, setItems] = createSignal<SessionMessage[]>([live])
+    const host = document.createElement("div")
+    document.body.appendChild(host)
+    dispose = render(
+      () => (
+        <MarkedContext.Provider
+          value={{ parser: { parse: async (text: string) => text }, resolveFile: () => undefined } as never}
+        >
+          <NativeTranscript messages={items()} status={{ type: "busy" } as never} />
+        </MarkedContext.Provider>
+      ),
+      host,
+    )
+    expect(host.querySelector('[data-slot="native-tool-run"] summary [role="status"]')).not.toBeNull()
+    host.querySelector<HTMLElement>('[data-slot="native-tool-run"] > summary')!.click()
+    setItems([initial])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(host.querySelector('[data-slot="native-tool-run"] summary [role="status"]')).toBeNull()
+    expect(host.querySelector<HTMLDetailsElement>('[data-slot="native-tool-run"]')!.open).toBe(true)
+    expect(host.textContent).toContain("write-1.txt")
+  })
+
   test("keeps steering in the open work log and folds only after accepted exit", () => {
     const steered = [
       { id: "msg_user_start", type: "user", text: "Investigate the failure", time: { created: 1 } },

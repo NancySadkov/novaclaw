@@ -35,6 +35,7 @@ import { SessionOrigin } from "@novaclaw/core/session/origin"
 import { Token } from "@novaclaw/core/util/token"
 import { isInFlightAssistant, isOptimistic, unqueuedPending } from "../message-fold"
 import { answerStart, foldClosing, groupTurns, nestToolWork, stableGroups, type TurnGroup } from "../turn-group"
+import { groupToolRuns, toolRunSummary, type AssistantFragment, type ToolRun } from "../tool-runs"
 import { reasoningTokenLabel } from "./reasoning-count"
 import { colleagueRow, incomingColleagueRow } from "./colleague-row"
 import { spawnRow } from "./spawn-row"
@@ -586,7 +587,7 @@ function Turn(props: {
       if (message.type !== "assistant") continue
       for (const part of message.content) {
         if (part.type !== "tool" && part.type !== "reasoning") continue
-        if (fold.get(`${part.type === "tool" ? "t" : "r"}:${part.id}`) === true) return true
+        if (fold.get(`${part.type === "tool" ? "t" : "r"}:${part.id}`) === true || fold.get(`g:${part.id}`) === true) return true
       }
     }
     return false
@@ -605,9 +606,7 @@ function Turn(props: {
         when={foldsClosing()}
         keyed
         fallback={
-          <For each={body()}>
-            {(message) => <NativeMessage message={message} developer={props.developer} liveTiming={props.liveTiming} />}
-          </For>
+          <MessageSequence messages={body()} developer={props.developer} liveTiming={props.liveTiming} />
         }
       >
         {(closingMessage) => (
@@ -625,16 +624,11 @@ function Turn(props: {
                 </span>
               </summary>
               <div data-slot="native-turn-work-body">
-                <For each={body().slice(0, -1)}>
-                  {(message) => (
-                    <NativeMessage message={message} developer={props.developer} liveTiming={props.liveTiming} />
-                  )}
-                </For>
-                <AssistantMessage
-                  message={closingMessage}
+                <MessageSequence
+                  messages={body()}
                   developer={props.developer}
                   liveTiming={props.liveTiming}
-                  half="work"
+                  workOnlyID={closingMessage.id}
                 />
               </div>
             </details>
@@ -659,6 +653,110 @@ function Turn(props: {
         )}
       </Show>
     </div>
+  )
+}
+
+function MessageSequence(props: {
+  messages: readonly SessionMessage[]
+  developer?: boolean
+  liveTiming?: boolean
+  workOnlyID?: string
+}) {
+  const rows = createMemo(() => new Map(groupToolRuns(props.messages, props.workOnlyID).map((row) => [row.key, row])))
+  return (
+    <For each={[...rows().keys()]}>
+      {(key) => {
+        const row = () => rows().get(key)
+        const tools = createMemo(() => {
+          const value = row()
+          return value?.kind === "tools" ? value : undefined
+        })
+        const assistant = createMemo(() => {
+          const value = row()
+          return value?.kind === "assistant" ? value.fragment : undefined
+        })
+        const message = createMemo(() => {
+          const value = row()
+          return value?.kind === "message" ? value.message : undefined
+        })
+        return (
+          <Switch>
+            <Match when={tools()}>
+              {(run) => <ToolRunGroup run={run()} developer={props.developer} liveTiming={props.liveTiming} />}
+            </Match>
+            <Match when={assistant()}>
+              {(fragment) => (
+                <AssistantSlice fragment={fragment()} developer={props.developer} liveTiming={props.liveTiming} />
+              )}
+            </Match>
+            <Match when={message()}>
+              {(message) => (
+                <NativeMessage message={message()} developer={props.developer} liveTiming={props.liveTiming} />
+              )}
+            </Match>
+          </Switch>
+        )
+      }}
+    </For>
+  )
+}
+
+function AssistantSlice(props: { fragment: AssistantFragment; developer?: boolean; liveTiming?: boolean }) {
+  return (
+    <AssistantMessage
+      message={props.fragment.message}
+      content={props.fragment.content}
+      chrome={props.fragment.chrome}
+      receipt={props.fragment.receipt}
+      developer={props.developer}
+      liveTiming={props.liveTiming}
+    />
+  )
+}
+
+function ToolRunGroup(props: { run: ToolRun; developer?: boolean; liveTiming?: boolean }) {
+  const i18n = useI18n()
+  const folds = useContext(ToolFoldContext)
+  const open = () => folds().get(props.run.key) ?? props.run.tools.some((part) => folds().get(`t:${part.id}`) === true)
+  const running = () =>
+    props.run.tools.some((part) => part.state.status === "pending" || part.state.status === "running")
+  const failed = () => props.run.tools.some((part) => part.state.status === "error")
+  const byKey = createMemo(() => new Map(props.run.fragments.map((fragment) => [fragment.key, fragment])))
+  const fragments = () => (
+    <For each={[...byKey().keys()]}>
+      {(key) => (
+        <Show when={byKey().get(key)}>
+          {(fragment) => (
+            <AssistantSlice fragment={fragment()} developer={props.developer} liveTiming={props.liveTiming} />
+          )}
+        </Show>
+      )}
+    </For>
+  )
+  return (
+    <Show when={props.run.tools.length > 1} fallback={fragments()}>
+      <details data-slot="native-tool-run" open={open() || undefined}>
+        <summary
+          onClick={(event) => {
+            event.preventDefault()
+            folds().set(props.run.key, !open())
+          }}
+        >
+          <span data-slot="native-tool-run-summary">
+            <span>
+              {i18n.t("ui.transcript.usedTools")} {toolRunSummary(props.run.tools)}
+            </span>
+            <Show when={running()}>
+              <span data-slot="native-working-dot" role="status" aria-label={i18n.t("ui.transcript.working")} />
+            </Show>
+            <Show when={failed()}>
+              <span data-slot="native-tool-run-failed">{i18n.t("ui.toolErrorCard.failed")}</span>
+            </Show>
+          </span>
+        </summary>
+        <div data-slot="native-tool-run-body">{fragments()}</div>
+      </details>
+    </Show>
   )
 }
 
@@ -908,6 +1006,9 @@ function AssistantMessage(props: {
   developer?: boolean
   liveTiming?: boolean
   half?: "work" | "answer"
+  content?: SessionMessageAssistant["content"]
+  chrome?: boolean
+  receipt?: boolean
 }) {
   const i18n = useI18n()
   // While the turn is in flight but nothing has streamed yet (the model is thinking before
@@ -948,13 +1049,14 @@ function AssistantMessage(props: {
   const split = () =>
     answerStart(props.message.content.map((p) => (p.type === "text" ? { ...p, text: stripAutomatedEcho(p.text) } : p)))
   const parts = () => {
+    if (props.content) return props.content
     if (props.half === "work") return props.message.content.slice(0, split())
     if (props.half === "answer") return props.message.content.slice(split())
     return props.message.content
   }
-  const toolWork = createMemo(() => nestToolWork(parts()))
-  const showReceipt = () => props.half !== "answer"
-  const showChrome = () => props.half !== "work"
+  const toolWork = createMemo(() => nestToolWork(props.message.content))
+  const showReceipt = () => props.receipt ?? props.half !== "answer"
+  const showChrome = () => props.chrome ?? props.half !== "work"
   /**
    * Does the Details fold hold this half's reasoning?
    *
