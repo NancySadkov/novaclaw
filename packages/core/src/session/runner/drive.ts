@@ -56,9 +56,9 @@ const SUB_AGENT_CONTINUE =
   "tool with a short result summary."
 
 const INTERACTIVE_CONTINUE =
-  "Your current request is still open because you have not called `exit` and had its result accepted. " +
-  "If work remains, take the next concrete action now; a progress report alone does not finish it. " +
-  "When the request is complete, give the user the answer and call `exit` with a concise result for review."
+  "Call the `exit` tool with your answer in its `result` argument. This is the only way to give your final answer. " +
+  'Example: `exit({"result":"The answer is 42."})`. Replace the example with your actual answer. ' +
+  "If work remains, finish it first, then call `exit`."
 
 // 🔴 **"Declare the durable `goal` component" was a harness steer that told an agent to author its own
 // objective, and it is GONE (owner, 2026-09-16: *"The goal is something user or agent's Superior officer

@@ -16,7 +16,7 @@ export const name = "exit"
 
 export const Input = Schema.Struct({
   result: Schema.String.pipe(Schema.optional).annotate({
-    description: "A short summary of what this session accomplished — handed to whoever spawned/awaits it.",
+    description: "Your complete final answer to the user, or the result for the agent awaiting this task.",
   }),
 })
 
@@ -31,7 +31,8 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.make({
           description:
-            "Request completion and submit this session's result for review. Use it when an autonomous " +
+            "Give your final answer by calling this tool with the answer in `result`. This is the only way to " +
+            "submit a final answer and request completion. Use it when an autonomous " +
             "or delegated task, or an interactive request, is genuinely finished. The session ends only when the completion reviewer accepts it.",
           input: Input,
           output: Output,

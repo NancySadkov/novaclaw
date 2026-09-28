@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { Schema } from "effect"
+import { ExitTool } from "../../tool/exit"
 import { SessionDrive } from "./drive"
 
 // The self-drive decision: a goal-oriented officer stays alive until Stop.
@@ -33,6 +35,22 @@ describe("SessionDrive.decide", () => {
     if (goal.kind !== "continue") throw new Error("expected continue")
     expect(goal.message).toContain("`exit` tool")
     expect(goal.message).toContain("goal")
+  })
+
+  test.each([
+    [{ type: "interactive" }, undefined],
+    [{}, undefined],
+    [{ type: "goal-oriented" }, { operationMode: "interactive" as const }],
+  ])("interactive completion teaches a valid exit call containing the final answer: %j", (session, attendance) => {
+    const decision = SessionDrive.decide(session, SessionDrive.initialState(t0), t0, undefined, attendance)
+    if (decision.kind !== "continue") throw new Error("expected continue")
+    expect(decision.message).toContain("only way to give your final answer")
+    expect(decision.message).toContain("If work remains, finish it first")
+    const example = decision.message.match(/`exit\((\{[^\n]+\})\)`/)
+    expect(example).not.toBeNull()
+    const input = Schema.decodeUnknownSync(ExitTool.Input)(JSON.parse(example![1]!))
+    expect(input.result?.trim().length).toBeGreaterThan(0)
+    expect(decision.message).not.toContain("give the user the answer and call")
   })
 
   test("the goal drive names the first unfinished plan step and does NOT repeat the goal", () => {
