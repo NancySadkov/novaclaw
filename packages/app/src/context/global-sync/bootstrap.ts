@@ -29,13 +29,9 @@ type GlobalStore = {
   reload: undefined | "pending"
 }
 
-/**
- * The 50 ms cap is this call site's own requirement, not a third spelling of the deferral: boot must
- * not wait indefinitely on a frame a visible-but-not-yet-painting window has not produced.
- */
 function waitForPaint() {
   return new Promise<void>((resolve) => {
-    afterFirstPaint(resolve, { timeoutMs: 50 })
+    afterFirstPaint(resolve)
   })
 }
 

@@ -30,6 +30,8 @@ export const BOOT_PHASES = [
   "sidecar-health",
   /** The renderer says it has finished its first paint and is accepting input. */
   "renderer-interactive",
+  "shell-ready",
+  "client-connected",
   /** The first token of the first assistant reply reached the renderer. */
   "first-chat-token",
 ] as const
@@ -53,6 +55,8 @@ export const PHASE_TRACK: Readonly<Record<BootPhase, "main" | "renderer">> = {
   "sidecar-spawned": "main",
   "sidecar-health": "main",
   "renderer-interactive": "renderer",
+  "shell-ready": "renderer",
+  "client-connected": "renderer",
   "first-chat-token": "renderer",
 }
 

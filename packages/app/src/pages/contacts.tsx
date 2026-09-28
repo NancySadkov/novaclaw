@@ -1,6 +1,7 @@
+import { createSettledResource } from "@/utils/settled-resource"
 import { useNavigate } from "@solidjs/router"
 import { ContextMenu } from "@kobalte/core/context-menu"
-import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import {
   DragDropProvider,
   SortableProvider,
@@ -153,7 +154,7 @@ export function ContactsPage() {
   // What each colleague is WORKING ON — the half the roster inherits from the chat list it replaces.
   // A failure here dims the work column; it must never blank the roster, because "who works here"
   // and "what are they doing" are two questions and only one of them just failed.
-  const [sessions, { refetch: refetchSessions }] = createResource(ctx, (current) =>
+  const [sessions, { refetch: refetchSessions }] = createSettledResource(ctx, (current) =>
     listSessions(current.sdk.client.v2).catch(() => [] as SessionLike[]),
   )
   // How fast each colleague is going, from the per-minute series the projector writes. Refetched on
@@ -164,7 +165,7 @@ export function ContactsPage() {
     if (!current || ids.length === 0) return undefined
     return `${ServerConnection.key(conn()!)}\u0000${ids.join(",")}`
   })
-  const [usage] = createResource(usageSource, (source) => {
+  const [usage] = createSettledResource(usageSource, (source) => {
     const separator = source.indexOf("\u0000")
     const ids = separator < 0 ? [] : source.slice(separator + 1).split(",")
     const current = ctx()
@@ -188,7 +189,7 @@ export function ContactsPage() {
       .join("|")
     return { current, terminal }
   })
-  const [executions] = createResource(executionSource, ({ current }) =>
+  const [executions] = createSettledResource(executionSource, ({ current }) =>
     sessionExecutions(current.sdk.server.http).catch(() => [] as SessionExecutionInfo[]),
   )
   const executionBySession = createMemo(

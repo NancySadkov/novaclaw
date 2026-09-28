@@ -52,7 +52,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
 
-function fakeServerScript(root: string) {
+function fakeServerScript(root: string, delay = 0) {
   const script = join(root, "fake-novaclaw.mjs")
   writeFileSync(
     script,
@@ -63,7 +63,7 @@ function fakeServerScript(root: string) {
       "  response.statusCode = 200",
       "  response.end(JSON.stringify({ healthy: true }))",
       "})",
-      'server.listen(port, "127.0.0.1")',
+      `setTimeout(() => server.listen(port, "127.0.0.1"), ${delay})`,
     ].join("\n"),
   )
   return script
@@ -144,6 +144,7 @@ describe("standalone server owner", () => {
     const owner = createStandaloneServer(instance(root), OPTIONS, launchFor(fakeServerScript(root)))
 
     const started = await owner.start(new AbortController().signal)
+    await started.healthy
     expect(started.credentials.username).toBe("novaclaw")
     expect(started.credentials.password).toBe("test-token")
     expect(started.credentials.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
@@ -164,6 +165,7 @@ describe("standalone server owner", () => {
     const script = fakeServerScript(root)
     const first = createStandaloneServer(instance(root), OPTIONS, launchFor(script))
     const started = await first.start(new AbortController().signal)
+    await started.healthy
     const spawnedPid = descriptor(root).pid
     spawned.push(spawnedPid)
 
@@ -174,10 +176,31 @@ describe("standalone server owner", () => {
 
     const second = createStandaloneServer(instance(root), OPTIONS, launchFor(script))
     const reused = await second.start(new AbortController().signal)
+    await reused.healthy
     expect(reused.credentials.url).toBe(started.credentials.url)
 
     await second.stop()
     await waitGone(spawnedPid)
     expect(isAlive(spawnedPid)).toBe(false)
+  })
+
+  test("publishes credentials while the server is still starting", async () => {
+    const root = mkdtempSync(join(tmpdir(), "novaclaw-standalone-"))
+    roots.push(root)
+    const owner = createStandaloneServer(instance(root), OPTIONS, launchFor(fakeServerScript(root, 1500)))
+    const started = await owner.start(new AbortController().signal)
+    spawned.push(descriptor(root).pid)
+    let healthy = false
+    const ready = started.healthy.then(() => {
+      healthy = true
+    })
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      expect(healthy).toBe(false)
+      await ready
+      expect(healthy).toBe(true)
+    } finally {
+      await owner.stop()
+    }
   })
 })

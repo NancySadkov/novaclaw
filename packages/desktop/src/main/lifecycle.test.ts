@@ -73,7 +73,15 @@ test("one run opens the window before starting the instance and publishes creden
   f.started.resolve({ credentials, healthy: f.health.promise })
   expect(await f.lifecycle.awaitInitialization()).toEqual(credentials)
   expect(f.events.filter((x) => x === "credentials")).toHaveLength(1)
+  let healthy = false
+  const serverReady = f.lifecycle.awaitHealthy().then(() => {
+    healthy = true
+  })
+  await advance()
+  expect(healthy).toBe(false)
   f.health.resolve()
+  await serverReady
+  expect(healthy).toBe(true)
   await run
   expect(f.lifecycle.phase()).toBe("sidecar-healthy")
 })
@@ -87,8 +95,23 @@ test("a startup failure settles renderer initialization even when IPC subscribes
   f.started.reject(error)
   await run
   await expect(f.lifecycle.awaitInitialization()).rejects.toBe(error)
+  await expect(f.lifecycle.awaitHealthy()).rejects.toBe(error)
   expect(f.failures).toEqual([error])
   expect(f.lifecycle.phase()).toBe("failed")
+})
+
+test("failed health prevents retaining an instance even after credentials were delivered", async () => {
+  const f = fixture()
+  const run = f.lifecycle.run()
+  f.ready.resolve()
+  f.started.resolve({ credentials, healthy: f.health.promise })
+  expect(await f.lifecycle.awaitInitialization()).toEqual(credentials)
+  const error = new Error("server never became healthy")
+  f.health.reject(error)
+  await run
+  await expect(f.lifecycle.awaitHealthy()).rejects.toBe(error)
+  expect(f.failures).toEqual([error])
+  expect(f.events).toContain("health-failed")
 })
 
 test("quit closes boot before Electron readiness and stops all owners under one cleared deadline", async () => {
@@ -141,6 +164,7 @@ test("quit closes boot before Electron readiness and stops all owners under one 
   expect(cancelled).toBe(1)
   expect(f.lifecycle.phase()).toBe("stopped")
   await expect(f.lifecycle.awaitInitialization()).rejects.toThrow("shutting down")
+  await expect(f.lifecycle.awaitHealthy()).rejects.toThrow("shutting down")
 })
 
 test("late sidecar credentials and health cannot reopen a quitting lifecycle", async () => {

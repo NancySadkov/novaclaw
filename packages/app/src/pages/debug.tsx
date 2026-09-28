@@ -1,5 +1,5 @@
 import { A, useNavigate } from "@solidjs/router"
-import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
 import type { LogReadResult } from "@novaclaw/sdk/v2/types"
 import type { SessionPresenceSnapshot } from "@novaclaw/sdk/v2/client"
 import * as Timestamp from "@novaclaw/schema/time"
@@ -239,7 +239,7 @@ function DebugAppPage() {
     return (global.ensureServerCtx(conn).sync.data.path as { log?: string } | undefined)?.log
   }
 
-  const [scheduler] = createResource(
+  const [scheduler] = createSettledResource(
     () => {
       const conn = focused()
       const dir = schedDirectory()
@@ -249,7 +249,7 @@ function DebugAppPage() {
   )
 
   const [capabilityTick, setCapabilityTick] = createSignal(0)
-  const [capabilityList] = createResource(
+  const [capabilityList] = createSettledResource(
     () => {
       const conn = focused()
       const dir = schedDirectory()
@@ -282,7 +282,7 @@ function DebugAppPage() {
   }
 
   const [executionTick, setExecutionTick] = createSignal(0)
-  const [executions] = createResource(
+  const [executions] = createSettledResource(
     () => {
       const conn = focused()
       return conn ? { conn, t: executionTick() } : undefined
@@ -327,7 +327,7 @@ function DebugAppPage() {
     const id = contextSessionID()
     return id === undefined ? undefined : sessions().find((row) => row.id === id)
   })
-  const [contextLoad, { refetch: refetchContext }] = createResource(
+  const [contextLoad, { refetch: refetchContext }] = createSettledResource(
     () => {
       const conn = focused()
       const sessionID = contextSessionID()
@@ -451,7 +451,7 @@ function DebugAppPage() {
   }
 
   type ServerLog = { ok: true; data: LogReadResult } | { ok: false; message: string }
-  const [serverLog] = createResource(
+  const [serverLog] = createSettledResource(
     () => {
       const conn = focused()
       if (!conn) return undefined

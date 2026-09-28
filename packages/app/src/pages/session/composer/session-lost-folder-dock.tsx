@@ -1,5 +1,6 @@
+import { createSettledResource } from "@/utils/settled-resource"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
-import { Show, createResource, createSignal } from "solid-js"
+import { Show, createSignal } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useSDK } from "@/context/sdk"
 import { useDirectoryPicker } from "@/components/directory-picker"
@@ -28,7 +29,7 @@ export function SessionLostFolderDock(props: { sessionID: string }) {
 
   // One small read per opened session. The alternative — carrying `missing` on every session row —
   // would spend bytes on every list response to answer a question that is almost always "nothing".
-  const [folder, { refetch }] = createResource(
+  const [folder, { refetch }] = createSettledResource(
     () => props.sessionID,
     async (sessionID) => {
       try {

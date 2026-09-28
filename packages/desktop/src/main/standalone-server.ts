@@ -237,16 +237,17 @@ export function createStandaloneServer(
         pid: started.pid,
       })
 
-      try {
-        const result = await waitHealthy(url, password, () => stopped || child !== started)
-        if (result === "cancelled") throw signal.reason ?? new Error("the standalone server start was cancelled")
-      } catch (error) {
-        await stopChild(started)
-        clearDescriptor(instance.instanceRoot, id)
-        throw error
-      }
-      writeLog("server", "standalone server ready", { url })
-      return { credentials: { url, username: options.username, password }, healthy: Promise.resolve() }
+      const healthy = waitHealthy(url, password, () => signal.aborted || stopped || child !== started)
+        .then((result) => {
+          if (result === "cancelled") throw signal.reason ?? new Error("the standalone server start was cancelled")
+          writeLog("server", "standalone server ready", { url })
+        })
+        .catch(async (error) => {
+          await stopChild(started)
+          clearDescriptor(instance.instanceRoot, id)
+          throw error
+        })
+      return { credentials: { url, username: options.username, password }, healthy }
     },
     async stop() {
       if (stopped) return

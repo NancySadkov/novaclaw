@@ -121,7 +121,7 @@ export function createSettledResource<T, S>(
   const settled = createMemo<T | Failed | undefined>(() => {
     const state = raw.state
     if (state === "errored") return FAILED
-    if (state === "ready" || state === "refreshing") return raw()
+    if (state === "ready" || state === "refreshing") return raw.latest
     return undefined
   })
 

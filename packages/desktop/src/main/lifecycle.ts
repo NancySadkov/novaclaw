@@ -44,6 +44,8 @@ export type ShutdownResult = { outcome: "settled" | "forced"; failures: readonly
 export function createDesktopLifecycle(ports: DesktopLifecyclePorts) {
   const abort = new AbortController()
   const initialization = Promise.withResolvers<ServerReadyData>()
+  const health = Promise.withResolvers<void>()
+  void health.promise.catch(() => undefined)
   // IPC may subscribe after startup fails. Preserve that rejection without an unhandled-rejection
   // side effect while no renderer exists to observe it yet.
   void initialization.promise.catch(() => undefined)
@@ -69,6 +71,7 @@ export function createDesktopLifecycle(ports: DesktopLifecyclePorts) {
   }
   const fail = (error: unknown, stage: "electron" | "window" | "startup" | "health") => {
     if (abort.signal.aborted) return
+    health.reject(error)
     if (stage !== "health") {
       failInitialization(error)
       transition("failed")
@@ -111,6 +114,7 @@ export function createDesktopLifecycle(ports: DesktopLifecyclePorts) {
       }
       try {
         await started.healthy
+        health.resolve()
         if (!abort.signal.aborted) transition("sidecar-healthy")
       } catch (error) {
         fail(error, "health")
@@ -134,12 +138,14 @@ export function createDesktopLifecycle(ports: DesktopLifecyclePorts) {
   return {
     phase: () => phase,
     awaitInitialization: () => initialization.promise,
+    awaitHealthy: () => health.promise,
     run: () => (running ??= boot()),
     quit: (): Promise<ShutdownResult> => {
       if (stopping) return stopping
       const completion = Promise.withResolvers<ShutdownResult>()
       stopping = completion.promise
       abort.abort(new Error("NovaClaw is shutting down"))
+      health.reject(abort.signal.reason)
       failInitialization(abort.signal.reason)
       transition("quitting")
       const failures: unknown[] = []

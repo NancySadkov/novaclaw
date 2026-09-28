@@ -122,17 +122,14 @@ describe("afterFirstPaint", () => {
     expect(ran).toBe(1)
   })
 
-  test("`timeoutMs` fires when the frame never comes, and only once when it does", async () => {
+  test("startup always proceeds when a visible window stops producing frames", async () => {
     const environment = withEnvironment({ visibility: "visible", raf: true })
     active = environment
     let ran = 0
-    afterFirstPaint(
-      () => {
-        ran += 1
-      },
-      { timeoutMs: 10 },
-    )
-    await tick(30)
+    afterFirstPaint(() => {
+      ran += 1
+    })
+    await tick(80)
     expect(ran, "bootstrap would hang on a visible window that has not painted yet").toBe(1)
     // The frame arriving late must not run it a second time.
     environment.paint()

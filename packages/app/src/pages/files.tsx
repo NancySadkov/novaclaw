@@ -1,7 +1,7 @@
 import { useSearchParams } from "@solidjs/router"
 import { rowsForDirectory } from "./files-rows"
 import { downloadHostPath } from "@/apps/agent-file-link"
-import { createEffect, createMemo, createResource, createSignal, For, Match, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Match, Show, Switch } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { useGlobal } from "@/context/global"
@@ -85,7 +85,7 @@ export function FilesPage() {
     home: p?.home ?? "",
     places: p?.places ?? [],
   })
-  const [pathInfo] = createResource(ctx, async (c) => {
+  const [pathInfo] = createSettledResource(ctx, async (c) => {
     const p = c.sync.data.path as PathLike | undefined
     if (p && (p.home || p.directory) && p.roots?.length) return shape(p)
     const got = await c.sdk.client.path
@@ -109,10 +109,10 @@ export function FilesPage() {
   const [params] = useSearchParams()
   createEffect(() => {
     const requested = typeof params.path === "string" ? params.path.trim() : ""
-    const s = requested || pathInfo.latest?.start
+    const s = requested || pathInfo()?.start
     if (s && !dir()) setDir(s)
   })
-  const roots = createMemo(() => pathInfo.latest?.roots ?? [])
+  const roots = createMemo(() => pathInfo()?.roots ?? [])
   // The root the current dir lives under (case-insensitive — Windows drive letters), "" if unknown.
   const currentRoot = createMemo(() => {
     const d = dir().toLowerCase()
@@ -123,8 +123,8 @@ export function FilesPage() {
   // instance host's existing well-known dirs (/path `places`) and the user's `folder_bookmarks`
   // config pins (instance-wide, agent-editable). One canonical slash-normalized key for compares.
   const pinKey = (value: string) => value.replace(/\\/g, "/").replace(/\/+$/, "")
-  const places = createMemo(() => pathInfo.latest?.places ?? [])
-  const homeDir = createMemo(() => pathInfo.latest?.home ?? "")
+  const places = createMemo(() => pathInfo()?.places ?? [])
+  const homeDir = createMemo(() => pathInfo()?.home ?? "")
   const bookmarks = createMemo(
     () =>
       ((ctx()?.sync.data.config as { folder_bookmarks?: readonly string[] } | undefined)?.folder_bookmarks ??
@@ -170,7 +170,7 @@ export function FilesPage() {
     },
   })
 
-  const [entries] = createResource(
+  const [entries] = createSettledResource(
     () => {
       const c = ctx()
       const d = dir()
@@ -203,12 +203,12 @@ export function FilesPage() {
   const visibleEntries = createMemo(() => {
     // Stale-directory rows are dropped rather than shown: `.latest` is worth keeping WITHIN a
     // directory (no blank flash on refetch) and is never worth it across one.
-    const list = rowsForDirectory(entries.latest, dir())
+    const list = rowsForDirectory(entries(), dir())
     if (!list || showHidden()) return list
     return list.filter((e) => !isHiddenName(e.name))
   })
 
-  const [preview] = createResource(
+  const [preview] = createSettledResource(
     () => {
       const c = ctx()
       const e = selected()
@@ -598,7 +598,7 @@ export function FilesPage() {
             </div>
             <div class="min-h-0 flex-1 overflow-auto">
               <Show
-                when={preview.latest}
+                when={preview()}
                 fallback={<div class="px-4 py-3 text-sm text-v2-text-text-faint">{language.t("files.loading")}</div>}
               >
                 {(pv) => (

@@ -95,5 +95,5 @@ export type ElectronAPI = {
   exportDebugLogs: (serverDiagnostics?: string) => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>
   /** Report a boot phase the main process cannot observe. Fire-and-forget; never awaited. */
-  markBootPhase: (phase: "renderer-interactive" | "first-chat-token") => void
+  markBootPhase: (phase: "renderer-interactive" | "shell-ready" | "client-connected" | "first-chat-token") => void
 }

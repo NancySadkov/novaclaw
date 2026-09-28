@@ -59,6 +59,7 @@ export async function runDesktop(options: DesktopLaunchOptions) {
     options.mode === "client"
       ? createConnectedInstance(options.connect!)
       : createDeferredInstance(async () => {
+          mark("sidecar-start")
           const { bundledServerBinary, createStandaloneServer } = await import("./standalone-server")
           if (bundledServerBinary() !== undefined) return createStandaloneServer(home, options.server)
           const { createDesktopService } = await import("./desktop-service")
@@ -103,7 +104,12 @@ export async function runDesktop(options: DesktopLaunchOptions) {
           writeLog("renderer", "fatal renderer error", { ...error }, "error")
         },
         markBootPhase: (phase) => {
-          if (phase === "renderer-interactive" || phase === "first-chat-token") mark(phase)
+          if (
+            phase === "renderer-interactive" ||
+            phase === "shell-ready" ||
+            phase === "client-connected" ||
+            phase === "first-chat-token"
+          ) mark(phase)
         },
       })
     },
@@ -165,7 +171,7 @@ export async function runDesktop(options: DesktopLaunchOptions) {
         if (response === 1) return quit(false, 0)
         if (response === 2) {
           try {
-            await lifecycle.awaitInitialization()
+            await lifecycle.awaitHealthy()
             return quit(false, 0, true)
           } catch (error) {
             logger.error("cannot retain a server that did not start", { error: String(error) })

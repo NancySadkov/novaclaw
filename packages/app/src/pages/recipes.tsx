@@ -1,6 +1,6 @@
 import { useNavigate } from "@solidjs/router"
 import { useLanguage } from "@/context/language"
-import { createEffect, createMemo, createResource, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useDirectoryPicker } from "@/components/directory-picker"
@@ -191,7 +191,7 @@ export function RecipesPage() {
    * nowhere else. A failure here stays `undefined`, which every describe* function below reports as
    * *"I could not read this recipe's file"* rather than as *"it declares nothing"*.
    */
-  const [source, { refetch: refetchSource }] = createResource(
+  const [source, { refetch: refetchSource }] = createSettledResource(
     () => {
       const base = httpBase()
       const slug = current()?.key

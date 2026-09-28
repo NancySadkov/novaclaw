@@ -11,7 +11,7 @@
  * honest answer for a build that has no boot timeline at all.
  */
 
-export type RendererBootPhase = "renderer-interactive" | "first-chat-token"
+export type RendererBootPhase = "renderer-interactive" | "shell-ready" | "client-connected" | "first-chat-token"
 
 type Reporter = (phase: RendererBootPhase) => void
 

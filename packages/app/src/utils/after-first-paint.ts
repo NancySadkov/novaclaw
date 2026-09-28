@@ -10,17 +10,10 @@
  *
  * There were three spellings of this: the guarded one in `context/server-sync.tsx`, the unguarded
  * one in `context/layout.tsx`, and a promise with a 50 ms race in `context/global-sync/bootstrap.ts`.
- * This is the one, and the 50 ms race survives as `timeoutMs` because bootstrap genuinely must not
- * wait on a frame that a visible-but-not-painting window has not produced yet.
  *
  * Returns a cancel function; call it from `onCleanup`.
  */
-export interface AfterFirstPaintOptions {
-  /** Fire anyway after this many ms, even if the frame never arrives. Omitted = wait for it. */
-  readonly timeoutMs?: number
-}
-
-export function afterFirstPaint(run: () => void, options?: AfterFirstPaintOptions): () => void {
+export function afterFirstPaint(run: () => void): () => void {
   let done = false
   let frame: number | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -58,7 +51,7 @@ export function afterFirstPaint(run: () => void, options?: AfterFirstPaintOption
     return cancel
   }
 
-  if (options?.timeoutMs !== undefined) cap = setTimeout(fire, options.timeoutMs)
+  cap = setTimeout(fire, 50)
   frame = requestAnimationFrame(() => {
     frame = undefined
     soon()

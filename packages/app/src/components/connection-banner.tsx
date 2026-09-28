@@ -5,6 +5,7 @@ import { usePlatform } from "@/context/platform"
 import { useSupervisorPhase } from "@/hooks/use-supervisor-phase"
 import { useServer } from "@/context/server"
 import type { ServerStreamStatus } from "@/context/server-sdk"
+import { reportBootPhase } from "@/utils/boot-phase"
 
 // Dependability P2 (uix-dependability-plan): the calm "connection lost — reconnecting…" banner.
 // A small fixed strip — never a dialog, never a stack trace, never traps focus (pointer-events
@@ -92,7 +93,10 @@ export function ConnectionBanner() {
   )
   createEffect(
     on(status, (current) => {
-      if (current === "connected") setLastRestartReason(undefined)
+      if (current === "connected") {
+        setLastRestartReason(undefined)
+        reportBootPhase("client-connected")
+      }
     }),
   )
   const restartReason = createMemo(() => {

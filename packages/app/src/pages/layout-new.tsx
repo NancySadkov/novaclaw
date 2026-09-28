@@ -13,6 +13,7 @@ import { useServer } from "@/context/server"
 import { useTabs } from "@/context/tabs"
 import { setNavigate } from "@/utils/notification-click"
 import { ToastRegion } from "@/utils/toast"
+import { reportBootPhase } from "@/utils/boot-phase"
 import { fetchInstanceDiagnostics } from "@/utils/diagnostic-export"
 import {
   collectNewSessionDeepLinks,
@@ -61,6 +62,7 @@ export default function NewLayout(props: ParentProps) {
   })
 
   onMount(() => {
+    reportBootPhase("shell-ready")
     const queue = (urls: string[]) => {
       if (urls.length === 0) return
       setPendingDeepLinks((previous) => [...previous, ...urls])
