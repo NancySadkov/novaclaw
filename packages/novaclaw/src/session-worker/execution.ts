@@ -125,10 +125,6 @@ const GIB = 1024 * MIB
 export const defaultMemoryLimitBytes = (totalBytes = os.totalmem()) =>
   Math.max(768 * MIB, Math.min(2 * GIB, Math.floor(totalBytes / 8)))
 
-/** Source-mode Bun carries the TypeScript compiler/module graph in every worker. Its measured healthy
- * RSS is 2.62 GB on Windows, above the 2 GiB packaged-Node containment cap before user work grows at
- * all. Keep the production artifact bounded at the measured tier ceiling; give only the explicit `.ts`
- * developer/test entrypoint enough room to boot and complete a turn. */
 export const workerMemoryLimitBytes = (workerPath: string, totalBytes = os.totalmem()) =>
   workerPath.endsWith(".ts")
     ? Math.max(defaultMemoryLimitBytes(totalBytes), 3 * GIB)

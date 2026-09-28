@@ -68,7 +68,7 @@ exports[`novaclaw CLI help-text snapshots every documented command emits stable 
 debugging and troubleshooting tools
 
 Commands:
-  nova-cli debug config        show resolved configuration
+  nova-cli debug config        show portable configuration
   nova-cli debug startup       print startup timing
   nova-cli debug agent <name>  show agent configuration details
   nova-cli debug v2            debug v2 catalog and built-in plugins

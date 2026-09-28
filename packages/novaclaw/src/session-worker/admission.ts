@@ -5,20 +5,9 @@ import { WorkerBudget } from "@/storage/worker-budget"
 
 const MIB = 1024 * 1024
 
-/**
- * Reserve more than the 0.84–0.90 GiB per source worker observed in the 2026-08-31 live fleet, so a
- * normal fluctuation does not put the watcher directly on its ceiling.
- *
- * This is an admission reservation, not a per-worker kill limit. The two answer different questions:
- * this one budgets a healthy fleet before processes exist; the supervisor limit contains one worker
- * that grows after admission.
- */
-export const SOURCE_RESERVATION_BYTES = 1280 * MIB
+export const SOURCE_RESERVATION_BYTES = 3072 * MIB
 
-/** Packaged Node workers measured 163–168 MiB private / 197–211 MiB working set on the owner's
- * 2026-09-09 fleet. Three times that observed footprint leaves substantial headroom without
- * pretending every packaged worker carries Bun's source compiler and module graph. */
-export const PACKAGED_RESERVATION_BYTES = 640 * MIB
+export const PACKAGED_RESERVATION_BYTES = 1280 * MIB
 
 export const reservationBytes = (workerPath: string) =>
   workerPath.endsWith(".ts") ? SOURCE_RESERVATION_BYTES : PACKAGED_RESERVATION_BYTES

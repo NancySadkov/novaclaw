@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js"
-import { agentInitials, fetchAgentPortrait, isAgentPortraitURL } from "@/apps/agent-portrait"
+import { agentInitials, loadAgentPortrait, isAgentPortraitURL } from "@/apps/agent-portrait"
 import { type ServerConnection, useServer } from "@/context/server"
 
 export function AgentPortrait(props: {
@@ -39,7 +39,7 @@ export function AgentPortrait(props: {
 
     let disposed = false
     let source: string | undefined
-    void fetchAgentPortrait(current.http, route).then(
+    void loadAgentPortrait(current.http, route).then(
       (blob) => {
         if (disposed) return
         source = URL.createObjectURL(blob)

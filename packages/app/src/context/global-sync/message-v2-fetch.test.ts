@@ -18,8 +18,10 @@ function fakeClient(body: unknown, capture?: (params: unknown) => void): Novacla
 describe("fetchNativeMessages", () => {
   test("unwraps response.data.data into SessionMessage[]", async () => {
     const messages = [{ id: "msg_1", type: "user", text: "hi", time: { created: 1 } }] as SessionMessage[]
-    const result = await fetchNativeMessages(fakeClient({ data: messages }), "s_1")
+    let seen: unknown
+    const result = await fetchNativeMessages(fakeClient({ data: messages }, (params) => (seen = params)), "s_1")
     expect(result).toEqual(messages)
+    expect(seen).toEqual({ sessionID: "s_1", limit: 50, order: undefined, cursor: undefined })
   })
 
   test("passes sessionID + pagination options through to the client", async () => {

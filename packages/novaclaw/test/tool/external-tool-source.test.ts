@@ -233,7 +233,7 @@ describe("AggregateExternalToolSource", () => {
     expect(settlement.result).toEqual({ type: "text", value: McpExternal.FRAME + "MCP:results" })
   })
 
-  test("keeps external schemas out of the resident array and unlocks settlement only after discovery", async () => {
+  test("keeps external schemas out of the resident array while installed tools remain callable", async () => {
     await using tmp = await tmpdir<void>({ init: async () => {} })
     const root = AbsolutePath.make(tmp.path)
     const base = testBase(root, "prj_deferred", { tracker_create_issue: mcpTool("created") })
@@ -274,10 +274,7 @@ describe("AggregateExternalToolSource", () => {
           input: { name: "tracker_create_issue", input: {} },
         },
       }
-      expect((yield* before.settle(input)).result).toMatchObject({
-        type: "error",
-        value: expect.stringContaining("Call tool_search"),
-      })
+      expect((yield* before.settle(input)).result).toEqual({ type: "text", value: McpExternal.FRAME + "created" })
       expect((yield* after.settle(input)).result).toEqual({ type: "text", value: McpExternal.FRAME + "created" })
     })
 

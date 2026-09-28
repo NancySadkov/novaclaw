@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { agentInitials, fetchAgentPortrait, isAgentPortraitURL } from "./agent-portrait"
+import { agentInitials, fetchAgentPortrait, isAgentPortraitURL, loadAgentPortrait } from "./agent-portrait"
 import { instanceUrl } from "@/utils/instance-fetch"
 
 describe("instance-owned agent portraits", () => {
@@ -47,5 +47,25 @@ describe("instance-owned agent portraits", () => {
           new Response(undefined, { headers: { "content-type": "image/png" } }),
         )) as unknown as typeof fetch),
     ).rejects.toThrow("Agent portrait response was empty")
+  })
+
+  test("a mounted portrait stays available to a newly opened roster during an outage", async () => {
+    const server = { url: "https://portrait-cache.example:4096", password: "one" }
+    const route = "/api/agent/myron/avatar?v=first"
+    let reads = 0
+    const fetch = (() => {
+      reads++
+      return Promise.resolve(new Response(Uint8Array.of(1, 2, 3), { headers: { "content-type": "image/png" } }))
+    }) as unknown as typeof globalThis.fetch
+    const original = await loadAgentPortrait(server, route, fetch)
+    const unavailable = (() => {
+      throw new Error("server unavailable")
+    }) as unknown as typeof globalThis.fetch
+    expect(await loadAgentPortrait(server, route, unavailable)).toBe(original)
+    expect(reads).toBe(1)
+    await expect(loadAgentPortrait({ ...server, password: "two" }, route, unavailable)).rejects.toThrow("server unavailable")
+    await expect(loadAgentPortrait(server, "/api/agent/myron/avatar?v=changed", unavailable)).rejects.toThrow(
+      "server unavailable",
+    )
   })
 })

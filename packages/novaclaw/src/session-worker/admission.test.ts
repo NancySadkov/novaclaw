@@ -9,6 +9,10 @@ const governing = (sessionID: string) => ({ sessionID, priority: "governing" as 
 
 describe("session-worker admission", () => {
   test("derives process capacity from the canonical fleet byte ceiling", () => {
+    expect(SessionWorkerAdmission.capacity(16 * 1024 * 1024 * 1024 / 3)).toBe(4)
+    expect(
+      SessionWorkerAdmission.capacity(16 * 1024 * 1024 * 1024 / 3, SessionWorkerAdmission.SOURCE_RESERVATION_BYTES),
+    ).toBe(2)
     expect(
       SessionWorkerAdmission.capacity(
         5 * SessionWorkerAdmission.SOURCE_RESERVATION_BYTES,

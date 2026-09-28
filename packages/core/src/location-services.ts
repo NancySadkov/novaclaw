@@ -14,6 +14,7 @@ import { Node } from "./effect/app-node"
 import { FileMutation } from "./file-mutation"
 import { FileObservation } from "./file-observation"
 import { FileSystem } from "./filesystem"
+import { FSUtil } from "./fs-util"
 import { FileSystemSearch } from "./filesystem/search"
 import { Watcher } from "./filesystem/watcher"
 import { Image } from "./image"
@@ -101,10 +102,12 @@ export type LocationError = LayerNode.Error<typeof locationServices>
 // fields (a full Location.Info passed where a Ref is expected) split the cache the same way.
 // A split key boots a PARALLEL location graph for the same directory — duplicating per-location
 // STATE (PermissionV2's pending asks above all). Canonicalize every ref at the map boundary.
-const canonicalRef = (ref: Location.Ref): Location.Ref =>
-  ref.workspaceID === undefined
-    ? ({ directory: ref.directory } as Location.Ref)
-    : ({ directory: ref.directory, workspaceID: ref.workspaceID } as Location.Ref)
+const canonicalRef = (ref: Location.Ref): Location.Ref => {
+  const directory = FSUtil.resolve(ref.directory)
+  return ref.workspaceID === undefined
+    ? ({ directory } as Location.Ref)
+    : ({ directory, workspaceID: ref.workspaceID } as Location.Ref)
+}
 
 // ⚠️ The GLOBAL half is hoisted and compiled again for EVERY location, and `Database`, `Global`,
 // the Memory capability and `SessionScheduler` still end up as exactly ONE instance per process. That is

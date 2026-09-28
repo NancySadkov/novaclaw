@@ -162,6 +162,27 @@ const violations = (probes: readonly Probe[]) =>
   })
 
 describe("location services global identity", () => {
+  test("one folder spelling builds one location graph", async () => {
+    const dir = await tmpdir()
+    try {
+      const app = AppNodeBuilder.build(
+        LayerNode.group([Database.node, EventV2.node, SettingsConfigStore.node, LocationServiceMap.node]),
+      ) as Layer.Layer<never, unknown, never>
+      const locations = await Effect.runPromise(
+        Effect.gen(function* () {
+          const map = yield* LocationServiceMap.Service
+          const first = yield* map.contextEffect(Location.Ref.make({ directory: AbsolutePath.make(dir.path) }))
+          const alternate = process.platform === "win32" ? dir.path.replaceAll("\\", "/") : `${dir.path}/.`
+          const second = yield* map.contextEffect(Location.Ref.make({ directory: AbsolutePath.make(alternate) }))
+          return [Context.get(first, Location.Service), Context.get(second, Location.Service)]
+        }).pipe(Effect.scoped, Effect.provide(app)) as Effect.Effect<[Location.Interface, Location.Interface], unknown, never>,
+      )
+      expect(locations[0]).toBe(locations[1])
+    } finally {
+      await dir[Symbol.asyncDispose]()
+    }
+  }, 20000)
+
   test("hoists all four direct one-per-process services into the global half", () => {
     const { hoisted } = LayerNode.hoist(locationServices, Node.tags.values.global, [])
     const names = hoisted.dependencies.map((item) => item.name)

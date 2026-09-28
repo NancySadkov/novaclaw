@@ -34,7 +34,7 @@ export async function fetchNativeMessages(
     signal: options?.signal,
     run: (signal) =>
       client.v2.session.messages(
-        { sessionID, limit: options?.limit, order: options?.order, cursor: options?.cursor },
+        { sessionID, limit: options?.limit ?? 50, order: options?.order, cursor: options?.cursor },
         { throwOnError: true, signal },
       ),
   })

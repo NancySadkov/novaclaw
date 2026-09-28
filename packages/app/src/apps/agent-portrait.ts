@@ -28,6 +28,27 @@ export const fetchAgentPortrait = (
   })
 }
 
+const portraitCache = new Map<string, Promise<Blob>>()
+const PORTRAIT_CACHE_LIMIT = 16
+
+export const loadAgentPortrait = (server: ServerConnection.HttpBase, avatar: string, fetch?: InstanceSend): Promise<Blob> => {
+  if (!/[?&]v=[^&]+/.test(avatar)) return fetchAgentPortrait(server, avatar, fetch)
+  const key = JSON.stringify([server.url, server.username, server.password, avatar])
+  const cached = portraitCache.get(key)
+  if (cached) {
+    portraitCache.delete(key)
+    portraitCache.set(key, cached)
+    return cached
+  }
+  const pending = fetchAgentPortrait(server, avatar, fetch).catch((error) => {
+    if (portraitCache.get(key) === pending) portraitCache.delete(key)
+    throw error
+  })
+  portraitCache.set(key, pending)
+  if (portraitCache.size > PORTRAIT_CACHE_LIMIT) portraitCache.delete(portraitCache.keys().next().value!)
+  return pending
+}
+
 /** Two name initials keep an officer identifiable in the compact portrait strip. */
 export const agentInitials = (name: string) =>
   name
