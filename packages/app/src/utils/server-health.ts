@@ -56,8 +56,9 @@ export const GATE_PROBE_REJECTED_MS = 15_000
  *
  * ⚠️ Faster than the outage cadence on purpose, and bounded below the supervisor's own 60 s start
  * budget. A start is a countdown the shell is keeping, not a fault to back off from: the gate that
- * gave up on it at 10 s is what turned a 9 s boot into a 39 s "could not reach". Probing every
- * second is also what the real boot does — the instance answers the instant its port is bound.
+ * gave up on it at 10 s is what turned a 9 s boot into a 39 s "could not reach". Half a second is
+ * also what the real boot looks like — the instance answers within a probe or two of its port being
+ * bound, so the cadence is never what the user waits on.
  */
 export const GATE_PROBE_STARTING_MS = 500
 
