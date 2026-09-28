@@ -69,13 +69,13 @@ describe("who can be addressed", () => {
    * existed still carry it — the classification has ONE reader (`AgentV2.kindOf`) precisely so a second
    * hand-written stance fallback cannot appear beside it.
    */
-  test("🔴 a chat-only colleague and a human are not addressable", () => {
+  test("Chat stays out of the tool roster and the human owner is addressable", () => {
     const notOfficers = [
       agent({ id: "xenia", name: "Xenia", title: "Companion", shortChat: true }),
       agent({ id: "mirror", name: "Mirror", title: "Companion", kind: "chat" }),
       agent({ id: "owner", name: "Owner", title: "Instance Owner", kind: "human" }),
     ]
-    expect(ColleagueTool.addressable(notOfficers, "nova")).toEqual([])
+    expect(ColleagueTool.addressable(notOfficers, "nova").map((item) => String(item.id))).toEqual(["owner"])
   })
 
   test("…and the control: a full officer of the same kinds is still addressable", () => {
@@ -95,9 +95,11 @@ describe("who can be addressed", () => {
       path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "tool", "colleague.ts"),
       "utf8",
     )
-    const body = source.slice(source.indexOf("export const addressable"), source.indexOf("/**", source.indexOf("export const addressable")))
+    const body = source.slice(
+      source.indexOf("export const addressable"),
+      source.indexOf("/**", source.indexOf("export const addressable")),
+    )
     expect(body).toContain("AgentV2.isColleague(agent)")
-    expect(body).toContain('AgentV2.kindOf(agent) === "agent"')
     // The hand-rolled clauses that let the ghosts through.
     expect(body).not.toContain('agent.mode !== "subagent"')
     expect(body).not.toContain("!agent.hidden")
@@ -157,9 +159,7 @@ describe("what the roster looks like to a model routing work", () => {
     expect(ColleagueTool.formatRoster([{ id: "build", name: "Builder" }], "nova")).toBe("build - Builder")
     expect(ColleagueTool.formatRoster([{ id: "build" }], "nova")).toBe("build - build")
     // A title of whitespace is no title, and must not print as one.
-    expect(ColleagueTool.formatRoster([{ id: "build", name: "Builder", title: "   " }], "nova")).toBe(
-      "build - Builder",
-    )
+    expect(ColleagueTool.formatRoster([{ id: "build", name: "Builder", title: "   " }], "nova")).toBe("build - Builder")
   })
 
   test("an empty roster says what to do instead of returning nothing", () => {
@@ -290,8 +290,8 @@ describe("the hand-off result promises the answer AND forbids waiting", () => {
     expect((source.match(/arrive HERE|arrive here/g) ?? []).length).toBe(2)
   })
 
-  test("and both forbid waiting for it", () => {
-    expect((source.match(/[Dd]o (?:NOT|not) wait/g) ?? []).length).toBe(2)
+  test("all three delivery outcomes forbid waiting for it", () => {
+    expect((source.match(/[Dd]o (?:NOT|not) wait/g) ?? []).length).toBe(3)
   })
 
   test("NEGATIVE CONTROL: the reader would notice if the sentences went away", () => {
@@ -345,7 +345,7 @@ describe("internal colleague delivery is governed by the host org chart", () => 
     "utf8",
   )
   const groupStart = source.indexOf('input.op === "ask_group"')
-  const oneStart = source.indexOf('const target = input.colleague.trim()', groupStart)
+  const oneStart = source.indexOf("const target = input.colleague.trim()", groupStart)
   const branch = source.slice(groupStart, oneStart)
 
   test("the ledger's own instrument works", () => {

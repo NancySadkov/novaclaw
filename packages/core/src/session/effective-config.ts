@@ -231,7 +231,13 @@ export const layer = Layer.effect(
       // keep a looser stance. The file is retired (owner, 2026-09-16), so there is no tune and no
       // fault: what remains is the colleague's fold under the chain, which is what the shipped
       // defaults plus one officer always were.
-      const resolved = clampToCeilings(resolveConfig(defaults, chain), currentCeilings())
+      const inherited = resolveConfig(defaults, chain)
+      const resolved = clampToCeilings(
+        agentID === AgentV2.OWNER_ID || AgentV2.kindOf(colleague) !== "agent"
+          ? { ...inherited, shortChat: true }
+          : inherited,
+        currentCeilings(),
+      )
       return {
         config: resolved,
         defaults,

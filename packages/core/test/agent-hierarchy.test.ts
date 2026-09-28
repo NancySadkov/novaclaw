@@ -25,7 +25,12 @@ describe("officer hierarchy", () => {
     expect(String(AgentV2.resolveSuperior("iris", AgentV2.ID.make("theron"), roster)?.id)).toBe("nova")
   })
 
-  test("Nova has no superior", () => {
-    expect(AgentV2.resolveSuperior("nova", AgentV2.ID.make("iris"), [officer("nova"), officer("iris")])).toBeUndefined()
+  test("Nova always reports to the owner", () => {
+    expect(
+      String(
+        AgentV2.resolveSuperior("nova", AgentV2.ID.make("iris"), [officer("owner"), officer("nova"), officer("iris")])
+          ?.id,
+      ),
+    ).toBe("owner")
   })
 })

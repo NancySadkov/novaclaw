@@ -209,6 +209,10 @@ export const ColleagueResultMessage = Schema.Struct({
   reason: Schema.String.pipe(Schema.optional),
   /** Whether anything is actually running their chat — `false` means durable but dormant. */
   started: Schema.Boolean.pipe(Schema.optional),
+  human: Schema.Boolean.pipe(Schema.optional),
+  recipient: Schema.String.pipe(Schema.optional),
+  redirected: Schema.Boolean.pipe(Schema.optional),
+  deferred: Schema.String.pipe(Schema.optional),
   /**
    * Who a GROUP message actually reached, and who it could not — present only for "group-delivered".
    *
@@ -377,13 +381,7 @@ const DeviceRequestBase = {
 export const DeviceAdmit = Schema.Struct({
   ...DeviceRequestBase,
   type: Schema.Literal("device-admit"),
-  sessionClass: Schema.Literals([
-    "interactive",
-    "interactive-focused",
-    "sub-agent",
-    "goal-oriented",
-    "cron",
-  ]),
+  sessionClass: Schema.Literals(["interactive", "interactive-focused", "sub-agent", "goal-oriented", "cron"]),
   priority: Schema.Finite.pipe(Schema.optional),
   concurrency: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)).pipe(Schema.optional),
   /** Cache-affinity window in ms; see `ConfigDevice.Info.minRunMs`. */

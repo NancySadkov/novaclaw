@@ -1,5 +1,8 @@
 import { AgentStatus } from "@novaclaw/core/agent-status"
 import { AgentV2 } from "@novaclaw/core/agent"
+import { SessionV2 } from "@novaclaw/core/session"
+import { SessionStore } from "@novaclaw/core/session/store"
+import * as OwnerInbox from "@novaclaw/core/session/owner-inbox"
 import { Avatar } from "@novaclaw/core/agent/avatar"
 import { InvalidRequestError } from "@novaclaw/protocol/errors"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
@@ -25,6 +28,18 @@ export const PROTECTED_AGENT = "protected_agent"
 export const AgentHandler = handlerLayer(
   HttpApiBuilder.group(AgentApi, "server.agent", (handlers) =>
     handlers
+      .handle("agent.reply", (ctx) =>
+        Effect.gen(function* () {
+          const { db } = yield* Database.Service
+          const store = yield* SessionStore.Service
+          const sessions = yield* SessionV2.Service
+          return yield* response(
+            OwnerInbox.reply({ db, store, sessions }, ctx.payload).pipe(
+              Effect.mapError((error) => new InvalidRequestError({ message: error.message, kind: "invalid_reply" })),
+            ),
+          )
+        }),
+      )
       .handle("agent.list", () =>
         Effect.gen(function* () {
           // ⚠️ `workspace` is stamped HERE rather than stored: it is derived from the id, so keeping
@@ -82,7 +97,7 @@ export const AgentHandler = handlerLayer(
       )
       .handleRaw("agent.avatar.upload", (ctx) =>
         Effect.gen(function* () {
-          if (AgentV2.isProtected(ctx.params.agentID))
+          if (ctx.params.agentID === AgentV2.NOVA_ID)
             return yield* new InvalidRequestError({
               message: "Nova always uses its star portrait",
               kind: PROTECTED_AGENT,
@@ -125,7 +140,7 @@ export const AgentHandler = handlerLayer(
         }),
       )
       .handle("agent.avatar.delete", (ctx) =>
-        AgentV2.isProtected(ctx.params.agentID)
+        ctx.params.agentID === AgentV2.NOVA_ID
           ? new InvalidRequestError({
               message: "Nova always uses its star portrait",
               kind: PROTECTED_AGENT,

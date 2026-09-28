@@ -13116,6 +13116,50 @@ export type V2LocationGetResponses = {
 
 export type V2LocationGetResponse = V2LocationGetResponses[keyof V2LocationGetResponses]
 
+export type V2AgentReplyData = {
+  body: {
+    sessionID: string
+    messageID: string
+    replyID: string
+    text: string
+  }
+  path?: never
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/agent/owner/reply"
+}
+
+export type V2AgentReplyErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2AgentReplyError = V2AgentReplyErrors[keyof V2AgentReplyErrors]
+
+export type V2AgentReplyResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: {
+      sessionID: string
+    }
+  }
+}
+
+export type V2AgentReplyResponse = V2AgentReplyResponses[keyof V2AgentReplyResponses]
+
 export type V2AgentListData = {
   body?: never
   path?: never

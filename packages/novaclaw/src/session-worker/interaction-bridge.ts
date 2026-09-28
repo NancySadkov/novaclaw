@@ -301,6 +301,10 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
         type: "colleague-result" as const,
         outcome: "delivered" as const,
         started: delivered.value.started,
+        human: delivered.value.human,
+        recipient: delivered.value.recipient,
+        redirected: delivered.value.redirected,
+        deferred: delivered.value.deferred,
       }
     // 🔴 A hand-off that did not land carries the SENTENCE, and the bridge must not flatten it.
     // `refused` is the loop bound (`session/colleague-bound.ts`), a paused colleague, or a name that

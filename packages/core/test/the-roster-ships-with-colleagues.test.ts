@@ -86,10 +86,11 @@ describe("the colleagues that ship", () => {
   test("🔴 each carries a job title, and a description that is not its own name back", () => {
     const literalsEnd = SEED_SOURCE.indexOf("export const seedFromDirectory")
     expect(literalsEnd).toBeGreaterThan(0)
-    for (const id of [...SEEDED, "owner"]) {
+    for (const id of SEEDED) {
       const block = SEED_SOURCE.slice(SEED_SOURCE.indexOf(`id: "${id}"`), literalsEnd)
-      const next = SEED_SOURCE.indexOf("id: \"", SEED_SOURCE.indexOf(`id: "${id}"`) + 1)
-      const scoped = next === -1 || next > literalsEnd ? block : SEED_SOURCE.slice(SEED_SOURCE.indexOf(`id: "${id}"`), next)
+      const next = SEED_SOURCE.indexOf('id: "', SEED_SOURCE.indexOf(`id: "${id}"`) + 1)
+      const scoped =
+        next === -1 || next > literalsEnd ? block : SEED_SOURCE.slice(SEED_SOURCE.indexOf(`id: "${id}"`), next)
       expect(scoped, `${id} has no job title`).toMatch(/title: "[^"]+"/)
       expect(scoped, `${id} says nothing about what it owns`).toMatch(/owns: "[^"]+"/)
       expect(scoped, `${id} restates its name and title in the description`).not.toContain("${officer.name}")

@@ -192,7 +192,7 @@ const view = (agent: AgentLike): ContactView => {
     paused: agent.paused === true,
     // The row offers no Retire control for Nova, and the API refuses it too. Both, on purpose: a
     // rule enforced only where it is displayed is a rule an agent's own config write walks around.
-    removable: !governing,
+    removable: !AgentV2.isProtected(agent.id),
     memory: agent.memory ?? "own",
   }
 }

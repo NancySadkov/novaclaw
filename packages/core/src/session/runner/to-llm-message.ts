@@ -17,7 +17,8 @@ import type { FileAttachment } from "../prompt"
 import { ArchiveAttachment } from "./archive-attachment"
 import { OldContext } from "../old-context"
 import { stripAutomatedEcho } from "../automated-echo"
-import { applyHarnessProvenance } from "../steer-provenance"
+import { applyHarnessProvenance, isSteerText, isHarnessNoticeText } from "../steer-provenance"
+import { isNotice } from "../notice"
 
 const media = (file: FileAttachment): ContentPart => ({
   type: "media",
@@ -508,7 +509,12 @@ const toolResult = (
   }
 }
 
-const assistant = (message: SessionMessage.Assistant, model: Model, capabilities: InputCapabilities | undefined) => {
+const assistant = (
+  message: SessionMessage.Assistant,
+  model: Model,
+  capabilities: InputCapabilities | undefined,
+  harness = true,
+) => {
   const sameModel =
     String(message.model.providerID) === String(model.provider) && String(message.model.id) === String(model.id)
   // A broken stream may leave provider-native continuation handles half-written. Keep the human-readable
@@ -549,10 +555,10 @@ const assistant = (message: SessionMessage.Assistant, model: Model, capabilities
   // PERSISTED in history and re-sent on every subsequent turn -- that is
   // intended: the transcript is the durable record of what happened, so a later
   // (e.g. recovered/online) turn can read it and reason about the failure.
-  if (message.error) {
+  if (harness && message.error) {
     content.push({ type: "text", text: `[Previous turn failed before completing: ${message.error.message}]` })
   }
-  if (message.finish === "broken") {
+  if (harness && message.finish === "broken") {
     content.push({
       type: "text",
       text: "[The previous provider reply ended unexpectedly. Its content above is usable but incomplete. Re-ground yourself in the conversation and current tool state, then continue without repeating completed actions.]",
@@ -585,6 +591,7 @@ function toLLMMessage(
   message: SessionMessage.Message,
   model: Model,
   capabilities: InputCapabilities | undefined,
+  harness = true,
 ): Message[] {
   switch (message.type) {
     case "agent-switched":
@@ -664,7 +671,7 @@ function toLLMMessage(
         }),
       ]
     case "assistant":
-      return assistant(message, model, capabilities)
+      return assistant(message, model, capabilities, harness)
     case "compaction": {
       /**
        * ⭐ **THE TOMBSTONE — `invariants.md` (Context Management 1), composed HERE because this is
@@ -717,9 +724,21 @@ export const toLLMMessages = (
   model: Model,
   capabilities?: InputCapabilities | undefined,
   maxImages?: number | undefined,
+  mode: "agent" | "chat" | "human" = "agent",
 ) =>
   budgetImages(
-    messages.flatMap((message) => toLLMMessage(message, model, capabilities)),
+    messages.flatMap((message) => {
+      if (mode === "human") return []
+      if (
+        mode === "chat" &&
+        (message.type === "synthetic" ||
+          message.type === "system" ||
+          (message.type === "user" &&
+            (isSteerText(message.text) || isHarnessNoticeText(message.text) || isNotice(message.id))))
+      )
+        return []
+      return toLLMMessage(message, model, capabilities, mode === "agent")
+    }),
     maxImages,
   )
 

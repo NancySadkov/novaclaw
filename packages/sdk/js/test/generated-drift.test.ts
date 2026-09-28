@@ -371,7 +371,7 @@ const GENERATE_TIMEOUT_MS = 60_000
 // chat" must take, since the transcript a user is reading is often a filed one. Measured against the
 // previous commit: ONE schema ADDED (`AgentChatSummary -> AgentChatSummary`), nothing REMOVED, no
 // existing name changed. Pure addition, same as `AgentChat` the day before.
-const SCHEMA_NAME_FINGERPRINT = "ec86187f954b8b72ca655a4579e9519c9a287d3a73d287c5f1987f1c4fc7870d"
+const SCHEMA_NAME_FINGERPRINT = "d60e5bf5a95247f8e57a59cfa4b83b54e874a381636f33f90e0bf0e7cc4cfc68"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

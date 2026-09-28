@@ -250,6 +250,7 @@ export const layer = Layer.effect(
         // queued input, a nudge, a recovery adoption — must not resurrect it, or the archive leaves a
         // ghost the user cannot see. Restoring unarchives, and the next prompt runs normally.
         if (stored.time?.archived !== undefined) return
+        if ((yield* SessionInput.settlePassiveInputs(database.db, events, sessionID)) === "human") return
         if (yield* held(sessionID)) return
 
         // 🔴 **Degrade, don't die: a session whose working folder has gone runs in a scratch folder.**

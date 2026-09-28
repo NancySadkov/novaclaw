@@ -20,3 +20,9 @@ export const WorkProjectGroup = HttpApiGroup.make("server.work-project")
       }),
     ),
   )
+  .annotateMerge(
+    OpenApi.annotations({
+      title: "projects",
+      description: "Project folders, officer assignments, and execution holds.",
+    }),
+  )

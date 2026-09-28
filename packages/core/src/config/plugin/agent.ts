@@ -32,6 +32,11 @@ export const Plugin = define({
         const files = entries.filter((entry): entry is Config.Document => entry.type === "document")
 
         const global = files.flatMap((file) => file.info.permissions ?? [])
+        const username = files.map((file) => file.info.username).findLast((name) => name?.trim())
+        if (username && draft.get(AgentV2.OWNER_ID))
+          draft.update(AgentV2.OWNER_ID, (agent) => {
+            agent.name = username
+          })
         const storedDefault = yield* store.getDefault()
         if (storedDefault !== undefined) draft.default(AgentV2.ID.make(storedDefault))
         for (const current of draft.list()) {

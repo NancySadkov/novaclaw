@@ -45,6 +45,9 @@ let selected = "/repo/worktree-a"
 let variant: string | undefined
 let interruptError: Error | undefined
 let interruptCalls = 0
+let human = false
+let modelAvailable = true
+let promptCalls = 0
 
 const promptValue: Prompt = [{ type: "text", content: "ls", start: 0, end: 2 }]
 const prompt = {
@@ -81,9 +84,10 @@ const clientFor = (directory: string) => {
             },
           }
         },
-        prompt: async () => ({
-          data: promptLanded === undefined ? undefined : { data: { sessionID: promptLanded } },
-        }),
+        prompt: async () => {
+          promptCalls++
+          return { data: promptLanded === undefined ? undefined : { data: { sessionID: promptLanded } } }
+        },
         command: async () => ({ data: undefined }),
         interrupt: async () => {
           interruptCalls++
@@ -145,7 +149,7 @@ beforeAll(async () => {
   mock.module("@/context/local", () => ({
     useLocal: () => ({
       model: {
-        current: () => ({ id: "model", provider: { id: "provider" } }),
+        current: () => (modelAvailable ? { id: "model", provider: { id: "provider" } } : undefined),
         // Fix D: `submit.ts` asks the CHAT what it picked, separately from what it resolved to. These
         // fixtures model a chat that did pick (matching `current()`), because the variant assertions
         // below ride on the pick — a variant only travels with a deliberate choice.
@@ -153,7 +157,7 @@ beforeAll(async () => {
         variant: { current: () => variant },
       },
       agent: {
-        current: () => ({ name: "agent" }),
+        current: () => ({ name: human ? "owner" : "agent" }),
       },
       permissionMode: {
         current: () => "ask",
@@ -316,11 +320,39 @@ beforeEach(() => {
   variant = undefined
   interruptError = undefined
   interruptCalls = 0
+  human = false
+  modelAvailable = true
+  promptCalls = 0
   toasts.length = 0
   for (const key of Object.keys(storedSessions)) delete storedSessions[key]
 })
 
 describe("prompt submit worktree selection", () => {
+  test("the human can save a message without any configured model", async () => {
+    human = true
+    modelAvailable = false
+    composerSession = "session-owner"
+    const submit = createPromptSubmit({
+      prompt,
+      info: () => ({ id: "session-owner" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      mode: () => "normal",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      sessionID: () => composerSession,
+    })
+    await submit.handleSubmit({ preventDefault() {} } as Event)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(promptCalls).toBe(1)
+    expect(toasts).toEqual([])
+    expect(promptedVariants).toEqual([])
+  })
   // Ported from outside contribution #10 by @DassaultFalconKing. Stop is the
   // control a user reaches for when something is already wrong; `.catch(() => {})` meant the agent
   // kept streaming with no reason given.
@@ -365,7 +397,9 @@ describe("prompt submit worktree selection", () => {
       resetHistoryNavigation: () => undefined,
       setMode: () => undefined,
       sessionID: () => composerSession,
-      stopSession: async () => { pageStops++ },
+      stopSession: async () => {
+        pageStops++
+      },
     })
 
     await submit.abort()
@@ -403,7 +437,9 @@ describe("prompt submit worktree selection", () => {
       resetHistoryNavigation: () => undefined,
       setMode: () => undefined,
       sessionID: () => composerSession,
-      stopSession: async () => { stopped = composerSession },
+      stopSession: async () => {
+        stopped = composerSession
+      },
     })
 
     await submit.abort()

@@ -21,7 +21,7 @@ import { agentColor } from "@/utils/agent"
 import { moveOfficerOrder, roster, searchRoster, type ContactView } from "@/apps/contacts"
 import { listSessions, listUsage, rememberOfficerChat, startChat } from "@/apps/agent-list"
 import { planHire } from "@/apps/agent-hire"
-import { cloneAgent, isNovaCloneRefusal } from "@/apps/agent-clone"
+import { cloneAgent, isProtectedAgentCloneRefusal } from "@/apps/agent-clone"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import { describeFailure } from "@/utils/failure-copy"
@@ -233,7 +233,7 @@ export function ContactsPage() {
       refetchAgents()
     } catch (error) {
       showToast(
-        isNovaCloneRefusal(error)
+        isProtectedAgentCloneRefusal(error)
           ? {
               title: language.t("agentConfig.cloneNovaTitle"),
               description: language.t("agentConfig.cloneNovaDescription"),
@@ -247,7 +247,7 @@ export function ContactsPage() {
 
   const actOnColleague = async (view: ContactView, action: "pause" | "retire") => {
     const current = ctx()
-    if (!current || acting() || (action === "retire" && !view.removable)) return
+    if (!current || acting() || view.id === "owner" || (action === "retire" && !view.removable)) return
     if (
       action === "retire" &&
       !(await confirm({
@@ -705,9 +705,7 @@ function ContactRow(props: ContactRowProps) {
   // ⚠️ Through `sessionHref`, never hand-built. The route segment is BASE64 of the server key, and
   // interpolating the raw key produced `/server/http://localhost:4096/session/…` — a link that looks
   // right in the DOM and cannot resolve. Caught by reading the rendered hrefs, not by the typecheck.
-  const chatHref = createMemo(() =>
-    props.serverKey ? agentHref(props.serverKey, props.view.id) : undefined,
-  )
+  const chatHref = createMemo(() => (props.serverKey ? agentHref(props.serverKey, props.view.id) : undefined))
   let tile: HTMLDivElement | undefined
   const openChat = () => {
     if (props.suppressOpen() || props.starting) return
@@ -823,7 +821,11 @@ function ContactRow(props: ContactRowProps) {
             <Icon name="settings-gear" class="size-4" />
             {language.t("command.category.settings")}
           </ContextMenu.Item>
-          <ContextMenu.Item class="officer-context-item" disabled={props.busy} onSelect={props.onPause}>
+          <ContextMenu.Item
+            class="officer-context-item"
+            disabled={props.busy || props.view.id === "owner"}
+            onSelect={props.onPause}
+          >
             {language.t(props.view.paused ? "agentConfig.resume" : "agentConfig.pause")}
           </ContextMenu.Item>
           <ContextMenu.Item

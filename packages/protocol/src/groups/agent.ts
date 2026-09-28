@@ -1,4 +1,6 @@
 import { Agent } from "@novaclaw/schema/agent"
+import { Session } from "@novaclaw/schema/session"
+import { SessionMessage } from "@novaclaw/schema/session-message"
 import { InvalidRequestError } from "../errors"
 import { Location } from "@novaclaw/schema/location"
 import { Schema } from "effect"
@@ -6,6 +8,21 @@ import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/un
 import { LocationQuery, locationQueryOpenApi } from "./location"
 
 export const AgentGroup = HttpApiGroup.make("server.agent")
+  .add(
+    HttpApiEndpoint.post("agent.reply", "/api/agent/owner/reply", {
+      query: LocationQuery,
+      payload: Schema.Struct({
+        sessionID: Session.ID,
+        messageID: SessionMessage.ID,
+        replyID: SessionMessage.ID,
+        text: Schema.String,
+      }),
+      success: Location.response(Schema.Struct({ sessionID: Session.ID })),
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({ identifier: "v2.agent.reply", summary: "Reply to an officer from your transcript" }),
+    ),
+  )
   .add(
     HttpApiEndpoint.get("agent.list", "/api/agent", {
       query: LocationQuery,
@@ -109,7 +126,7 @@ export const AgentGroup = HttpApiGroup.make("server.agent")
           summary: "Every chat a colleague has",
           description:
             "All root chats belonging to this colleague, newest first, INCLUDING archived ones — the set " +
-            "\"Clear chat\" must act on, since the transcript a user is reading is often a filed one. " +
+            '"Clear chat" must act on, since the transcript a user is reading is often a filed one. ' +
             "Sub-agent threads are not roots and are not included. An empty array means this colleague " +
             "has never had a chat.",
         }),
@@ -124,16 +141,15 @@ export const AgentGroup = HttpApiGroup.make("server.agent")
     HttpApiEndpoint.get("agent.avatar.get", "/api/agent/:agentID/avatar", {
       params: { agentID: Agent.ID },
       success: Schema.Uint8Array.pipe(HttpApiSchema.asUint8Array()),
-    })
-      .annotateMerge(
-        OpenApi.annotations({
-          identifier: "v2.agent.avatar.get",
-          summary: "Read an agent portrait",
-          description:
-            "Read the instance-owned portrait bytes for one agent. An agent without an uploaded portrait " +
-            "receives the deterministic server-owned placeholder.",
-        }),
-      ),
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.agent.avatar.get",
+        summary: "Read an agent portrait",
+        description:
+          "Read the instance-owned portrait bytes for one agent. An agent without an uploaded portrait " +
+          "receives the deterministic server-owned placeholder.",
+      }),
+    ),
   )
   .add(
     HttpApiEndpoint.put("agent.avatar.upload", "/api/agent/:agentID/avatar", {
@@ -229,7 +245,7 @@ export const AgentGroup = HttpApiGroup.make("server.agent")
           identifier: "v2.agent.remove",
           summary: "Remove agent",
           description:
-            "Delete a config-defined agent from the instance agent store, and clear `default_agent` when it pointed at that agent. Takes effect fully on the next serve boot. The instance's governing agent (`nova`) cannot be removed and returns 400.",
+            "Delete a config-defined agent from the instance agent store, and clear `default_agent` when it pointed at that agent. Takes effect fully on the next serve boot. Nova and the instance owner cannot be removed and return 400.",
         }),
       ),
   )

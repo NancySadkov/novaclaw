@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { ConfigAgent } from "@novaclaw/core/config/agent"
-import { cloneAgent, clonedFields, NOT_CLONED, NovaCloneRefusal, planClone } from "./agent-clone"
+import { cloneAgent, clonedFields, NOT_CLONED, ProtectedAgentCloneRefusal, planClone } from "./agent-clone"
 import type { AgentLike } from "./contacts"
 
 const source: AgentLike = {
@@ -17,7 +17,10 @@ const source: AgentLike = {
 describe("what a clone inherits", () => {
   test("Nova cannot be cloned through planning or persistence", async () => {
     const nova: AgentLike = { ...source, id: "nova", name: "Nova" }
-    expect(() => planClone({ source: nova, taken: [], random: () => 0 })).toThrow(NovaCloneRefusal)
+    expect(() => planClone({ source: nova, taken: [], random: () => 0 })).toThrow(ProtectedAgentCloneRefusal)
+    expect(() => planClone({ source: { ...source, id: "owner" }, taken: [], random: () => 0 })).toThrow(
+      ProtectedAgentCloneRefusal,
+    )
     let wrote = false
     await expect(
       cloneAgent({

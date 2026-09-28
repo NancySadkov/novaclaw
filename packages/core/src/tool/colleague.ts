@@ -206,17 +206,10 @@ export const mayStaff = (selfID: string): boolean => AgentV2.mayStaff(selfID)
  * so the tool was the one door offering to `ask` a permission mode wearing an agent's shape. A posture
  * has no `colleague` tool, so a hand-off to one is a message nobody can answer.
  *
- * ⚠️ **`kindOf === "agent"` is the other half, and it is why Xenia was listed.** A Chat-only colleague
- * (`shortChat`, or the newer `kind: "chat"`) runs with no tools, no memory and no harness prompt — it
- * is a place to talk to the model, not an officer that can be handed work. And the instance's owning
- * human is `kind: "human"`, a profile row rather than something a message reaches. The server already
- * applies exactly this pair for the team-chat projection (`agent/team-chat.ts`); the catalogue did not,
- * so a model could address a companion and wait for a reply that is structurally impossible.
  */
 export const addressable = (agents: ReadonlyArray<AgentV2.Info>, selfID: string): ReadonlyArray<AgentV2.Info> =>
   agents.filter(
-    (agent) =>
-      AgentV2.isColleague(agent) && AgentV2.kindOf(agent) === "agent" && String(agent.id) !== selfID,
+    (agent) => AgentV2.isColleague(agent) && AgentV2.kindOf(agent) !== "chat" && String(agent.id) !== selfID,
   )
 
 export const layer = Layer.effectDiscard(
@@ -449,9 +442,7 @@ export const layer = Layer.effectDiscard(
                       : "") +
                     (outcome.deferred ? `Their work is queued because ${outcome.deferred}. ` : "") +
                     `They answer in their own time; end your turn if you need their reply.` +
-                    (outcome.missing.length > 0
-                      ? ` Not delivered to ${outcome.missing.join(", ")}.`
-                      : ""),
+                    (outcome.missing.length > 0 ? ` Not delivered to ${outcome.missing.join(", ")}.` : ""),
                 } satisfies Output
               }
 
@@ -496,19 +487,25 @@ export const layer = Layer.effectDiscard(
                 // address in with the message), so the honest sentence is neither the old promise nor
                 // the flat denial that replaced it: the answer arrives HERE, LATER, as a message from
                 // them, and this turn must not wait for it.
-                message: outcome.started
-                  ? `Left it with ${outcome.recipient ?? target}, in their own chat, and they have started on it. ` +
-                    (outcome.redirected ? `The request to ${target} was routed to the next person in the chain of command. ` : "") +
-                    `Their answer will ` +
-                    `arrive HERE as a message from them — later, in their own time. Do NOT wait for it and do not ` +
-                    `stall this turn: finish what you can do yourself and tell the user who has the rest.`
-                  : // Durable but dormant, and SAID so: nothing is running their chat, so a caller
-                    // reporting "handed over" would promise a reply nobody is going to write.
-                    `Stored the message in ${outcome.recipient ?? target}'s chat` +
-                    (outcome.redirected ? ` (routed to the next person in the chain of command instead of ${target})` : "") +
-                    `. It is queued${outcome.deferred ? ` because ${outcome.deferred}` : " because no executor is attached"}; ` +
-                    `their chat will read it on its next run. Their answer will arrive here if and when they write it. Tell the user it is queued ` +
-                    `with that colleague rather than under way, and do not wait for it.`,
+                message: outcome.human
+                  ? `Delivered to the instance owner's transcript. They can answer later; their reply will arrive in your chat. Continue all work that does not depend on the answer. Do not wait, poll, or stop merely because you asked a question.`
+                  : outcome.started
+                    ? `Left it with ${outcome.recipient ?? target}, in their own chat, and they have started on it. ` +
+                      (outcome.redirected
+                        ? `The request to ${target} was routed to the next person in the chain of command. `
+                        : "") +
+                      `Their answer will ` +
+                      `arrive HERE as a message from them — later, in their own time. Do NOT wait for it and do not ` +
+                      `stall this turn: finish what you can do yourself and tell the user who has the rest.`
+                    : // Durable but dormant, and SAID so: nothing is running their chat, so a caller
+                      // reporting "handed over" would promise a reply nobody is going to write.
+                      `Stored the message in ${outcome.recipient ?? target}'s chat` +
+                      (outcome.redirected
+                        ? ` (routed to the next person in the chain of command instead of ${target})`
+                        : "") +
+                      `. It is queued${outcome.deferred ? ` because ${outcome.deferred}` : " because no executor is attached"}; ` +
+                      `their chat will read it on its next run. Their answer will arrive here if and when they write it. Tell the user it is queued ` +
+                      `with that colleague rather than under way, and do not wait for it.`,
               } satisfies Output
             }).pipe(
               Effect.mapError((error) => {

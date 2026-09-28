@@ -17,18 +17,18 @@
 // now fails when a new field is neither carried nor deliberately excluded.
 
 import { ConfigAgent } from "@novaclaw/core/config/agent"
+import { AgentV2 } from "@novaclaw/core/agent"
 import { retargetScratchGrants } from "@novaclaw/core/agent/scratch-grants"
 import { OfficerName } from "@novaclaw/core/agent/officer-name"
 import { modelRef } from "./agent-model"
 import type { AgentLike } from "./contacts"
 
-/** Nova's charter is unique to one instance; copying its prompt would create a second apparent CEO
- * without creating a second authority root. */
-export class NovaCloneRefusal extends Error {
-  readonly name = "NovaCloneRefusal"
+export class ProtectedAgentCloneRefusal extends Error {
+  readonly name = "ProtectedAgentCloneRefusal"
 }
 
-export const isNovaCloneRefusal = (error: unknown): error is NovaCloneRefusal => error instanceof NovaCloneRefusal
+export const isProtectedAgentCloneRefusal = (error: unknown): error is ProtectedAgentCloneRefusal =>
+  error instanceof ProtectedAgentCloneRefusal
 
 /**
  * Fields a clone deliberately does NOT take, each for its own reason. Everything else in
@@ -101,9 +101,11 @@ export const planClone = (input: {
   readonly taken: Iterable<string>
   readonly random: () => number
 }): Clone => {
-  if (input.source.id === "nova")
-    throw new NovaCloneRefusal(
-      "Nova is the single CEO of this instance. To have another Nova, deploy a separate NovaClaw instance.",
+  if (AgentV2.isProtected(input.source.id))
+    throw new ProtectedAgentCloneRefusal(
+      input.source.id === "owner"
+        ? "The instance owner is your own identity and cannot be cloned."
+        : "Nova is the single CEO of this instance. To have another Nova, deploy a separate NovaClaw instance.",
     )
   const name = OfficerName.pick({ taken: input.taken, random: input.random })
   const fragment: Record<string, unknown> = { name: OfficerName.display(name) }

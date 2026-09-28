@@ -1030,6 +1030,38 @@ class ApiV2AgentAvatar extends NovaClawApiClient {
 
 class ApiV2Agent extends NovaClawApiClient {
   /**
+   * Reply to an officer from your transcript
+   */
+  public reply<ThrowOnError extends boolean = false>(
+    parameters: {
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+      sessionID: string
+      messageID: string
+      replyID: string
+      text: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const query = { location: parameters?.["location"] }
+    const body = {
+      sessionID: parameters?.["sessionID"],
+      messageID: parameters?.["messageID"],
+      replyID: parameters?.["replyID"],
+      text: parameters?.["text"],
+    }
+    return (options?.client ?? this.client).post<T.V2AgentReplyResponses, T.V2AgentReplyErrors, ThrowOnError>({
+      url: "/api/agent/owner/reply",
+      ...options,
+      query,
+      body,
+      headers: { "Content-Type": "application/json", ...options?.headers },
+    })
+  }
+
+  /**
    * List agents
    *
    * Retrieve currently registered agents.
@@ -1188,7 +1220,7 @@ class ApiV2Agent extends NovaClawApiClient {
   /**
    * Remove agent
    *
-   * Delete a config-defined agent from the instance agent store, and clear `default_agent` when it pointed at that agent. Takes effect fully on the next serve boot. The instance's governing agent (`nova`) cannot be removed and returns 400.
+   * Delete a config-defined agent from the instance agent store, and clear `default_agent` when it pointed at that agent. Takes effect fully on the next serve boot. Nova and the instance owner cannot be removed and return 400.
    */
   public remove<ThrowOnError extends boolean = false>(
     parameters: {

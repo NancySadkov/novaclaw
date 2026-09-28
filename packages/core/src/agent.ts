@@ -27,6 +27,7 @@ export const BUILD_ID = ID.make("build")
 
 /** The CEO of this instance's organization (AGENTS.md — the structural metaphor). */
 export const NOVA_ID = ID.make("nova")
+export const OWNER_ID = ID.make("owner")
 
 /**
  * 🔴 **WHO OWNS A CHAT NOBODY ATTRIBUTED — and it is an OFFICER, never a posture.**
@@ -84,7 +85,7 @@ export const RECIPE_ID = ID.make("recipe")
  *  exactly as every other officer's is; what stays fixed is that Nova exists (no retirement), that
  *  it stays the one CEO (no clone), and that it governs from the instance rather than from a project
  *  folder ({@link PROTECTED_NEVER}). */
-export const PROTECTED_IDS: ReadonlySet<string> = new Set([NOVA_ID])
+export const PROTECTED_IDS: ReadonlySet<string> = new Set([NOVA_ID, OWNER_ID])
 
 export const isProtected = (id: string): boolean => PROTECTED_IDS.has(id)
 
@@ -154,10 +155,7 @@ export const protectedTunableKeys = (fragment: Record<string, unknown>): string[
  * ⚠️ `writer` DEFAULTS TO `"instance"`, the narrow arm. A caller that does not know who it is is
  * not the operator, and the safe answer has to be the one you get by doing nothing.
  */
-export const protectedRefusedKeys = (
-  fragment: Record<string, unknown>,
-  writer: ConfigWriter = "instance",
-): string[] =>
+export const protectedRefusedKeys = (fragment: Record<string, unknown>, writer: ConfigWriter = "instance"): string[] =>
   Object.keys(fragment).filter(
     (key) => PROTECTED_NEVER.has(key) || (writer !== "operator" && !PROTECTED_TUNABLE.has(key)),
   )
@@ -207,16 +205,17 @@ export const resolveSuperior = (
   roster: ReadonlyArray<Info>,
   options: { readonly includePaused?: boolean } = {},
 ): Info | undefined => {
-  if (selfID === NOVA_ID) return undefined
   const byID = new Map(roster.map((agent) => [String(agent.id), agent]))
+  if (selfID === OWNER_ID || selfID === NOVA_ID) return byID.get(OWNER_ID)
   const fallback = byID.get(NOVA_ID)
   const requested = configured ?? NOVA_ID
   if (requested === selfID) return fallback
   const superior = byID.get(requested)
-  if (superior === undefined || !isColleague(superior) || (superior.paused === true && !options.includePaused)) return fallback
+  if (superior === undefined || !isColleague(superior) || (superior.paused === true && !options.includePaused))
+    return fallback
   const seen = new Set([selfID])
   let cursor: Info | undefined = superior
-  while (cursor !== undefined && String(cursor.id) !== NOVA_ID) {
+  while (cursor !== undefined && String(cursor.id) !== NOVA_ID && String(cursor.id) !== OWNER_ID) {
     const id = String(cursor.id)
     if (seen.has(id)) return fallback
     seen.add(id)
@@ -290,9 +289,10 @@ export const kindOf = (info: { readonly kind?: Kind | undefined; readonly shortC
 export const isHuman = (info: Parameters<typeof kindOf>[0]): boolean => kindOf(info) === "human"
 
 export const operationModeOf = (
-  info: ({ readonly operationMode?: "interactive" | "unattended" | undefined } & Parameters<typeof kindOf>[0]) | undefined,
-): "interactive" | "unattended" | undefined =>
-  kindOf(info) === "agent" ? info?.operationMode : "interactive"
+  info:
+    | ({ readonly operationMode?: "interactive" | "unattended" | undefined } & Parameters<typeof kindOf>[0])
+    | undefined,
+): "interactive" | "unattended" | undefined => (kindOf(info) === "agent" ? info?.operationMode : "interactive")
 
 export const Color = Agent.Color
 
@@ -343,6 +343,14 @@ export const layer = Layer.effect(
           if (!draft.agents.has(id)) draft.agents.set(id, current)
           fn(current)
           current.id = id
+          if (id === NOVA_ID) current.superior = OWNER_ID
+          if (id === OWNER_ID) {
+            current.kind = "human"
+            current.superior = OWNER_ID
+            current.mode = "primary"
+            current.hidden = false
+            current.paused = false
+          }
         },
         remove: (id) => {
           draft.agents.delete(id)
@@ -353,7 +361,9 @@ export const layer = Layer.effect(
     // roster (that is the whole point of pausing rather than retiring), it simply must never be the
     // agent a session falls back to when nothing else is chosen.
     const selectable = (agent: Info | undefined) =>
-      agent && agent.mode !== "subagent" && !agent.hidden && agent.paused !== true ? agent : undefined
+      agent && !isHuman(agent) && agent.mode !== "subagent" && !agent.hidden && agent.paused !== true
+        ? agent
+        : undefined
     /**
      * 🔴 An unattributed chat belongs to an OFFICER. See {@link DEFAULT_COLLEAGUE_ID} for why.
      *

@@ -141,5 +141,6 @@ export const migrations = (
     import("./migration/20260927225632_work_projects"),
     import("./migration/20260928002558_work_project_directory"),
     import("./migration/20260928093000_colleague_is_always_reachable"),
+    import("./migration/20260928140000_owner_inbox"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

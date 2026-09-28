@@ -137,7 +137,7 @@ export type FollowupDraft = {
   prompt: Prompt
   context: (ContextItem & { key: string })[]
   agent: string
-  model: { providerID: string; modelID: string }
+  model?: { providerID: string; modelID: string }
   /**
    * What THIS chat picked, or `undefined` when it never picked. `model` above is what the composer
    * will RUN on — the same field resolved through the officer and the fallbacks — so it must never
@@ -407,20 +407,23 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       pending.delete(key)
       return Promise.resolve()
     }
-    return (input.stopSession
-      ? input.stopSession()
-      : sdk().client.v2.session.interrupt({ sessionID: id }).then(() => undefined))
-      .catch((err) => {
-        // Stop is the control a user reaches for when something is already going wrong, so a silent
-        // failure here is the worst-placed one in the composer: the agent keeps streaming and the
-        // UI gives no reason. Ruling 2 — a failed mutation never reports success. This was the last
-        // `.catch(() => {})` in the file; every other failure path already toasts this exact shape.
-        // Ported from outside contribution #10 by @DassaultFalconKing.
-        showToast({
-          title: language.t("common.requestFailed"),
-          description: errorMessage(err),
-        })
+    return (
+      input.stopSession
+        ? input.stopSession()
+        : sdk()
+            .client.v2.session.interrupt({ sessionID: id })
+            .then(() => undefined)
+    ).catch((err) => {
+      // Stop is the control a user reaches for when something is already going wrong, so a silent
+      // failure here is the worst-placed one in the composer: the agent keeps streaming and the
+      // UI gives no reason. Ruling 2 — a failed mutation never reports success. This was the last
+      // `.catch(() => {})` in the file; every other failure path already toasts this exact shape.
+      // Ported from outside contribution #10 by @DassaultFalconKing.
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: errorMessage(err),
       })
+    })
   }
 
   const restoreCommentItems = (
@@ -509,7 +512,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const currentOverride = local.model.override()
     const currentAgent = local.agent.current()
     const variant = local.model.variant.current()
-    if (!currentModel || !currentAgent) {
+    const human =
+      currentAgent?.name === "owner" ||
+      (currentAgent !== undefined && sync().data.config?.agents?.[currentAgent.name]?.kind === "human")
+    if ((!human && !currentModel) || !currentAgent) {
       showToast({
         title: language.t("prompt.toast.modelAgentRequired.title"),
         description: language.t("prompt.toast.modelAgentRequired.description"),
@@ -579,7 +585,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
             strict: local.strict.current(),
             features: local.features.current(),
             mode: local.mode.current(),
-            // Guarded above (`if (!currentModel || !currentAgent) return`), so this is never blank.
             agent: currentAgent.name,
           }),
         )
@@ -618,10 +623,12 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return
     }
 
-    const model = {
-      modelID: currentModel.id,
-      providerID: currentModel.provider.id,
-    }
+    const model = currentModel
+      ? {
+          modelID: currentModel.id,
+          providerID: currentModel.provider.id,
+        }
+      : undefined
     const agent = currentAgent.name
     const draft: FollowupDraft = {
       sessionID: session.id,
@@ -631,9 +638,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       agent,
       model,
       // 🔴 What this chat picked, not what it resolved to. See `FollowupDraft.override`.
-      override: currentOverride
-        ? { providerID: currentOverride.providerID, modelID: currentOverride.modelID }
-        : undefined,
+      override:
+        !human && currentOverride
+          ? { providerID: currentOverride.providerID, modelID: currentOverride.modelID }
+          : undefined,
       variant,
     }
 
@@ -758,7 +766,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       serverSync: serverSync(),
       draft,
       messageID,
-      optimisticBusy: sessionDirectory === projectDirectory,
+      optimisticBusy: !human && sessionDirectory === projectDirectory,
       before: waitForWorktree,
     })
       /**

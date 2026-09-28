@@ -11480,6 +11480,118 @@
         ]
       }
     },
+    "/api/agent/owner/reply": {
+      "post": {
+        "tags": ["agents"],
+        "operationId": "v2.agent.reply",
+        "parameters": [
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "required": false
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "$ref": "#/components/schemas/LocationInfo"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "sessionID": {
+                          "type": "string",
+                          "pattern": "^ses"
+                        }
+                      },
+                      "required": ["sessionID"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": ["location", "data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Reply to an officer from your transcript",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sessionID": {
+                    "type": "string",
+                    "pattern": "^ses"
+                  },
+                  "messageID": {
+                    "type": "string",
+                    "pattern": "^msg_"
+                  },
+                  "replyID": {
+                    "type": "string",
+                    "pattern": "^msg_"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": ["sessionID", "messageID", "replyID", "text"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.agent.reply({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/agent": {
       "get": {
         "tags": ["agents"],
@@ -12280,7 +12392,7 @@
             }
           }
         },
-        "description": "Delete a config-defined agent from the instance agent store, and clear `default_agent` when it pointed at that agent. Takes effect fully on the next serve boot. The instance's governing agent (`nova`) cannot be removed and returns 400.",
+        "description": "Delete a config-defined agent from the instance agent store, and clear `default_agent` when it pointed at that agent. Takes effect fully on the next serve boot. Nova and the instance owner cannot be removed and return 400.",
         "summary": "Remove agent",
         "x-codeSamples": [
           {
@@ -21577,7 +21689,7 @@
     },
     "/api/projects": {
       "get": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["projects"],
         "operationId": "v2.workProject.list",
         "parameters": [],
         "security": [],
@@ -21748,7 +21860,7 @@
         ]
       },
       "post": {
-        "tags": ["novaclaw HttpApi"],
+        "tags": ["projects"],
         "operationId": "v2.workProject.execute",
         "parameters": [],
         "security": [],
@@ -50949,8 +51061,8 @@
       "description": "Launcher tiles an agent or a plugin contributed. Instance-global; built-in tiles are code."
     },
     {
-      "name": "novaclaw HttpApi",
-      "description": "The instance's `/api/*` contract: sessions, agents, models, memory and the rest of the OS surface."
+      "name": "projects",
+      "description": "Project folders, officer assignments, and execution holds."
     },
     {
       "name": "filesystem",

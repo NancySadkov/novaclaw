@@ -32,7 +32,7 @@ import {
   Stream,
 } from "effect"
 import path from "path"
-import * as OSModule from "node:os"
+import { instanceOwnerName } from "../../agent/instance-owner"
 import { AgentV2 } from "../../agent"
 import { AgentModelFit } from "../../agent/model-fit"
 import { ModelHealth } from "./model-health"
@@ -136,7 +136,6 @@ import {
   lastAssistantText,
   ANNOUNCED_TOOL_RECOVERY,
   EMPTY_TURN_RECOVERY,
-  EMPTY_TURN_RECOVERY_CHAT,
   EMPTY_TURN_DIAGNOSTIC,
 } from "./doom-loop"
 import { TextualCall } from "./textual-call"
@@ -188,17 +187,6 @@ const PROMPT_CONTEXT_VALUE = Schema.Struct({
   }),
 })
 const PROMPT_CONTEXT_CODEC = Schema.toCodecJson(PROMPT_CONTEXT_VALUE)
-
-/** The instance owner's username, from the OS. */
-const instanceOwner = (): string => {
-  try {
-    const name = OSModule.userInfo().username
-    if (name.trim().length > 0) return name
-  } catch {
-    // A sandbox with no passwd entry — fall through to the environment.
-  }
-  return process.env.USERNAME ?? process.env.USER ?? "owner"
-}
 
 /**
  * Runs one durable coding-agent Session until it settles.
@@ -543,9 +531,12 @@ export const layer = Layer.effect(
      */
     const harnessConfig = Effect.fn("SessionRunner.harnessConfig")(function* (officerID?: AgentV2.ID) {
       const officer = officerID === undefined ? undefined : (yield* agents.select(officerID)).info
-      const derived = HarnessConfig.withOfficer(HarnessConfig.derive(yield* config.entries(), {
-        shell: Shell.agentDefault(),
-      }), { qualityConfig: officer?.qualityConfig, context: officer?.context as HarnessConfig.OfficerLayer["context"] })
+      const derived = HarnessConfig.withOfficer(
+        HarnessConfig.derive(yield* config.entries(), {
+          shell: Shell.agentDefault(),
+        }),
+        { qualityConfig: officer?.qualityConfig, context: officer?.context as HarnessConfig.OfficerLayer["context"] },
+      )
       // Built off `derived.entries`, i.e. the SAME read — a second `config.entries()` inside one
       // turn could hand the compactor a different snapshot than the system prompt was composed from.
       return {
@@ -1389,7 +1380,7 @@ export const layer = Layer.effect(
           kernelRelease: platform.kernelRelease,
           arch: platform.arch,
           shell: Shell.agentDefault(),
-          owner: instanceOwner(),
+          owner: roster.find((item) => item.id === AgentV2.OWNER_ID)?.name ?? instanceOwnerName(),
           scratch,
           goal: SessionDrive.assignedGoal({
             officerGoal: agent.info?.goal,
@@ -2507,7 +2498,13 @@ export const layer = Layer.effect(
         "prompt.largest": systemParts.length === 0 ? "none" : "system",
         "prompt.largest.tokens": systemParts.length === 0 ? 0 : promptTokens,
       })
-      const providerMessages = toLLMMessages(context, model, modelCapabilities, modelImageLimit)
+      const providerMessages = toLLMMessages(
+        context,
+        model,
+        modelCapabilities,
+        modelImageLimit,
+        ShortChat.enabled(config.shortChat) ? "chat" : "agent",
+      )
       const freshImages = freshImageCount(providerMessages)
       if (modelImageLimit !== undefined && freshImages > modelImageLimit) {
         const refusal = new SessionRunnerModel.ImageBatchTooLargeError({
@@ -2563,13 +2560,18 @@ export const layer = Layer.effect(
           // a change costs only the tokens after it.
           // 🔴 The TAIL, in the order `ContextTemplate.SLOTS` declares. It is the one place after the
           // transcript, and the order is the table's rather than a hand-written spread here.
-          ...ContextTemplate.tailMessages({
-            projectGrounding: projectGrounding === undefined ? undefined : Message.user(projectGrounding),
-            memoryRecall: recallMessage === undefined ? undefined : Message.user(recallMessage),
-            todoReminder: todoReminder === undefined ? undefined : Message.user(todoReminder),
-            toolCatalogueUpdate: toolCatalogueUpdate === undefined ? undefined : Message.user(toolCatalogueUpdate),
-            maxSteps: isLastStep ? Message.assistant(MAX_STEPS_PROMPT) : undefined,
-          }),
+          ...ContextTemplate.tailMessages(
+            ShortChat.enabled(config.shortChat)
+              ? {}
+              : {
+                  projectGrounding: projectGrounding === undefined ? undefined : Message.user(projectGrounding),
+                  memoryRecall: recallMessage === undefined ? undefined : Message.user(recallMessage),
+                  todoReminder: todoReminder === undefined ? undefined : Message.user(todoReminder),
+                  toolCatalogueUpdate:
+                    toolCatalogueUpdate === undefined ? undefined : Message.user(toolCatalogueUpdate),
+                  maxSteps: isLastStep ? Message.assistant(MAX_STEPS_PROMPT) : undefined,
+                },
+          ),
         ],
         // A text-only model is not told a picture "arrives as a picture you can see" (owner,
         // 2026-08-20). Applied HERE rather than in the registry because this is the first point
@@ -3007,10 +3009,12 @@ export const layer = Layer.effect(
                   ? {}
                   : {
                       reasoningPhase: {
-                        revocation: scheduler.awaitRevocation({
-                          sessionID: session.id as string,
-                          deviceKey: reasoningScheduledDevice.key,
-                        }).pipe(Effect.flatMap((revoked) => revoked ? Effect.void : Effect.never)),
+                        revocation: scheduler
+                          .awaitRevocation({
+                            sessionID: session.id as string,
+                            deviceKey: reasoningScheduledDevice.key,
+                          })
+                          .pipe(Effect.flatMap((revoked) => (revoked ? Effect.void : Effect.never))),
                         // The outer dispatch owns the ordinary device. Move that lease, rather than
                         // holding two devices or attributing one model's work to the other's queue.
                         enter: scheduler
@@ -4406,6 +4410,7 @@ export const layer = Layer.effect(
       readonly sessionID: SessionSchema.ID
       readonly force: boolean
     }) {
+      if ((yield* SessionInput.settlePassiveInputs(db, events, input.sessionID)) === "human") return
       // The drives' cross-drain facts, from the store that outlives this drain (`drive-state.ts`).
       yield* hydrateDriveState(input.sessionID)
       // Arm the 30s title fallback for LONG turns. A short turn finishes first and titles at drain end as
@@ -4520,9 +4525,7 @@ export const layer = Layer.effect(
             providerID: ProviderV2.ID.make(String(providerRecovery.model.providerID)),
             id: ModelV2.ID.make(String(providerRecovery.model.id)),
           })
-          const recorded = yield* models
-            .providerFailed(stranded, nowMs)
-            .pipe(Effect.orElseSucceed(() => false))
+          const recorded = yield* models.providerFailed(stranded, nowMs).pipe(Effect.orElseSucceed(() => false))
           yield* Log.event("session.provider.stranded", {
             "session.id": input.sessionID,
             "model.stranded": `${stranded.providerID}/${stranded.id}`,
@@ -4534,11 +4537,16 @@ export const layer = Layer.effect(
         // stopped behind a reassuring banner. Admit the continuation DURABLY before clearing the
         // latch. `SessionInput.steer` prepends the 1N provenance prefix, so a small model reads the
         // nudge as an automated check rather than an empty user turn.
-        yield* SessionInput.steer(db, events, input.sessionID, "Session restarted. Recover and proceed.")
+        const restart = yield* SessionInput.steer(
+          db,
+          events,
+          input.sessionID,
+          "Session restarted. Recover and proceed.",
+        )
         // `promotion` and `shouldRun` below are derived from this snapshot. The recovery branch has
         // just changed the durable queue, so leaving the old `false` here passes the first no-work
         // gate only to stop at the second one.
-        hasSteer = true
+        hasSteer = restart !== undefined || hasSteer
       } else {
         yield* failInterruptedTools(input.sessionID)
       }
@@ -4566,7 +4574,7 @@ export const layer = Layer.effect(
         handoffResolution.defaults.strict,
         OfficerHarness.chainDeclared(handoff.strict, handoffResolution.defaults.strict),
       )
-      if (strictEffective.enabled === true) {
+      if (!ShortChat.enabled(handoff.shortChat) && strictEffective.enabled === true) {
         if (handoff.permissionMode === "bypass" || handoff.permissionMode === "yolo") {
           const outcome = yield* runStrictDrain(
             input.sessionID,
@@ -4643,7 +4651,7 @@ export const layer = Layer.effect(
         yield* SessionInput.steer(db, events, input.sessionID, QualityProvision.NUDGE)
       }
       let promotion: SessionInput.Delivery | undefined = hasSteer ? "steer" : hasQueue ? "queue" : undefined
-      let shouldRun = input.force || hasSteer || hasQueue
+      let shouldRun = input.force || hasSteer || hasQueue || providerRecovery !== undefined
       // The drain-stop (architecture.md step 5): `exit(result)` ends the RUN, not just the drive.
       // Snapshot the pre-drain state so only the exit TRANSITION stops this drain — a session
       // whose result was already recorded (the user talking to a completed chat) runs normally.
@@ -4659,6 +4667,7 @@ export const layer = Layer.effect(
         let step = 1
         let brokenResponseAttempts = 0
         while (needsContinuation) {
+          if ((yield* SessionInput.settlePassiveInputs(db, events, input.sessionID)) === "human") return
           if (yield* WorkProjects.held(db, input.sessionID)) return
           // ⚠️ THE per-turn read (B7 tier-1 / ruling 3). One `config.entries()` per turn, threaded
           // through everything this turn does — the system prompt, the compactor, the sampling
@@ -4748,7 +4757,10 @@ export const layer = Layer.effect(
           // prefix and is never read back as the user speaking. `consecutiveEmpty` is deliberately
           // left as it stands: a truncated turn is neither progress nor an empty-turn strike.
           const truncation = FinishRecovery.decide(result.finish, result.needsContinuation, finishRecovery)
-          if (truncation.kind === "continue") {
+          if (
+            truncation.kind === "continue" &&
+            !ShortChat.enabled((yield* effective.resolve(input.sessionID)).shortChat)
+          ) {
             yield* Log.event("session.finish.recover", {
               "session.id": input.sessionID,
               step,
@@ -4831,13 +4843,16 @@ export const layer = Layer.effect(
                 result: exitRequest.result,
               })
               const completionTarget = yield* store.get(input.sessionID).pipe(Effect.orElseSucceed(() => undefined))
-              const completionOfficer = completionTarget?.agent === undefined
-                ? undefined
-                : yield* agents.get(AgentV2.ID.make(completionTarget.agent))
-              if (SessionDrive.unattendedMode({
-                operationMode: AgentV2.operationModeOf(completionOfficer),
-                sessionType: completionTarget?.type,
-              })) {
+              const completionOfficer =
+                completionTarget?.agent === undefined
+                  ? undefined
+                  : yield* agents.get(AgentV2.ID.make(completionTarget.agent))
+              if (
+                SessionDrive.unattendedMode({
+                  operationMode: AgentV2.operationModeOf(completionOfficer),
+                  sessionType: completionTarget?.type,
+                })
+              ) {
                 acceptedGoalExit = true
                 needsContinuation = false
                 break
@@ -4987,12 +5002,8 @@ export const layer = Layer.effect(
               consecutiveEmpty++
               if (consecutiveEmpty === 1) {
                 yield* Log.event("session.turn.empty.recovered", { "session.id": input.sessionID })
-                yield* SessionInput.steer(
-                  db,
-                  events,
-                  input.sessionID,
-                  ShortChat.enabled(handoff.shortChat) ? EMPTY_TURN_RECOVERY_CHAT : EMPTY_TURN_RECOVERY,
-                )
+                if (ShortChat.enabled((yield* effective.resolve(input.sessionID)).shortChat)) needsContinuation = true
+                else yield* SessionInput.steer(db, events, input.sessionID, EMPTY_TURN_RECOVERY)
               } else {
                 yield* Log.event("session.turn.empty.paused", { "session.id": input.sessionID })
                 // T4 (1N residue): the user must see WHY the chat went quiet — surface the calm
@@ -5475,8 +5486,11 @@ export const layer = Layer.effect(
               const slice = Math.min(5_000, remaining)
               wokeForInput = yield* Effect.race(
                 Stream.unwrap(
-                  EventV2.subscribeBounded(events, SessionEvent.PromptAdmitted, 256, (event) =>
-                    event.data.sessionID === input.sessionID,
+                  EventV2.subscribeBounded(
+                    events,
+                    SessionEvent.PromptAdmitted,
+                    256,
+                    (event) => event.data.sessionID === input.sessionID,
                   ),
                 ).pipe(
                   Stream.runHead,

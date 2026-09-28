@@ -165,6 +165,7 @@ function MessageTimestamp(props: { created: unknown }) {
 // Injected via context so `session-ui` stays decoupled from the app's SDK/dialog layer: the app
 // passes a callback and owns confirmation + the actual revert mutation. Absent callback = no button.
 type TranscriptActions = {
+  onReplyColleague?: (messageID: string, text: string, replyID: string) => void | Promise<void>
   onRevert?: (messageID: string) => void
   onRetry?: (messageID: string) => void | Promise<void>
   onChooseModel?: () => void
@@ -199,6 +200,7 @@ function imageAttachmentsForCurrentRun(messages: readonly SessionMessage[]): num
  * a container at all.
  */
 export function NativeTranscript(props: {
+  onReplyColleague?: (messageID: string, text: string, replyID: string) => void | Promise<void>
   messages: readonly SessionMessage[]
   class?: string
   reasoningFold?: ReasoningFoldMode
@@ -375,106 +377,115 @@ export function NativeTranscript(props: {
   })
   return (
     <ToolFoldContext.Provider value={toolFold}>
-    <ReasoningFoldContext.Provider
-      value={() => ({
-        reasoning: props.reasoningFold ?? "collapsed",
-        // Tool cards historically followed the reasoning mode — keep that when no explicit
-        // tool mode is given so existing callers render unchanged.
-        tool: props.toolFold ?? props.reasoningFold ?? "collapsed",
-        // The SAME predicate `Turn` folds its work on (`running` reads `busy` first), so the two
-        // folds settle together instead of one of them collapsing under a running turn.
-        settled: !busy(),
-      })}
-    >
-      <TranscriptDirectoryContext.Provider value={() => props.directory}>
-        <ToolContext.Provider value={() => ({ maxTimeoutMs: props.maxToolTimeoutMs, active: activeToolWork(), commandTiming: props.showCommandTiming ?? true })}>
-          <TranscriptMessagesContext.Provider value={() => props.messages}>
-            <TranscriptActionsContext.Provider
-              value={() => ({
-                onRevert: props.onRevert,
-                onRetry: props.onRetry,
-                onChooseModel: props.onChooseModel,
-                onUnpinDevice: props.onUnpinDevice,
-                onStopCommand: props.onStopCommand,
-              })}
-            >
-              <div data-component="native-transcript" class={props.class}>
-                <For each={turns()}>
-                  {(group, index) => (
-                    <Turn
-                      group={group}
-                      developer={props.developer}
-                      liveTiming={liveTiming() !== undefined}
-                      // A sleeping goal remains session-busy after its accepted checkpoint. That
-                      // status belongs to the next work unit, not to the one the auditor closed.
-                      busy={busy() && !group.completed && index() === turns().length - 1}
-                    />
-                  )}
-                </For>
-                {/* Only prompts the transcript is not already showing — see `unqueuedPending`. Both lists hold
+      <ReasoningFoldContext.Provider
+        value={() => ({
+          reasoning: props.reasoningFold ?? "collapsed",
+          // Tool cards historically followed the reasoning mode — keep that when no explicit
+          // tool mode is given so existing callers render unchanged.
+          tool: props.toolFold ?? props.reasoningFold ?? "collapsed",
+          // The SAME predicate `Turn` folds its work on (`running` reads `busy` first), so the two
+          // folds settle together instead of one of them collapsing under a running turn.
+          settled: !busy(),
+        })}
+      >
+        <TranscriptDirectoryContext.Provider value={() => props.directory}>
+          <ToolContext.Provider
+            value={() => ({
+              maxTimeoutMs: props.maxToolTimeoutMs,
+              active: activeToolWork(),
+              commandTiming: props.showCommandTiming ?? true,
+            })}
+          >
+            <TranscriptMessagesContext.Provider value={() => props.messages}>
+              <TranscriptActionsContext.Provider
+                value={() => ({
+                  onRevert: props.onRevert,
+                  onRetry: props.onRetry,
+                  onReplyColleague: props.onReplyColleague,
+                  onChooseModel: props.onChooseModel,
+                  onUnpinDevice: props.onUnpinDevice,
+                  onStopCommand: props.onStopCommand,
+                })}
+              >
+                <div data-component="native-transcript" class={props.class}>
+                  <For each={turns()}>
+                    {(group, index) => (
+                      <Turn
+                        group={group}
+                        developer={props.developer}
+                        liveTiming={liveTiming() !== undefined}
+                        // A sleeping goal remains session-busy after its accepted checkpoint. That
+                        // status belongs to the next work unit, not to the one the auditor closed.
+                        busy={busy() && !group.completed && index() === turns().length - 1}
+                      />
+                    )}
+                  </For>
+                  {/* Only prompts the transcript is not already showing — see `unqueuedPending`. Both lists hold
               the first prompt of a session while it waits for the runner. */}
-                <For each={unqueuedPending(props.pending, props.messages)}>
-                  {(item) =>
-                    item.origin?.via === "agent" && item.origin.relation === "peer" ? (
-                      <QueuedColleagueMessage
-                        id={item.id}
-                        text={item.text}
-                        sender={item.origin.label ?? item.origin.sessionID ?? i18n.t("ui.transcript.colleague.unknown")}
-                        turn={item.origin.turn ?? (item.origin.announce === true ? "announce" : "ask")}
+                  <For each={unqueuedPending(props.pending, props.messages)}>
+                    {(item) =>
+                      item.origin?.via === "agent" && item.origin.relation === "peer" ? (
+                        <QueuedColleagueMessage
+                          id={item.id}
+                          text={item.text}
+                          sender={
+                            item.origin.label ?? item.origin.sessionID ?? i18n.t("ui.transcript.colleague.unknown")
+                          }
+                          turn={item.origin.turn ?? (item.origin.announce === true ? "announce" : "ask")}
+                        />
+                      ) : (
+                        <QueuedMessage
+                          id={item.id}
+                          text={item.text}
+                          onCancel={props.onCancelQueued}
+                          onEdit={item.editable ? props.onEditQueued : undefined}
+                        />
+                      )
+                    }
+                  </For>
+                  <Show
+                    when={activeToolID() ? undefined : liveTiming()}
+                    fallback={
+                      <Show
+                        when={
+                          !activeToolID() &&
+                          ((busy() && !hasOpenAssistant() && props.waitLabel) ||
+                            (props.status?.type === "busy" && !hasOpenAssistant()))
+                        }
+                      >
+                        <div data-slot="native-provider-status" role="status" aria-live="polite">
+                          <span data-slot="native-working-dot" aria-hidden="true" />
+                          <span>{props.waitLabel ?? i18n.t("ui.transcript.working")}</span>
+                        </div>
+                      </Show>
+                    }
+                  >
+                    {(timing) => (
+                      <TurnReceipt
+                        messageID={liveMessageID()}
+                        timing={timing()}
+                        live
+                        developer={props.developer}
+                        runStartedAt={runStartedAt()}
+                        tokens={liveTokens()}
+                        reasoning={liveReasoning()}
                       />
-                    ) : (
-                      <QueuedMessage
-                        id={item.id}
-                        text={item.text}
-                        onCancel={props.onCancelQueued}
-                        onEdit={item.editable ? props.onEditQueued : undefined}
-                      />
-                    )
-                  }
-                </For>
-                <Show
-                  when={activeToolID() ? undefined : liveTiming()}
-                  fallback={
-                    <Show
-                      when={
-                        !activeToolID() &&
-                        ((busy() && !hasOpenAssistant() && props.waitLabel) ||
-                          (props.status?.type === "busy" && !hasOpenAssistant()))
-                      }
-                    >
+                    )}
+                  </Show>
+                  <Show when={props.status?.type === "retry" && props.status.message}>
+                    {(message) => (
                       <div data-slot="native-provider-status" role="status" aria-live="polite">
                         <span data-slot="native-working-dot" aria-hidden="true" />
-                        <span>{props.waitLabel ?? i18n.t("ui.transcript.working")}</span>
+                        <span>{message()}</span>
                       </div>
-                    </Show>
-                  }
-                >
-                  {(timing) => (
-                    <TurnReceipt
-                      messageID={liveMessageID()}
-                      timing={timing()}
-                      live
-                      developer={props.developer}
-                      runStartedAt={runStartedAt()}
-                      tokens={liveTokens()}
-                      reasoning={liveReasoning()}
-                    />
-                  )}
-                </Show>
-                <Show when={props.status?.type === "retry" && props.status.message}>
-                  {(message) => (
-                    <div data-slot="native-provider-status" role="status" aria-live="polite">
-                      <span data-slot="native-working-dot" aria-hidden="true" />
-                      <span>{message()}</span>
-                    </div>
-                  )}
-                </Show>
-              </div>
-            </TranscriptActionsContext.Provider>
-          </TranscriptMessagesContext.Provider>
-        </ToolContext.Provider>
-      </TranscriptDirectoryContext.Provider>
-    </ReasoningFoldContext.Provider>
+                    )}
+                  </Show>
+                </div>
+              </TranscriptActionsContext.Provider>
+            </TranscriptMessagesContext.Provider>
+          </ToolContext.Provider>
+        </TranscriptDirectoryContext.Provider>
+      </ReasoningFoldContext.Provider>
     </ToolFoldContext.Provider>
   )
 }
@@ -587,7 +598,8 @@ function Turn(props: {
       if (message.type !== "assistant") continue
       for (const part of message.content) {
         if (part.type !== "tool" && part.type !== "reasoning") continue
-        if (fold.get(`${part.type === "tool" ? "t" : "r"}:${part.id}`) === true || fold.get(`g:${part.id}`) === true) return true
+        if (fold.get(`${part.type === "tool" ? "t" : "r"}:${part.id}`) === true || fold.get(`g:${part.id}`) === true)
+          return true
       }
     }
     return false
@@ -605,9 +617,7 @@ function Turn(props: {
       <Show
         when={foldsClosing()}
         keyed
-        fallback={
-          <MessageSequence messages={body()} developer={props.developer} liveTiming={props.liveTiming} />
-        }
+        fallback={<MessageSequence messages={body()} developer={props.developer} liveTiming={props.liveTiming} />}
       >
         {(closingMessage) => (
           <>
@@ -894,13 +904,66 @@ function QueuedColleagueMessage(props: {
 
 function ColleagueMessage(props: { message: SessionMessageColleague }) {
   const i18n = useI18n()
+  const actions = useContext(TranscriptActionsContext)
+  const [draft, setDraft] = createSignal("")
+  const [sending, setSending] = createSignal(false)
+  const [error, setError] = createSignal("")
+  let pendingReply: { text: string; id: string } | undefined
+  const send = async () => {
+    const text = draft().trim()
+    const reply = actions().onReplyColleague
+    if (!text || sending() || !reply) return
+    if (pendingReply?.text !== text) pendingReply = { text, id: `msg_${crypto.randomUUID().replaceAll("-", "")}` }
+    setSending(true)
+    setError("")
+    try {
+      await reply(props.message.id, text, pendingReply.id)
+      setDraft("")
+      pendingReply = undefined
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : i18n.t("ui.transcript.colleague.replyFailed"))
+    } finally {
+      setSending(false)
+    }
+  }
   return (
     <BasicToolV2
       data-slot="native-colleague"
       data-message-id={props.message.id}
+      open={actions().onReplyColleague ? true : undefined}
       trigger={{ icon: toolIcon("colleague"), ...incomingColleagueRow(props.message, i18n.t) }}
     >
       <Markdown text={props.message.text} cacheKey={`${props.message.id}:colleague`} />
+      <Show when={actions().onReplyColleague && props.message.senderSessionID}>
+        <form
+          class="mt-3 flex flex-col gap-2"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void send()
+          }}
+        >
+          <textarea
+            aria-label={i18n.t("ui.transcript.colleague.replyTo", { who: props.message.sender })}
+            placeholder={i18n.t("ui.transcript.colleague.replyTo", { who: props.message.sender })}
+            class="min-h-20 w-full resize-y rounded-md border border-v2-border-border-base bg-v2-background-bg-base p-2 text-sm"
+            value={draft()}
+            disabled={sending()}
+            onInput={(event) => setDraft(event.currentTarget.value)}
+          />
+          <Show when={error()}>
+            <p role="alert" class="text-sm text-v2-text-text-base">
+              {error()}
+            </p>
+          </Show>
+          <button
+            type="submit"
+            disabled={sending() || !draft().trim()}
+            class="self-end rounded-md bg-v2-background-bg-layer-03 px-3 py-1.5 text-sm text-v2-text-text-accent disabled:opacity-50"
+          >
+            {sending() ? i18n.t("ui.transcript.sending") : i18n.t("ui.transcript.colleague.sendReply")}
+          </button>
+        </form>
+      </Show>
     </BasicToolV2>
   )
 }

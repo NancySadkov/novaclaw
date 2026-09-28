@@ -19,7 +19,7 @@ import { listSessions, startChat } from "@/apps/agent-list"
 import { OfficerPrompt } from "@novaclaw/core/officer-prompt"
 import { modelRef, parseModelRef } from "@/apps/agent-model"
 import { useModels } from "@/context/models"
-import { cloneAgent, isNovaCloneRefusal } from "@/apps/agent-clone"
+import { cloneAgent, isProtectedAgentCloneRefusal } from "@/apps/agent-clone"
 import { chatFor, chatToClear } from "@/apps/roster-live"
 import { GOVERNING_ID, displayName, isColleague, memoryKey, superiorCandidates, type AgentLike } from "@/apps/contacts"
 import { ownerRoute } from "@/apps/memory-owner"
@@ -40,7 +40,13 @@ import { OfficerRecipes } from "@/components/officer-recipes"
 import { OfficerContext } from "@/components/settings-v2/officer-context"
 import { OfficerQuality } from "@/components/settings-v2/officer-quality"
 import { OfficerMessengers } from "@/components/settings-v2/officer-messengers"
-import { CORE_TOOLS, PERMISSION_MODE_CHOICES, officerCapabilities, withComputerUse, withToolOverride } from "@/apps/officer-capabilities"
+import {
+  CORE_TOOLS,
+  PERMISSION_MODE_CHOICES,
+  officerCapabilities,
+  withComputerUse,
+  withToolOverride,
+} from "@/apps/officer-capabilities"
 import type { Recipe as AdhocRecipe } from "@/components/settings-v2/tools-draft"
 import { planSettingsCopy } from "@/apps/agent-settings-copy"
 import { AgentRemoteChat } from "@/components/agent-remote-chat"
@@ -152,6 +158,8 @@ export function OfficerSettingsScreen(props: {
   const capabilities = createMemo(() => officerCapabilities(agent()?.config as Record<string, unknown> | undefined))
 
   const governing = createMemo(() => props.agentID === GOVERNING_ID)
+  const owner = createMemo(() => props.agentID === "owner")
+  const fixedIdentity = () => governing() || owner()
 
   const name = createMemo(() => agent()?.name?.trim() || displayName(props.agentID))
 
@@ -245,9 +253,7 @@ export function OfficerSettingsScreen(props: {
     | "nudges"
     | "schedule"
     | "memory"
-  const [activeTab, setActiveTab] = createSignal<SettingsTab>(
-    "work",
-  )
+  const [activeTab, setActiveTab] = createSignal<SettingsTab>("work")
   const desktopSettings = createMediaQuery("(min-width: 768px)")
   let tabList: HTMLElement | undefined
   createEffect(() => {
@@ -299,6 +305,7 @@ export function OfficerSettingsScreen(props: {
   // same "absent means inherit" the config layer itself uses, so the screen shows what a chat with
   // this colleague would actually start with.
   const postureValue = (): "agent" | "chat" | "human" => {
+    if (owner()) return "human"
     const draft = posture()
     if (draft !== undefined) return draft
     const stored = agent()?.config?.["kind"]
@@ -948,7 +955,7 @@ export function OfficerSettingsScreen(props: {
       props.onDismiss()
     } catch (error) {
       showToast(
-        isNovaCloneRefusal(error)
+        isProtectedAgentCloneRefusal(error)
           ? {
               title: language.t("agentConfig.cloneNovaTitle"),
               description: language.t("agentConfig.cloneNovaDescription"),
@@ -1030,7 +1037,7 @@ export function OfficerSettingsScreen(props: {
   const retire = async () => {
     const id = props.agentID
     const client = sdk()
-    if (client === undefined || governing()) return
+    if (client === undefined || fixedIdentity()) return
     if (
       !(await confirm({
         title: language.t("agentConfig.retire.confirm.title", { name: name() }),
@@ -1258,7 +1265,7 @@ export function OfficerSettingsScreen(props: {
             // optional, so an empty string is how a UI says "unset" through a merge patch.
             // A pure Chat role has no project component. Clear an old assignment even when this
             // save changed another field, so a stale hidden folder cannot spring back later.
-            ...(governing()
+            ...(fixedIdentity()
               ? {}
               : postureValue() !== "agent"
                 ? { directory: "" }
@@ -1279,10 +1286,7 @@ export function OfficerSettingsScreen(props: {
               ? {}
               : { permissions: computerRuleset() }),
             archiveChats: archiveValue(),
-            // The governing agent reports to nobody (`AgentV2.resolveSuperior` answers undefined for
-            // it), so the selector is not rendered and the key is not sent: a field the system would
-            // discard is not written either.
-            ...(governing() || superior() === undefined || superior() === "" ? {} : { superior: superior()! }),
+            ...(fixedIdentity() || superior() === undefined || superior() === "" ? {} : { superior: superior()! }),
             ...binding,
           },
         },
@@ -1440,18 +1444,20 @@ export function OfficerSettingsScreen(props: {
           data-slot="agent-settings-actions"
           class="flex w-full flex-wrap items-center justify-end gap-1 sm:w-auto sm:shrink-0"
         >
-          <button
-            type="button"
-            data-action="agent-pause"
-            class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
-            disabled={saving() || busy() !== undefined || agent() === undefined}
-            onClick={() => void setPaused(agent()?.paused !== true)}
-          >
-            {busy() === "pause"
-              ? language.t("agentConfig.pausing")
-              : language.t(agent()?.paused === true ? "agentConfig.resume" : "agentConfig.pause")}
-          </button>
-          <Show when={!governing()}>
+          <Show when={!owner()}>
+            <button
+              type="button"
+              data-action="agent-pause"
+              class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
+              disabled={saving() || busy() !== undefined || agent() === undefined}
+              onClick={() => void setPaused(agent()?.paused !== true)}
+            >
+              {busy() === "pause"
+                ? language.t("agentConfig.pausing")
+                : language.t(agent()?.paused === true ? "agentConfig.resume" : "agentConfig.pause")}
+            </button>
+          </Show>
+          <Show when={!fixedIdentity()}>
             <button
               type="button"
               data-action="agent-clone"
@@ -1519,10 +1525,17 @@ export function OfficerSettingsScreen(props: {
         <KobalteTabs.List
           as="nav"
           data-slot="agent-settings-nav"
-          ref={(element: HTMLElement) => { tabList = element }}
+          ref={(element: HTMLElement) => {
+            tabList = element
+          }}
           onWheel={(event: WheelEvent & { currentTarget: HTMLElement }) => {
             const list = event.currentTarget
-            if (desktopSettings() || list.scrollWidth <= list.clientWidth || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
+            if (
+              desktopSettings() ||
+              list.scrollWidth <= list.clientWidth ||
+              Math.abs(event.deltaY) <= Math.abs(event.deltaX)
+            )
+              return
             list.scrollLeft += event.deltaY
             event.preventDefault()
           }}
@@ -1623,9 +1636,7 @@ export function OfficerSettingsScreen(props: {
                   Export profile
                 </button>
               </div>
-              <p class="mt-2 text-[11px] leading-relaxed text-v2-text-text-faint">
-                Exports identity and job only.
-              </p>
+              <p class="mt-2 text-[11px] leading-relaxed text-v2-text-text-faint">Exports identity and job only.</p>
               {/* Why this is a profile field and not something you type into the chat. */}
               <div class="mt-3 text-xs text-v2-text-text-muted">
                 {language.t("agentConfig.portrait")}
@@ -1666,18 +1677,18 @@ export function OfficerSettingsScreen(props: {
                   </button>
                 </Show>
               </div>
-              {/* 🔴 THE REPORTING LINE IS PART OF WHO THIS COLLEAGUE IS, so it lives in PROFILE
-                  (owner, 2026-09-16), beside the name, title and portrait — not in Mind, which is
-                  where it landed when it was the first use of a picker and has been read as a
-                  thinking setting ever since. The org chart is an identity structure
-                  (`AGENTS.md`, the structural metaphor): the superior is who the colleague answers
-                  to, which is a fact about the role, not about how it reasons.
-
-                  ⚠️ NOVA REPORTS TO NOBODY, so the selector is not rendered for it.
-                  `resolveSuperior` answers `undefined` for the governing agent by construction, which
-                  makes this field inert for Nova — and the rule this screen already states is that a
-                  field the system would discard is not rendered as editable. */}
-              <Show when={!governing()}>
+              <Show
+                when={!fixedIdentity()}
+                fallback={
+                  <div class="mt-4 border-t border-v2-border-border-muted pt-4">
+                    <div class="text-xs text-v2-text-text-muted">{language.t("agentConfig.superior")}</div>
+                    <div class="mt-1 text-sm">
+                      {(agents() ?? []).find((item) => item.id === "owner")?.name ?? "Owner"}
+                      {owner() ? " (you)" : ""}
+                    </div>
+                  </div>
+                }
+              >
                 <div class="mt-4 border-t border-v2-border-border-muted pt-4">
                   <label class="block text-xs text-v2-text-text-muted" for="agent-superior">
                     {language.t("agentConfig.superior")}
@@ -1940,6 +1951,7 @@ export function OfficerSettingsScreen(props: {
                     aria-label={language.t("agentConfig.posture")}
                     options={MODE_CHOICES}
                     current={modeValue()}
+                    disabled={owner()}
                     label={(value) =>
                       value === "interactive"
                         ? language.t("agentConfig.mode.interactive")
@@ -2051,19 +2063,36 @@ export function OfficerSettingsScreen(props: {
                 {(id) => <OfficerMessengers agentID={id} />}
               </Show>
               <div class="mt-4 rounded-xl border border-v2-border-border-muted bg-v2-background-bg-layer-02 p-3 sm:p-4">
-                <AgentRemoteChat agentID={props.agentID} sessionID={officerSessionID} ensureSession={ensureOfficerSession} />
+                <AgentRemoteChat
+                  agentID={props.agentID}
+                  sessionID={officerSessionID}
+                  ensureSession={ensureOfficerSession}
+                />
               </div>
             </section>
 
             <section class="agent-settings-card" data-section="context" data-settings-tab="context">
               <Show when={activeTab() === "context" ? props.agentID : undefined} keyed>
-                {(id) => <OfficerContext agentID={id} config={() => agent()?.config as Record<string, unknown> | undefined} onChanged={props.onChanged} />}
+                {(id) => (
+                  <OfficerContext
+                    agentID={id}
+                    config={() => agent()?.config as Record<string, unknown> | undefined}
+                    onChanged={props.onChanged}
+                  />
+                )}
               </Show>
             </section>
 
             <section class="agent-settings-card" data-section="quality" data-settings-tab="quality">
               <Show when={activeTab() === "quality" ? props.agentID : undefined} keyed>
-                {(id) => <OfficerQuality agentID={id} config={() => agent()?.config as Record<string, unknown> | undefined} directory={directoryValue} onChanged={props.onChanged} />}
+                {(id) => (
+                  <OfficerQuality
+                    agentID={id}
+                    config={() => agent()?.config as Record<string, unknown> | undefined}
+                    directory={directoryValue}
+                    onChanged={props.onChanged}
+                  />
+                )}
               </Show>
             </section>
 
@@ -2330,20 +2359,19 @@ export function OfficerSettingsScreen(props: {
 
             <section class="agent-settings-card" data-settings-tab="capabilities" data-section="workers">
               <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Capabilities</h3>
-                <div class="flex items-center justify-between gap-2 text-xs">
-                  <span>{language.t("prompt.permissionMode.title")}</span>
-                  <SelectV2
-                    appearance="inline"
-                    aria-label={language.t("prompt.permissionMode.title")}
-                    options={PERMISSION_MODE_CHOICES}
-                    current={
-                      PERMISSION_MODE_CHOICES.find((mode) => mode === permissionModeValue()) ??
-                      PERMISSION_MODE_CHOICES[2]
-                    }
-                    label={(mode) => language.t(`prompt.permissionMode.${mode}`)}
-                    onSelect={(mode) => mode && setPermissionMode(mode)}
-                  />
-                </div>
+              <div class="flex items-center justify-between gap-2 text-xs">
+                <span>{language.t("prompt.permissionMode.title")}</span>
+                <SelectV2
+                  appearance="inline"
+                  aria-label={language.t("prompt.permissionMode.title")}
+                  options={PERMISSION_MODE_CHOICES}
+                  current={
+                    PERMISSION_MODE_CHOICES.find((mode) => mode === permissionModeValue()) ?? PERMISSION_MODE_CHOICES[2]
+                  }
+                  label={(mode) => language.t(`prompt.permissionMode.${mode}`)}
+                  onSelect={(mode) => mode && setPermissionMode(mode)}
+                />
+              </div>
               <div class="mt-5 grid gap-4 sm:grid-cols-2">
                 <label class="block text-xs text-v2-text-text-muted">
                   Maximum active workers
@@ -2371,49 +2399,49 @@ export function OfficerSettingsScreen(props: {
                   <span class="mt-1 block text-[11px] text-v2-text-text-faint">0 disables spawning.</span>
                 </label>
               </div>
-                <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-tool-timeout">
-                  {language.t("agentConfig.maxToolTimeout")}
-                </label>
+              <label class="mt-3 block text-xs text-v2-text-text-muted" for="agent-tool-timeout">
+                {language.t("agentConfig.maxToolTimeout")}
+              </label>
+              <input
+                id="agent-tool-timeout"
+                aria-label={language.t("agentConfig.maxToolTimeout")}
+                class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                type="number"
+                min="1"
+                step="1"
+                value={maxToolTimeoutMinutesValue()}
+                placeholder={language.t("agentConfig.maxToolTimeoutDefault")}
+                onInput={(event) => setMaxToolTimeoutMinutes(event.currentTarget.value)}
+              />
+              <p class="mt-1 text-[11px] text-v2-text-text-faint">Workers inherit this limit.</p>
+              <label class="flex items-start gap-2 text-xs">
                 <input
-                  id="agent-tool-timeout"
-                  aria-label={language.t("agentConfig.maxToolTimeout")}
-                  class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value={maxToolTimeoutMinutesValue()}
-                  placeholder={language.t("agentConfig.maxToolTimeoutDefault")}
-                  onInput={(event) => setMaxToolTimeoutMinutes(event.currentTarget.value)}
+                  type="checkbox"
+                  class="mt-0.5"
+                  checked={surgicalEditsValue()}
+                  onChange={(event) => setSurgicalEdits(event.currentTarget.checked)}
                 />
-                <p class="mt-1 text-[11px] text-v2-text-text-faint">Workers inherit this limit.</p>
+                <span>
+                  <span class="block">Edits instead of overwriting</span>
+                  <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                    Reject overwriting files and nudge the agent toward small, targeted edits.
+                  </span>
+                </span>
+              </label>
+              {/* Officers are granted Computer Use by the floor, so the switch is an OPT-OUT and this
+                  row only exists where that grant actually reaches. A subagent has no grant to opt out
+                  of, and showing it a switch reading "on" would be a control that lies. */}
+              <Show when={agent() !== undefined && isColleague(agent()!)}>
                 <label class="flex items-start gap-2 text-xs">
                   <input
                     type="checkbox"
                     class="mt-0.5"
-                    checked={surgicalEditsValue()}
-                    onChange={(event) => setSurgicalEdits(event.currentTarget.checked)}
+                    checked={computerUseValue()}
+                    onChange={(event) => setComputerUse(event.currentTarget.checked)}
                   />
-                  <span>
-                    <span class="block">Edits instead of overwriting</span>
-                    <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
-                      Reject overwriting files and nudge the agent toward small, targeted edits.
-                    </span>
-                  </span>
+                  <span>{language.t("agentConfig.computerUse")}</span>
                 </label>
-                {/* Officers are granted Computer Use by the floor, so the switch is an OPT-OUT and this
-                  row only exists where that grant actually reaches. A subagent has no grant to opt out
-                  of, and showing it a switch reading "on" would be a control that lies. */}
-                <Show when={agent() !== undefined && isColleague(agent()!)}>
-                  <label class="flex items-start gap-2 text-xs">
-                    <input
-                      type="checkbox"
-                      class="mt-0.5"
-                      checked={computerUseValue()}
-                      onChange={(event) => setComputerUse(event.currentTarget.checked)}
-                    />
-                    <span>{language.t("agentConfig.computerUse")}</span>
-                  </label>
-                </Show>
+              </Show>
 
               <label class="mt-3 block text-xs text-v2-text-text-muted">Worker prototype</label>
               <SelectV2
@@ -2578,7 +2606,6 @@ export function OfficerSettingsScreen(props: {
                 </Show>
               </div>
             </section>
-
           </div>
         </KobalteTabs.Content>
       </KobalteTabs>

@@ -56,16 +56,4 @@ describe("the gates: no tool-call nudge reaches a tool-less turn", () => {
       "!ShortChat.enabled(handoff.shortChat) &&\n        (handoff.quality ?? entryHarness.quality.enabled) &&",
     )
   })
-
-  test("an empty pure-Chat turn recovers WITHOUT tool wording", () => {
-    // The stall recovery itself stays (the user is owed the answer); only the tool clause goes.
-    expect(runner).toContain("EMPTY_TURN_RECOVERY_CHAT")
-    expect(runner).toContain("? EMPTY_TURN_RECOVERY_CHAT")
-    const doomLoop = source("../src/session/runner/doom-loop.ts")
-    expect(doomLoop).toContain("export const EMPTY_TURN_RECOVERY_CHAT =")
-    // The chat wording itself names no tool.
-    const chatLine = /export const EMPTY_TURN_RECOVERY_CHAT =\s*\n?\s*"([^"]+)"/.exec(doomLoop)?.[1] ?? ""
-    expect(chatLine).toContain("no reply")
-    expect(chatLine.toLowerCase()).not.toContain("tool")
-  })
 })

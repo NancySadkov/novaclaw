@@ -317,7 +317,15 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
         capabilities.colleague({ op: "ask", colleague: request.colleague, message: request.message }),
       ).pipe(
         Effect.flatMap((reply): Effect.Effect<ColleagueHandoff.Delivery> => {
-          if (reply.outcome === "delivered") return Effect.succeed({ delivered: true, started: reply.started ?? false })
+          if (reply.outcome === "delivered")
+            return Effect.succeed({
+              delivered: true,
+              started: reply.started ?? false,
+              human: reply.human,
+              recipient: reply.recipient,
+              redirected: reply.redirected,
+              deferred: reply.deferred,
+            })
           // The refusal, rebuilt on this side so the TOOL sees the same `Delivery` shape it would have
           // seen host-side. Without this arm a refusal would `die` here as an unavailability — the
           // sender would lose its turn instead of being told what happened.
@@ -414,9 +422,7 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
           if (reply.outcome === "halted")
             return Effect.succeed({
               completed: false,
-              ...(reply.state === undefined
-                ? {}
-                : { halted: reply.state as SessionJoin.Outcome["halted"] }),
+              ...(reply.state === undefined ? {} : { halted: reply.state as SessionJoin.Outcome["halted"] }),
               generatedAnyTokens: reply.generatedAnyTokens,
               generatedTokens: reply.generatedTokens,
               providerErrors: reply.providerErrors,
@@ -607,7 +613,10 @@ export function make(capabilities: SessionWorkerCapabilities.Capabilities): {
     execute: (command) =>
       Effect.tryPromise({
         try: () => capabilities.projects(command),
-        catch: () => new WorkProjects.Error({ message: "Could not reach the project service. Retry when the connection recovers." }),
+        catch: () =>
+          new WorkProjects.Error({
+            message: "Could not reach the project service. Retry when the connection recovers.",
+          }),
       }).pipe(
         Effect.flatMap((reply) =>
           reply.outcome === "ok" && reply.snapshot
@@ -624,7 +633,11 @@ export function replacements(capabilities: SessionWorkerCapabilities.Capabilitie
   return [
     [
       WorkProjects.node,
-      makeGlobalNode({ service: WorkProjects.Service, layer: Layer.succeed(WorkProjects.Service, services.projects), deps: [] }),
+      makeGlobalNode({
+        service: WorkProjects.Service,
+        layer: Layer.succeed(WorkProjects.Service, services.projects),
+        deps: [],
+      }),
     ],
     [
       EventV2.node,

@@ -4,6 +4,7 @@ import path from "path"
 import { define } from "./internal"
 import { Effect } from "effect"
 import { AgentV2 } from "../agent"
+import { instanceOwnerName } from "../agent/instance-owner"
 import { AgentWorkerCapacity } from "../agent/worker-capacity"
 import { Scratch } from "../scratch"
 import { ownScratchGrants, scratchDirectoryGrants } from "../agent/scratch-grants"
@@ -292,8 +293,18 @@ export const Plugin = define({
     const defaults: PermissionV2.Ruleset = floor({ scratchDirs: SCRATCH_DIRS, officer: false })
 
     yield* ctx.agent.transform((draft) => {
+      draft.update(AgentV2.OWNER_ID, (item) => {
+        item.name = instanceOwnerName()
+        item.title = "Instance owner"
+        item.description = "Your saved messages and questions from your officers. Reply whenever you are ready."
+        item.kind = "human"
+        item.superior = AgentV2.OWNER_ID
+        item.mode = "primary"
+        item.memory = "none"
+      })
       draft.update(AgentV2.NOVA_ID, (item) => {
         item.name = "Nova"
+        item.superior = AgentV2.OWNER_ID
         item.title = "Chief Executive"
         // 🔴 **Nova ships with NO worker budget, and the value is READ from the ceiling's own table**
         // rather than written as a literal. Two copies of "0" is how the Settings screen and the
@@ -301,9 +312,8 @@ export const Plugin = define({
         // `SessionSpawner` asks, and a literal here would only ever reach the first of them.
         // Overridable — `ConfigAgentPlugin` is registered AFTER this one, so a stored
         // `max_workers` lands on top of it.
-        ;(item as unknown as Record<string, unknown>)["maxWorkers"] = AgentWorkerCapacity.SHIPPED_MAX_WORKERS[
-          AgentV2.NOVA_ID
-        ]
+        ;(item as unknown as Record<string, unknown>)["maxWorkers"] =
+          AgentWorkerCapacity.SHIPPED_MAX_WORKERS[AgentV2.NOVA_ID]
         item.description =
           "Nova, the CEO. Talk to Nova about what you want done; Nova routes it to the colleague who owns that work, or hires one when nobody does."
         item.system ??= NOVA_SYSTEM
@@ -414,7 +424,6 @@ export const Plugin = define({
         item.system = COMPACTION_SYSTEM
         item.permissions.push(...PermissionV2.merge(defaults, [{ action: "*", resource: "*", effect: "deny" }]))
       })
-
     })
   }),
 })

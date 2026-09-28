@@ -13,6 +13,8 @@ import {
   type PendingPrompt,
 } from "@/utils/session-pending-api"
 import { useSettings } from "@/context/settings"
+import { useGlobal } from "@/context/global"
+import { instanceFetch } from "@/utils/instance-fetch"
 import { createBottomPinController, navigationTargetIndex } from "./native-scroll"
 import { keepEqualRows, startPendingPoll } from "./pending-poll"
 import { showToast } from "@/utils/toast"
@@ -87,6 +89,31 @@ export function NativeTimeline(props: {
   const sessionDirectory = () => props.directory
   const expertise = useExpertise()
   const settings = useSettings()
+  const global = useGlobal()
+  const human = () => {
+    const id = serverSync().session.get(props.sessionID)?.agent
+    const connection = server.current
+    const officer = connection
+      ? global
+          .ensureServerCtx(connection)
+          .agents.list()
+          .find((item) => item.id === id)
+      : undefined
+    return id === "owner" || officer?.config?.["kind"] === "human"
+  }
+  const replyColleague = async (messageID: string, text: string, replyID: string) => {
+    const connection = server.current
+    if (!connection?.http || !props.directory)
+      throw new Error("Connection lost. Your reply is kept here; reconnect and try again.")
+    await instanceFetch(connection.http, {
+      route: "api/agent/owner/reply",
+      method: "POST",
+      directory: props.directory,
+      directoryVia: "header",
+      timeoutMs: 30_000,
+      body: { sessionID: props.sessionID, messageID, text, replyID },
+    })
+  }
   // The user's explicit Settings pref wins over the expertise-level default ("auto") — the
   // feed-display selects in Settings → Appearance (owner 2026-07-22: the level default alone left
   // no way to keep reasoning/tool cards collapsed as a Developer, and the old shell/edit
@@ -523,8 +550,9 @@ export function NativeTimeline(props: {
             maxToolTimeoutMs={props.maxToolTimeoutMs}
             executionOpen={props.executionOpen ?? (reconciling() ? true : undefined)}
             waitLabel={waitLabel()}
-            reasoningFold={reasoningFold()}
-            toolFold={toolFold()}
+            reasoningFold={human() ? "open" : reasoningFold()}
+            toolFold={human() ? "open" : toolFold()}
+            onReplyColleague={human() ? replyColleague : undefined}
             showCommandTiming={settings.appearance.commandTiming()}
             developer={expertise.level() === "developer"}
             pending={pending()}

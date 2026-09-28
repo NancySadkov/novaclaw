@@ -3,6 +3,7 @@ import { Effect } from "effect"
 import type { Database } from "../database/database"
 import type { EventV2 } from "../event"
 import { SessionInput } from "./input"
+import { resolveSessionMode } from "./mode"
 import { SessionMessage } from "./message"
 import { NOTICE_PREFIX } from "./notice"
 import type { SessionSchema } from "./schema"
@@ -114,10 +115,7 @@ export const noticeID = (input: Stalled): string => `${NOTICE_PREFIX}${input.ask
  * which is what the generation rule in {@link stalled} prevents. This function covers the other door,
  * where rows survive and a queued input would otherwise sit in an archive unreadable for ever.
  */
-export const clearPending = (
-  db: Database.Interface["db"],
-  sessionID: SessionSchema.ID,
-): Effect.Effect<number> =>
+export const clearPending = (db: Database.Interface["db"], sessionID: SessionSchema.ID): Effect.Effect<number> =>
   Effect.gen(function* () {
     // Selected before deleted rather than reading the driver's affected-row count: the count is the
     // only thing a caller has to go on here, and it is also what a test asserts, so it must not depend
@@ -135,11 +133,7 @@ export const clearPending = (
       .all()
       .pipe(Effect.orDie)
     for (const row of doomed)
-      yield* db
-        .delete(SessionInputTable)
-        .where(eq(SessionInputTable.id, row.id))
-        .run()
-        .pipe(Effect.orDie)
+      yield* db.delete(SessionInputTable).where(eq(SessionInputTable.id, row.id)).run().pipe(Effect.orDie)
     return doomed.length
   })
 
@@ -245,7 +239,8 @@ export const stalled = (input: {
     if (answered) continue
     const key = `${ask.from}\u0000${colleague}`
     const existing = out.get(key)
-    if (existing === undefined || ask.at < existing.askedAt) out.set(key, { asker: ask.from, colleague, askedAt: ask.at })
+    if (existing === undefined || ask.at < existing.askedAt)
+      out.set(key, { asker: ask.from, colleague, askedAt: ask.at })
   }
   return [...out.values()]
 }
@@ -276,11 +271,7 @@ export const LOOKBACK_MS = 24 * 60 * 60_000
  * (a sweeper for one notice is a subsystem to keep alive), so a failure here must not stop schedules
  * from firing.
  */
-export const sweep = (
-  db: Database.Interface["db"],
-  events: EventV2.Interface,
-  now: number,
-): Effect.Effect<number> =>
+export const sweep = (db: Database.Interface["db"], events: EventV2.Interface, now: number): Effect.Effect<number> =>
   Effect.gen(function* () {
     const sessions = yield* db
       .select({ id: SessionTable.id, agent: SessionTable.agent, born: SessionTable.time_created })
@@ -292,7 +283,7 @@ export const sweep = (
     const chatOf: Record<string, string> = {}
     const chatBornAt: Record<string, number> = {}
     for (const row of sessions) {
-      if (!row.agent) continue
+      if (!row.agent || (yield* resolveSessionMode(db, row.id)) !== "agent") continue
       agentOf[row.id] = row.agent
       // One chat per agent, so the first is the only. ⚠️ The birth time is taken under the SAME
       // `??=` as the id it belongs to, so the two can never name different sessions — the rule in
@@ -358,7 +349,7 @@ export const sweep = (
         .get()
         .pipe(Effect.orDie)
       if (already !== undefined) continue
-      const written = yield* SessionInput.admit(db, events, {
+      const written = yield* SessionInput.automated(db, events, {
         id,
         sessionID: chat as SessionSchema.ID,
         prompt: {
@@ -371,7 +362,7 @@ export const sweep = (
         },
         delivery: "queue",
       }).pipe(
-        Effect.as(true),
+        Effect.map((admitted) => admitted !== undefined),
         Effect.orElseSucceed(() => false),
       )
       if (written) told += 1

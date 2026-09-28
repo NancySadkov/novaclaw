@@ -6,6 +6,7 @@ import { createHash } from "node:crypto"
 import path from "node:path"
 import { Log } from "@novaclaw/schema/log"
 import { AgentConfigStore } from "./agent-config-store"
+import { AgentV2 } from "./agent"
 import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
 import { HostExec } from "./host-exec"
@@ -17,12 +18,25 @@ import { SessionSchema } from "./session/schema"
 import { SessionCompactionTable } from "./session/sql"
 import { NudgeDeliveryTable } from "./nudge-delivery.sql"
 import { SessionInput } from "./session/input"
+import { resolveSessionMode } from "./session/mode"
 import { SessionMessage } from "./session/message"
 import { Shell } from "./shell"
 
 export interface Interface {
-  readonly beforeTool: (input: { readonly sessionID: string; readonly agentID: string; readonly callID: string; readonly name: string; readonly arguments: unknown; readonly directory?: string }) => Effect.Effect<string | undefined>
-  readonly confirmBefore: (input: { readonly sessionID: string; readonly agentID: string; readonly id: string; readonly callID: string }) => Effect.Effect<boolean>
+  readonly beforeTool: (input: {
+    readonly sessionID: string
+    readonly agentID: string
+    readonly callID: string
+    readonly name: string
+    readonly arguments: unknown
+    readonly directory?: string
+  }) => Effect.Effect<string | undefined>
+  readonly confirmBefore: (input: {
+    readonly sessionID: string
+    readonly agentID: string
+    readonly id: string
+    readonly callID: string
+  }) => Effect.Effect<boolean>
   readonly deliverScheduled: (input: {
     readonly sessionID: string
     readonly sessionEpoch: number
@@ -54,7 +68,14 @@ export const layer = Layer.effect(
       maxOutputBytes: 16_384,
       plan: ({ command, cwd }) =>
         HostExec.spawnPlan({
-          shape: { kind: "shell-command", shell: process.platform === "win32" ? (Shell.w64devkitShell() ?? HostExec.resolveShell()) : HostExec.resolveShell(), command },
+          shape: {
+            kind: "shell-command",
+            shell:
+              process.platform === "win32"
+                ? (Shell.w64devkitShell() ?? HostExec.resolveShell())
+                : HostExec.resolveShell(),
+            command,
+          },
           cwd,
           worktree: cwd,
           consent: "none",
@@ -86,9 +107,12 @@ export const layer = Layer.effect(
         }
         const output = result.output.trim().slice(0, 1_024)
         const trustedDate = /^date(?:\s|$)/.test(match[1]!.trim()) && /^\d{4}-\d{2}-\d{2} [A-Za-z]+$/.test(output)
-        text = text.replace(match[0], trustedDate
-          ? output
-          : `${SessionOrigin.externalContentFrame("configured nudge inline command output")}${output}`)
+        text = text.replace(
+          match[0],
+          trustedDate
+            ? output
+            : `${SessionOrigin.externalContentFrame("configured nudge inline command output")}${output}`,
+        )
       }
       return text
     })
@@ -104,10 +128,22 @@ export const layer = Layer.effect(
         .pipe(Effect.orDie)
     return Service.of({
       beforeTool: Effect.fn("NudgeService.beforeTool")(function* (input) {
+        if ((yield* resolveSessionMode(db, SessionSchema.ID.make(input.sessionID))) !== "agent") return undefined
         const agent = AgentConfigStore.fold((yield* agents.configured())[input.agentID] ?? [])
-        const event: Nudge.Event = { type: "tool", phase: "before", id: input.callID, name: input.name, input: input.arguments }
-        const matched = (agent?.nudges ?? []).filter((nudge) =>
-          (nudge.hook.type === "tool-call" || nudge.hook.type === "shell-command") && nudge.hook.phase === "before" && Nudge.matches(nudge, event))
+        if (input.agentID === AgentV2.OWNER_ID || AgentV2.kindOf(agent) !== "agent") return undefined
+        const event: Nudge.Event = {
+          type: "tool",
+          phase: "before",
+          id: input.callID,
+          name: input.name,
+          input: input.arguments,
+        }
+        const matched = (agent?.nudges ?? []).filter(
+          (nudge) =>
+            (nudge.hook.type === "tool-call" || nudge.hook.type === "shell-command") &&
+            nudge.hook.phase === "before" &&
+            Nudge.matches(nudge, event),
+        )
         const signature = JSON.stringify([input.name, input.arguments])
         const now = Date.now()
         const waiting = matched.find((nudge) => {
@@ -132,22 +168,38 @@ export const layer = Layer.effect(
         return true
       }),
       deliverScheduled: Effect.fn("NudgeService.deliverScheduled")(function* (input) {
-        const messageID = SessionMessage.ID.make("msg_" + createHash("sha256")
-          .update(`${input.sessionID}:${input.sessionEpoch}:${input.scheduleID}:${input.occurrence}`)
-          .digest("hex").slice(0, 32))
+        if ((yield* resolveSessionMode(db, SessionSchema.ID.make(input.sessionID))) !== "agent") return
+        const messageID = SessionMessage.ID.make(
+          "msg_" +
+            createHash("sha256")
+              .update(`${input.sessionID}:${input.sessionEpoch}:${input.scheduleID}:${input.occurrence}`)
+              .digest("hex")
+              .slice(0, 32),
+        )
         const admittedSessionID = yield* input.admit(messageID, SessionInput.applySteerProvenance(input.text))
-        yield* db.insert(NudgeDeliveryTable).values({
-          session_id: admittedSessionID,
-          nudge_id: `schedule:${input.scheduleID}`,
-          occurrence: input.occurrence,
-          fired_at: input.admittedAt,
-        }).onConflictDoUpdate({
-          target: [NudgeDeliveryTable.session_id, NudgeDeliveryTable.nudge_id],
-          set: { occurrence: input.occurrence, fired_at: input.admittedAt },
-          setWhere: ne(NudgeDeliveryTable.occurrence, input.occurrence),
-        }).run().pipe(Effect.orDie)
+        yield* db
+          .insert(NudgeDeliveryTable)
+          .values({
+            session_id: admittedSessionID,
+            nudge_id: `schedule:${input.scheduleID}`,
+            occurrence: input.occurrence,
+            fired_at: input.admittedAt,
+          })
+          .onConflictDoUpdate({
+            target: [NudgeDeliveryTable.session_id, NudgeDeliveryTable.nudge_id],
+            set: { occurrence: input.occurrence, fired_at: input.admittedAt },
+            setWhere: ne(NudgeDeliveryTable.occurrence, input.occurrence),
+          })
+          .run()
+          .pipe(Effect.orDie)
       }),
       claim: Effect.fn("NudgeService.claim")(function* (input) {
+        if ((yield* resolveSessionMode(db, SessionSchema.ID.make(input.sessionID))) !== "agent") return []
+        const agent =
+          input.agentID === undefined
+            ? undefined
+            : AgentConfigStore.fold((yield* agents.configured())[input.agentID] ?? [])
+        if (input.agentID === AgentV2.OWNER_ID || AgentV2.kindOf(agent) !== "agent") return []
         // One read per event, not per definition: the quiet rule asks whether the context this nudge
         // was delivered into still exists, and a session has at most one answer to that.
         const compacted = yield* db
@@ -159,8 +211,6 @@ export const layer = Layer.effect(
           .get()
           .pipe(Effect.orDie)
         let suppressed = 0
-        const agent =
-          input.agentID === undefined ? undefined : AgentConfigStore.fold((yield* agents.configured())[input.agentID] ?? [])
         const definitions: Nudge.ScopedDefinition[] = [
           ...(input.agentID === undefined
             ? []
@@ -176,7 +226,12 @@ export const layer = Layer.effect(
           // The interval cap is tested BEFORE any hook runs: saying "quiet" must not itself cost a
           // command execution on the way to the answer.
           const prior = yield* priorDelivery(input.sessionID, scoped.deliveryID)
-          if (prior && !Nudge.periodic(occurrence) && scoped.nudge.spammable !== true && Date.now() - prior.firedAt < Nudge.QUIET_INTERVAL_MS) {
+          if (
+            prior &&
+            !Nudge.periodic(occurrence) &&
+            scoped.nudge.spammable !== true &&
+            Date.now() - prior.firedAt < Nudge.QUIET_INTERVAL_MS
+          ) {
             suppressed++
             continue
           }

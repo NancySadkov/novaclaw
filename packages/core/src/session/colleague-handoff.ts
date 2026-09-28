@@ -16,6 +16,7 @@ import { ColleagueNote } from "./colleague-note"
 import * as ColleagueRoute from "./colleague-route"
 import { SessionMessageTable } from "./sql"
 import { SessionInput } from "./input"
+import { resolveSessionMode } from "./mode"
 import { SessionMessage } from "./message"
 import { SessionRunCoordinator } from "./run-coordinator"
 import { SessionSchema } from "./schema"
@@ -180,6 +181,7 @@ const lastPeerContext = (db: Database.Interface["db"], session: SessionSchema.ID
 const PEER_LOOKBACK = 12
 
 export interface Delivery {
+  readonly human?: boolean
   /** False when that colleague has no open chat to leave this in — a fact, not a failure. */
   readonly delivered: boolean
   /** Whether anything is actually running their chat. `false` = durable but dormant. */
@@ -329,8 +331,14 @@ export const scheduleDeferredWake = (
   if (deferredWakes.has(chatID)) return
   const timer = setTimeout(() => {
     deferredWakes.delete(chatID)
-    void Effect.runPromise(pending ? pending().pipe(Effect.flatMap((queued) => queued ? wake(chatID) : Effect.succeed(true))) : wake(chatID)).then(
-      (started) => { if (!started) scheduleDeferredWake(chatID, wake, delayMs, pending) },
+    void Effect.runPromise(
+      pending
+        ? pending().pipe(Effect.flatMap((queued) => (queued ? wake(chatID) : Effect.succeed(true))))
+        : wake(chatID),
+    ).then(
+      (started) => {
+        if (!started) scheduleDeferredWake(chatID, wake, delayMs, pending)
+      },
       (error) => {
         process.stderr.write(`Deferred colleague wake failed for ${chatID}: ${String(error)}\n`)
         scheduleDeferredWake(chatID, wake, delayMs, pending)
@@ -375,6 +383,7 @@ const landColleagueMessage = (
   },
 ) =>
   Effect.gen(function* () {
+    const human = (yield* resolveSessionMode(deps.db, args.chatID)) === "human"
     yield* SessionInput.admit(deps.db, deps.events, {
       id: SessionMessage.ID.create(),
       sessionID: args.chatID,
@@ -382,21 +391,23 @@ const landColleagueMessage = (
         // The colleague's words, plus HOW TO ANSWER — the note is the entire reply channel, and an
         // answer's note differs from a question's so the exchange stops at one round trip
         // (`colleague-note.ts` holds the argument).
-        text: ColleagueNote.compose({
-          message: args.message,
-          from: args.label ?? String(args.from),
-          turn: args.turn,
-          fromWorker: args.fromWorker,
-          // The room MINUS the sender (the note names them separately) and minus the reader, who
-          // does not need telling they are here. Absent for a 1:1, which keeps that note identical.
-          ...(args.participants === undefined
-            ? {}
-            : {
-                group: args.participants.filter(
-                  (id) => id !== args.recipient && id !== (args.label ?? String(args.from)),
-                ),
-              }),
-        }),
+        text: human
+          ? args.message
+          : ColleagueNote.compose({
+              message: args.message,
+              from: args.label ?? String(args.from),
+              turn: args.turn,
+              fromWorker: args.fromWorker,
+              // The room MINUS the sender (the note names them separately) and minus the reader, who
+              // does not need telling they are here. Absent for a 1:1, which keeps that note identical.
+              ...(args.participants === undefined
+                ? {}
+                : {
+                    group: args.participants.filter(
+                      (id) => id !== args.recipient && id !== (args.label ?? String(args.from)),
+                    ),
+                  }),
+            }),
         files: [],
         agents: [],
         // PEER, not parent — `session/origin.ts` renders the two differently, and the difference is
@@ -423,6 +434,7 @@ const landColleagueMessage = (
       },
       delivery: "queue",
     }).pipe(Effect.orDie)
+    if (human) return false
     // Strictly AFTER the admit: the executor's drain reads the queued row from the database, so
     // waking first is a race that ends in an empty turn (`spawner.ts` learned this).
     //
@@ -430,20 +442,22 @@ const landColleagueMessage = (
     // read it on their next turn. `false` here means "nothing is running it", which is exactly what
     // `Delivery.started` has always meant.
     if (args.wake === false) {
-      if (args.deferWake) scheduleDeferredWake(
-        args.chatID, deps.wake, 60_000, () => SessionInput.hasPending(deps.db, args.chatID, "queue"),
-      )
+      if (args.deferWake)
+        scheduleDeferredWake(args.chatID, deps.wake, 60_000, () =>
+          SessionInput.hasPending(deps.db, args.chatID, "queue"),
+        )
       return false
     }
-    const started = yield* deps.wake(args.chatID).pipe(Effect.catchCause((cause) =>
-      Effect.sync(() => {
-        process.stderr.write(`Colleague message stored but wake failed for ${args.chatID}: ${String(cause)}\n`)
-        return false
-      }),
-    ))
-    if (!started) scheduleDeferredWake(
-      args.chatID, deps.wake, 60_000, () => SessionInput.hasPending(deps.db, args.chatID, "queue"),
+    const started = yield* deps.wake(args.chatID).pipe(
+      Effect.catchCause((cause) =>
+        Effect.sync(() => {
+          process.stderr.write(`Colleague message stored but wake failed for ${args.chatID}: ${String(cause)}\n`)
+          return false
+        }),
+      ),
     )
+    if (!started)
+      scheduleDeferredWake(args.chatID, deps.wake, 60_000, () => SessionInput.hasPending(deps.db, args.chatID, "queue"))
     return started
   })
 
@@ -616,8 +630,7 @@ export const fromParts = (input: {
   deliver: Effect.fn("ColleagueHandoff.deliver")(function* (request) {
     const sender = yield* input.session(request.from)
     const route = ColleagueRoute.route(sender, request.colleague, yield* input.roster)
-    if (route.kind === "unavailable")
-      return { delivered: false, started: false, refused: `NOT SENT. ${route.reason}` }
+    if (route.kind === "unavailable") return { delivered: false, started: false, refused: `NOT SENT. ${route.reason}` }
     const recipient = route.kind === "officer" ? route.recipient : String(route.sessionID)
     const chatID = route.kind === "officer" ? yield* openChat(input, route.recipient) : route.sessionID
     if (chatID === undefined)
@@ -648,12 +661,21 @@ export const fromParts = (input: {
     const hop = ColleagueBound.nextHop(context.hops)
     const path = ColleagueBound.extendPath(context.path, label)
     const cycling = ColleagueBound.closesCycle({
-      path, target: recipient, answering: askedByRecipient, room: context.participants,
+      path,
+      target: recipient,
+      answering: askedByRecipient,
+      room: context.participants,
     })
     const now = yield* Clock.currentTimeMillis
     const paused = route.kind === "officer" && input.paused !== undefined && (yield* input.paused(route.recipient))
     const overBudget = ColleagueBound.exceedsHopCap(hop) || !ColleagueBound.hasCapacityFor(String(request.from), now, 1)
-    const deferred = paused ? "recipient is paused" : cycling ? "colleague chain would loop" : overBudget ? "colleague activity budget reached" : undefined
+    const deferred = paused
+      ? "recipient is paused"
+      : cycling
+        ? "colleague chain would loop"
+        : overBudget
+          ? "colleague activity budget reached"
+          : undefined
     if (deferred === undefined) ColleagueBound.record(String(request.from), now)
     const started = yield* landColleagueMessage(input, {
       chatID,
@@ -668,7 +690,14 @@ export const fromParts = (input: {
       wake: deferred === undefined,
       deferWake: deferred !== undefined && !paused,
     })
-    return { delivered: true, started, recipient, redirected: route.redirected, deferred }
+    return {
+      delivered: true,
+      started,
+      recipient,
+      redirected: route.redirected,
+      deferred,
+      human: (yield* resolveSessionMode(input.db, chatID)) === "human",
+    }
   }),
   deliverGroup: Effect.fn("ColleagueHandoff.deliverGroup")(function* (request) {
     const sender = yield* input.session(request.from)
@@ -749,8 +778,15 @@ export const fromParts = (input: {
     if (input.paused !== undefined)
       for (const colleague of reachable) if (yield* input.paused(colleague)) pausedRecipients.add(colleague)
     const paused = pausedRecipients.size > 0
-    const overBudget = ColleagueBound.exceedsHopCap(hop) || !ColleagueBound.hasCapacityFor(String(request.from), now, reachable.length)
-    const deferred = paused ? "a recipient is paused" : cycling.length > 0 ? "colleague chain would loop" : overBudget ? "colleague activity budget reached" : undefined
+    const overBudget =
+      ColleagueBound.exceedsHopCap(hop) || !ColleagueBound.hasCapacityFor(String(request.from), now, reachable.length)
+    const deferred = paused
+      ? "a recipient is paused"
+      : cycling.length > 0
+        ? "colleague chain would loop"
+        : overBudget
+          ? "colleague activity budget reached"
+          : undefined
     if (deferred === undefined) ColleagueBound.recordMany(String(request.from), now, reachable.length)
 
     const conversation = Identifier.ascending("conversation")

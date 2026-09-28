@@ -138,6 +138,7 @@ describe("AgentV2", () => {
         // held to the same floor as every other built-in below: governing WHO exists grants no
         // ambient authority over what they may run.
         "nova",
+        "owner",
         "recipe",
         // "build" and "plan" left on 2026-09-27 when the anonymous agents were RETIRED (owner: "get
         // completely rid of build and plan both as colleagues and as machinery - we have completely
@@ -195,7 +196,7 @@ describe("AgentV2", () => {
       // posture instead leaves Nova, the service agents are `hidden`, and `general`/`explore` are
       // staff: so exactly one row, which is what makes the per-row assertions below mean something.
       const roster = ColleagueTool.addressable(yield* agent.all(), AgentV2.ID.make("plan"))
-      expect(roster.map((item) => String(item.id))).toEqual([AgentV2.NOVA_ID])
+      expect(roster.map((item) => String(item.id)).sort()).toEqual([AgentV2.NOVA_ID, AgentV2.OWNER_ID])
       for (const colleague of roster) {
         const id = String(colleague.id)
         expect(colleague.name?.trim(), `${id} has no display name`).toBeTruthy()
@@ -249,13 +250,12 @@ describe("AgentV2", () => {
       for (const retired of [AgentV2.BUILD_ID, "plan"]) {
         expect(ids, `${retired} is still an agent`).not.toContain(retired)
         expect(AgentV2.POSTURE_IDS.has(retired), `${retired} left the retired-id vocabulary`).toBe(true)
-        expect(AgentV2.isColleague({ id: retired, mode: "primary" }), `${retired} reads as a colleague`).toBe(
-          false,
-        )
+        expect(AgentV2.isColleague({ id: retired, mode: "primary" }), `${retired} reads as a colleague`).toBe(false)
       }
       // The catalogue is not empty, or "we removed them" would read the same as "we broke the tool" -
       // the failure mode of a filter aggressive enough to empty it.
       expect(ColleagueTool.addressable(all, AgentV2.ID.make("plan")).map((item) => String(item.id))).toEqual([
+        AgentV2.OWNER_ID,
         AgentV2.NOVA_ID,
       ])
       // And a chat belongs to a colleague, which is what makes the retirement structural rather than

@@ -60,19 +60,6 @@ const SEEDED_OFFICERS: ReadonlyArray<{
   }>
 }> = [
   {
-    // 🔴 THE OWNING USER, as a first-class entity (owner, 2026-09-17). A `human` never runs a model
-    // turn: `AgentV2.kindOf` is `human`, so its prompt is empty and the derived `shortChat` posture
-    // withdraws every tool. Seeded HIDDEN so it is a directory/profile row rather than a chat target
-    // — a colleague you can `colleague message` is not the same thing as the person you are. Unhide
-    // it in Contacts if you want it on the main roster.
-    id: "owner",
-    name: "Owner",
-    title: "Instance Owner",
-    owns: "The person this instance works for. A human, so no turn ever runs on their behalf.",
-    kind: "human",
-    hidden: true,
-  },
-  {
     id: "xenia",
     name: "Xenia",
     // 🔴 The COMPANION is a chat, not an agent (owner, 2026-09-02). This is the colleague a user

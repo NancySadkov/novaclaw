@@ -356,7 +356,7 @@ export const layer = Layer.effect(
           )
           if (!sessionID) return
           const admit = (target: SessionSchema.ID) =>
-            SessionInput.admit(db, events, {
+            SessionInput.automated(db, events, {
               id: SessionMessage.ID.make(`msg_project_${id}_${target}`),
               sessionID: target,
               prompt: Prompt.make({ text: applySteerProvenance(text) }),

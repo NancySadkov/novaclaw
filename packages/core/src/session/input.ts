@@ -10,6 +10,9 @@ import { SessionMessage } from "./message"
 import { Prompt } from "./prompt"
 import { SessionSchema } from "./schema"
 import { SessionInputTable, SessionMessageTable } from "./sql"
+import { resolveSessionMode } from "./mode"
+import { isSteerText } from "./steer-provenance"
+import { isNotice } from "./notice"
 
 type DatabaseService = Database.Interface["db"]
 
@@ -48,10 +51,31 @@ export const admit = Effect.fn("SessionInput.admit")(function* (
     readonly delivery: Delivery
   },
 ) {
+  const materializeHuman = (admitted: Admitted) =>
+    Effect.gen(function* () {
+      if (admitted.promotedSeq !== undefined || (yield* resolveSessionMode(db, admitted.sessionID)) !== "human")
+        return admitted
+      yield* events
+        .publish(SessionEvent.Prompted, {
+          sessionID: admitted.sessionID,
+          messageID: admitted.id,
+          timestamp: admitted.timeCreated,
+          prompt: admitted.prompt,
+          delivery: admitted.delivery,
+        })
+        .pipe(
+          Effect.catchDefect((defect) =>
+            find(db, admitted.id).pipe(
+              Effect.flatMap((stored) => (stored?.promotedSeq !== undefined ? Effect.void : Effect.die(defect))),
+            ),
+          ),
+        )
+      return (yield* find(db, admitted.id)) ?? admitted
+    })
   const existing = yield* find(db, input.id)
-  if (existing !== undefined) return existing
+  if (existing !== undefined) return yield* materializeHuman(existing)
   const timestamp = yield* DateTime.now
-  return yield* events
+  const admitted = yield* events
     .publish(SessionEvent.PromptAdmitted, {
       messageID: input.id,
       sessionID: input.sessionID,
@@ -78,6 +102,7 @@ export const admit = Effect.fn("SessionInput.admit")(function* (
         find(db, input.id).pipe(Effect.flatMap((stored) => (stored ? Effect.succeed(stored) : Effect.die(defect)))),
       ),
     )
+  return yield* materializeHuman(admitted)
 })
 
 /**
@@ -99,13 +124,31 @@ import { applySteerProvenance } from "./steer-provenance"
  * fresh id per call — idempotency (nudge-once) is the caller's concern (e.g. the doom-loop's
  * `nudged` set). Prepends `STEER_PROVENANCE_PREFIX` (1N) unless the text already carries it.
  */
-export const steer = (db: DatabaseService, events: EventV2.Interface, sessionID: SessionSchema.ID, text: string) =>
-  admit(db, events, {
+export const steer = Effect.fn("SessionInput.steer")(function* (
+  db: DatabaseService,
+  events: EventV2.Interface,
+  sessionID: SessionSchema.ID,
+  text: string,
+) {
+  return yield* automated(db, events, {
     id: SessionMessage.ID.create(),
     sessionID,
     prompt: Prompt.make({ text: applySteerProvenance(text) }),
     delivery: "steer",
   })
+})
+
+export const automated = Effect.fn("SessionInput.automated")(function* (
+  db: DatabaseService,
+  events: EventV2.Interface,
+  input: Parameters<typeof admit>[2],
+) {
+  if ((yield* resolveSessionMode(db, input.sessionID)) !== "agent") return undefined
+  return yield* admit(db, events, {
+    ...input,
+    prompt: Prompt.make({ ...input.prompt, text: applySteerProvenance(input.prompt.text) }),
+  })
+})
 
 export const projectAdmitted = Effect.fn("SessionInput.projectAdmitted")(function* (
   db: DatabaseService,
@@ -345,8 +388,16 @@ const publish = Effect.fn("SessionInput.publish")(function* (
   sessionID: SessionSchema.ID,
   rows: ReadonlyArray<typeof SessionInputTable.$inferSelect>,
 ) {
+  let promoted = 0
   for (const row of rows) {
     const id = SessionMessage.ID.make(row.id)
+    if (
+      (isSteerText(decodePrompt(row.prompt).text) || isNotice(row.id)) &&
+      (yield* resolveSessionMode(db, sessionID)) !== "agent"
+    ) {
+      yield* cancel(db, events, sessionID, id)
+      continue
+    }
     yield* events
       .publish(SessionEvent.Prompted, {
         sessionID,
@@ -364,8 +415,32 @@ const publish = Effect.fn("SessionInput.publish")(function* (
             : Effect.die(defect),
         ),
       )
+    promoted++
   }
-  return rows.length
+  return promoted
+})
+
+export const settlePassiveInputs = Effect.fn("SessionInput.settlePassiveInputs")(function* (
+  db: DatabaseService,
+  events: EventV2.Interface,
+  sessionID: SessionSchema.ID,
+) {
+  const mode = yield* resolveSessionMode(db, sessionID)
+  if (mode === "agent") return mode
+  const rows = yield* db
+    .select()
+    .from(SessionInputTable)
+    .where(and(eq(SessionInputTable.session_id, sessionID), isNull(SessionInputTable.promoted_seq)))
+    .orderBy(asc(SessionInputTable.admitted_seq))
+    .all()
+    .pipe(Effect.orDie)
+  if (mode === "human") yield* publish(db, events, sessionID, rows)
+  else
+    for (const row of rows) {
+      if (isSteerText(decodePrompt(row.prompt).text) || isNotice(row.id))
+        yield* cancel(db, events, sessionID, SessionMessage.ID.make(row.id))
+    }
+  return mode
 })
 
 export const promoteSteers = Effect.fn("SessionInput.promoteSteers")(function* (
@@ -410,5 +485,5 @@ export const promoteNextQueued = Effect.fn("SessionInput.promoteNextQueued")(fun
     .limit(1)
     .get()
     .pipe(Effect.orDie)
-  return row === undefined ? false : yield* publish(db, events, sessionID, [row]).pipe(Effect.as(true))
+  return row === undefined ? false : yield* publish(db, events, sessionID, [row]).pipe(Effect.map((count) => count > 0))
 })
