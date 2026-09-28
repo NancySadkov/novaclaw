@@ -1,6 +1,6 @@
 export * as SessionProjector from "./projector"
 
-import { and, asc, desc, eq, gt, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, getTableColumns, gt, isNull, or, sql } from "drizzle-orm"
 import { DateTime, Effect, Layer, Schema } from "effect"
 import { AgentUsage } from "../agent/usage"
 import { Database } from "../database/database"
@@ -292,7 +292,13 @@ function insertMessage(db: DatabaseService, event: SessionEvent.Event, message: 
 export const backfillCompactionTranscript = Effect.fn("SessionProjector.backfillCompactionTranscript")(function* (
   db: DatabaseService,
 ) {
-  const overlays = yield* db.select().from(SessionCompactionTable).all().pipe(Effect.orDie)
+  const overlays = yield* db
+    .select(getTableColumns(SessionCompactionTable))
+    .from(SessionCompactionTable)
+    .leftJoin(SessionMessageTable, eq(SessionMessageTable.id, SessionCompactionTable.id))
+    .where(isNull(SessionMessageTable.id))
+    .all()
+    .pipe(Effect.orDie)
   if (overlays.length === 0) return
   const starts = yield* db
     .select({ seq: EventTable.seq, data: EventTable.data })

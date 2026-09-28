@@ -80,8 +80,8 @@ export const layer = Layer.effectDiscard(Effect.gen(function* () {
     "instance.cause": Log.fault(cause),
   })))
   yield* Effect.forkScoped(Effect.forever(Effect.gen(function* () {
-    yield* tick
     yield* Effect.sleep(Duration.minutes(15))
+    yield* tick
   })))
 }))
 

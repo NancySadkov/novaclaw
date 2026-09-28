@@ -63,6 +63,7 @@ test("preloaded officer tabs remain interactive across directory changes", async
     window.requestAnimationFrame = () => 1
   })
   for (let index = 0; index < 12; index++) {
+    if (index === 6) await page.route(/\/api\/session\/[^/]+\/message(?:\?|$)/, () => new Promise(() => {}))
     const selected = index % sessions.length
     await tabs.nth(selected).click()
     await expect(page.getByText(`Conversation ${sessions[selected].id}`, { exact: true })).toBeVisible({

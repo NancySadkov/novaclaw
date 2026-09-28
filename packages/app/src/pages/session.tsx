@@ -281,7 +281,6 @@ export default function Page() {
     }
   }
   const messagesReady = timeline.ready
-  const sessionSync = timeline.resource
   const userMessages = timeline.userMessages
   const visibleUserMessages = timeline.visibleUserMessages
 
@@ -1159,7 +1158,6 @@ export default function Page() {
 
   return (
     <div class="relative size-full overflow-hidden flex flex-col">
-      {sessionSync() ?? ""}
       <Show when={executionAttention()}>
         {(attempt) => (
           <Show when={["recovering", "paused", "failed", "interrupted"].includes(attempt().state)}>

@@ -1,8 +1,33 @@
 import { expect, test } from "bun:test"
 import { Database } from "@novaclaw/core/database/database"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { sql } from "drizzle-orm"
-import { Effect } from "effect"
-import { prune } from "../../src/storage/database-history"
+import { Effect, Layer } from "effect"
+import * as TestClock from "effect/testing/TestClock"
+import { layer, prune } from "../../src/storage/database-history"
+
+test("periodic history cleanup waits for its interval before scanning stored events", async () => {
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* db.run(sql`INSERT INTO event_sequence (aggregate_id, seq) VALUES ('scheduled-chat', 2)`)
+      const data = JSON.stringify({ info: { summary: { diffs: [{ file: "a", patch: "old diff" }] } } })
+      yield* db.run(sql`INSERT INTO event (id, aggregate_id, seq, type, data) VALUES
+      ('scheduled-1', 'scheduled-chat', 1, 'session.updated.2', ${data}),
+      ('scheduled-2', 'scheduled-chat', 2, 'session.updated.2', ${data})`)
+      const remaining = Effect.gen(function* () {
+        const rows = yield* db.all<{ count: number }>(sql`SELECT count(*) AS count FROM event
+        WHERE aggregate_id = 'scheduled-chat' AND json_type(data, '$.info.summary.diffs') IS NOT NULL`)
+        return rows[0]?.count
+      })
+      yield* Layer.build(layer.pipe(Layer.provide(SettingsConfigStore.layer)))
+      yield* TestClock.adjust("14 minutes")
+      expect(yield* remaining).toBe(2)
+      yield* TestClock.adjust("1 minute")
+      expect(yield* remaining).toBe(1)
+    }).pipe(Effect.scoped, Effect.provide(Database.layerFromPath(":memory:")), Effect.provide(TestClock.layer())),
+  )
+})
 
 test("history cleanup removes older diff copies and keeps the latest replay state", async () => {
   await Effect.runPromise(Effect.gen(function* () {

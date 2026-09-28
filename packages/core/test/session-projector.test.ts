@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { DateTime, Effect, Schema } from "effect"
-import { asc, eq } from "drizzle-orm"
+import { asc, eq, sql } from "drizzle-orm"
 import { AgentUsage } from "@novaclaw/core/agent/usage"
 import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
@@ -689,6 +689,11 @@ describe("SessionProjector", () => {
         summary: "restored summary",
         time: { created: DateTime.makeUnsafe(1_000), completed: DateTime.makeUnsafe(4_500) },
       })
+      yield* db.run(sql`DROP TABLE event`)
+      yield* SessionProjector.backfillCompactionTranscript(db)
+      expect(
+        yield* db.select().from(SessionMessageTable).where(eq(SessionMessageTable.id, compactionID)).get(),
+      ).toEqual(restored)
     }),
   )
 

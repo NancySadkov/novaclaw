@@ -15,6 +15,7 @@ import { LocationServiceMap } from "@novaclaw/core/location-service-map"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { ServerLocationServiceMap } from "../../src/location-service-map"
 import { Server } from "../../src/server/server"
+import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { PtyPaths } from "@novaclaw/protocol/groups/pty"
 import { withTimeout } from "../../src/util/timeout"
 import { resetDatabase } from "../fixture/db"
@@ -238,6 +239,63 @@ async function openPtySocket(listener: Awaited<ReturnType<typeof startListener>>
 }
 
 describe("HttpApi Server.listen", () => {
+  test("does not accept connections until the routes can answer preflights", async () => {
+    const reservation = net.createServer()
+    const port = await new Promise<number>((resolve, reject) => {
+      reservation.once("error", reject)
+      reservation.listen(0, "127.0.0.1", () => {
+        const port = (reservation.address() as net.AddressInfo).port
+        reservation.close((error) => (error ? reject(error) : resolve(port)))
+      })
+    })
+    const entered = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    const createRoutes = HttpApiApp.createRoutes
+    const delayed = spyOn(HttpApiApp, "createRoutes").mockImplementation((options) =>
+      createRoutes(options).pipe(
+        Layer.provideMerge(
+          Layer.effectDiscard(
+            Effect.promise(() => {
+              entered.resolve()
+              return release.promise
+            }),
+          ),
+        ),
+      ),
+    )
+    const listening = Server.listen({ hostname: "127.0.0.1", port })
+    try {
+      await withTimeout(entered.promise, 5_000, "route initialization did not begin")
+      const accepted = await new Promise<boolean>((resolve) => {
+        const socket = net.connect(port, "127.0.0.1")
+        const finish = (value: boolean) => {
+          socket.destroy()
+          resolve(value)
+        }
+        socket.once("connect", () => finish(true))
+        socket.once("error", () => finish(false))
+        socket.setTimeout(500, () => finish(true))
+      })
+      expect(accepted).toBe(false)
+      release.resolve()
+      const listener = await withTimeout(listening, 5_000, "ready listener did not start")
+      const response = await fetch(new URL("/global/health", listener.url), {
+        method: "OPTIONS",
+        headers: {
+          origin: "nc://renderer",
+          "access-control-request-method": "GET",
+          "access-control-request-headers": "authorization",
+        },
+        signal: AbortSignal.timeout(1_000),
+      })
+      expect(response.status).toBe(204)
+      expect(response.headers.get("access-control-allow-origin")).toBe("nc://renderer")
+    } finally {
+      release.resolve()
+      delayed.mockRestore()
+      await stop(await listening, "ready-listener cleanup")
+    }
+  })
   testPty("listener replacement detaches and replays the same live PTY from its last cursor", async () => {
     await using tmp = await tmpdir({ config: { formatter: false } })
     const shared = Layer.makeMemoMapUnsafe()

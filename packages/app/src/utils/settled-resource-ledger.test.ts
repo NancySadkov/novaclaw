@@ -97,7 +97,6 @@ const LEDGER: { resources: Record<string, number>; folds: Record<string, number>
     "context/language.tsx": 1,
     "pages/directory-layout.tsx": 1,
     "pages/session/composer/session-responder-dock.tsx": 1,
-    "pages/session/timeline/model.ts": 1,
     "utils/persist.ts": 1,
   },
   folds: {

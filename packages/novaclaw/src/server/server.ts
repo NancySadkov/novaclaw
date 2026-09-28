@@ -148,26 +148,22 @@ const listenEffect: (opts: ListenOptions) => Effect.Effect<EffectListener, unkno
 )
 
 function listenerLayer(opts: ListenOptions, port: number) {
-  // The two taps split the single biggest phase of the boot into its two honest halves: binding the
-  // TCP socket (`serverLayer` → `NodeHttpServer.layer`) and building the whole instance service graph
-  // behind the routes (`createRoutes` — Database + migration, every config store, MCP, skills, the
-  // messenger drivers…). `provideMerge` builds its argument FIRST, so the bind precedes the graph:
-  // the port is listening while the services are still coming up, which is a fact about this boot
-  // that no total could have told us. Neither tap changes what is built or in what order.
-  return HttpRouter.serve(
-    Layer.tap(HttpApiApp.createRoutes(opts), () => Effect.sync(() => BootProfile.mark("server:services-built"))),
-    {
-      middleware: disposeMiddleware,
-      disableLogger: true,
-      disableListenLog: true,
-    },
-  ).pipe(
-    Layer.provideMerge(WebSocketTracker.layer),
-    Layer.provideMerge(
-      Layer.tap(serverLayer({ port, hostname: opts.hostname }), () =>
-        Effect.sync(() => BootProfile.mark("server:http-bound")),
+  return Layer.unwrap(
+    Effect.map(HttpRouter.HttpRouter, (router) =>
+      HttpServer.serve(router.asHttpEffect(), disposeMiddleware).pipe(
+        Layer.provideMerge(
+          Layer.tap(serverLayer({ port, hostname: opts.hostname }), () =>
+            Effect.sync(() => BootProfile.mark("server:http-bound")),
+          ),
+        ),
       ),
     ),
+  ).pipe(
+    Layer.provideMerge(
+      Layer.tap(HttpApiApp.createRoutes(opts), () => Effect.sync(() => BootProfile.mark("server:services-built"))),
+    ),
+    Layer.provide(HttpRouter.layer),
+    Layer.provideMerge(WebSocketTracker.layer),
     // Install a fresh `ConfigProvider` per listener so `Config.string(...)`
     // reads reflect the current `process.env`. Effect's default
     // `ConfigProvider` snapshots `process.env` on first read and caches the

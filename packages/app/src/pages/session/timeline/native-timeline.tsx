@@ -421,16 +421,6 @@ export function NativeTimeline(props: {
     root.scrollTo({ top: Math.max(0, rect.top - box.top + root.scrollTop), behavior: "auto" })
   }
 
-  // Own the load (message-timeline's load effect never runs while it is unmounted).
-  createEffect(() => {
-    const sid = props.sessionID
-    // A failed refresh keeps the resident transcript; stream recovery owns the retry.
-    if (sid)
-      void serverSync()
-        .nativeMessages.load(sid)
-        .catch(() => {})
-  })
-
   // Self-heal missed live events: the SSE event stream can drop a turn's events when it
   // reconnects during a heartbeat gap (an idle tab that then submits) — including the
   // `step.started` that creates the assistant message, so the reply never renders live. When
