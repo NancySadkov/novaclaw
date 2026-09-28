@@ -32,7 +32,9 @@ export function createLocalInstance(ports: LocalInstancePorts): LocalInstanceOwn
 } {
   const abort = new AbortController()
   const listeners = new Set<(state: SuperviseStatus) => void>()
-  let status: SuperviseStatus = { phase: "running" }
+  /** `starting`, not `running` — see the identical note in `standalone-server.ts`. Nothing has been
+   *  spawned yet, and the renderer is already asking whether this instance is up. */
+  let status: SuperviseStatus = { phase: "starting" }
   let pending: ReturnType<LocalInstanceOwner["start"]> | undefined
   let current: Started | undefined
   let stopping: Promise<void> | undefined
@@ -79,7 +81,20 @@ export function createLocalInstance(ports: LocalInstancePorts): LocalInstanceOwn
           signal.throwIfAborted()
         }
         const credentials: ServerReadyData = { url, username, password: password ?? null }
-        return { credentials, healthy: deadlineHealth(current.health.wait, signal) }
+        const healthy = deadlineHealth(current.health.wait, signal)
+        // 🔴 This owner reports `running` ITSELF, from its own health gate, rather than trusting the
+        // spawn port to have done it. `ports.spawn` forwards a supervisor's transitions (restarting,
+        // gave-up, stopped) and none of those mean "up", so a spawn that returned without ever
+        // saying `running` would leave this instance permanently `starting` — and the connection
+        // gate would sit on "Starting {{server}}" against a server that was up. The health promise
+        // is the one thing here that has actually watched the server answer.
+        void healthy.then(
+          () => {
+            if (!abort.signal.aborted) report({ phase: "running" })
+          },
+          () => undefined, // a failed health gate rejects `healthy` to boot, which reports the fault
+        )
+        return { credentials, healthy }
       } catch (error) {
         if (
           signal.aborted ||

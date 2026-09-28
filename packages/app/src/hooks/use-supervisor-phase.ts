@@ -20,7 +20,11 @@ import { usePlatform, type SupervisorPhase } from "@/context/platform"
  * answer is "no supervisor", never a fabricated phase, so a caller must treat `undefined` as "I do
  * not know" and keep its calm copy.
  */
-export function useSupervisorPhase(): { phase: Accessor<SupervisorPhase | undefined>; gaveUp: Accessor<boolean> } {
+export function useSupervisorPhase(): {
+  phase: Accessor<SupervisorPhase | undefined>
+  gaveUp: Accessor<boolean>
+  starting: Accessor<boolean>
+} {
   const platform = usePlatform()
   const [phase, setPhase] = createSignal<SupervisorPhase | undefined>()
 
@@ -39,5 +43,13 @@ export function useSupervisorPhase(): { phase: Accessor<SupervisorPhase | undefi
 
   /** The only phase that ends the retry story. Everything else is "still working on it". */
   const gaveUp = createMemo(() => phase()?.phase === "gave-up")
-  return { phase, gaveUp }
+  /**
+   * A start in progress — spawned, not yet observed to answer.
+   *
+   * ⚠️ Distinct from `gaveUp` because the two demand opposite copy: `gave-up` means stop telling the
+   * user a recovery is coming, `starting` means a recovery IS coming and the screen saying otherwise
+   * is what produced *"Could not reach Local Server"* against a healthy instance (2026-09-28).
+   */
+  const starting = createMemo(() => phase()?.phase === "starting")
+  return { phase, gaveUp, starting }
 }

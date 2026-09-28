@@ -136,7 +136,16 @@ export function createStandaloneServer(
 } {
   const databaseFile = join(instance.dataPath, "novaclaw.db")
   const listeners = new Set<(state: SuperviseStatus) => void>()
-  let status: SuperviseStatus = { phase: "running" }
+  /**
+   * 🔴 `starting`, NOT `running`.
+   *
+   * This owner is constructed before it spawns anything, and `df1606bb1` made `start()` publish
+   * credentials to the renderer at spawn — so between construction and the first health answer the
+   * renderer is already asking "is my instance up?". Reporting `running` here answered yes, and the
+   * gate then burned its whole 10 s budget and rendered "Could not reach Local Server" against a
+   * server that was 8.7 s from healthy (packaged 0.1.81, 2026-09-28).
+   */
+  let status: SuperviseStatus = { phase: "starting" }
   let retained = false
   let stopped = false
   let child: ChildProcess | undefined
@@ -188,6 +197,8 @@ export function createStandaloneServer(
         const url = loopbackUrl(existing.hostname, existing.port)
         if (await checkHealth(url, existing.password)) {
           writeLog("server", "reusing the running NovaClaw server", { url })
+          // Reuse is the ONE path that has already proven health, at the top of this function.
+          report({ phase: "running" })
           return {
             credentials: { url, username: existing.username, password: existing.password },
             healthy: Promise.resolve(),
@@ -241,6 +252,9 @@ export function createStandaloneServer(
         .then((result) => {
           if (result === "cancelled") throw signal.reason ?? new Error("the standalone server start was cancelled")
           writeLog("server", "standalone server ready", { url })
+          // Observed to answer, and only now. The renderer is already holding these credentials and
+          // is asking; `running` is the answer to that question, not a default.
+          report({ phase: "running" })
         })
         .catch(async (error) => {
           await stopChild(started)

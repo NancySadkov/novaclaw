@@ -43,7 +43,12 @@ test("controls exist before loading, and normal startup forwards status and owne
   f.loading.resolve(f.owner)
   expect((await start).credentials).toEqual(credentials)
   f.report({ phase: "stopped" })
-  expect(statuses).toEqual([{ phase: "running" }, { phase: "stopped" }])
+  // 🔴 `starting`, not `running`. This assertion used to require `running` here — the wrapper
+  // reporting an instance as up before it had even imported the module that provides it, which is
+  // how the connection gate came to be told its server was healthy while the port was still unbound
+  // (packaged 0.1.81, 2026-09-28). The forwarding itself is what this test is for, and it is
+  // unchanged: the owner's own `stopped` still arrives second.
+  expect(statuses).toEqual([{ phase: "starting" }, { phase: "stopped" }])
   f.instance.retain?.()
   await f.instance.stop()
   expect(f.events).toEqual(["load", "start", "retain", "unsubscribe", "stop"])

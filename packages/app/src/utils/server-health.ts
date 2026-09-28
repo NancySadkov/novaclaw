@@ -33,11 +33,16 @@ export function serverReachability(health: ServerHealth | undefined): ServerReac
 }
 
 /** The i18n key the connection gate's headline uses. */
-export type ConnectionErrorHeadline = "app.server.none" | "app.server.unreachable" | "app.server.rejected"
+export type ConnectionErrorHeadline =
+  | "app.server.none"
+  | "app.server.starting"
+  | "app.server.unreachable"
+  | "app.server.rejected"
 
 /** The i18n key the connection gate's subline uses. */
 export type ConnectionErrorDetail =
   | "app.server.noneHint"
+  | "app.server.startingHint"
   | "app.server.retrying"
   | "app.server.rejectedHint"
   | "app.connection.stopped.description"
@@ -46,6 +51,15 @@ export type ConnectionErrorDetail =
 export const GATE_PROBE_MS = 1_000
 /** How often it re-probes a REJECTION — slow enough not to hammer, fast enough to clear itself. */
 export const GATE_PROBE_REJECTED_MS = 15_000
+/**
+ * How often it re-probes while the instance is still STARTING.
+ *
+ * ⚠️ Faster than the outage cadence on purpose, and bounded below the supervisor's own 60 s start
+ * budget. A start is a countdown the shell is keeping, not a fault to back off from: the gate that
+ * gave up on it at 10 s is what turned a 9 s boot into a 39 s "could not reach". Probing every
+ * second is also what the real boot does — the instance answers the instant its port is bound.
+ */
+export const GATE_PROBE_STARTING_MS = 500
 
 /**
  * The connection gate's whole copy decision, pure — so the combinations are assertable without a
@@ -63,6 +77,7 @@ export function connectionErrorCopy(input: {
   readonly hasServer: boolean
   readonly reachability: ServerReachability
   readonly supervisorGaveUp: boolean
+  readonly supervisorStarting: boolean
 }): { headline: ConnectionErrorHeadline; detail: ConnectionErrorDetail; probeEveryMs: number } {
   if (!input.hasServer)
     return { headline: "app.server.none", detail: "app.server.noneHint", probeEveryMs: GATE_PROBE_MS }
@@ -77,6 +92,21 @@ export function connectionErrorCopy(input: {
       headline: "app.server.unreachable",
       detail: "app.connection.stopped.description",
       probeEveryMs: GATE_PROBE_MS,
+    }
+  // 🔴 A START is not an outage, and this branch is the whole reason the sentence was a lie.
+  //
+  // The shell that launched the instance knows it is still coming up; this screen did not, because
+  // the supervisor had no word for "starting" and reported `running` instead. Measured 2026-09-28 in
+  // the packaged app: the instance was healthy 8.7 s into a boot and this screen was still promising
+  // "Retrying automatically..." 30 s later, against a server answering `/global/health` in 15 ms.
+  //
+  // Ordered BELOW `rejected` deliberately: a credential refusal is a settled fact about a server
+  // that is demonstrably up, and no amount of starting will change it.
+  if (input.supervisorStarting)
+    return {
+      headline: "app.server.starting",
+      detail: "app.server.startingHint",
+      probeEveryMs: GATE_PROBE_STARTING_MS,
     }
   return { headline: "app.server.unreachable", detail: "app.server.retrying", probeEveryMs: GATE_PROBE_MS }
 }

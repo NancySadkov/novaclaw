@@ -48,6 +48,19 @@ export type StopReason = "intentional" | "crash" | "unresponsive" | "start-faile
  * ladder legible while it is still climbing.
  */
 export type SuperviseStatus =
+  /**
+   * 🔴 Spawned, and not yet observed to answer. This member exists because the alternative was a
+   * LIE rather than a gap: with only `running | stopped | restarting | gave-up`, an owner that had
+   * not yet spawned anything had to report `running`, and every reader — the renderer's connection
+   * gate above all — was entitled to take that as "this instance is up".
+   *
+   * Measured 2026-09-28 in the packaged app (0.1.81): the gate was handed a `running` phase for an
+   * instance whose port had not been bound yet, exhausted its own 10 s budget, and rendered
+   *"Could not reach Local Server / Retrying automatically..."* against a server that came up healthy
+   * 8.7 s in and was answering `/global/health` in 15 ms the whole time. A start in progress is not
+   * an outage, and the vocabulary is what made the two indistinguishable.
+   */
+  | { readonly phase: "starting" }
   | { readonly phase: "running" }
   /** A deliberate stop — quit, relaunch, update. Never a fault, never counted, never telemetry. */
   | { readonly phase: "stopped" }

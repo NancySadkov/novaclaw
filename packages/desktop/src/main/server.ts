@@ -445,7 +445,14 @@ export async function superviseLocalServer(
         return
       }
       note("sidecar respawned")
-      report({ phase: "running" })
+      // Not yet: `ready` is the child's own IPC promise, not an answer to anything the renderer
+      // asked. `running` is that answer, so it waits for the health gate like the first boot does.
+      void current.health.wait.then(
+        () => {
+          if (!stopping) report({ phase: "running" })
+        },
+        () => undefined, // a failed startup health is owned by the exit/respawn path
+      )
       startMonitor(current)
       // Respawned children aren't awaited by boot code — surface a failed health gate in the log.
       current.health.wait.catch((error: unknown) => note(`respawned sidecar health check failed: ${String(error)}`))
@@ -526,7 +533,15 @@ export async function superviseLocalServer(
     throw error
   }
   startMonitor(current)
-  report({ phase: "running" })
+  // 🔴 The first boot claimed `running` here, one line after the child's `ready` message and well
+  // before `/global/health` had answered. The renderer's gate reads this phase while deciding
+  // whether to tell the user its instance is unreachable, so "spawned" was being reported as "up".
+  void current.health.wait.then(
+    () => {
+      if (!stopping) report({ phase: "running" })
+    },
+    () => undefined, // a failed startup health rejects `healthy` to boot, which reports the fault
+  )
   return {
     listener: {
       stop,
