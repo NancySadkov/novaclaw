@@ -97,8 +97,11 @@ export async function run(input: Input): Promise<"settled" | "interrupted" | "fa
   void pump().catch((error) => rejectProtocol(error instanceof Error ? error : new Error("worker protocol failed")))
 
   emit({ ...identityOf(start), type: "ready", workerPID: process.pid })
+  // A receipt of life, carrying no resource claim: the host measures this worker's memory from
+  // outside, because a self-reported working set is a number Windows may shrink (see
+  // `Heartbeat` in the protocol, and the 6.32 GB commit / 18.5 MB working set measurement there).
   const heartbeat = setInterval(
-    () => emit({ ...identityOf(start), type: "heartbeat", at: Date.now(), rssBytes: process.memoryUsage.rss() }),
+    () => emit({ ...identityOf(start), type: "heartbeat", at: Date.now() }),
     input.heartbeatIntervalMs ?? 1_000,
   )
   heartbeat.unref?.()

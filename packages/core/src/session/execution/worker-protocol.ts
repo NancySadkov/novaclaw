@@ -345,11 +345,22 @@ export const Ready = Schema.Struct({
   workerPID: PositiveInt,
 }).annotate({ identifier: "SessionWorker.Ready" })
 
+/**
+ * A receipt of life, and NOTHING else.
+ *
+ * 🔴 **`rssBytes` was removed from this message, and that removal is the fix.** The supervisor used to
+ * kill a worker whose self-reported `rssBytes` exceeded its ceiling — a number the operating system may
+ * shrink at will. Measured 2026-09-28 on a live instance: a worker held **6.32 GB of commit at 18.5 MB
+ * of working set** and the 2 GiB ceiling never fired, because 18.5 MB is 31× under it. The bound now
+ * reads committed memory from OUTSIDE the worker (`core/src/util/process-commit.ts`).
+ *
+ * ⚠️ A self-reported figure is a fine liveness receipt and a terrible resource bound, and leaving the
+ * field in place only invites the next author to bound against it again.
+ */
 export const Heartbeat = Schema.Struct({
   ...Identity,
   type: Schema.Literal("heartbeat"),
   at: Schema.Finite,
-  rssBytes: NonNegativeInt.pipe(Schema.optional),
 }).annotate({ identifier: "SessionWorker.Heartbeat" })
 
 export const Settled = Schema.Struct({

@@ -4,6 +4,7 @@ import { spawn, spawnSync } from "node:child_process"
 import fs from "node:fs"
 import nodePath from "node:path"
 import { ResourcePressure } from "@novaclaw/schema/resource-pressure"
+import { ProcessCommit } from "@novaclaw/core/util/process-commit"
 import { Schema } from "effect"
 
 /**
@@ -461,7 +462,20 @@ export function memory(now: () => number = Date.now): Promise<MemoryReading> {
   return inflight
 }
 
-/** Resident RAM for one process. This is deliberately RSS/working set, not host commit charge. */
+/**
+ * What ONE process is costing the host.
+ *
+ * 🔴 **Delegated to `ProcessCommit` — commit on Windows, RSS on Linux — and that changes what this
+ * number MEANS.** It used to read `WorkingSet64` from outside, which is the quantity the operating
+ * system is free to shrink: a process holding 6.32 GB of commit while resident at 18.5 MB read as
+ * 18.5 MB, and every admission decision taken from it was taken from a number that could not see the
+ * failure. `ProcessCommit` is the product's single memory instrument
+ * (`core/src/util/process-commit.ts`), and this was the last reader that had its own.
+ *
+ * The field keeps its name because it is an ADMISSION reading — a value for deciding whether to start
+ * more work — and renaming it would ripple through every caller for no gain in meaning. What matters
+ * is which number lands in it, and that is now stated by the instrument rather than here.
+ */
 export function processMemory(pid: number | undefined): Promise<ProcessMemoryReading> {
   if (!Number.isSafeInteger(pid) || !pid || pid <= 0)
     return Promise.resolve({
@@ -469,6 +483,13 @@ export function processMemory(pid: number | undefined): Promise<ProcessMemoryRea
       reason: "Process memory is unavailable: no running process id was reported.",
     })
   if (pid === process.pid)
+    // ⚠️ **A KNOWN RESIDUAL, and the only one left.** Reading our OWN footprint needs no shell, and a
+    // process cannot portably read its own committed memory — so this one admission input is still
+    // resident rather than committed, and a trimmed server under-reports itself here. It is an ADMISSION
+    // input (should we start more work?) and not a kill, so the consequence is under-caution rather
+    // than a starved host; and the box-wide commit charge this same file already reads covers the
+    // failure that actually hurts. Every CROSS-PROCESS bound now reads `ProcessCommit` — see the
+    // `memory-bound-instrument` ratchet. Closing this one means a self-commit API, not a code change.
     return Promise.resolve({
       known: true,
       rssBytes: process.memoryUsage().rss,
@@ -478,56 +499,24 @@ export function processMemory(pid: number | undefined): Promise<ProcessMemoryRea
   const previous = processCached.get(pid)
   if (previous?.value !== undefined && now - previous.at < MEMORY_CACHE_MS) return Promise.resolve(previous.value)
   if (previous?.inflight !== undefined) return previous.inflight
-  if (process.platform === "linux") {
-    const probe = Promise.resolve().then(() => {
-      const text = readFileOrUndefined(`/proc/${pid}/status`)
-      const match = /^VmRSS:\s+(\d+)\s+kB$/m.exec(text ?? "")
-      const kib = Number(match?.[1])
-      return Number.isFinite(kib) && kib >= 0
-        ? { known: true as const, rssBytes: kib * 1024, crosscheck: `grep VmRSS /proc/${pid}/status` }
-        : { known: false as const, reason: `Process memory for pid ${pid} is unavailable from /proc.` }
-    })
-    processCached.set(pid, { at: now, inflight: probe })
-    void probe.then(
-      (value) => processCached.set(pid, { at: Date.now(), value }),
-      () => processCached.delete(pid),
-    )
-    return probe
-  }
-  if (process.platform !== "win32")
-    return Promise.resolve({ known: false, reason: `Process memory is not measured on ${process.platform}.` })
 
-  const probe = new Promise<ProcessMemoryReading>((resolve) => {
-    let stdout = ""
-    let settled = false
-    const child = spawn(
-      "powershell",
-      ["-NoProfile", "-NonInteractive", "-Command", `(Get-Process -Id ${pid} -ErrorAction Stop).WorkingSet64`],
-      { stdio: ["ignore", "pipe", "ignore"], windowsHide: true },
-    )
-    const finish = (value: ProcessMemoryReading) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      resolve(value)
-    }
-    const timer = setTimeout(() => {
-      child.kill()
-      finish({ known: false, reason: `Process memory for pid ${pid} did not answer within 5 seconds.` })
-    }, 5_000)
-    timer.unref?.()
-    child.stdout.setEncoding("utf8")
-    child.stdout.on("data", (chunk: string) => (stdout += chunk))
-    child.on("error", () => finish({ known: false, reason: `Process memory for pid ${pid} could not be measured.` }))
-    child.on("close", (code) => {
-      const bytes = Number(stdout.trim())
-      finish(
-        code === 0 && Number.isFinite(bytes) && bytes >= 0
-          ? { known: true, rssBytes: bytes, crosscheck: `Get-Process -Id ${pid} | Select-Object WorkingSet64` }
-          : { known: false, reason: `Process memory for pid ${pid} is unavailable because the process stopped.` },
-      )
-    })
-  })
+  // One instrument, one implementation. This used to carry its own Linux `/proc` parser AND its own
+  // Windows `Get-Process … WorkingSet64` spawn; both are now `ProcessCommit`'s problem, which is the
+  // point of moving it to `core` — a second reader of a shrinkable number is how this drifted in the
+  // first place. The cache stays here because admission asks on a hot path.
+  const probe = ProcessCommit.read(pid).then(
+    (reading): ProcessMemoryReading =>
+      reading
+        ? {
+            known: true,
+            rssBytes: reading.bytes,
+            crosscheck:
+              reading.metric === "commit"
+                ? `Get-Process -Id ${pid} | Select-Object PagedMemorySize64`
+                : `Get-Process -Id ${pid} | Select-Object WorkingSet64`,
+          }
+        : { known: false, reason: `Process memory for pid ${pid} could not be measured from outside the process.` },
+  )
   processCached.set(pid, { at: now, inflight: probe })
   void probe.then(
     (value) => processCached.set(pid, { at: Date.now(), value }),

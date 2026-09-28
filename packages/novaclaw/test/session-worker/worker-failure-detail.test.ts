@@ -19,7 +19,7 @@ const outcomes: readonly SessionWorkerSupervisor.Outcome[] = [
   { type: "failed", classification: "worker-start", detail: "spawn ENOENT" },
   { type: "start-timeout" },
   { type: "no-token-timeout", silenceMs: 300_001, limitMs: 300_000 },
-  { type: "memory-limit", rssBytes: 3000 * 1024 * 1024, limitBytes: 2048 * 1024 * 1024 },
+  { type: "memory-limit", heldBytes: 3000 * 1024 * 1024, limitBytes: 2048 * 1024 * 1024, metric: "commit" },
   { type: "protocol-error", detail: "worker message is not valid JSON" },
   { type: "stale-message" },
   { type: "exited", code: 42 },
@@ -46,9 +46,14 @@ test("control: the arms that already carried their own detail are unchanged", ()
     "worker-start: spawn ENOENT",
   )
   expect(failureDetail({ type: "failed", classification: "worker-start" })).toBe("worker-start")
+  // The number is now a real measurement of committed memory taken from outside the worker, and the
+  // copy NAMES which quantity it is — "3000 MiB used" is ambiguous when the two platforms differ.
   expect(
-    failureDetail({ type: "memory-limit", rssBytes: 3000 * 1024 * 1024, limitBytes: 2048 * 1024 * 1024 }),
-  ).toContain("3000 MiB used")
+    failureDetail({ type: "memory-limit", heldBytes: 3000 * 1024 * 1024, limitBytes: 2048 * 1024 * 1024, metric: "commit" }),
+  ).toContain("3000 MiB committed")
+  expect(
+    failureDetail({ type: "memory-limit", heldBytes: 3000 * 1024 * 1024, limitBytes: 2048 * 1024 * 1024, metric: "rss" }),
+  ).toContain("3000 MiB resident")
   expect(failureDetail({ type: "protocol-error", detail: "worker message is not valid JSON" })).toContain(
     "worker message is not valid JSON",
   )

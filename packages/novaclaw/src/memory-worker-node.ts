@@ -48,9 +48,14 @@ for await (const line of createInterface({ input: process.stdin, crlfDelay: Infi
         // commit by itself when it took the 2026-09-27 `core` gate to 100 % and reaped the user's
         // browser and editor).
         //
-        // So the supervisor needs this to know when to recycle, and it is the only portable way for
-        // a parent to learn a child's real cost: `process.memoryUsage()` inside the child.
-        rssBytes: process.memoryUsage().rss,
+        // So the supervisor needs to know when to recycle, and it no longer asks the child.
+        //
+        // 🔴 This reply used to carry `rssBytes: process.memoryUsage().rss`, on the claim — written
+        // right here — that a child's self-report is "the only portable way for a parent to learn a
+        // child's real cost". It is not, and it is worse than useless: working set is a number the
+        // operating system may shrink, so a long-lived Wasm arena that has grown without bound reports
+        // itself as small. The parent now reads committed memory from outside, by `ProcessCommit`, and
+        // this reply carries only the answer.
       }) + "\n"
     if (Buffer.byteLength(response) > MAX_FRAME_BYTES) throw new Error("memory worker result is too large")
     process.stdout.write(response)

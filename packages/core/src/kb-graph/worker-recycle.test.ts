@@ -2,10 +2,10 @@ import { describe, expect, test } from "bun:test"
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { open, DEFAULT_MAX_WORKER_RSS_BYTES } from "./isolated-engine"
+import { open, DEFAULT_MAX_WORKER_HELD_BYTES } from "./isolated-engine"
 
 /**
- * 🔴 THE MEMORY WORKER IS RECYCLED WHEN ITS OWN FOOTPRINT CROSSES THE CEILING.
+ * 🔴 THE MEMORY WORKER IS RECYCLED WHEN ITS FOOTPRINT CROSSES THE CEILING.
  *
  * The graph engine is LadybugDB compiled to Wasm, and Wasm linear memory only grows. Measured
  * 2026-09-27 on a copy of a real production store: `WasmMemory.open` costs ~1.3 GB resident for a
@@ -20,27 +20,41 @@ import { open, DEFAULT_MAX_WORKER_RSS_BYTES } from "./isolated-engine"
  * close (`memory-worker-node.ts`) so nothing is stranded by a close-then-continue. The arena simply
  * grows inside one long-lived process.
  *
- * So the fix is the only lever that works — recycle the PROCESS — and these cases drive the REAL
- * supervisor over its real stdin/stdout protocol against a fake worker, because the whole point is
- * that the child reports its own RSS and the parent acts on it.
+ * So the fix is the only lever that works — recycle the PROCESS.
+ *
+ * 🔴 **These cases no longer fake a footprint, and that is the point.** They used to drive the REAL
+ * supervisor over its real stdin/stdout protocol against a fake worker whose "reported RSS" was a
+ * number in a file, because "the child reports its own RSS and the parent acts on it" was the design.
+ * That design is the defect: working set is a number the operating system may shrink, so a long-lived
+ * arena that has grown without bound reports itself as small. The parent now reads committed memory
+ * from outside (`ProcessCommit`), so the child reports nothing and there is nothing left to fake — the
+ * ceiling is moved past the real process instead, which is both simpler and the thing being tested.
  */
 
 const MB = 1024 * 1024
 /** `process.execPath`, not a bare `bun` — PATH is not the same for a spawned child on Windows. */
 const BUN = process.execPath
 
-/** A fake `__memory-worker`: speaks the protocol, and its reported footprint is settable. */
-function fakeWorker(): { path: string; dir: string; setRss: (bytes: number) => void; exits: () => number } {
+/**
+ * A ceiling no real process can be under, and one every real process is over.
+ *
+ * ⚠️ Both are absurd on purpose. The measurement is of a REAL child now, so the only way to place the
+ * bound deterministically is to place the CEILING: 1 GB is above any Node/Bun process and 1 byte is
+ * below any process that has allocated anything. Asserting on the child's exact byte count instead
+ * would be asserting on the host's memory manager, which is not what this file is about.
+ */
+const UNREACHABLE_CEILING = 1024 * 1024 * 1024
+const ALWAYS_EXCEEDED_CEILING = 1
+
+/** A fake `__memory-worker`: speaks the protocol, and reports NO footprint — because it has none to report. */
+function fakeWorker(): { path: string; dir: string; exits: () => number } {
   const dir = mkdtempSync(join(tmpdir(), "mem-worker-"))
   const path = join(dir, "worker.mjs")
-  const control = join(dir, "rss")
-  writeFileSync(control, String(8 * MB))
+  const log = join(dir, "exits")
   writeFileSync(
     path,
-    `import { readFileSync, appendFileSync, writeFileSync } from "node:fs"
-const control = ${JSON.stringify(control)}
-const log = ${JSON.stringify(join(dir, "exits"))}
-const rss = () => Number(readFileSync(control, "utf8"))
+    `import { appendFileSync } from "node:fs"
+const log = ${JSON.stringify(log)}
 let buffer = ""
 process.stdin.on("data", (chunk) => {
   buffer += chunk
@@ -53,17 +67,16 @@ process.stdin.on("data", (chunk) => {
       appendFileSync(log, "x")
       process.exit(0)
     }
-    process.stdout.write(JSON.stringify({ id: request.id, ok: true, value: { opened: request.args[0] }, rssBytes: rss() }) + "\\n")
+    process.stdout.write(JSON.stringify({ id: request.id, ok: true, value: { opened: request.args[0] } }) + "\\n")
   }
 })`,
   )
   return {
     path,
     dir,
-    setRss: (bytes: number) => writeFileSync(control, String(bytes)),
     exits: () => {
       try {
-        return readFileSyncSyncCount(join(dir, "exits"))
+        return readFileSyncSyncCount(log)
       } catch {
         return 0
       }
@@ -96,13 +109,16 @@ const withDir = async <T>(fn: (dir: string) => Promise<T>): Promise<T> => {
 }
 
 describe("memory worker recycling", () => {
-  test("a reply under the ceiling leaves the worker alone", async () => {
+  test("a worker under the ceiling is left alone, and its footprint is now READ, not reported", async () => {
     const worker = fakeWorker()
     try {
       await withDir(async (dir) => {
-        const engine = await open(join(dir, "g0", "graph"), {}, { argv: [BUN, worker.path], maxWorkerRssBytes: 64 * MB })
+        const engine = await open(join(dir, "g0", "graph"), {}, { argv: [BUN, worker.path], maxWorkerHeldBytes: UNREACHABLE_CEILING })
         await engine.search({ query: "anything" })
-        expect(engine.workerRssBytes).toBe(8 * MB)
+        // A real reading of a real process, taken from outside it. Before the fix this number came
+        // from the child and the test asserted the child's own fiction.
+        expect(engine.workerHeldBytes).toBeGreaterThan(0)
+        expect(["commit", "rss"]).toContain(engine.workerHeldMetric as string)
         expect(engine.fault).toBeUndefined()
         await engine.close()
       })
@@ -118,9 +134,7 @@ describe("memory worker recycling", () => {
     const worker = fakeWorker()
     try {
       await withDir(async (dir) => {
-        const engine = await open(join(dir, "g0", "graph"), {}, { argv: [BUN, worker.path], maxWorkerRssBytes: 64 * MB })
-        worker.setRss(200 * MB)
-        await engine.search({ query: "now too big" })
+        const engine = await open(join(dir, "g0", "graph"), {}, { argv: [BUN, worker.path], maxWorkerHeldBytes: ALWAYS_EXCEEDED_CEILING })
         // Recycled, so the fault is cleared and the next request is served by a FRESH worker.
         expect(engine.fault).toBeUndefined()
         const answer = await engine.search({ query: "after the recycle" })
@@ -141,13 +155,14 @@ describe("memory worker recycling", () => {
     const worker = fakeWorker()
     try {
       await withDir(async (dir) => {
-        const engine = await open(join(dir, "g0", "graph"), {}, { argv: [BUN, worker.path], maxWorkerRssBytes: 64 * MB })
-        worker.setRss(200 * MB)
+        const engine = await open(join(dir, "g0", "graph"), {}, { argv: [BUN, worker.path], maxWorkerHeldBytes: ALWAYS_EXCEEDED_CEILING })
         try {
           const answer = await engine.search({ query: "must still answer" })
           expect(answer).toBeDefined()
         } catch (error) {
-          throw new Error(`search rejected: ${JSON.stringify(String(error))} | rss=${engine.workerRssBytes} fault=${engine.fault}`)
+          throw new Error(
+            `search rejected: ${JSON.stringify(String(error))} | held=${engine.workerHeldBytes} fault=${engine.fault}`,
+          )
         }
         await engine.close()
       })
@@ -159,8 +174,8 @@ describe("memory worker recycling", () => {
   test("the default ceiling is a real number, and it is a ceiling rather than a target", () => {
     // Pinned so a change to it is a decision. It sits above the measured 1.3 GB open cost and the
     // 2.8 GB idle reading, and below the 15.6 GB that took the machine down.
-    expect(DEFAULT_MAX_WORKER_RSS_BYTES).toBe(3 * 1024 * 1024 * 1024)
-    expect(DEFAULT_MAX_WORKER_RSS_BYTES).toBeGreaterThan(2.8 * 1024 * MB)
-    expect(DEFAULT_MAX_WORKER_RSS_BYTES).toBeLessThan(15.6 * 1024 * MB)
+    expect(DEFAULT_MAX_WORKER_HELD_BYTES).toBe(3 * 1024 * 1024 * 1024)
+    expect(DEFAULT_MAX_WORKER_HELD_BYTES).toBeGreaterThan(2.8 * 1024 * MB)
+    expect(DEFAULT_MAX_WORKER_HELD_BYTES).toBeLessThan(15.6 * 1024 * MB)
   })
 })

@@ -1,5 +1,6 @@
 import { Presence } from "@novaclaw/core/presence"
 import { killTree, killTreeSync } from "@novaclaw/core/util/kill-tree"
+import { ProcessCommit } from "@novaclaw/core/util/process-commit"
 import { SessionWorkerProtocol } from "@novaclaw/core/session/execution/worker-protocol"
 import type { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { AbsolutePath } from "@novaclaw/core/schema"
@@ -18,7 +19,22 @@ export type Outcome =
   | { readonly type: "heartbeat-timeout"; readonly silenceMs: number; readonly limitMs: number }
   | { readonly type: "no-token-timeout"; readonly silenceMs: number; readonly limitMs: number }
   | { readonly type: "command-launch-timeout"; readonly callID: string; readonly limitMs: number }
-  | { readonly type: "memory-limit"; readonly rssBytes: number; readonly limitBytes: number }
+  /**
+   * 🔴 `heldBytes` + `metric`, NOT `rssBytes` — and the rename IS the fix, not cosmetics.
+   *
+   * This bound used to be evaluated against the worker's own `process.memoryUsage.rss()`, a number the
+   * operating system may shrink at will. Measured 2026-09-28 on a live instance: a worker held
+   * **6.32 GB of commit at 18.5 MB of working set** and this ceiling never fired, because 18.5 MB is
+   * 31× under it. The reading is now taken from OUTSIDE, by `ProcessCommit` (see
+   * `core/src/util/process-commit.ts`), and `metric` rides with it because "6.3 GB" means commit on
+   * Windows and resident on Linux — one name for both would be a lie in one direction.
+   */
+  | {
+      readonly type: "memory-limit"
+      readonly heldBytes: number
+      readonly limitBytes: number
+      readonly metric: "commit" | "rss"
+    }
   | { readonly type: "protocol-error"; readonly detail: string }
   | { readonly type: "stale-message" }
   | { readonly type: "exited"; readonly code: number }
@@ -130,6 +146,15 @@ const STARTUP_TIMEOUT_MS = 15_000
 const INTERRUPT_GRACE_MS = 2_000
 const CLEANUP_TIMEOUT_MS = 2_000
 const MONITOR_INTERVAL_MS = 100
+/**
+ * How often the per-worker memory ceiling is sampled.
+ *
+ * ⚠️ The monitor ticks every 100 ms, and `ProcessCommit` costs a shell — so the bound is sampled on its
+ * own, much slower cadence. The number is a DETECTION LATENCY, and it is the price of not making a
+ * memory guard into a memory problem. 5 s matches the fleet watcher's own tick, so a busy instance
+ * pays for one shell per worker per 5 s and no more.
+ */
+const MEMORY_SAMPLE_INTERVAL_MS = 5_000
 const activePIDs = new Set<number>()
 
 /** Process-count diagnostic and a testable lazy-lifetime invariant: an idle session owns no worker. */
@@ -389,14 +414,14 @@ export function spawn(input: Input): Handle {
           finish({ type: "protocol-error", detail: "heartbeat arrived before ready" })
           return
         }
-        if (
-          message.rssBytes !== undefined &&
-          input.memoryLimitBytes !== undefined &&
-          message.rssBytes > input.memoryLimitBytes
-        ) {
-          finish({ type: "memory-limit", rssBytes: message.rssBytes, limitBytes: input.memoryLimitBytes })
-          return
-        }
+        // 🔴 There is deliberately NO memory check here any more.
+        //
+        // A heartbeat used to carry the worker's self-reported `rssBytes` and this branch killed on it.
+        // That number is the worker's own working set, which Windows trims under pressure — so a worker
+        // holding 6.32 GB of COMMIT while resident at 18.5 MB reported "tiny" and was never stopped,
+        // while starving the host. The bound is now evaluated outside, on commit, by the memory tick in
+        // the monitor. Dropping the field from the protocol is deliberate: a self-reported number that
+        // once carried a limit is exactly the number the next author would bound against again.
         lastHeartbeatAt = Date.now()
         // A heartbeat is evidence of life, never authority to end it. A transient database write
         // failure is retried naturally by the next heartbeat; killing useful work because its
@@ -699,6 +724,46 @@ export function spawn(input: Input): Handle {
   const heartbeatTimeoutMs = input.heartbeatTimeoutMs ?? ToolDeadline.DEFAULT_MAX_TOOL_TIMEOUT_MS
   const tokenSilenceTimeoutMs = input.tokenSilenceTimeoutMs ?? DEFAULT_TOKEN_SILENCE_TIMEOUT_MS
   const commandLaunchTimeoutMs = input.commandLaunchTimeoutMs ?? ToolDeadline.COMMAND_LAUNCH_TIMEOUT_MS
+  /**
+   * The per-worker memory ceiling, evaluated OUTSIDE the worker on committed memory.
+   *
+   * 🔴 **This is the whole fix, and the reason it is here and not in the heartbeat handler.** The
+   * ceiling used to be checked against a number the worker reported about itself
+   * (`process.memoryUsage.rss()`), and that is the one quantity the operating system is free to
+   * shrink. Measured 2026-09-28 on a live instance: a `novaclaw` worker held **6.32 GB of commit at
+   * 18.5 MB of working set**, and the 2 GiB ceiling never fired because 18.5 MB is 31× under it. The
+   * host's commit budget is what actually runs out, so that is the number the bound is written against.
+   *
+   * ⚠️ **Sampled, not polled, and on its own cadence.** `ProcessCommit` costs ONE shell for a whole
+   * fleet, so asking on every monitor tick would make a memory guard that is itself a memory problem.
+   * A sample that cannot be taken is NOT a passing sample: it is left un-enforced for that tick and
+   * retried, never read as "under the limit".
+   *
+   * ⚠️ **A reading that arrives after the worker is gone must not rewrite a settled outcome.** `finish`
+   * is idempotent, and the `done` guard is re-checked here because the sample outlives the tick that
+   * started it.
+   */
+  let memorySampleAt = 0
+  let memorySampleInFlight = false
+  const enforceMemoryLimit = (limitBytes: number | undefined) => {
+    if (limitBytes === undefined || done || interruptRequested || !ready) return
+    const now = Date.now()
+    if (memorySampleInFlight || now - memorySampleAt < MEMORY_SAMPLE_INTERVAL_MS) return
+    memorySampleAt = now
+    memorySampleInFlight = true
+    void ProcessCommit.read(childPID)
+      .then((reading) => {
+        // `undefined` is UNKNOWN, not "small" — see the note above.
+        if (reading === undefined || done) return
+        if (reading.bytes > limitBytes)
+          finish({ type: "memory-limit", heldBytes: reading.bytes, limitBytes, metric: reading.metric })
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        memorySampleInFlight = false
+      })
+  }
+
   monitor = setInterval(
     () => {
       // Once the owner asks to stop, that explicit terminal intent owns the outcome. The worker may
@@ -707,6 +772,7 @@ export function spawn(input: Input): Handle {
       // an automatic timeout diagnosis.
       if (interruptRequested) return
       const now = Date.now()
+      void enforceMemoryLimit(input.memoryLimitBytes)
       if (!ready && now - startedAt > startupTimeoutMs) finish({ type: "start-timeout" })
       if (ready && now - lastHeartbeatAt > heartbeatTimeoutMs)
         finish({ type: "heartbeat-timeout", silenceMs: now - lastHeartbeatAt, limitMs: heartbeatTimeoutMs })

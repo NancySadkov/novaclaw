@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { WorkerBudget } from "@/storage/worker-budget"
-import { WorkerCommit } from "@/storage/worker-commit"
+import { ProcessCommit } from "@novaclaw/core/util/process-commit"
 
 /**
  * The shed decision, and the instrument it reads.
@@ -94,7 +94,7 @@ describe("who gets shed", () => {
 describe("the instrument", () => {
   test("parses pid/bytes pairs and ignores everything else", () => {
     const text = ["PID  Bytes", "1234 5368709120", "", "  99 0  ", "garbage", "-1 500"].join("\n")
-    expect(WorkerCommit.parseLines(text)).toEqual([
+    expect(ProcessCommit.parseLines(text)).toEqual([
       { pid: 1234, bytes: 5368709120 },
       { pid: 99, bytes: 0 },
     ])
@@ -103,25 +103,25 @@ describe("the instrument", () => {
   test("a zero is a real answer; a non-number is not", () => {
     // A process can legitimately owe nothing yet. Dropping zeros would silently shrink the fleet
     // total and make the sum ceiling read low exactly when workers are starting.
-    expect(WorkerCommit.parseLines("5 0")).toEqual([{ pid: 5, bytes: 0 }])
-    expect(WorkerCommit.parseLines("5 NaN")).toEqual([])
+    expect(ProcessCommit.parseLines("5 0")).toEqual([{ pid: 5, bytes: 0 }])
+    expect(ProcessCommit.parseLines("5 NaN")).toEqual([])
   })
 
   test("reads VmRSS out of a /proc status block", () => {
     const status = ["Name:\tbun", "VmSize:\t 9999999 kB", "VmRSS:\t 2621440 kB", "Threads:\t12"].join("\n")
-    expect(WorkerCommit.parseProcStatus(status)).toBe(2621440 * 1024)
-    expect(WorkerCommit.parseProcStatus("Name:\tbun")).toBeUndefined()
+    expect(ProcessCommit.parseProcStatus(status)).toBe(2621440 * 1024)
+    expect(ProcessCommit.parseProcStatus("Name:\tbun")).toBeUndefined()
   })
 
   test("an empty fleet costs NOTHING — no process is spawned", async () => {
     // A memory guard that spawns a shell every tick against an empty fleet is itself the problem.
-    const sample = await WorkerCommit.sample([])
+    const sample = await ProcessCommit.sample([])
     expect(sample.readings).toEqual([])
   })
 
   test("an unsupported platform says so rather than reporting zero", async () => {
     // ⚠️ "Nothing was measured" and "everything is small" must never be the same answer.
-    const sample = await WorkerCommit.sample([1], "aix")
+    const sample = await ProcessCommit.sample([1], "aix")
     expect(sample.unavailable).toBeDefined()
     expect(sample.readings).toEqual([])
   })
@@ -130,7 +130,7 @@ describe("the instrument", () => {
     // Windows charges commit against a hard system-wide limit; Linux overcommits, so RSS is what
     // predicts exhaustion there. Reporting one number under one name across both would be a lie in
     // whichever direction the reader guessed — so a caller never has to infer it.
-    expect((await WorkerCommit.sample([], "win32")).metric).toBe("commit")
-    expect((await WorkerCommit.sample([], "linux")).metric).toBe("rss")
+    expect((await ProcessCommit.sample([], "win32")).metric).toBe("commit")
+    expect((await ProcessCommit.sample([], "linux")).metric).toBe("rss")
   })
 })

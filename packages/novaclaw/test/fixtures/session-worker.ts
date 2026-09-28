@@ -129,7 +129,10 @@ input.on("line", (line) => {
       return
     }
     if (mode === "memory") {
-      emit({ ...identity, type: "heartbeat", at: Date.now(), rssBytes: 2_000_000 })
+      // A plain liveness receipt, carrying NO resource claim. It used to assert
+      // `rssBytes: 2_000_000` here, and the supervisor used to kill on it — which is the defect this
+      // fixture no longer participates in. The bound is read from outside now.
+      emit({ ...identity, type: "heartbeat", at: Date.now() })
       return
     }
     if (mode === "child") {

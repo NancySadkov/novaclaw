@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url"
 import { dirname, join } from "node:path"
 import { createInterface } from "node:readline"
 import { existsSync } from "node:fs"
+import { ProcessCommit } from "@novaclaw/core/util/process-commit"
 import type { Engine } from "./memory-client"
 import type { SnapshotRecovery, WasmMemory } from "./wasm-engine"
 
@@ -12,13 +13,23 @@ export type GraphEngine = Engine & Pick<WasmMemory, "stagedCount" | "stagedScope
   readonly recovery: SnapshotRecovery
   readonly publishBlocked: string | undefined
   readonly fault?: string | undefined
-  /** The worker's own last reported footprint — see `DEFAULT_MAX_WORKER_RSS_BYTES`. */
-  readonly workerRssBytes?: number | undefined
-  readonly workerRssCeilingBytes?: number
+  /**
+   * The worker's footprint as measured FROM OUTSIDE it, and the ceiling it is recycled against.
+   *
+   * 🔴 These were `workerRssBytes`/`workerRssCeilingBytes` and they carried the worker's OWN reported
+   * RSS. That number is the one the operating system may shrink, so a worker holding 6.32 GB of commit
+   * while resident at 18.5 MB reported "tiny" and was never recycled — the same defect that let a
+   * session worker run away, in the second place it appeared. The reading now comes from
+   * `ProcessCommit`, and `workerHeldMetric` says whether it is commit or RSS, because "3 GB" means
+   * different things on the two platforms.
+   */
+  readonly workerHeldBytes?: number | undefined
+  readonly workerHeldMetric?: "commit" | "rss" | undefined
+  readonly workerHeldCeilingBytes?: number
 }
 
 type Reply =
-  | { id: number; ok: true; value: unknown; publishBlocked?: string; rssBytes?: number }
+  | { id: number; ok: true; value: unknown; publishBlocked?: string }
   | { id: number; ok: false; error: string }
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }
 type Worker = { process: ChildProcessWithoutNullStreams; exited: Promise<void> }
@@ -30,7 +41,7 @@ process.once("exit", () => {
   for (const worker of activeWorkers) worker.kill("SIGKILL")
 })
 
-export const DEFAULT_MAX_WORKER_RSS_BYTES = 3 * 1024 * 1024 * 1024
+export const DEFAULT_MAX_WORKER_HELD_BYTES = 3 * 1024 * 1024 * 1024
 
 export const commandFor = (input: {
   executable: string
@@ -77,7 +88,7 @@ export const open = async (
     shutdownTimeoutMs?: number
     signal?: AbortSignal
     /** Recycle the worker once its own reported footprint crosses this. See the constant above. */
-    maxWorkerRssBytes?: number
+    maxWorkerHeldBytes?: number
   } = {},
 ): Promise<GraphEngine> => {
   let child: Worker | undefined
@@ -92,15 +103,30 @@ export const open = async (
   let publishBlocked: string | undefined
   let fault: string | undefined
   const pending = new Map<number, Pending>()
-  const rssCeiling = transport.maxWorkerRssBytes ?? DEFAULT_MAX_WORKER_RSS_BYTES
-  let lastRssBytes: number | undefined
+  const heldCeiling = transport.maxWorkerHeldBytes ?? DEFAULT_MAX_WORKER_HELD_BYTES
+  let lastHeld: { bytes: number; metric: "commit" | "rss" } | undefined
 
-  const recycleIfOversized = () => {
-    if (lastRssBytes === undefined || !Number.isFinite(lastRssBytes)) return false
-    if (lastRssBytes <= rssCeiling) return false
+  /**
+   * Recycle the worker when its footprint, measured from OUTSIDE, crosses the ceiling.
+   *
+   * 🔴 `async` because the reading is no longer the child's to give. This used to read a number the
+   * worker reported about itself, which is precisely the number a long-lived Wasm arena stops
+   * reporting honestly: the arena grows, the process is trimmed, and the self-report says "fine".
+   */
+  const recycleIfOversized = async (): Promise<boolean> => {
     const target = child
     if (!target) return false
-    discard(target, `memory worker exceeded its memory ceiling (${Math.round(lastRssBytes / 1024 / 1024)} MB)`)
+    const reading = await ProcessCommit.read(target.process.pid ?? -1)
+    // `undefined` is UNKNOWN, not "under the ceiling" — see the note in `process-commit.ts`.
+    if (reading === undefined) return false
+    lastHeld = reading
+    if (reading.bytes <= heldCeiling) return false
+    discard(
+      target,
+      `memory worker exceeded its memory ceiling (${Math.round(reading.bytes / 1024 / 1024)} MB ${
+        reading.metric === "commit" ? "committed" : "resident"
+      })`,
+    )
     fault = undefined
     return true
   }
@@ -164,7 +190,9 @@ export const open = async (
         }),
       }
       child = next
-      lastRssBytes = undefined
+      // The MEASURED footprint belonged to the worker that just went away, so it goes with it. Keeping
+      // it would leave a stale reading standing in for a process that no longer exists.
+      lastHeld = undefined
       spawned.stderr.pipe(process.stderr, { end: false })
       const lines = createInterface({ input: spawned.stdout, crlfDelay: Infinity })
       spawned.once("close", () => lines.close())
@@ -183,7 +211,6 @@ export const open = async (
         clearTimeout(waiting.timer)
         if (reply.ok) {
           publishBlocked = reply.publishBlocked
-          if (typeof reply.rssBytes === "number" && Number.isFinite(reply.rssBytes)) lastRssBytes = reply.rssBytes
           waiting.resolve(reply.value)
         } else waiting.reject(new Error(reply.error))
       })
@@ -211,7 +238,7 @@ export const open = async (
     const operation = tail.then(async () => {
       if (closed) throw new Error("memory worker is closed")
       await start()
-      if (recycleIfOversized()) {
+      if (await recycleIfOversized()) {
         await start()
         if (closed) throw new Error("memory worker is closed")
       }
@@ -242,14 +269,15 @@ export const open = async (
     get publishBlocked() { return publishBlocked },
     get fault() { return fault },
     /**
-     * The worker's own last reported footprint, and the ceiling it is recycled against.
+     * The worker's last measured footprint, and the ceiling it is recycled against.
      *
-     * Exposed because this number was invisible for as long as it mattered: a live instance held
-     * 2.8 GB idle and 15.6 GB after work, and nothing in the product could see either. A cost nothing
-     * can read is a cost nothing can act on.
+     * ⚠️ Measured from outside the worker, because a cost the subject reports about itself is a cost
+     * the product cannot act on. `workerHeldMetric` travels with the number so a reader is told whether
+     * it is committed memory (Windows) or resident (Linux) rather than guessing.
      */
-    get workerRssBytes() { return lastRssBytes },
-    get workerRssCeilingBytes() { return rssCeiling },
+    get workerHeldBytes() { return lastHeld?.bytes },
+    get workerHeldMetric() { return lastHeld?.metric },
+    get workerHeldCeilingBytes() { return heldCeiling },
     addMemory: (input) => request("addMemory", input),
     addEdge: (input) => request("addEdge", input),
     search: (input) => request("search", input),

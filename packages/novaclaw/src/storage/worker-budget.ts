@@ -1,6 +1,6 @@
 export * as WorkerBudget from "./worker-budget"
 
-import type { Reading } from "./worker-commit"
+import type { Reading } from "@novaclaw/core/util/process-commit"
 import os from "node:os"
 
 const GIB = 1024 * 1024 * 1024

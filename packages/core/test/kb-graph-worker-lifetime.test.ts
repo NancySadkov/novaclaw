@@ -63,7 +63,7 @@ test("failed recycling never overlaps generations and can recover", async () => 
   const fixture = fileURLToPath(new URL("./fixture/memory-worker-open-failure.ts", import.meta.url))
   writeFileSync(control, "ok")
   const engine = await open(join(directory, "graph"), {}, {
-    argv: [process.execPath, fixture, pidsFile, control], maxWorkerRssBytes: 1,
+    argv: [process.execPath, fixture, pidsFile, control], maxWorkerHeldBytes: 1,
   })
   try {
     writeFileSync(control, "fail")
