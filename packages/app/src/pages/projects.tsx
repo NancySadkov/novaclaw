@@ -213,7 +213,7 @@ export function ProjectsPanel(props: {
     <AppPage class="projects-page">
       <header class="projects-header">
         <div class="projects-heading">
-          <img src={publicAssetUrl("/assets/skin/glyphs/projects.svg")} alt="" />
+          <img src={publicAssetUrl("/assets/skin/glyphs/projects-generated.png")} alt="" />
           <div>
             <h1>{t("home.app.projects.name")}</h1>
             <p>{t("projects.hint")}</p>

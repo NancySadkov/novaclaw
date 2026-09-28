@@ -142,7 +142,7 @@ export function useBuiltinApps(): () => HomeApp[] {
       get title() { return name("projects") },
       get subtitle() { return sub("projects") },
       icon: "checklist",
-      tile: "/assets/skin/glyphs/projects.svg",
+      tile: "/assets/skin/glyphs/projects-generated.png",
       tileNeedsFrame: true,
       accent: "#9b8acb",
       source: "builtin",
