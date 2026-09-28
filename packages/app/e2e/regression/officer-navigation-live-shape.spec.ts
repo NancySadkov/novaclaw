@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test"
 import { fixture } from "../smoke/session-timeline.fixture"
 import { mockNovaClawServer } from "../utils/mock-server"
+import { emitMockEvent } from "../utils/mock-event-server"
 
 test("preloaded officer tabs remain interactive across directory changes", async ({ page }) => {
   const server = `http://127.0.0.1:${process.env.PLAYWRIGHT_SERVER_PORT ?? "4196"}`
@@ -9,6 +10,7 @@ test("preloaded officer tabs remain interactive across directory changes", async
     name: `Officer ${index}`,
     mode: "primary",
     kind: "agent",
+    avatar: `/api/agent/officer-${index}/avatar`,
   }))
   const diffs = Array.from({ length: 10411 }, (_, index) => ({
     file: `src/folder-${index % 100}/file-${index}.ts`,
@@ -41,6 +43,13 @@ test("preloaded officer tabs remain interactive across directory changes", async
   await page.route("**/api/session/execution**", () => new Promise(() => {}))
   await page.route("**/api/instance/pressure", () => new Promise(() => {}))
   await page.route("**/api/agent", (route) => route.fulfill({ headers, json: { data: agents } }))
+  await page.route("**/api/agent/*/avatar", (route) =>
+    route.fulfill({
+      headers,
+      contentType: "image/svg+xml",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="gold"/></svg>',
+    }),
+  )
   await page.route(/\/api\/agent\/[^/]+\/chat$/, (route) => {
     const agent = new URL(route.request().url()).pathname.split("/").at(-2)
     const session = sessions.find((item) => item.agent === agent)!
@@ -59,11 +68,28 @@ test("preloaded officer tabs remain interactive across directory changes", async
   await page.goto("/")
   const tabs = page.locator('[data-slot="titlebar-tabs"] a')
   await expect(tabs).toHaveCount(6)
+  const portraits = page.locator('[data-slot="titlebar-tabs"] img')
+  await expect(portraits).toHaveCount(6)
+  const portraitSources = await portraits.evaluateAll((images) =>
+    images.map((image) => (image as HTMLImageElement).src),
+  )
   await page.evaluate(() => {
     window.requestAnimationFrame = () => 1
   })
   for (let index = 0; index < 12; index++) {
-    if (index === 6) await page.route(/\/api\/session\/[^/]+\/message(?:\?|$)/, () => new Promise(() => {}))
+    if (index === 6) {
+      await page.route(/\/api\/session\/[^/]+\/message(?:\?|$)/, () => new Promise(() => {}))
+      await page.route("**/api/agent", () => new Promise(() => {}))
+      for (let update = 0; update < 60; update++)
+        await emitMockEvent({
+          directory: "global",
+          payload: {
+            id: `evt_status_${update}`,
+            type: "agent.status.updated",
+            properties: { agent: agents[update % agents.length].id, task: "Checking the roster", observed: update },
+          },
+        })
+    }
     const selected = index % sessions.length
     await tabs.nth(selected).click()
     await expect(page.getByText(`Conversation ${sessions[selected].id}`, { exact: true })).toBeVisible({
@@ -75,7 +101,32 @@ test("preloaded officer tabs remain interactive across directory changes", async
     expect(errors).toEqual([])
     await page.locator('[data-component="brand-home-button"]').click()
     await expect(page.locator('[data-home-app-id="contacts"] button')).toBeVisible({ timeout: 1_000 })
+    await expect
+      .poll(() =>
+        portraits.evaluateAll((images) =>
+          images.every((image) => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0),
+        ),
+      )
+      .toBe(true)
+    await expect
+      .poll(() =>
+        page
+          .locator("[data-home-app-id] img")
+          .evaluateAll(
+            (images) =>
+              images.length > 0 &&
+              images.every(
+                (image) => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0,
+              ),
+          ),
+      )
+      .toBe(true)
     await page.locator('[data-home-app-id="contacts"] button').click()
     await expect(page.locator(".officer-roster-toolbar")).toBeVisible({ timeout: 1_000 })
+    await expect(page.locator(".officer-roster-grid")).toBeVisible({ timeout: 1_000 })
+    if (index >= 6) await expect(page.getByText("Checking the roster", { exact: true })).toHaveCount(6)
+    expect(await portraits.evaluateAll((images) => images.map((image) => (image as HTMLImageElement).src))).toEqual(
+      portraitSources,
+    )
   }
 })

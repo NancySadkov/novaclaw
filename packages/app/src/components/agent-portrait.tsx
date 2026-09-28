@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js"
 import { agentInitials, fetchAgentPortrait, isAgentPortraitURL } from "@/apps/agent-portrait"
 import { type ServerConnection, useServer } from "@/context/server"
 
@@ -13,12 +13,29 @@ export function AgentPortrait(props: {
   const server = useServer()
   const [failed, setFailed] = createSignal<string>()
   const [loaded, setLoaded] = createSignal<{ route: string; source: string }>()
+  const request = createMemo(
+    () => {
+      const route = props.avatar
+      const connection = props.connection ?? server.current
+      if (!isAgentPortraitURL(route) || !connection) return undefined
+      const { url, username, password } = connection.http
+      return { route, http: { url, username, password } }
+    },
+    undefined,
+    {
+      equals: (previous, next) =>
+        previous?.route === next?.route &&
+        previous?.http.url === next?.http.url &&
+        previous?.http.username === next?.http.username &&
+        previous?.http.password === next?.http.password,
+    },
+  )
 
   createEffect(() => {
-    const route = props.avatar
-    const current = props.connection ?? server.current
+    const current = request()
     setLoaded(undefined)
-    if (!isAgentPortraitURL(route) || current === undefined) return
+    if (!current) return
+    const { route } = current
 
     let disposed = false
     let source: string | undefined

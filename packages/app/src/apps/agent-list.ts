@@ -14,9 +14,9 @@ import { chatFor, type SessionLike, type UsageMinute } from "./roster-live"
  *  `memory`. Two shapes for one concept is a migration this page must not silently depend on — filed
  *  in `notes/named-agents.md`. */
 export const listAgents = async (sdk: {
-  agent: { list: () => Promise<{ data?: unknown; error?: unknown }> }
-}): Promise<AgentLike[]> => {
-  const response = await sdk.agent.list()
+  agent: { list: (parameters?: undefined, options?: { signal?: AbortSignal }) => Promise<{ data?: unknown; error?: unknown }> }
+}, signal?: AbortSignal): Promise<AgentLike[]> => {
+  const response = await sdk.agent.list(undefined, { signal })
   /**
    * 🔴 **A FAILED read is not an empty roster** (owner, 2026-08-28: *"contacts app now has no
    * contacts. Not even Nova itself … lack of agents (i.e. even nova itself being dead) should trigger

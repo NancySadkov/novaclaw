@@ -1,6 +1,6 @@
 import { createSimpleContext } from "@novaclaw/ui/context"
-import { createEffect, createMemo, createRoot, createSignal, onCleanup } from "solid-js"
-import { createSettledResource } from "@/utils/settled-resource"
+import { createEffect, createMemo, createRoot, onCleanup } from "solid-js"
+import { createAgentRoster } from "./agent-roster"
 import { createServerProjects, ServerConnection, useServer } from "./server"
 import { useServerHealth } from "@/utils/server-health"
 import { createServerSdkContext } from "./server-sdk"
@@ -9,7 +9,6 @@ import { getOwner } from "solid-js/web"
 import { QueryClient } from "@tanstack/solid-query"
 import type { ServerScope } from "@/utils/server-scope"
 import { listAgents } from "@/apps/agent-list"
-import type { AgentLike } from "@/apps/contacts"
 
 export const {
   use: useGlobal,
@@ -115,75 +114,17 @@ function createServerCtx(
     queryClient.clear()
   })
 
-  /**
-   * THE roster for this instance — one fetch, shared by every surface that asks who works here.
-   *
-   * 🔴 It lives on the server context because there were THREE independent `createResource`s over
-   * `GET /api/agent` (review D8, 2026-08-23): the home launcher's New Agent bar, the Contacts page,
-   * and the config dialog on EVERY open. Opening Home, then Contacts, then one colleague was three
-   * round trips for identical data — and the dialog's own in-flight window is what made it possible
-   * to save a colleague's brief away as `""` before its record had arrived (D3).
-   *
-   * ⚠️ It is DELIBERATELY the v2 list and not the sync store's `data.agent`, which is the legacy
-   * `GET /agent` projection: entries keyed by `name`, carrying no `title`, `personality`, `avatar`
-   * or `memory` (`apps/agent-list.ts`).
-   */
-  const [rosterError, setRosterError] = createSignal<unknown>(undefined)
-  const [agentRoster, agentRosterActions] = createSettledResource(
-    () => sdk.client.v2,
-    (client) =>
-      listAgents(client).then(
-        (rows) => {
-          setRosterError(undefined)
-          return rows
-        },
-        (error: unknown) => {
-          // ⚠️ The failure is KEPT, not discarded. Most surfaces only want a list and are content
-          // with an empty one, but Contacts is the roster: "you have nobody" and "we could not read
-          // who you have" are different sentences, and collapsing them is how a broken request
-          // reads as an empty organization. One fetch, both facts.
-          setRosterError(error ?? new Error("listAgents failed"))
-          return [] as AgentLike[]
-        },
-      ),
-  )
-  /**
-   * 🔴 The roster JOINS the reconnect recovery engine, because a `createResource` was invisible to it.
-   *
-   * `server-sync.tsx` invalidates every TanStack query under this server's scope whenever the SSE
-   * stream (re)connects — that is the whole data plane's cold-start and outage recovery. This roster
-   * is a solid `createResource`, not a query, so it was NOT covered: it fetched exactly once during
-   * boot and never ran again. A boot read that landed before the instance had materialised its agent
-   * config was therefore permanent, and it did not look like a failure — an empty array resolves
-   * SUCCESSFULLY, so `loading` was false, `error` was undefined, and Contacts rendered its
-   * "No colleagues yet" empty state over an instance that had a full roster. Nova is seeded in code
-   * and can never actually be absent, so that sentence was always a lie; the only cure was a reload,
-   * which minted a fresh resource.
-   *
-   * ⚠️ It refetches on the TRANSITION into "connected", not on every status read. `streamStatus` also
-   * carries "connecting"/"reconnecting", and refetching on each would put a request on the wire for
-   * every retry tick of an instance that is down — the opposite of what a recovery path is for.
-   */
+  const agents = createAgentRoster((signal) => listAgents(sdk.client.v2, signal))
   let lastStreamStatus: string | undefined
   createEffect(() => {
     const status = sdk.streamStatus()
     const previous = lastStreamStatus
     lastStreamStatus = status
     if (status !== "connected" || previous === "connected" || previous === undefined) return
-    void agentRosterActions.refetch()
+    void agents.refetch()
   })
 
-  const agents = {
-    list: (): readonly AgentLike[] => agentRoster() ?? [],
-    loading: () => agentRoster.loading,
-    /** The last failure, or `undefined` once a read succeeds. */
-    error: () => rosterError(),
-    refetch: () => void agentRosterActions.refetch(),
-  }
-
-  // Status labels are written by the lifecycle sampler after the roster's initial fetch. The event
-  // is a cache-invalidation hint; GET /agent remains the one source of the joined roster row.
-  const stopAgentStatus = sync.onAgentStatus(() => void agentRosterActions.refetch())
+  const stopAgentStatus = sync.onAgentStatus(agents.applyStatus)
   onCleanup(stopAgentStatus)
 
   function enrich(project: { worktree: string; expanded: boolean; sandboxes?: string[]; id?: string }) {

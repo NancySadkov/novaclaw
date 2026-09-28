@@ -1,4 +1,5 @@
 import type { Config, NovaclawClient, Path, V2Event } from "@novaclaw/sdk/v2/client"
+import type { AgentStatusEvent } from "./agent-roster"
 import { showToast } from "@/utils/toast"
 import { getFilename } from "@novaclaw/core/util/path"
 import { type Accessor, batch, createMemo, getOwner, onCleanup, onMount, untrack } from "solid-js"
@@ -223,7 +224,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK, projects: Ret
   const unregisterMessageRecovery = serverSDK.reconnectRecovery.register((signal) =>
     nativeMessages.reconcileAll(signal),
   )
-  const agentStatusListeners = new Set<() => void>()
+  const agentStatusListeners = new Set<(event: AgentStatusEvent) => void>()
 
   const children = createChildStoreManager({
     owner,
@@ -473,8 +474,8 @@ export function createServerSyncContextInner(serverSDK: ServerSDK, projects: Ret
 
     // Agent status is an instance component even though the event carries the session's location.
     // Notify subscribers before directory routing so Contacts updates whether that folder is open.
-    if ((event.type as string) === "agent.status.updated" || (event.type as string) === "agent.status.removed") {
-      for (const listener of agentStatusListeners) listener()
+    if (event.type === "agent.status.updated" || event.type === "agent.status.removed") {
+      for (const listener of agentStatusListeners) listener(event)
     }
 
     if (directory === "global") {
@@ -665,7 +666,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK, projects: Ret
     project: projectApi,
     session,
     nativeMessages,
-    onAgentStatus(listener: () => void) {
+    onAgentStatus(listener: (event: AgentStatusEvent) => void) {
       agentStatusListeners.add(listener)
       return () => agentStatusListeners.delete(listener)
     },

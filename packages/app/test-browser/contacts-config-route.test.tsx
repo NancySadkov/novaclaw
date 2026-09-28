@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test"
 import { render } from "solid-js/web"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { createStore } from "solid-js/store"
+import { createSignal } from "solid-js"
 import { createMemoryHistory, MemoryRouter, Route } from "@solidjs/router"
 import { DialogProvider } from "@novaclaw/ui/context/dialog"
 import { ContactsPage } from "@/pages/contacts"
@@ -167,10 +168,13 @@ test("officer tiles reorder from the keyboard and open their actions by right cl
     { ...AGENT, id: "aris", name: "Aris" },
     { ...AGENT, id: "theron", name: "Theron" },
   ]
+  const [refreshing, setRefreshing] = createSignal(false)
+  const [rosterError, setRosterError] = createSignal<unknown>()
+  const [rosterRows, setRosterRows] = createSignal(roster)
   const agents = {
-    list: () => roster,
-    loading: () => false,
-    error: () => undefined,
+    list: rosterRows,
+    loading: refreshing,
+    error: rosterError,
     refetch: () => {},
   }
   const workerReads: string[] = []
@@ -273,6 +277,23 @@ test("officer tiles reorder from the keyboard and open their actions by right cl
 
   const ids = () => [...document.querySelectorAll<HTMLElement>("[data-contact-id]")].map((row) => row.dataset.contactId)
   expect(ids()).toEqual(["nova", "theron", "aris"])
+  const originalTile = document.querySelector('[data-contact-id="theron"]')
+  setRosterRows(roster.map((agent) => ({ ...agent, status: { task: "Updated work", observed: 42 } })))
+  await settle()
+  expect(document.querySelector('[data-contact-id="theron"]')).toBe(originalTile)
+  expect(document.body.textContent).toContain("Updated work")
+  setRefreshing(true)
+  await settle()
+  expect(ids()).toEqual(["nova", "theron", "aris"])
+  expect(document.body.textContent).not.toContain("contacts.loading")
+  setRosterError(new Error("Connection lost"))
+  setRefreshing(false)
+  await settle()
+  expect(document.querySelector('[data-contact-id="theron"]')).toBe(originalTile)
+  expect(document.querySelector('[data-action="contacts-retry"]')).not.toBeNull()
+  expect(document.body.textContent).toContain("contacts.loadFailed")
+  setRosterError(undefined)
+  await settle()
   expect(workerReads).toContain("ses_theron")
   expect(document.querySelector('[data-contact-id="theron"] [data-action="contacts-workers"]')).toBeNull()
   expect(document.querySelector('[data-contact-id="theron"] [data-slot="officer-response-badge"]')?.textContent).toBe("1")

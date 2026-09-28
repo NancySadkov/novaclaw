@@ -2,6 +2,7 @@ import { createSettledResource } from "@/utils/settled-resource"
 import { useNavigate } from "@solidjs/router"
 import { ContextMenu } from "@kobalte/core/context-menu"
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
+import { createStore, reconcile } from "solid-js/store"
 import {
   DragDropProvider,
   SortableProvider,
@@ -134,19 +135,6 @@ export function ContactsPage() {
     return current ? global.ensureServerCtx(current) : undefined
   })
 
-  // 🔴 A failure here must be VISIBLE and must not throw. Two rules that fought each other until
-  // the roster moved onto the server context:
-  //   · A swallowed failure renders the empty state — "No colleagues yet" — which is a LIE when the
-  //     request failed. Measured the hard way: the first draft of this page called the wrong client
-  //     namespace, the catch turned a TypeError into an empty roster, and the screen looked like a
-  //     working feature with nobody hired.
-  //   · A REJECTED resource is worse (review D1, 2026-08-23): `read()` re-throws, `createMemo` is
-  //     eager, and this app has exactly one ErrorBoundary — at its root — so an unreachable instance
-  //     replaced the WHOLE UI rather than dimming this one list.
-  // `ctx().agents` answers both: it degrades to `[]` for the surfaces that only want a list, and
-  // keeps the failure on `error()` for this one, which is the surface that must name it.
-  // ⚠️ ONE fetch, on the server context (review D8) — this page used to mint the third of three
-  // independent `GET /api/agent`s, and the config dialog minted another on every open.
   const agents = () => ctx()?.agents.list()
   const agentsLoading = () => ctx()?.agents.loading() ?? true
   const agentsError = () => ctx()?.agents.error()
@@ -346,7 +334,9 @@ ${copy.detail}`
   })
 
   const savedOrder = createMemo<readonly string[]>(() => pendingOrder() ?? sync().data.config?.officer_order ?? [])
-  const views = createMemo(() => roster(agents() ?? [], savedOrder()))
+  const [viewStore, setViewStore] = createStore({ rows: [] as readonly ContactView[] })
+  createEffect(() => setViewStore("rows", reconcile(roster(agents() ?? [], savedOrder()), { key: "id" })))
+  const views = () => viewStore.rows
   const shown = createMemo(() => searchRoster(views(), query()))
 
   /**
@@ -445,14 +435,16 @@ ${copy.detail}`
       </div>
 
       <div data-slot="officer-roster-scroll" class="min-h-0 flex-1 overflow-y-auto">
-        {/* Four distinct situations, four distinct sentences. An empty roster, a search that
-            matched nothing, a roster still loading and a roster we FAILED to read are not the
-            same fact, and collapsing them is how a broken request reads as "you have nobody".
-            ⚠️ The failed/loading test is HOISTED ABOVE the `shown()` read (review D1): the guard
-            used to evaluate `shown()`, which chains to `agents()`, so the branch that reports the
-            failure could only be reached after the failure had already taken the page. */}
+        <Show when={(agents()?.length ?? 0) > 0 && agentsError() !== undefined}>
+          <div role="status" class="flex items-center gap-2 px-4 py-2 text-sm text-v2-text-text-faint">
+            <span>{language.t("contacts.loadFailed")}</span>
+            <button type="button" data-action="contacts-retry" onClick={() => refetchAgents()}>
+              {language.t("contacts.retry")}
+            </button>
+          </div>
+        </Show>
         <Show
-          when={agentsError() === undefined && !agentsLoading()}
+          when={(agents()?.length ?? 0) > 0 || (agentsError() === undefined && !agentsLoading())}
           fallback={
             <div class="px-4 py-6 text-sm text-v2-text-text-faint">
               <p>{agentsError() !== undefined ? language.t("contacts.loadFailed") : language.t("contacts.loading")}</p>
