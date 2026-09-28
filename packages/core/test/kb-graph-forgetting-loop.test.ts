@@ -1,4 +1,4 @@
-import { afterEach, describe, expect } from "bun:test"
+import { afterEach, beforeEach, describe, expect, spyOn } from "bun:test"
 import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -7,6 +7,7 @@ import { Database } from "@novaclaw/core/database/database"
 import { EventV2 } from "@novaclaw/core/event"
 import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
+import { MemorySetting } from "@novaclaw/core/kb-graph/memory-setting"
 import { testEffect } from "./lib/effect"
 
 /**
@@ -37,7 +38,12 @@ import { testEffect } from "./lib/effect"
 const it = testEffect(Database.layerFromPath(":memory:"))
 
 let dir: string | undefined
+let memoryEnabled: ReturnType<typeof spyOn> | undefined
+beforeEach(() => {
+  memoryEnabled = spyOn(MemorySetting, "memoryEnabled").mockReturnValue(true)
+})
 afterEach(() => {
+  memoryEnabled?.mockRestore()
   if (dir) rmSync(dir, { recursive: true, force: true })
   dir = undefined
 })

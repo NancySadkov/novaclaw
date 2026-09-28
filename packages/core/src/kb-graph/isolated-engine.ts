@@ -21,33 +21,15 @@ type Reply =
   | { id: number; ok: true; value: unknown; publishBlocked?: string; rssBytes?: number }
   | { id: number; ok: false; error: string }
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }
+type Worker = { process: ChildProcessWithoutNullStreams; exited: Promise<void> }
 const MAX_QUEUED_REQUESTS = 64
 const MAX_FRAME_BYTES = 16 * 1024 * 1024
+const activeWorkers = new Set<ChildProcessWithoutNullStreams>()
 
-/**
- * 🔴 WHEN THE WORKER'S MEMORY IS A REASON TO THROW IT AWAY AND START A NEW ONE.
- *
- * The graph engine is LadybugDB compiled to Wasm, and Wasm linear memory only grows — there is no
- * shrink. Measured 2026-09-27 on a copy of a real production store: `open` costs ~1.3 GB resident
- * for a store holding ZERO memories (871 MB external / 433 MB ArrayBuffer, JS heap under 15 MB), so
- * it is a FIXED arena rather than a function of the data. `close()` releases none of it, and the only
- * thing that returns it is process exit.
- *
- * Three wrong theories got here first — eighteen engines, eighteen retained generations, and an LRU
- * capped at two — each falsified by reading `world-memory.ts` (a closure singleton that opens once),
- * `snapshot.ts` (`candidates()` lists paths and copies nothing) and `memory-worker-node.ts` (the
- * worker `break`s and EXITS on close, so nothing is stranded). The engine does not cycle. One long
- * lived arena simply grows, and a live instance was caught at 2.8 GB idle and 15.6 GB after work,
- * the latter holding enough commit to take the box to 100 %.
- *
- * So the only lever that works is the process, and this is it: the worker reports its own RSS on
- * every reply, and crossing this line recycles it. The arena is returned by the exit, the next
- * request spawns a fresh worker, and the floor is one arena rather than an unbounded climb.
- *
- * ⚠️ A RECYCLE IS NOT A FAULT. A discarded worker records the reason as `fault`, which every later
- * call then refuses on — correct for a crash and wrong for a deliberate recycle, which would leave
- * memory permanently broken until the instance restarted. So this path clears the latch.
- */
+process.once("exit", () => {
+  for (const worker of activeWorkers) worker.kill("SIGKILL")
+})
+
 export const DEFAULT_MAX_WORKER_RSS_BYTES = 3 * 1024 * 1024 * 1024
 
 export const commandFor = (input: {
@@ -91,12 +73,15 @@ export const open = async (
   transport: {
     argv?: readonly string[]
     requestTimeoutMs?: number
+    openTimeoutMs?: number
     shutdownTimeoutMs?: number
+    signal?: AbortSignal
     /** Recycle the worker once its own reported footprint crosses this. See the constant above. */
     maxWorkerRssBytes?: number
   } = {},
 ): Promise<GraphEngine> => {
-  let child: ChildProcessWithoutNullStreams | undefined
+  let child: Worker | undefined
+  let stopping = Promise.resolve()
   let opening: Promise<void> | undefined
   let closing: Promise<void> | undefined
   let closed = false
@@ -110,28 +95,18 @@ export const open = async (
   const rssCeiling = transport.maxWorkerRssBytes ?? DEFAULT_MAX_WORKER_RSS_BYTES
   let lastRssBytes: number | undefined
 
-  /**
-   * Kill the worker when its own reported footprint has grown past the ceiling.
-   *
-   * ⚠️ Called BETWEEN requests, never while one is in flight. Doing it from the reply handler — the
-   * obvious place, since that is where the number arrives — kills the child microseconds after
-   * resolving a request, and the next `sendRaw` then reaches for a `stdin` that is gone. The first
-   * version of this did exactly that and the test caught it as a hung request.
-   */
   const recycleIfOversized = () => {
     if (lastRssBytes === undefined || !Number.isFinite(lastRssBytes)) return false
     if (lastRssBytes <= rssCeiling) return false
     const target = child
     if (!target) return false
     discard(target, `memory worker exceeded its memory ceiling (${Math.round(lastRssBytes / 1024 / 1024)} MB)`)
-    // A recycle is not a fault: the fault latch makes every later call refuse, which would turn a
-    // memory guard into a memory outage until the instance restarted.
     fault = undefined
     return true
   }
 
-  const discard = (processToDiscard: ChildProcessWithoutNullStreams, reason: string) => {
-    if (child !== processToDiscard) return
+  const discard = (worker: Worker, reason: string) => {
+    if (child !== worker) return stopping
     child = undefined
     fault = reason
     for (const waiting of pending.values()) {
@@ -139,10 +114,16 @@ export const open = async (
       waiting.reject(new Error(reason))
     }
     pending.clear()
-    processToDiscard.kill()
+    stopping = worker.exited
+    worker.process.stderr.unpipe(process.stderr)
+    worker.process.stdin.destroy()
+    worker.process.kill("SIGKILL")
+    worker.process.stdout.destroy()
+    worker.process.stderr.destroy()
+    return stopping
   }
 
-  const sendRaw = (processToUse: ChildProcessWithoutNullStreams, method: string, args: unknown[], timeoutMs: number) =>
+  const sendRaw = (worker: Worker, method: string, args: unknown[], timeoutMs: number) =>
     new Promise<unknown>((resolve, reject) => {
       const id = ++sequence
       const frame = JSON.stringify({ id, method, args }) + "\n"
@@ -150,14 +131,14 @@ export const open = async (
         reject(new Error(`memory worker request is larger than ${MAX_FRAME_BYTES} bytes`))
         return
       }
-      const timer = setTimeout(() => discard(processToUse, `memory worker timed out in ${method}`), timeoutMs)
+      const timer = setTimeout(() => discard(worker, `memory worker timed out in ${method}`), timeoutMs)
       pending.set(id, { resolve, reject, timer })
       try {
-        processToUse.stdin.write(frame, (error) => {
-          if (error) discard(processToUse, `memory worker pipe failed: ${error.message}`)
+        worker.process.stdin.write(frame, (error) => {
+          if (error) discard(worker, `memory worker pipe failed: ${error.message}`)
         })
       } catch (error) {
-        discard(processToUse, `memory worker pipe failed: ${String(error)}`)
+        discard(worker, `memory worker pipe failed: ${String(error)}`)
       }
     })
 
@@ -165,16 +146,30 @@ export const open = async (
     if (opening) return opening
     if (child) return Promise.resolve()
     opening = (async () => {
+      await stopping
+      if (closed) throw new Error("memory worker is closed")
       const argv = transport.argv ?? command()
-      const next = spawn(argv[0]!, argv.slice(1), {
+      const spawned = spawn(argv[0]!, argv.slice(1), {
         stdio: ["pipe", "pipe", "pipe"] as const,
         windowsHide: true,
         env: { ...process.env, ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: "1" } : {}) },
       })
+      activeWorkers.add(spawned)
+      const next: Worker = {
+        process: spawned,
+        exited: new Promise((resolve) => {
+          const released = () => { activeWorkers.delete(spawned); resolve() }
+          spawned.once("exit", released)
+          spawned.once("error", () => { if (spawned.pid === undefined) released() })
+        }),
+      }
       child = next
-      next.stderr.pipe(process.stderr, { end: false })
-      const lines = createInterface({ input: next.stdout, crlfDelay: Infinity })
+      lastRssBytes = undefined
+      spawned.stderr.pipe(process.stderr, { end: false })
+      const lines = createInterface({ input: spawned.stdout, crlfDelay: Infinity })
+      spawned.once("close", () => lines.close())
       lines.on("line", (line) => {
+        if (child !== next) return
         let reply: Reply
         try {
           reply = JSON.parse(line) as Reply
@@ -188,17 +183,21 @@ export const open = async (
         clearTimeout(waiting.timer)
         if (reply.ok) {
           publishBlocked = reply.publishBlocked
-          // RECORDED here, acted on between requests. The worker's own footprint is the only number
-          // that can decide the recycle, and it is the only portable way a parent learns it.
           if (typeof reply.rssBytes === "number" && Number.isFinite(reply.rssBytes)) lastRssBytes = reply.rssBytes
           waiting.resolve(reply.value)
         } else waiting.reject(new Error(reply.error))
       })
-      next.on("error", (error) => discard(next, `memory worker failed: ${error.message}`))
-      next.on("exit", (code) => discard(next, `memory worker exited (${code ?? "unknown"})`))
-      const opened = await sendRaw(next, "open", [directory, options], 60_000)
-      recovery = opened as SnapshotRecovery
-      fault = undefined
+      spawned.on("error", (error) => discard(next, `memory worker failed: ${error.message}`))
+      spawned.stdin.on("error", (error) => discard(next, `memory worker pipe failed: ${error.message}`))
+      spawned.on("exit", (code) => discard(next, `memory worker exited (${code ?? "unknown"})`))
+      try {
+        recovery = await sendRaw(next, "open", [directory, options], transport.openTimeoutMs ?? 60_000) as SnapshotRecovery
+        if (closed) throw new Error("memory worker is closed")
+        fault = undefined
+      } catch (error) {
+        await discard(next, String(error))
+        throw error
+      }
     })().finally(() => {
       opening = undefined
     })
@@ -212,9 +211,6 @@ export const open = async (
     const operation = tail.then(async () => {
       if (closed) throw new Error("memory worker is closed")
       await start()
-      // The recycle happens HERE, on the seam between requests, where no reply is owed to anyone. The
-      // arena is returned by the child's exit and `start()` below brings up a fresh one, so the floor
-      // is a single arena rather than an unbounded climb.
       if (recycleIfOversized()) {
         await start()
         if (closed) throw new Error("memory worker is closed")
@@ -229,7 +225,18 @@ export const open = async (
     return operation
   }
 
-  await start()
+  const abort = () => {
+    closed = true
+    if (child) discard(child, "memory worker is closed")
+  }
+  transport.signal?.addEventListener("abort", abort, { once: true })
+  if (transport.signal?.aborted) abort()
+  try {
+    await start()
+  } catch (error) {
+    transport.signal?.removeEventListener("abort", abort)
+    throw error
+  }
   return {
     get recovery() { return recovery },
     get publishBlocked() { return publishBlocked },
@@ -268,6 +275,7 @@ export const open = async (
     stagedScopes: (prefix) => request("stagedScopes", prefix),
     close: () => closing ??= (async () => {
       closed = true
+      transport.signal?.removeEventListener("abort", abort)
       const timer = setTimeout(() => {
         if (child) discard(child, "memory worker shutdown timed out")
       }, transport.shutdownTimeoutMs ?? 10_000)
@@ -277,9 +285,11 @@ export const open = async (
         clearTimeout(timer)
       }
       const live = child
-      if (!live) return
-      await sendRaw(live, "close", [], transport.shutdownTimeoutMs ?? 10_000).catch(() => undefined)
-      discard(live, "memory worker closed")
+      if (live) {
+        await sendRaw(live, "close", [], transport.shutdownTimeoutMs ?? 10_000).catch(() => undefined)
+        await discard(live, "memory worker closed")
+      }
+      await stopping
     })(),
   }
 }

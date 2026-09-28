@@ -11,9 +11,11 @@ let engine: WasmMemory | undefined
 const MAX_FRAME_BYTES = 16 * 1024 * 1024
 for await (const line of createInterface({ input: process.stdin, crlfDelay: Infinity })) {
   let id = -1
+  let method: string | undefined
   try {
     const request = JSON.parse(line) as { id: number; method: string; args: unknown[] }
     id = request.id
+    method = request.method
     let value: unknown
     if (request.method === "open") {
       if (engine) throw new Error("memory graph already opened")
@@ -55,6 +57,7 @@ for await (const line of createInterface({ input: process.stdin, crlfDelay: Infi
     if (request.method === "close") break
   } catch (error) {
     process.stdout.write(JSON.stringify({ id, ok: false, error: String(error).slice(0, 500) }) + "\n")
+    if (method === "open") break
   }
 }
 await engine?.close()

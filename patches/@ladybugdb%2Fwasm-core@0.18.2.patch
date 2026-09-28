@@ -1,0 +1,5 @@
+diff --git a/nodejs/lbug/lbug_wasm.js b/nodejs/lbug/lbug_wasm.js
+--- a/nodejs/lbug/lbug_wasm.js
++++ b/nodejs/lbug/lbug_wasm.js
+@@ -2,0 +3 @@
++module.exports = lbug;

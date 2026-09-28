@@ -192,6 +192,7 @@ export const configFromFlags = (): Config => ({
 /** Build the independent world-model capability. Opening remains lazy, like the explicit KB. */
 export const layerFromConfig = (
   cfg: Config,
+  openEngine: typeof IsolatedMemory.open = IsolatedMemory.open,
 ): Layer.Layer<Service, never, EventV2.Service | Database.Service> =>
   Layer.effect(
     Service,
@@ -209,13 +210,24 @@ export const layerFromConfig = (
       workerFaultRead = () => undefined
       let engine: GraphEngine | undefined
       let opening: Promise<MemoryClient.Interface> | undefined
+      let disposed = false
+      const lifetime = new AbortController()
+      const clock = yield* Effect.clockWith((clock) => Effect.succeed(clock))
+      let nextOpenAt = 0
+      let retryDelayMs = 5_000
+      let openFailure: unknown
       const open = () => {
+        if (disposed) return Promise.reject(new Error("world memory is closed"))
         if (engine) return Promise.resolve(MemoryClient.fromEngine(engine))
         if (opening) return opening
+        if (clock.currentTimeMillisUnsafe() < nextOpenAt) return Promise.reject(openFailure)
         currentRuntimeStatus = { stage: "loading" }
-        opening = IsolatedMemory.open(dbDir, cfg.dim === undefined ? {} : { dim: cfg.dim })
+        opening = openEngine(dbDir, cfg.dim === undefined ? {} : { dim: cfg.dim }, { signal: lifetime.signal })
           .then((opened) => {
             engine = opened
+            retryDelayMs = 5_000
+            nextOpenAt = 0
+            openFailure = undefined
             publishBlockedRead = () => opened.publishBlocked
             workerFaultRead = () => opened.fault
             currentRuntimeStatus =
@@ -230,6 +242,10 @@ export const layerFromConfig = (
             return MemoryClient.fromEngine(opened)
           })
           .catch((cause) => {
+            if (disposed) throw cause
+            openFailure = cause
+            nextOpenAt = clock.currentTimeMillisUnsafe() + retryDelayMs
+            retryDelayMs = Math.min(retryDelayMs * 2, 5 * 60_000)
             currentRuntimeStatus = { stage: "error", detail: String(cause).slice(0, 300) }
             Effect.runFork(Log.event("kb.memory.open.failed", { "kb.cause": Log.fault(cause) }))
             throw cause
@@ -330,7 +346,13 @@ export const layerFromConfig = (
           }
         }),
       )
-      yield* Effect.addFinalizer(() => Effect.promise(async () => engine && (await engine.close())))
+      yield* Effect.addFinalizer(() => Effect.promise(async () => {
+        disposed = true
+        if (opening) lifetime.abort()
+        await opening?.catch(() => undefined)
+        await engine?.close()
+        lifetime.abort()
+      }))
       return MemoryObserved.observed(lazyClient, { events, ledger })
     }),
   )

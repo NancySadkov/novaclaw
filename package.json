@@ -102,6 +102,7 @@
     "pacote@21.5.1": "patches/pacote@21.5.1.patch",
     "@pierre/trees@1.0.0-beta.4": "patches/@pierre%2Ftrees@1.0.0-beta.4.patch",
     "@modelcontextprotocol/sdk@1.29.0": "patches/@modelcontextprotocol%2Fsdk@1.29.0.patch",
-    "effect@4.0.0-beta.83": "patches/effect@4.0.0-beta.83.patch"
+    "effect@4.0.0-beta.83": "patches/effect@4.0.0-beta.83.patch",
+    "@ladybugdb/wasm-core@0.18.2": "patches/@ladybugdb%2Fwasm-core@0.18.2.patch"
   }
 }
