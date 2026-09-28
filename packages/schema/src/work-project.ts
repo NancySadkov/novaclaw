@@ -4,6 +4,7 @@ import { Schema } from "effect"
 
 const Name = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160))
 const Objective = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16000))
+const Directory = Schema.NullOr(Schema.String.check(Schema.isMaxLength(4096)))
 export const Phase = Schema.Struct({
   id: Schema.String,
   name: Name,
@@ -24,6 +25,7 @@ export const Info = Schema.Struct({
   id: Schema.String,
   name: Name,
   objective: Objective,
+  directory: Directory,
   phases: Plan,
   paused: Schema.Boolean,
   revision: Schema.Int,
@@ -37,13 +39,20 @@ export const Snapshot = Schema.Struct({ projects: Schema.Array(Info), officers: 
 export type Snapshot = typeof Snapshot.Type
 export const Command = Schema.Union([
   Schema.Struct({ op: Schema.Literal("list") }),
-  Schema.Struct({ op: Schema.Literal("create"), name: Name, objective: Objective, phases: Plan }),
+  Schema.Struct({
+    op: Schema.Literal("create"),
+    name: Name,
+    objective: Objective,
+    directory: Schema.optional(Directory),
+    phases: Plan,
+  }),
   Schema.Struct({
     op: Schema.Literal("edit"),
     id: Schema.String,
     revision: Schema.Int,
     name: Name,
     objective: Objective,
+    directory: Schema.optional(Directory),
     phases: Plan,
   }),
   Schema.Struct({ op: Schema.Literal("pause"), id: Schema.String, paused: Schema.Boolean }),

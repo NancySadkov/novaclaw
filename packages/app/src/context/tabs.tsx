@@ -664,8 +664,8 @@ export const {
         if (current) setRecentKey(tabKey(current))
         navigate("/")
       },
-      state<T>(tab: Tab, name: string, init: () => T) {
-        return memory.ensure(tabKey(tab), name, init)
+      state<T>(tab: Tab, name: string, init: () => T, identity?: string) {
+        return memory.ensure(tabKey(tab), name, init, identity)
       },
     }
 

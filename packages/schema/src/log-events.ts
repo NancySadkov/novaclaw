@@ -2877,7 +2877,7 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/run-coordinator.ts",
   },
-  "project.delivery.retry": {
+  "session.project.delivery.retry": {
     level: "warn",
     message: "project assignment notification queued for retry",
     attributes: { "project.fault": "fault" },

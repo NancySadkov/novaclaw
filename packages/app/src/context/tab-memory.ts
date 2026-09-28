@@ -3,6 +3,7 @@ import { createRoot, type Owner } from "solid-js"
 type Entry = {
   value: unknown
   dispose: VoidFunction
+  identity?: string
 }
 
 export function createTabMemory(owner: Owner | null) {
@@ -16,12 +17,13 @@ export function createTabMemory(owner: Owner | null) {
   }
 
   return {
-    ensure<T>(key: string, name: string, init: () => T) {
+    ensure<T>(key: string, name: string, init: () => T, identity?: string) {
       const state = entries.get(key) ?? new Map<string, Entry>()
       if (!entries.has(key)) entries.set(key, state)
       const existing = state.get(name)
-      if (existing) return existing.value as T
-      const entry = createRoot((dispose) => ({ value: init(), dispose }), owner)
+      if (existing?.identity === identity && existing) return existing.value as T
+      existing?.dispose()
+      const entry = createRoot((dispose) => ({ value: init(), dispose, identity }), owner)
       state.set(name, entry)
       return entry.value
     },

@@ -76,6 +76,7 @@
     "novaclaw:tool": 0,
     "novaclaw test/*": 3
   },
+  "countsProjectFoldersAndWarmTabs": "2026-09-28: core 7396->7399 adds three project-folder cases covering SQLite migration parity, persistence and assignment delivery, and invalid paths. Focused core files: 24 pass. app:browser 279->282 adds one folder editor case and two warm session-state cases; whole app package measured 1866 unit and 282 browser pass, zero failures. novaclaw test/* 772->773 adds one supervisor import-boundary guard; focused supervisor, exit-intent and real server process tests: 35 pass, one existing Windows terminal skip. Core and full NovaClaw counts are intentional declaration deltas, not a claim of a whole-unit run.",
   "counts": {
     "script": 292,
     "script-lib": 5,
@@ -88,9 +89,9 @@
     "sdk-js": 46,
     "session-ui": 237,
     "ui": 67,
-    "core": 7396,
+    "core": 7399,
     "app:unit": 1866,
-    "app:browser": 279,
+    "app:browser": 282,
     "desktop": 262,
     "server": 119,
     "novaclaw:server": 454,
@@ -100,7 +101,7 @@
     "novaclaw:control-plane": 21,
     "novaclaw:fixture": 31,
     "novaclaw:cli-contract": 2,
-    "novaclaw test/*": 772,
+    "novaclaw test/*": 773,
     "novaclaw test/cli/lazy-command.test.ts": 3,
     "novaclaw test/cli/run/run-process.test.ts": 17,
     "novaclaw test/mcp/config-reload.test.ts": 4

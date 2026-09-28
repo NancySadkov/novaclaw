@@ -1,4 +1,4 @@
-import { type Accessor, createEffect, createMemo, createResource } from "solid-js"
+import { type Accessor, createEffect, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
 import { DateTime } from "luxon"
 import * as Timestamp from "@novaclaw/schema/time"
@@ -292,15 +292,6 @@ export const {
       setStore("removed", [...(store.removed ?? []), key])
     }
 
-    const [recentModels] = createResource(
-      async () => {
-        const recent = store.recent
-        await ready.promise
-        return recent
-      },
-      (p) => p,
-      { initialValue: [] },
-    )
     return {
       ready,
       list,
@@ -311,7 +302,7 @@ export const {
       enabled,
       setEnabled,
       recent: {
-        list: () => recentModels()!,
+        list: () => store.recent,
         push,
       },
       variant: {

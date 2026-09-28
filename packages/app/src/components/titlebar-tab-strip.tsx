@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createResource, createRoot, For, onCleanup, onMount } from "solid-js"
+import { createEffect, createMemo, For, onCleanup, onMount, untrack } from "solid-js"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { DragDropProvider, PointerSensor } from "@dnd-kit/solid"
 import { isSortable, useSortable } from "@dnd-kit/solid/sortable"
@@ -18,6 +18,9 @@ import { base64Encode } from "@novaclaw/core/util/encode"
 import { canStartTabDrag, TAB_DRAG_ACTIVATION_DISTANCE } from "./titlebar-tab-gesture"
 import { chatFor } from "@/apps/roster-live"
 import type { SessionV2Info as Session } from "@novaclaw/sdk/v2"
+import { cachedOfficerChat, rememberOfficerChat, resolveOfficerChat } from "@/apps/agent-list"
+import { createSettledResource } from "@/utils/settled-resource"
+import { Session as SessionPage } from "@/pages/session-loader"
 
 const sortableTransition = { duration: 0 }
 
@@ -51,22 +54,29 @@ function SessionTabSlot(props: {
   const tabs = useTabs()
   const sortable = useTabSortable(() => props.id, props.index)
   let ref!: HTMLDivElement
-  const sdk = createMemo(() => props.serverCtx()?.sdk ?? null)
   // A session tab resolves ITS session; an AGENT tab resolves the COLLEAGUE — the session is a
   // component reached through it (AGENTS.md) — and is labelled by the colleague, exactly as the
   // roster names it. No session id is needed for the tab to render or to keep its place.
-  const sessionId = () => (props.tab.type === "session" ? props.tab.sessionId : undefined)
+  const [resolvedOfficer] = createSettledResource(
+    () => (props.tab.type === "agent" && props.serverCtx() ? { tab: props.tab, ctx: props.serverCtx()! } : null),
+    ({ tab, ctx }) =>
+      resolveOfficerChat(ctx.sdk.client.v2, { agentID: tab.agent, serverKey: tab.server, create: false }),
+  )
+  const sessionId = () =>
+    props.tab.type === "session"
+      ? props.tab.sessionId
+      : (resolvedOfficer() ?? cachedOfficerChat(props.tab.server, props.tab.agent)?.id)
   const cachedSession = createMemo(() => {
     const id = sessionId()
     return id ? props.serverCtx()?.sync.session.peek(id) : undefined
   })
-  const [loadedSession] = createResource(
+  const [loadedSession] = createSettledResource(
     () => {
       const ctx = props.serverCtx()
       const id = sessionId()
       return ctx && id ? { id, ctx } : null
     },
-    ({ id, ctx }) => ctx.sync.session.resolve(id).catch(() => undefined),
+    ({ id, ctx }) => ctx.sync.session.resolve(id),
   )
   /**
    * 🔴 An AGENT TAB MUST STILL NAME THE CHAT ITS BADGES ARE ABOUT.
@@ -98,7 +108,10 @@ function SessionTabSlot(props: {
     // A minimal, SAFE stub: the colleague the tab stands for, and an empty id/title. Everything the
     // strip reads off it (`agent`, `id`, `title`, `location?`) is optional-tolerant by construction —
     // an agent tab has no session record until its chat resolves.
-    if (props.tab.type === "agent") return colleagueChat() ?? ({ agent: props.tab.agent, id: "" } as Session)
+    if (props.tab.type === "agent")
+      return (
+        colleagueChat() ?? cachedSession() ?? loadedSession() ?? ({ agent: props.tab.agent, id: "" } as Session)
+      )
     return cachedSession() ?? loadedSession()
   })
 
@@ -117,35 +130,29 @@ function SessionTabSlot(props: {
     tabs.noteSessionAgent(props.tab.server, sessionId()!, value.agent)
   })
 
-  let prefetched = false
-
-  createEffect(() => {
-    if (props.tab.type !== "session") return
-    const ctx = props.serverCtx()
+  const preloadKey = createMemo(() => {
     const value = session()
-    if (!ctx || !value?.location || prefetched) return
-    prefetched = true
-    createRoot((dispose) => {
-      try {
-        void ctx.sync
-          .ensureDirSyncContext(value.location.directory)
-          .session.sync(value.id)
-          .catch(() => {})
-          .finally(dispose)
-      } catch {
-        dispose()
-      }
-    })
+    return value?.id && value.location ? `${props.tab.server}\0${value.id}\0${value.location.directory}` : undefined
   })
-
   createEffect(() => {
-    if (props.tab.type !== "session") return
-    const value = session()
-    const current = sdk()
-    if (!value?.location || !current) return
-    createTabPromptState(tabs, props.tab, current.scope, {
-      dir: base64Encode(value.location.directory),
-      id: value.id,
+    if (!preloadKey()) return
+    const ctx = untrack(props.serverCtx)
+    const value = untrack(session)
+    if (!ctx || !value?.id || !value.location) return
+    if (props.tab.type === "agent")
+      rememberOfficerChat(props.tab.server, props.tab.agent, value.id, value.location.directory)
+    ctx.sync.session.pin(value.id)
+    onCleanup(() => ctx.sync.session.unpin(value.id))
+    void SessionPage.preload().catch(() => {})
+    void ctx.sync
+      .ensureDirSyncContext(value.location.directory)
+      .session.sync(value.id)
+      .catch(() => {})
+    untrack(() => {
+      createTabPromptState(tabs, props.tab, ctx.sdk.scope, {
+        dir: base64Encode(value.location.directory),
+        id: value.id,
+      })
     })
   })
 

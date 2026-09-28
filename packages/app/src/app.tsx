@@ -71,7 +71,7 @@ import { HomeScreen } from "@/pages/home-screen/home-screen"
 import { clientLogPayload, installClientLogSender, installErrorLog } from "@/utils/error-log"
 import { publicAssetUrl } from "@/utils/public-asset"
 
-const Session = lazy(() => import("@/pages/session"))
+import { Session } from "@/pages/session-loader"
 const FilesPage = lazy(() => import("@/pages/files").then(({ FilesPage }) => ({ default: FilesPage })))
 const RecipesPage = lazy(() => import("@/pages/recipes").then(({ RecipesPage }) => ({ default: RecipesPage })))
 const ProjectsPage = lazy(() => import("@/pages/projects").then(({ ProjectsPage }) => ({ default: ProjectsPage })))
@@ -410,13 +410,17 @@ function TargetAgentRoute() {
           setFailure(new Error(`${agent} has no chat`))
           return
         }
+        const cached = cachedOfficerChat(key, agent)
+        const knownDirectory = cached?.directory ?? sync().session.peek(id)?.location?.directory
         setChat(id)
+        if (knownDirectory !== undefined) setDirectory(knownDirectory)
+        else if (known?.id !== id) setDirectory(undefined)
         const lineage = await sync()
           .session.lineage.resolve(id)
           .catch(() => undefined)
         if (mine !== run) return
-        const dir = lineage?.session.location.directory
-        setDirectory(dir)
+        const dir = lineage?.session.location.directory ?? knownDirectory
+        if (dir !== undefined) setDirectory(dir)
         // Cache the directory too, so the NEXT open needs no fetch at all.
         if (dir !== undefined) rememberOfficerChat(key, agent, id, dir)
       })

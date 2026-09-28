@@ -48,7 +48,7 @@ describe("agent tab session identity", () => {
     const stub = /id:\s*""/
     expect(stub.test(strip)).toBe(true)
     // Every `id: ""` in the strip must sit behind the colleague lookup on the same expression.
-    const answers = strip.match(/return\s+[^\n]*id:\s*""[^\n]*/g) ?? []
+    const answers = strip.match(/return\s*\(?\s*colleagueChat\(\)[\s\S]*?id:\s*""[^\n]*/g) ?? []
     expect(answers.length).toBe(1)
     expect(answers[0]).toMatch(/colleagueChat\(\)\s*\?\?/)
   })

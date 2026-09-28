@@ -2,7 +2,7 @@ import { batch, createEffect, createMemo, onCleanup } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { showToast } from "@/utils/toast"
-import { useParams } from "@solidjs/router"
+import { useResolvedSessionID } from "./session-scope"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { getFilename } from "@novaclaw/core/util/path"
 import { useSDK } from "./sdk"
@@ -53,7 +53,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
   init: () => {
     const sdk = useSDK()
     useSync()
-    const params = useParams()
+    const sessionID = useResolvedSessionID()
     const serverSDK = useServerSDK()
     const language = useLanguage()
     const layout = useLayout()
@@ -61,7 +61,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
     const scope = createMemo(() => sdk().directory)
     const path = createPathHelpers(scope)
     const tabs = layout.tabs(() =>
-      SessionStateKey.from(serverSDK().scope, SessionRouteKey.fromRoute(base64Encode(sdk().directory), params.id)),
+      SessionStateKey.from(serverSDK().scope, SessionRouteKey.fromRoute(base64Encode(sdk().directory), sessionID())),
     )
 
     const inflight = new Map<string, Promise<void>>()
@@ -112,7 +112,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
     })
 
     const viewCache = createFileViewCache(serverSDK().scope)
-    const view = createMemo(() => viewCache.load(scope(), params.id))
+    const view = createMemo(() => viewCache.load(scope(), sessionID()))
 
     const ensure = (file: string) => {
       if (!file) return

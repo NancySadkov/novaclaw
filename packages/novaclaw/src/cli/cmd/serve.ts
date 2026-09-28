@@ -1,22 +1,15 @@
-import { Effect } from "effect"
-import { effectCmd, fail } from "../effect-cmd"
-import { resolveNetworkOptions } from "../network"
+import { cmd } from "./cmd"
+import { CliError } from "../effect-cmd"
+
 import { withServerOptions, applyCredentialOptions, warnOnIgnoredEnv } from "../credential-options"
 import { Flag } from "@novaclaw/core/flag/flag"
-import { ServerLaunchCredential } from "@novaclaw/core/server-launch-credential"
-import { memoMap } from "@novaclaw/core/effect/memo-map"
+
 // THE one tree-kill, in its leaf spelling (`Shell.killTreeSync` is the same function). The leaf
 // imports `node:` builtins only, which keeps it off the CLI's startup cost.
 import { killTreeSync } from "@novaclaw/core/util/kill-tree"
 import { CommandSpec } from "../command-spec"
 import { ServeChildCommand } from "../serve-child-command"
-import { Shutdown } from "@novaclaw/core/shutdown"
-import { OwnedProcesses } from "@novaclaw/core/util/owned-processes"
-import { disposeAllInstances } from "@/project/instance-runtime"
 
-/** What a person will wait for a quit. Long enough for a database flush, short enough to feel
- *  like the app closed rather than hung. */
-const SHUTDOWN_DEADLINE = "5 seconds"
 import { ServeLiveness } from "../serve-liveness"
 
 // Dependability P4 (uix-dependability-plan): `novaclaw serve` is SUPERVISED BY DEFAULT — the
@@ -194,7 +187,7 @@ async function forwardStdout(stream: ReadableStream<Uint8Array>, onLine: (line: 
   if (pending) onLine(pending)
 }
 
-export const ServeCommand = effectCmd({
+export const ServeCommand = cmd({
   ...CommandSpec.serve,
   builder: (yargs) =>
     withServerOptions(yargs).option("supervise", {
@@ -202,10 +195,8 @@ export const ServeCommand = effectCmd({
       default: true,
       describe: "restart the server automatically if it crashes (--no-supervise runs it bare)",
     }),
-  // Server loads instances per-request via x-novaclaw-directory header — no
-  // need for an ambient project InstanceContext at startup.
-  instance: false,
-  handler: Effect.fn("Cli.serve")(function* (args) {
+
+  async handler(args) {
     // 🔴 FIRST, before the server graph assembles: the auth `Config` reads this holder lazily, so a
     // credential that arrives after `Server.listen` is a credential no request ever sees. Supervised,
     // the child re-execs with this same argv (`ServeChildCommand.current` replays it), so the flag
@@ -213,70 +204,11 @@ export const ServeCommand = effectCmd({
     applyCredentialOptions(args)
     warnOnIgnoredEnv()
     if (args.supervise) {
-      const outcome = yield* Effect.promise(superviseLoop)
-      if (outcome === "giveup") return yield* fail("server crash loop — supervision gave up", 1)
+      const outcome = await superviseLoop()
+      if (outcome === "giveup") throw new CliError({ message: "server crash loop — supervision gave up", exitCode: 1 })
       return
     }
-    const { Server } = yield* Effect.promise(() => import("../../server/server"))
-    // Phrased as the choice it is. The old sentence named an environment variable nobody is asked to
-    // set, which read as an instruction to go export one — the opposite of the fix.
-    if (!ServerLaunchCredential.isSet()) {
-      console.log(
-        "note: no --password given and no stored token, so this instance accepts unauthenticated " +
-          "requests on its bind address. Pass --password, or set one in Settings → Instances.",
-      )
-    }
-    const opts = yield* resolveNetworkOptions(args)
-    // ONE instance graph: this command runs under `AppRuntime`, whose `AppLayer` is already alive in
-    // the shared memo map, so the listener's routes must be built in the same map or the process
-    // carries two graphs (two database clients, two MCP managers, two buses). `ListenOptions.memoMap`.
-    const server = yield* Effect.promise(() => Server.listen({ ...opts, memoMap }))
-    console.log(`novaclaw server listening on http://${server.hostname}:${server.port}`)
-
-    /**
-     * Settle on the way out, inside a deadline, and SAY what was forced.
-     *
-     * This process had no signal handling at all: SIGTERM simply killed it, so anything mid-flight
-     * was lost without a word. `Shutdown.settleAll` gives the two subsystems this process owns a
-     * bounded chance to finish and names whichever did not — a failing one cannot cancel the other,
-     * which matters here because instance disposal is the half holding unflushed session state.
-     *
-     * ⚠️ The deadline is a promise about TOTAL wait, so it covers both tasks together rather than
-     * each. A quit that takes twice as long as advertised is the reason people reach for kill -9.
-     *
-     * The `commands` task reaps every agent-launched OS process still registered as owned (bash jobs,
-     * terminals, js sandboxes, the DHT sidecar) through the ONE tree-kill. Instance disposal already
-     * releases the location scopes those children belong to, but a scope release only reaches a live
-     * root — and nothing else on this path names the raw children at all. Without this a server quit
-     * strands running commands as strays. It runs FIRST so the trees get the full deadline, and a
-     * listener replacement never passes through here — only a real shutdown does.
-     */
-    let settling = false
-    const settle = (signal: string) => {
-      if (settling) return
-      settling = true
-      void Effect.runPromise(
-        Shutdown.settleAll(
-          [
-            { name: "commands", settle: Effect.promise(() => OwnedProcesses.killAll()) },
-            { name: "http", settle: Effect.promise(() => server.stop(true)) },
-            { name: "instances", settle: Effect.promise(() => disposeAllInstances()) },
-          ],
-          SHUTDOWN_DEADLINE,
-        ),
-      )
-        .then((report) => {
-          console.log(`novaclaw server stopping (${signal}). ${Shutdown.describe(report)}`)
-          process.exit(ExitIntent.settle({ kind: "shutdown" }, 0))
-        })
-        // Never let the reporting itself hold the process: an exit that hangs is worse than one
-        // that says less. The intent is still recorded — the operator asked to stop either way, and
-        // a failure to DESCRIBE the shutdown is not a reason to let the watchdog call it a crash.
-        .catch(() => process.exit(ExitIntent.settle({ kind: "shutdown" }, 0)))
-    }
-    process.on("SIGINT", () => settle("SIGINT"))
-    process.on("SIGTERM", () => settle("SIGTERM"))
-
-    yield* Effect.never
-  }),
+    const { run } = await import("./serve-runtime")
+    await run(args)
+  },
 })

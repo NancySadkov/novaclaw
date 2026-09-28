@@ -3,6 +3,7 @@ import type { WorkProject } from "@novaclaw/schema/work-project"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { AppPage } from "@/components/app-page"
+import { useDirectoryPicker } from "@/components/directory-picker"
 import { useConfirm, type ConfirmOptions } from "@/components/dialog-confirm"
 import { useLanguage } from "@/context/language"
 import { useServerSDK } from "@/context/server-sdk"
@@ -11,12 +12,20 @@ import { publicAssetUrl } from "@/utils/public-asset"
 import { projectsApi, type ProjectsApi } from "@/utils/projects-api"
 
 type Translate = ReturnType<typeof useLanguage>["t"]
-type Draft = { id?: string; revision?: number; name: string; objective: string; phases: WorkProject.Phase[] }
+type Draft = {
+  id?: string
+  revision?: number
+  name: string
+  objective: string
+  directory: string
+  phases: WorkProject.Phase[]
+}
 
 export function ProjectsPage() {
   const sdk = useServerSDK()
   const language = useLanguage()
   const confirm = useConfirm()
+  const pickDirectory = useDirectoryPicker()
   const api = createMemo(() => {
     const base = sdk()?.server.http
     if (!base) return undefined
@@ -24,13 +33,32 @@ export function ProjectsPage() {
     onCleanup(() => controller.abort())
     return projectsApi(base, controller.signal)
   })
-  return <ProjectsPanel api={api()} t={language.t} confirm={confirm} />
+  return (
+    <ProjectsPanel
+      api={api()}
+      t={language.t}
+      confirm={confirm}
+      pickDirectory={(onSelect) => {
+        const server = sdk()?.server
+        if (!server) return
+        pickDirectory({
+          server,
+          title: language.t("projects.directory"),
+          multiple: false,
+          onSelect: (value) => {
+            if (typeof value === "string") onSelect(value)
+          },
+        })
+      }}
+    />
+  )
 }
 
 export function ProjectsPanel(props: {
   api: ProjectsApi | undefined
   t: Translate
   confirm: (options: ConfirmOptions) => Promise<boolean>
+  pickDirectory?: (onSelect: (directory: string) => void) => void
 }) {
   const t = props.t
   const [data, { refetch, mutate }] = createSettledResource(
@@ -104,9 +132,10 @@ export function ProjectsPanel(props: {
             revision: project.revision,
             name: project.name,
             objective: project.objective,
+            directory: project.directory ?? "",
             phases: project.phases.map((phase) => ({ ...phase })),
           }
-        : { name: "", objective: "", phases: [] },
+        : { name: "", objective: "", directory: "", phases: [] },
     )
   }
   const change = (patch: Partial<Draft>) => {
@@ -151,9 +180,16 @@ export function ProjectsPanel(props: {
             revision: value.revision!,
             name: value.name,
             objective: value.objective,
+            directory: value.directory.trim() || null,
             phases: value.phases,
           }
-        : { op: "create", name: value.name, objective: value.objective, phases: value.phases },
+        : {
+            op: "create",
+            name: value.name,
+            objective: value.objective,
+            directory: value.directory.trim() || null,
+            phases: value.phases,
+          },
     )
     if (!result) return
     setSelected(value.id ?? result.projects.find((project) => !known.has(project.id))?.id)
@@ -340,6 +376,42 @@ export function ProjectsPanel(props: {
                     onInput={(event) => change({ objective: event.currentTarget.value })}
                   />
                 </label>
+                <label class="project-label">
+                  {t("projects.directory")}
+                  <input
+                    class="project-field"
+                    maxLength={4096}
+                    value={value().directory}
+                    onInput={(event) => change({ directory: event.currentTarget.value })}
+                  />
+                </label>
+                <div class="project-controls">
+                  <Show when={props.pickDirectory}>
+                    <button
+                      class="project-button"
+                      type="button"
+                      disabled={busy()}
+                      onClick={() => {
+                        const editing = draft()
+                        const api = props.api
+                        props.pickDirectory?.((directory) => {
+                          if (props.api === api && draft() === editing) change({ directory })
+                        })
+                      }}
+                    >
+                      {t("projects.browse")}
+                    </button>
+                  </Show>
+                  <button
+                    class="project-button"
+                    type="button"
+                    disabled={busy() || !value().directory}
+                    onClick={() => change({ directory: "" })}
+                  >
+                    {t("projects.clearDirectory")}
+                  </button>
+                </div>
+                <p class="project-help">{t("projects.directoryHint")}</p>
                 <div class="project-section-heading">
                   <h3>{t("projects.plan")}</h3>
                   <span>{t("projects.phases", { count: value().phases.length })}</span>
@@ -438,6 +510,13 @@ export function ProjectsPanel(props: {
               </div>
               <h2 class="project-detail-title">{project().name}</h2>
               <p class="project-objective">{project().objective}</p>
+              <Show when={project().directory}>
+                <p class="project-directory">
+                  <strong>{t("projects.directory")}</strong>
+                  <br />
+                  {project().directory}
+                </p>
+              </Show>
               <div class="project-controls">
                 <button
                   class="project-button primary"

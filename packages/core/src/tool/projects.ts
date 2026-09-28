@@ -14,7 +14,7 @@ export const name = "projects"
 export const metadata = {
   sideEffect: "non-idempotent",
   description:
-    "Nova manages the workgroup's projects here. List projects and officers, create or edit an objective and ordered phases, assign an officer to one project (null releases them), mark phases pending or complete, pause/resume, or delete a project. Phase IDs must be unique stable strings. Edit and delete require the current revision from list. Assignments deliver the objective and plan to the officer's chat. Pausing holds assigned officers and their workers at the next safe step; resuming preserves individual pauses. Nova oversees every project and is not assigned to one. Only Nova may use this tool; other officers report progress to their superior.",
+    "Nova manages the workgroup's projects here. List projects and officers, create or edit an objective, ordered phases and an optional absolute server directory (null clears the folder), assign an officer to one project (null releases them), mark phases pending or complete, pause/resume, or delete a project. Phase IDs must be unique stable strings. Edit and delete require the current revision from list. Assignments deliver the objective, plan and folder to the officer's chat. Pausing holds assigned officers and their workers at the next safe step; resuming preserves individual pauses. Nova oversees every project and is not assigned to one. Only Nova may use this tool; other officers report progress to their superior.",
   input: WorkProject.Command,
   output: WorkProject.Snapshot,
 } as const

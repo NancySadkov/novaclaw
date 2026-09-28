@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import type { AsyncStorage } from "@solid-primitives/storage"
 import { createMemo, createResource, createRoot } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -11,18 +11,25 @@ import { createStore } from "solid-js/store"
 
 type PersistedFn = typeof import("@/utils/persist").persisted
 let persisted: PersistedFn
+const platform = { ...(await import("@/context/platform")) }
+let active = false
+afterEach(() => {
+  active = false
+})
 
 // Switchable platform: "web" (sync localStorage path) or "desktop" with a gated async storage.
 let mode: { platform: string; storage?: (name?: string) => AsyncStorage } = { platform: "web" }
 
 beforeAll(async () => {
   mock.module("@/context/platform", () => ({
-    usePlatform: () => mode,
+    ...platform,
+    usePlatform: () => (active ? mode : platform.usePlatform()),
   }))
   persisted = (await import("@/utils/persist")).persisted
 })
 
 beforeEach(() => {
+  active = true
   localStorage.clear()
   mode = { platform: "web" }
 })

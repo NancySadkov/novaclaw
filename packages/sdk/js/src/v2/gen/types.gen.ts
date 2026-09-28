@@ -6315,6 +6315,7 @@ export type WorkProjectCommand =
       op: "create"
       name: string
       objective: string
+      directory?: string | null
       phases: Array<{
         id: string
         name: string
@@ -6327,6 +6328,7 @@ export type WorkProjectCommand =
       revision: number
       name: string
       objective: string
+      directory?: string | null
       phases: Array<{
         id: string
         name: string
@@ -17796,6 +17798,7 @@ export type V2WorkProjectListResponses = {
       id: string
       name: string
       objective: string
+      directory: string | null
       phases: Array<{
         id: string
         name: string
@@ -17850,6 +17853,7 @@ export type V2WorkProjectExecuteResponses = {
       id: string
       name: string
       objective: string
+      directory: string | null
       phases: Array<{
         id: string
         name: string

@@ -1,7 +1,7 @@
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { AgentV2 } from "@novaclaw/core/agent"
-import { useParams } from "@solidjs/router"
+import { useResolvedSessionID } from "./session-scope"
 import { batch, createEffect, createMemo, createSignal, startTransition } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useModels } from "@/context/models"
@@ -97,7 +97,7 @@ const clone = (value: State | undefined) => {
 export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   name: "Local",
   init: () => {
-    const params = useParams()
+    const sessionID = useResolvedSessionID()
     const language = useLanguage()
     const sdk = useSDK()
     const sync = useSync()
@@ -105,7 +105,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const providers = useProviders(() => sdk().directory)
     const models = useModels()
 
-    const id = createMemo(() => params.id || undefined)
+    const id = createMemo(() => sessionID() || undefined)
     /**
      * 🔴 **THE GHOST, AT ITS LAST WRITER.** This filter was `mode !== "subagent" && !hidden`, and the
      * legacy roster projection lists `build` FIRST — so `list()[0]` was `build`, `store.current` was
@@ -128,9 +128,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         (item) => item.mode !== "subagent" && !item.hidden && !AgentV2.POSTURE_IDS.has(item.name),
       )
       const governing = colleagues.find((item) => item.name === AgentV2.DEFAULT_COLLEAGUE_ID)
-      return governing === undefined
-        ? colleagues
-        : [governing, ...colleagues.filter((item) => item !== governing)]
+      return governing === undefined ? colleagues : [governing, ...colleagues.filter((item) => item !== governing)]
     })
     const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
 
@@ -172,9 +170,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
      */
     const validModel = (model: ModelKey) => {
       return (
-        !!providers.model(model.providerID, model.modelID) &&
-        connected().has(model.providerID) &&
-        models.enabled(model)
+        !!providers.model(model.providerID, model.modelID) && connected().has(model.providerID) && models.enabled(model)
       )
     }
 
@@ -478,8 +474,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
                 return
               }
               setPendingModel((m) => ({ ...m, [session]: null }))
-              void sdk().client.v2.session
-                .switchModel({ sessionID: session, model: null })
+              void sdk()
+                .client.v2.session.switchModel({ sessionID: session, model: null })
                 .catch((error: unknown) => {
                   clearPending(session)
                   fail(error)
@@ -495,8 +491,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             }
             // The session OWNS the override: stage it for the immediate UI, then write the kernel.
             setPendingModel((m) => ({ ...m, [session]: item }))
-            void sdk().client.v2.session
-              .switchModel({
+            void sdk()
+              .client.v2.session.switchModel({
                 sessionID: session,
                 model: {
                   providerID: item.providerID,
@@ -563,8 +559,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
                 ...(value ? { variant: value } : {}),
               }
               setPendingModel((m) => ({ ...m, [session]: next }))
-              void sdk().client.v2.session
-                .switchModel({
+              void sdk()
+                .client.v2.session.switchModel({
                   sessionID: session,
                   model: { providerID: item.provider.id, id: item.id, ...(value ? { variant: value } : {}) },
                 })

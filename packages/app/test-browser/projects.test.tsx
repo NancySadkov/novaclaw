@@ -28,6 +28,7 @@ const project: WorkProject.Info = {
   id: "prj_one",
   name: "Observatory",
   objective: "Map the night sky",
+  directory: "/srv/observatory",
   phases: [
     { id: "design", name: "Design", status: "complete" },
     { id: "build", name: "Build", status: "pending" },
@@ -47,7 +48,11 @@ const snapshot: WorkProject.Snapshot = {
     { id: "thea", name: "Thea", title: "Designer", paused: false, working: false, projectID: null },
   ],
 }
-const mount = async (api: ProjectsApi, confirm = async () => true) => {
+const mount = async (
+  api: ProjectsApi,
+  confirm = async () => true,
+  pickDirectory?: (select: (directory: string) => void) => void,
+) => {
   if (!base) {
     base = document.createElement("base")
     base.href = "http://localhost/"
@@ -55,7 +60,7 @@ const mount = async (api: ProjectsApi, confirm = async () => true) => {
   }
   host = document.createElement("div")
   document.body.append(host)
-  dispose = render(() => <ProjectsPanel api={api} t={t} confirm={confirm} />, host)
+  dispose = render(() => <ProjectsPanel api={api} t={t} confirm={confirm} pickDirectory={pickDirectory} />, host)
   await settle()
 }
 const button = (text: string) =>
@@ -68,6 +73,45 @@ const selectProject = async () => {
   host.querySelector<HTMLButtonElement>(".project-card")!.click()
   await settle()
 }
+
+test("edits the server folder through the picker, restores it on reopen and clears it explicitly", async () => {
+  let state = structuredClone(snapshot)
+  const commands: WorkProject.Command[] = []
+  await mount(
+    {
+      list: async () => state,
+      execute: async (command) => {
+        commands.push(command)
+        if (command.op === "edit")
+          state = { ...state, projects: [{ ...state.projects[0]!, directory: command.directory ?? null }] }
+        return state
+      },
+    },
+    async () => true,
+    (select) => select("/srv/sky survey"),
+  )
+  await selectProject()
+  expect(host.textContent).toContain("/srv/observatory")
+  button("Edit project").click()
+  await settle()
+  button("Browse folders…").click()
+  const folder = () =>
+    [...host.querySelectorAll<HTMLLabelElement>("label")]
+      .find((label) => label.textContent?.includes("Folder on server"))!
+      .querySelector("input")!
+  expect(folder().value).toBe("/srv/sky survey")
+  host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }))
+  await settle()
+  expect(commands.at(-1)).toMatchObject({ op: "edit", directory: "/srv/sky survey" })
+  expect(host.textContent).toContain("/srv/sky survey")
+  button("Edit project").click()
+  await settle()
+  expect(folder().value).toBe("/srv/sky survey")
+  button("Clear folder").click()
+  host.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }))
+  await settle()
+  expect(commands.at(-1)).toMatchObject({ op: "edit", directory: null })
+})
 
 test("shows real progress and officer counts; pause/resume and phase checkboxes call the project API", async () => {
   const commands: WorkProject.Command[] = []

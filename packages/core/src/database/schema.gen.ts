@@ -761,6 +761,7 @@ export default {
           \`id\` text PRIMARY KEY,
           \`name\` text NOT NULL,
           \`objective\` text NOT NULL,
+          \`directory\` text,
           \`phases\` text NOT NULL,
           \`paused\` integer DEFAULT false NOT NULL,
           \`revision\` integer DEFAULT 1 NOT NULL

@@ -5,6 +5,7 @@ export const WorkProjectTable = sqliteTable("work_project", {
   id: text().primaryKey(),
   name: text().notNull(),
   objective: text().notNull(),
+  directory: text(),
   phases: text({ mode: "json" }).$type<readonly WorkProject.Phase[]>().notNull(),
   paused: integer({ mode: "boolean" }).notNull().default(false),
   revision: integer().notNull().default(1),

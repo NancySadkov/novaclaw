@@ -1,6 +1,8 @@
 export * as WorkProjects from "./store"
 
 import { and, eq, inArray, isNull } from "drizzle-orm"
+import fs from "node:fs/promises"
+import path from "node:path"
 import { Context, Effect, Layer, Schedule, Schema, Semaphore } from "effect"
 import { WorkProject } from "@novaclaw/schema/work-project"
 import { Log } from "@novaclaw/schema/log"
@@ -23,6 +25,21 @@ import { ProjectNoticeTable, ProjectOfficerTable, WorkProjectTable } from "./sql
 
 type Db = Database.Interface["db"]
 type Row = typeof WorkProjectTable.$inferSelect
+
+const serverDirectory = (value: string | null | undefined) =>
+  Effect.tryPromise({
+    try: async () => {
+      const directory = value?.trim()
+      if (!directory) return null
+      if (!path.isAbsolute(directory)) throw new globalThis.Error("Use an absolute folder path on the server.")
+      if (!(await fs.stat(directory)).isDirectory()) throw new globalThis.Error("The selected path is not a folder.")
+      return path.normalize(directory)
+    },
+    catch: (cause) =>
+      new Error({
+        message: `Cannot assign the project folder: ${cause instanceof globalThis.Error ? cause.message : String(cause)}`,
+      }),
+  })
 
 export class Error extends Schema.TaggedErrorClass<Error>()("WorkProject.Error", { message: Schema.String }) {}
 export interface Interface {
@@ -69,7 +86,7 @@ export const held = (db: Db, sessionID: SessionSchema.ID) =>
 
 export const brief = (project: Row | undefined) =>
   project
-    ? `Project assignment: ${JSON.stringify(project.name)} (${project.id}). ${project.paused ? "This project is paused. Work will resume when the project is resumed." : "Work on this project toward its objective."}\nObjective: ${project.objective}\nPlan:\n${project.phases.map((phase, i) => `${i + 1}. [${phase.status}] ${phase.name}`).join("\n") || "No phases yet."}\nNova coordinates project assignments and plan updates.`
+    ? `Project assignment: ${JSON.stringify(project.name)} (${project.id}). ${project.paused ? "This project is paused. Work will resume when the project is resumed." : "Work on this project toward its objective."}\nObjective: ${project.objective}\n${project.directory ? `Project folder on the server: ${JSON.stringify(project.directory)}. Use this folder for project work; pass it as the working directory for shell commands and use absolute paths for files.\n` : "No project folder is assigned.\n"}Plan:\n${project.phases.map((phase, i) => `${i + 1}. [${phase.status}] ${phase.name}`).join("\n") || "No phases yet."}\nNova coordinates project assignments and plan updates.`
     : "Your project assignment has ended. Stop pursuing that project's objective; await your next assignment or user request."
 
 export const primeContext = (db: Db, events: EventV2.Interface, sessionID: SessionSchema.ID) =>
@@ -173,6 +190,10 @@ export const fromParts = (input: {
       lock.withPermit(
         Effect.gen(function* () {
           if (command.op === "list") return yield* snapshot
+          const directory =
+            (command.op === "create" || command.op === "edit") && command.directory !== undefined
+              ? yield* serverDirectory(command.directory)
+              : undefined
           const officers = yield* roster
           const affected = new Set<string>()
           yield* db
@@ -196,6 +217,7 @@ export const fromParts = (input: {
                         id: `prj_${crypto.randomUUID()}`,
                         name: command.name.trim(),
                         objective: command.objective.trim(),
+                        directory,
                         phases: command.phases,
                       })
                       .run()
@@ -259,7 +281,12 @@ export const fromParts = (input: {
                   if (command.op === "edit") {
                     const problem = validate(command.name, command.objective, command.phases)
                     if (problem) return yield* invalid(problem)
-                    update = { name: command.name.trim(), objective: command.objective.trim(), phases: command.phases }
+                    update = {
+                      name: command.name.trim(),
+                      objective: command.objective.trim(),
+                      phases: command.phases,
+                      ...(directory !== undefined ? { directory } : {}),
+                    }
                   } else if (command.op === "pause") update = { paused: command.paused }
                   else {
                     if (!project.phases.some((phase) => phase.id === command.phaseID))
@@ -299,7 +326,9 @@ export const fromParts = (input: {
             )
             .pipe(Effect.catch((error) => (error instanceof Error ? Effect.fail(error) : Effect.die(error))))
           yield* flush.pipe(
-            Effect.catchCause((cause) => Log.event("project.delivery.retry", { "project.fault": Log.fault(cause) })),
+            Effect.catchCause((cause) =>
+              Log.event("session.project.delivery.retry", { "project.fault": Log.fault(cause) }),
+            ),
           )
           return yield* snapshot
         }),
@@ -351,7 +380,7 @@ export const layer = Layer.effect(
         }),
     })
     yield* service.flush.pipe(
-      Effect.catchCause((cause) => Log.event("project.delivery.retry", { "project.fault": Log.fault(cause) })),
+      Effect.catchCause((cause) => Log.event("session.project.delivery.retry", { "project.fault": Log.fault(cause) })),
       Effect.repeat(Schedule.spaced("10 seconds")),
       Effect.forkScoped,
     )

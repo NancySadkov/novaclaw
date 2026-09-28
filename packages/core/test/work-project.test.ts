@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import path from "node:path"
 import { eq } from "drizzle-orm"
 import { Effect, Schema } from "effect"
 import { SqliteClient } from "@effect/sql-sqlite-bun"
@@ -7,6 +8,7 @@ import { WorkProject } from "@novaclaw/schema/work-project"
 import { ConfigAgent } from "@novaclaw/core/config/agent"
 import type { Database } from "@novaclaw/core/database/database"
 import { DatabaseMigration } from "@novaclaw/core/database/migration"
+import directoryMigration from "@novaclaw/core/database/migration/20260928002558_work_project_directory"
 import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionExecutionTable, SessionTable } from "@novaclaw/core/session/sql"
@@ -72,6 +74,74 @@ const session = (db: Db, name: string, parent?: string, archived?: number) =>
     .run()
 
 describe("work projects", () => {
+  test("upgrading a populated project table matches a fresh database", () =>
+    fixture(({ db }) =>
+      Effect.gen(function* () {
+        const columns = () =>
+          db
+            .all<{
+              name: string
+              type: string
+              notnull: number
+              dflt_value: string | null
+            }>("PRAGMA table_info(work_project)")
+            .pipe(
+              Effect.map((rows) =>
+                rows
+                  .map(({ name, type, notnull, dflt_value }) => ({ name, type, notnull, dflt_value }))
+                  .sort((a, b) => a.name.localeCompare(b.name)),
+              ),
+            )
+        const fresh = yield* columns()
+        yield* db.run("DROP TABLE work_project")
+        yield* db.run(
+          "CREATE TABLE work_project (id text PRIMARY KEY, name text NOT NULL, objective text NOT NULL, phases text NOT NULL, paused integer DEFAULT false NOT NULL, revision integer DEFAULT 1 NOT NULL)",
+        )
+        yield* db.run(
+          "INSERT INTO work_project (id, name, objective, phases) VALUES ('existing', 'Old project', 'Keep the data', '[]')",
+        )
+        yield* db.run("DELETE FROM migration WHERE id = '20260928002558_work_project_directory'")
+        yield* DatabaseMigration.applyOnly(db, [directoryMigration])
+        expect(yield* columns()).toEqual(fresh)
+        expect(yield* db.all("SELECT id, objective, directory FROM work_project")).toEqual([
+          { id: "existing", objective: "Keep the data", directory: null },
+        ])
+      }),
+    ))
+  test("server folders persist, reach officers, survive omitted edits and can be cleared", () =>
+    fixture(({ projects, reopen, notices }) =>
+      Effect.gen(function* () {
+        const directory = path.resolve(import.meta.dirname)
+        let project = (yield* projects.execute({ ...create, directory })).projects[0]!
+        expect((yield* reopen().execute({ op: "list" })).projects[0]!.directory).toBe(directory)
+        yield* projects.execute({ op: "assign", officer: "iris", projectID: project.id })
+        expect(notices.at(-1)!.text).toContain(JSON.stringify(directory))
+        expect(notices.at(-1)!.text).toContain("working directory for shell commands")
+        project = (yield* projects.execute({ ...create, op: "edit", id: project.id, revision: project.revision }))
+          .projects[0]!
+        expect(project.directory).toBe(directory)
+        project = (yield* projects.execute({ ...project, op: "edit", directory: null })).projects[0]!
+        expect(project.directory).toBeNull()
+        expect(notices.at(-1)!.text).toContain("No project folder is assigned")
+      }),
+    ))
+
+  test("rejects relative paths, files and missing server folders without saving a project", () =>
+    fixture(({ projects }) =>
+      Effect.gen(function* () {
+        for (const directory of [
+          "relative/path",
+          import.meta.filename,
+          path.join(import.meta.dirname, crypto.randomUUID()),
+        ]) {
+          expect((yield* projects.execute({ ...create, directory }).pipe(Effect.flip)).message).toContain(
+            "Cannot assign the project folder",
+          )
+        }
+        expect((yield* projects.execute({ op: "list" })).projects).toEqual([])
+      }),
+    ))
+
   test("assignment delivery survives a failed notification and a restart", () =>
     fixture(({ db, projects }) =>
       Effect.gen(function* () {

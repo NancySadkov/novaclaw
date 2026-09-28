@@ -1,5 +1,6 @@
+import * as CanonicalPath from "./util/canonical-path"
 import { NodeFileSystem } from "@effect/platform-node"
-import { basename, dirname, isAbsolute, join, parse, relative, resolve as pathResolve, sep } from "path"
+import { dirname, join, parse, relative, resolve as pathResolve } from "path"
 import { homedir } from "os"
 import { realpathSync } from "fs"
 import * as NFS from "fs/promises"
@@ -242,12 +243,7 @@ export namespace FSUtil {
   }
 
   export function windowsPath(p: string): string {
-    if (process.platform !== "win32") return p
-    return p
-      .replace(/^\/([a-zA-Z]):(?:[\\/]|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
-      .replace(/^\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
-      .replace(/^\/cygdrive\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
-      .replace(/^\/mnt\/([a-zA-Z])(?:\/|$)/, (_, drive) => `${drive.toUpperCase()}:/`)
+    return CanonicalPath.windowsPath(p)
   }
 
   // Declared as functions, not consts: the walks above are written earlier in the file and would
@@ -337,24 +333,7 @@ export namespace FSUtil {
    * arrives.
    */
   export function canonical(p: string): string {
-    const absolute = pathResolve(windowsPath(p))
-    let anchor = absolute
-    const trailing: string[] = []
-    for (;;) {
-      try {
-        const root = realpathSync.native(anchor)
-        return trailing.length === 0 ? root : join(root, ...trailing.reverse())
-      } catch (e: any) {
-        // ENOTDIR as well as ENOENT: an ancestor that is a FILE reports the former, and it is just
-        // as much a "keep walking up" answer as a missing one.
-        if (e?.code !== "ENOENT" && e?.code !== "ENOTDIR") throw e
-      }
-      const parent = dirname(anchor)
-      // Reached the volume root without finding anything real — nothing to canonicalize against.
-      if (parent === anchor) return absolute
-      trailing.push(basename(anchor))
-      anchor = parent
-    }
+    return CanonicalPath.canonical(p)
   }
 
   /**
@@ -366,7 +345,7 @@ export namespace FSUtil {
    * against a lexical parent would reject every legitimate path under it.
    */
   export function containsCanonical(parent: string, child: string) {
-    return contains(canonical(parent), canonical(child))
+    return CanonicalPath.containsCanonical(parent, child)
   }
 
   export function overlaps(a: string, b: string) {
@@ -374,7 +353,6 @@ export namespace FSUtil {
   }
 
   export function contains(parent: string, child: string) {
-    const result = relative(parent, child)
-    return result === "" || (!isAbsolute(result) && result !== ".." && !result.startsWith(`..${sep}`))
+    return CanonicalPath.contains(parent, child)
   }
 }

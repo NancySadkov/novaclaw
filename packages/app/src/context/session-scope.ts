@@ -1,4 +1,5 @@
 import { createContext, useContext, type Accessor } from "solid-js"
+import { useParams } from "@solidjs/router"
 
 /**
  * The session a page is currently showing, RESOLVED THROUGH ITS AGENT.
@@ -28,3 +29,9 @@ const SessionScopeContext = createContext<SessionScope>()
 export const SessionScopeProvider = SessionScopeContext.Provider
 
 export const useSessionScope = (): SessionScope | undefined => useContext(SessionScopeContext)
+
+export const useResolvedSessionID = () => {
+  const params = useParams<{ id?: string }>()
+  const scope = useSessionScope()
+  return (): string | undefined => (scope ? scope.sessionID() : params.id)
+}

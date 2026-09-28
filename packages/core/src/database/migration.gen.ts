@@ -139,6 +139,7 @@ export const migrations = (
     import("./migration/20260927201500_retire_the_anonymous_agents"),
     import("./migration/20260927214353_add_scratch_horizon"),
     import("./migration/20260927225632_work_projects"),
+    import("./migration/20260928002558_work_project_directory"),
     import("./migration/20260928093000_colleague_is_always_reachable"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

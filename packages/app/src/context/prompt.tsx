@@ -11,6 +11,7 @@ import { useSDK } from "./sdk"
 import { useTabs, type Tab } from "./tabs"
 import { ServerConnection } from "./server"
 import { requireServerKey } from "@/utils/session-route"
+import { useResolvedSessionID } from "./session-scope"
 
 interface PartBase {
   content: string
@@ -131,10 +132,11 @@ type PromptStore = {
 
 type Scope = { draftID: string } | { dir: string; id?: string }
 
-export function selectPromptTab(tabs: Tab[], scope: Scope, server: ServerConnection.Key) {
+export function selectPromptTab(tabs: Tab[], scope: Scope, server: ServerConnection.Key, agent?: string) {
   if ("draftID" in scope) return tabs.find((tab) => tab.type === "draft" && tab.draftID === scope.draftID)
   if (!scope.id) return
   return (
+    tabs.find((tab) => tab.type === "agent" && tab.server === server && tab.agent === agent) ??
     tabs.find((tab) => tab.type === "session" && tab.server === server && tab.sessionId === scope.id) ??
     ({ type: "session", server, sessionId: scope.id } satisfies Tab)
   )
@@ -239,13 +241,14 @@ export const createTabPromptState = (
   tabs: ReturnType<typeof useTabs>,
   tab: Tab,
   ...args: Parameters<typeof createPromptSession>
-) => tabs.state(tab, "prompt", () => createPromptSession(...args))
+) => tabs.state(tab, "prompt", () => createPromptSession(...args), `${args[0]}\0${scopeKey(args[1])}`)
 
 export const { use: usePrompt, provider: PromptProvider } = createSimpleContext({
   name: "Prompt",
   gate: false,
   init: () => {
-    const params = useParams<{ serverKey?: string; id?: string }>()
+    const params = useParams<{ serverKey?: string; agentID?: string }>()
+    const sessionID = useResolvedSessionID()
     const sdk = useSDK()
     const [search] = useSearchParams<{ draftId?: string }>()
     const serverSDK = useServerSDK()
@@ -275,9 +278,9 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
     const serverKey = () =>
       params.serverKey ? requireServerKey(params.serverKey) : ServerConnection.key(serverSDK().server)
     const scope = () =>
-      search.draftId ? { draftID: search.draftId } : { dir: base64Encode(sdk().directory), id: params.id }
+      search.draftId ? { draftID: search.draftId } : { dir: base64Encode(sdk().directory), id: sessionID() }
     const load = (scope: Scope) => {
-      const current = selectPromptTab(tabs.store, scope, serverKey())
+      const current = selectPromptTab(tabs.store, scope, serverKey(), params.agentID)
       if (current) {
         return createTabPromptState(tabs, current, serverSDK().scope, scope)
       }

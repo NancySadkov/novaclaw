@@ -1,6 +1,6 @@
 import { DataProvider } from "@novaclaw/session-ui/context"
 import { base64Encode } from "@novaclaw/core/util/encode"
-import { useLocation, useNavigate, useParams } from "@solidjs/router"
+import { useLocation, useNavigate } from "@solidjs/router"
 import { type Accessor, createEffect, createMemo, createResource, onCleanup, type ParentProps, Show } from "solid-js"
 import { LocalProvider } from "@/context/local"
 import { useSync } from "@/context/sync"
@@ -8,6 +8,7 @@ import { decode64 } from "@/utils/base64"
 import { Schema } from "effect"
 import type { ServerConnection } from "@/context/server"
 import { sessionHref } from "@/utils/session-route"
+import { useResolvedSessionID } from "@/context/session-scope"
 import { useServerSync } from "@/context/server-sync"
 
 export function DirectoryDataProvider(
@@ -19,7 +20,7 @@ export function DirectoryDataProvider(
 ) {
   const location = useLocation()
   const navigate = useNavigate()
-  const params = useParams()
+  const resolvedSessionID = useResolvedSessionID()
   const sync = useSync()
   const serverSync = useServerSync()
   const directory = () => (typeof props.directory === "function" ? props.directory() : props.directory)
@@ -40,7 +41,7 @@ export function DirectoryDataProvider(
   })
 
   createResource(
-    () => params.id,
+    () => resolvedSessionID(),
     (id) =>
       sync()
         .session.sync(id)
@@ -48,10 +49,11 @@ export function DirectoryDataProvider(
   )
 
   createEffect(() => {
-    const sessionID = params.id
+    const sessionID = resolvedSessionID()
     if (!sessionID) return
-    serverSync().session.pin(sessionID)
-    onCleanup(() => serverSync().session.unpin(sessionID))
+    const current = serverSync()
+    current.session.pin(sessionID)
+    onCleanup(() => current.session.unpin(sessionID))
   })
 
   return (

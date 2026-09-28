@@ -29,7 +29,11 @@ import { join, relative } from "node:path"
  */
 
 /** The seam itself reads the route — that is its job — and the session page proxies it. */
-const ALLOWED = new Set([join("pages", "session", "session-layout.ts"), join("pages", "session.tsx")])
+const ALLOWED = new Set([
+  join("pages", "session", "session-layout.ts"),
+  join("pages", "session.tsx"),
+  join("context", "session-scope.ts"),
+])
 
 /**
  * Known instances, as `file:line` — the line a reviewer should look at. Regenerate the list by
@@ -38,18 +42,12 @@ const ALLOWED = new Set([join("pages", "session", "session-layout.ts"), join("pa
 const KNOWN = new Set([
   "app.tsx:116",
   join("components", "dialog-fork.tsx") + ":43",
-  join("context", "comments.tsx") + ":234",
-  join("context", "file.tsx") + ":64",
   // ⚠️ `:107` → `:108` when the agent list below it gained the posture filter and the governing
   // officer (owner, 2026-09-27, the `build` ghost). This ledger is a CEILING, not a permission slip —
   // the inventory is read off line numbers, so an edit ABOVE a known instance is expected churn and
   // the honest fix is to re-point the entry, never to widen the set.
-  join("context", "local.tsx") + ":108",
   join("context", "notification.tsx") + ":169",
-  join("context", "prompt.tsx") + ":278",
   join("context", "tabs.tsx") + ":585",
-  join("context", "terminal.tsx") + ":780",
-  join("pages", "directory-layout.tsx") + ":43",
 ])
 
 const ROOT = join(import.meta.dir, "..")

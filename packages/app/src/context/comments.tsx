@@ -1,7 +1,7 @@
 import { batch, createMemo, createRoot, onCleanup } from "solid-js"
 import { createStore, reconcile, type SetStoreFunction, type Store } from "solid-js/store"
 import { createSimpleContext } from "@novaclaw/ui/context"
-import { useParams } from "@solidjs/router"
+import { useResolvedSessionID } from "./session-scope"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { Persist, persisted } from "@/utils/persist"
 import { useServerSDK } from "./server-sdk"
@@ -203,7 +203,7 @@ export const { use: useComments, provider: CommentsProvider } = createSimpleCont
   name: "Comments",
   gate: false,
   init: () => {
-    const params = useParams()
+    const sessionID = useResolvedSessionID()
     const sdk = useSDK()
     const serverSDK = useServerSDK()
     const cache = createScopedCache(
@@ -231,7 +231,7 @@ export const { use: useComments, provider: CommentsProvider } = createSimpleCont
       return cache.get(key).value
     }
 
-    const session = createMemo(() => load(base64Encode(sdk().directory), params.id))
+    const session = createMemo(() => load(base64Encode(sdk().directory), sessionID()))
 
     return {
       ready: () => session().ready(),

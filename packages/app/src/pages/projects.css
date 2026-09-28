@@ -315,6 +315,11 @@
   resize: vertical;
   min-height: 100px;
 }
+.project-directory {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  color: var(--v2-text-text-muted);
+}
 .project-section-heading {
   display: flex;
   justify-content: space-between;

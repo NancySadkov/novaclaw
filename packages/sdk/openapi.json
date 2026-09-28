@@ -21607,6 +21607,17 @@
                             "minLength": 1,
                             "maxLength": 16000
                           },
+                          "directory": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "phases": {
                             "type": "array",
                             "items": {
@@ -21653,6 +21664,7 @@
                           "id",
                           "name",
                           "objective",
+                          "directory",
                           "phases",
                           "paused",
                           "revision",
@@ -21766,6 +21778,17 @@
                             "minLength": 1,
                             "maxLength": 16000
                           },
+                          "directory": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 4096
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "phases": {
                             "type": "array",
                             "items": {
@@ -21812,6 +21835,7 @@
                           "id",
                           "name",
                           "objective",
+                          "directory",
                           "phases",
                           "paused",
                           "revision",
@@ -44564,6 +44588,17 @@
                 "minLength": 1,
                 "maxLength": 16000
               },
+              "directory": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 4096
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "phases": {
                 "type": "array",
                 "items": {
@@ -44613,6 +44648,17 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 16000
+              },
+              "directory": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 4096
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "phases": {
                 "type": "array",

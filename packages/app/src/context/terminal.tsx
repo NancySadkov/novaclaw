@@ -2,7 +2,7 @@ import { createStore, produce } from "solid-js/store"
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { isRecord } from "@novaclaw/schema/record"
 import { batch, createEffect, createMemo, createRoot, on, onCleanup } from "solid-js"
-import { useParams } from "@solidjs/router"
+import { useResolvedSessionID } from "./session-scope"
 import { useSDK, type DirectorySDK } from "./sdk"
 import type { Platform } from "./platform"
 import { useServerSDK } from "./server-sdk"
@@ -471,12 +471,7 @@ function createWorkspaceTerminalSession(
   }
 
   const cloning = new Set<string>()
-  const clone = async (
-    client: DirectorySDK["client"],
-    directory: string,
-    id: string,
-    options: CloneOptions = {},
-  ) => {
+  const clone = async (client: DirectorySDK["client"], directory: string, id: string, options: CloneOptions = {}) => {
     if (cloning.has(id)) return
     cloning.add(id)
     try {
@@ -708,7 +703,7 @@ export const { use: useTerminal, provider: TerminalProvider } = createSimpleCont
     const serverSDK = useServerSDK()
     const language = useLanguage()
     const confirm = useConfirm()
-    const params = useParams()
+    const sessionID = useResolvedSessionID()
     const cache = new Map<string, TerminalCacheEntry>()
     const scope = () => serverSDK().scope
     const directory = createMemo(() => base64Encode(sdk().directory))
@@ -777,11 +772,11 @@ export const { use: useTerminal, provider: TerminalProvider } = createSimpleCont
       return entry.value
     }
 
-    const workspace = createMemo(() => loadWorkspace(directory(), params.id, scope()))
+    const workspace = createMemo(() => loadWorkspace(directory(), sessionID(), scope()))
 
     createEffect(
       on(
-        () => ({ dir: directory(), id: params.id, scope: scope() }),
+        () => ({ dir: directory(), id: sessionID(), scope: scope() }),
         (next, prev) => {
           if (!prev?.dir) return
           if (next.dir === prev.dir && next.id === prev.id && next.scope === prev.scope) return

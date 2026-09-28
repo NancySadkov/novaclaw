@@ -1,7 +1,7 @@
 import { useParams } from "@solidjs/router"
 import { createMemo } from "solid-js"
 import { useLayout } from "@/context/layout"
-import { useSessionScope } from "@/context/session-scope"
+import { useResolvedSessionID } from "@/context/session-scope"
 import { SessionRouteKey, SessionStateKey } from "@/utils/server-scope"
 import { useSDK } from "@/context/sdk"
 import { useServerSDK } from "@/context/server-sdk"
@@ -26,11 +26,7 @@ import { base64Encode } from "@novaclaw/core/util/encode"
  * Every read of a session identity in the session tree goes through here. `useSessionKey` is its
  * first consumer, not its owner.
  */
-export const useResolvedSessionID = () => {
-  const params = useParams<{ id?: string }>()
-  const scope = useSessionScope()
-  return (): string | undefined => scope?.sessionID() ?? params.id
-}
+export { useResolvedSessionID } from "@/context/session-scope"
 
 export const useSessionKey = () => {
   const params = useParams()

@@ -2,7 +2,7 @@ export * as ExitIntent from "./exit-intent"
 
 import { mkdirSync, renameSync, writeFileSync } from "node:fs"
 import path from "node:path"
-import { FSUtil } from "@novaclaw/core/fs-util"
+import { containsCanonical } from "@novaclaw/core/util/canonical-path"
 import { Global } from "@novaclaw/core/global"
 
 /**
@@ -59,9 +59,7 @@ export const trustedStateRoots = (): readonly string[] => [
 export const isTrustedStateDir = (dir: string, trustedRoots?: readonly string[]): boolean => {
   if (!path.isAbsolute(dir)) return false
   try {
-    return (trustedRoots ?? trustedStateRoots()).some(
-      (root) => path.isAbsolute(root) && FSUtil.containsCanonical(root, dir),
-    )
+    return (trustedRoots ?? trustedStateRoots()).some((root) => path.isAbsolute(root) && containsCanonical(root, dir))
   } catch {
     return false
   }

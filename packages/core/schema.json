@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "f07a92d8-86c0-43a0-810c-287f87e56037",
+  "id": "cecdb6e7-963f-4219-8b37-c63fe9c5014a",
   "prevIds": [
-    "6bf4d867-a1bf-4a98-95cc-55c0708b8af0"
+    "f07a92d8-86c0-43a0-810c-287f87e56037"
   ],
   "ddl": [
     {
@@ -4911,6 +4911,16 @@
       "default": null,
       "generated": null,
       "name": "objective",
+      "entityType": "columns",
+      "table": "work_project"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "directory",
       "entityType": "columns",
       "table": "work_project"
     },

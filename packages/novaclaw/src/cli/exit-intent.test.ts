@@ -76,7 +76,7 @@ describe("settle", () => {
 
   test("supervised: returns the reserved code and writes the document", () => {
     const dir = tmp()
-    expect(ExitIntent.settle({ kind: "shutdown" }, 0, WATCHED(dir))).toBe(ExitIntent.EXIT_CODE)
+    expect(ExitIntent.settle({ kind: "shutdown" }, 0, WATCHED(dir), [dir])).toBe(ExitIntent.EXIT_CODE)
     expect(JSON.parse(readFileSync(path.join(dir, "exit-intent.json"), "utf8"))).toEqual({ kind: "shutdown" })
     rmSync(dir, { recursive: true, force: true })
   })
@@ -94,7 +94,7 @@ describe("settle", () => {
   test("supervised: a dormant intent carries its absolute wake time", () => {
     const dir = tmp()
     const wakeAtMs = 1787961234567
-    expect(ExitIntent.settle({ kind: "dormant", wakeAtMs }, 0, WATCHED(dir))).toBe(ExitIntent.EXIT_CODE)
+    expect(ExitIntent.settle({ kind: "dormant", wakeAtMs }, 0, WATCHED(dir), [dir])).toBe(ExitIntent.EXIT_CODE)
     expect(JSON.parse(readFileSync(path.join(dir, "exit-intent.json"), "utf8"))).toEqual({
       kind: "dormant",
       wakeAtMs,
@@ -110,7 +110,7 @@ describe("settle", () => {
     // A FILE where the state directory should be: mkdir and the write both fail.
     const blocked = path.join(dir, "blocked")
     writeFileSync(blocked, "not a directory")
-    expect(ExitIntent.settle({ kind: "shutdown" }, 0, WATCHED(blocked))).toBe(0)
+    expect(ExitIntent.settle({ kind: "shutdown" }, 0, WATCHED(blocked), [dir])).toBe(0)
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -123,7 +123,7 @@ describe("settle", () => {
   // it is litter in a directory the watchdog scans, and its presence would mean the rename failed.
   test("the atomic temp file does not survive a successful write", () => {
     const dir = tmp()
-    ExitIntent.write(dir, { kind: "restart" })
+    ExitIntent.write(dir, { kind: "restart" }, [dir])
     expect(existsSync(path.join(dir, "exit-intent.json"))).toBe(true)
     expect(existsSync(path.join(dir, "exit-intent.json.tmp"))).toBe(false)
     rmSync(dir, { recursive: true, force: true })
@@ -132,7 +132,7 @@ describe("settle", () => {
   test("it creates the state directory if the watchdog has not yet", () => {
     const parent = tmp()
     const dir = path.join(parent, "deep", "state")
-    expect(ExitIntent.settle({ kind: "shutdown" }, 0, WATCHED(dir))).toBe(ExitIntent.EXIT_CODE)
+    expect(ExitIntent.settle({ kind: "shutdown" }, 0, WATCHED(dir), [parent])).toBe(ExitIntent.EXIT_CODE)
     expect(existsSync(path.join(dir, "exit-intent.json"))).toBe(true)
     rmSync(parent, { recursive: true, force: true })
   })
@@ -232,6 +232,8 @@ describe("the supervisor's spawn is wired to it", () => {
   // The other half of the pair. Landing intent-emission WITHOUT the scrub is what arms the trap, so
   // the two are pinned together and a future edit cannot quietly keep one.
   test("and the plain server emits a shutdown intent, which is only safe because of the scrub", () => {
-    expect(serve()).toContain('ExitIntent.settle({ kind: "shutdown" }, 0)')
+    expect(readFileSync(path.join(import.meta.dir, "cmd", "serve-runtime.ts"), "utf8")).toContain(
+      'ExitIntent.settle({ kind: "shutdown" }, 0)',
+    )
   })
 })

@@ -16,11 +16,23 @@ import path from "node:path"
 const CMD = path.resolve(import.meta.dir, "..", "..", "src", "cli", "cmd")
 
 describe("the CLI listeners share the app graph", () => {
-  for (const file of ["serve.ts", "web.ts"]) {
+  for (const file of ["serve-runtime.ts", "web.ts"]) {
     test(`${file} passes the shared memo map to Server.listen`, () => {
       const source = fs.readFileSync(path.join(CMD, file), "utf8")
       expect(source).toContain('import { memoMap } from "@novaclaw/core/effect/memo-map"')
       expect(source).toMatch(/Server\.listen\(\{\s*\.\.\.opts,\s*memoMap\s*\}\)/)
     })
   }
+  test("the supervisor dispatches before the application runtime is imported", () => {
+    const source = fs.readFileSync(path.join(CMD, "serve.ts"), "utf8")
+    expect(source).toContain("ServeCommand = cmd(")
+    expect(source).not.toMatch(
+      /import .*from ["'][^"']*(?:app-runtime|instance-runtime|server\/server|serve-runtime)["']/,
+    )
+    expect(source.indexOf("if (args.supervise)")).toBeLessThan(source.indexOf('await import("./serve-runtime")'))
+    const intent = fs.readFileSync(path.join(CMD, "..", "exit-intent.ts"), "utf8")
+    expect(intent).not.toContain('from "@novaclaw/core/fs-util"')
+    const helper = fs.readFileSync(path.join(CMD, "../../../..", "core/src/util/canonical-path.ts"), "utf8")
+    expect(helper.match(/from "(?!node:)[^"]+"/g) ?? []).toEqual([])
+  })
 })

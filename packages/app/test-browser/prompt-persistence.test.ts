@@ -1,10 +1,18 @@
-import { beforeAll, describe, expect, mock, test } from "bun:test"
+import { afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import type { AsyncStorage } from "@solid-primitives/storage"
 import { createEffect, createRoot } from "solid-js"
 import { ServerScope } from "@/utils/server-scope"
 
 let Prompt: typeof import("@/context/prompt")
 let read: ((value: string | null) => void) | undefined
+const platform = { ...(await import("@/context/platform")) }
+let active = false
+beforeEach(() => {
+  active = true
+})
+afterEach(() => {
+  active = false
+})
 
 const storage: AsyncStorage = {
   getItem: () => new Promise((resolve) => (read = resolve)),
@@ -17,14 +25,9 @@ const storage: AsyncStorage = {
 }
 
 beforeAll(async () => {
-  mock.module("@solidjs/router", () => ({
-    useParams: () => ({}),
-    useSearchParams: () => [{}],
-    useLocation: () => ({ pathname: "", query: {} }),
-    useNavigate: () => () => undefined,
-  }))
   mock.module("@/context/platform", () => ({
-    usePlatform: () => ({ platform: "desktop", storage: () => storage }),
+    ...platform,
+    usePlatform: () => (active ? { platform: "desktop", storage: () => storage } : platform.usePlatform()),
   }))
 
   Prompt = await import("@/context/prompt")
