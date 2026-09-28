@@ -27,10 +27,12 @@ export interface SessionExecutionInfo {
   readonly updatedAt: number
 }
 
-export async function sessionExecutions(server: ServerConnection.HttpBase, sessionID?: string) {
+export async function sessionExecutions(server: ServerConnection.HttpBase, sessionID?: string, signal?: AbortSignal) {
   const response = await instanceFetch<{ data: SessionExecutionInfo[] }>(server, {
     route: "api/session/execution",
     query: { sessionID },
+    signal,
+    timeoutMs: 15_000,
   })
   return response.data
 }

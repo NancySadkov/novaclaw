@@ -14,7 +14,7 @@ import * as realSync from "@/context/sync"
 import * as realSessionView from "@/pages/session/use-session-view"
 import * as realSettingsNavigation from "@/components/settings-navigation"
 import * as realDirectoryPicker from "@/components/directory-picker"
-import * as realSolidQuery from "@tanstack/solid-query"
+import * as realSolidQuery from "@/utils/query"
 import { dict as en } from "@/i18n/en"
 
 /**
@@ -170,7 +170,7 @@ const SERVER_SDK = () => ({ scope: "local", server: CONNECTION, event: { listen:
 const SYNC = () => ({ data: { config: {}, agent: [] } })
 
 beforeAll(async () => {
-  mock.module("@tanstack/solid-query", () => ({
+  mock.module("@/utils/query", () => ({
     ...SNAP.solidQuery,
     createQuery: gated(() => ({ isLoading: false, data: undefined }), SNAP.solidQuery.createQuery),
   }))

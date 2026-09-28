@@ -1765,6 +1765,25 @@ class ApiV2Session extends NovaClawApiClient {
   }
 
   /**
+   * Get session changes
+   *
+   * Read saved file patches when opening a session's changes review.
+   */
+  public diff<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { sessionID: parameters?.["sessionID"] }
+    return (options?.client ?? this.client).get<T.V2SessionDiffResponses, T.V2SessionDiffErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/diff",
+      ...options,
+      path,
+    })
+  }
+
+  /**
    * List child sessions
    *
    * Retrieve the sessions forked or spawned from the given parent session.

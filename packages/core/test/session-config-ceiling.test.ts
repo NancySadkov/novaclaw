@@ -57,22 +57,12 @@ describe("the memory ceiling", () => {
   })
 
   test("the clamp runs on the RESOLVED config, not folded under the chain", () => {
-    // ⚠️ A source claim, because the ordering is the property and no behavioural test can see it:
-    // folding the ceiling into the defaults would put it BENEATH the chain, where an explicit `true`
-    // climbs straight back over it — which is exactly the case the first test above forbids.
-    // ⚠️ Pinned as NESTING, not as character offsets. The first version compared `indexOf` positions
-    // of two formatting-specific literals, and both vanished when the entry point started walking the
-    // chain itself and the call collapsed onto one line — it went red on a file whose ordering was
-    // still correct. What this test is about is that the clamp WRAPS the resolve, so that is what it
-    // reads.
     const source = fs.readFileSync(path.join(SRC, "session", "effective-config.ts"), "utf8")
-    // 🗑️ RE-PINNED 2026-09-16. The claim is unchanged — the clamp WRAPS the resolve, so an explicit
-    // `true` cannot climb over the ceiling — but the fold it used to name (`ProjectDefaults.fold`, the
-    // folder's tune, preceded by a fault that strengthened the defaults) is gone with the
-    // `novaclaw.json` mechanism. What survives is the colleague's fold under the same name, and the
-    // nesting is still the property being asserted: `clampToCeilings(resolveConfig(defaults, chain))`.
     expect(source).toMatch(/AgentDefaults\.fold\(EFFECTIVE_CONFIG_DEFAULTS/)
-    expect(source).toMatch(/clampToCeilings\(\s*resolveConfig\(\s*defaults/)
+    expect(source).toMatch(/const inherited = resolveConfig\(defaults, chain\)/)
+    expect(source).toMatch(
+      /const resolved = clampToCeilings\(\s*[^?]+\?\s*\{\s*\.\.\.inherited, shortChat: true\s*\}\s*:\s*inherited,\s*currentCeilings\(\)/,
+    )
   })
 
   test("no reader re-applies the ceiling by hand", () => {
@@ -81,11 +71,7 @@ describe("the memory ceiling", () => {
     // Its own definition, its own caller, and the engine's capability gate — which asks a different
     // question (may a global engine work at all) and has no session to clamp. Both the explicit
     // The sole world-memory engine enforces that privacy switch on its maintenance loop.
-    const allowed = new Set([
-      "kb-graph/memory-setting.ts",
-      "kb-graph/world-memory.ts",
-      "session/effective-config.ts",
-    ])
+    const allowed = new Set(["kb-graph/memory-setting.ts", "kb-graph/world-memory.ts", "session/effective-config.ts"])
     const offenders = SOURCES.filter(
       (item) => !allowed.has(item.rel) && /MemorySetting\.memoryEnabled\(/.test(item.code),
     ).map((item) => item.rel)

@@ -16,6 +16,7 @@ const session = (id: string, parentID?: string): Session =>
 
 function setup(sessions: Record<string, Session>) {
   const get: unknown[] = []
+  const diff: unknown[] = []
   const client = {
     v2: {
       session: {
@@ -25,13 +26,35 @@ function setup(sessions: Record<string, Session>) {
           return { data: sessions[id] ? { data: sessions[id] } : undefined }
         },
         todo: async () => ({ data: { data: [] } }),
+        diff: async (input: { sessionID: string }) => {
+          diff.push(input)
+          return { data: { data: sessions[input.sessionID]?.summary?.diffs ?? [] } }
+        },
       },
     },
   } as unknown as NovaclawClient
-  return { get, store: createServerSession(client) }
+  return { get, diff, store: createServerSession(client) }
 }
 
 describe("server session", () => {
+  test("patches load only on demand and live updates stay out of the metadata cache", async () => {
+    const diffs = [{ file: "src/main.ts", patch: "@@ -1 +1 @@\n-old\n+new\n", additions: 1, deletions: 1 }]
+    const info = { ...session("root"), summary: { files: 1, additions: 1, deletions: 1, diffs } }
+    const ctx = setup({ root: info })
+    await ctx.store.sync("root")
+    expect(ctx.diff).toEqual([])
+    expect(ctx.store.get("root")?.summary?.files).toBe(1)
+    expect(ctx.store.get("root")?.summary?.diffs).toBeUndefined()
+    expect(ctx.store.data.session_diff.root).toBeUndefined()
+    await ctx.store.diff("root")
+    expect(ctx.get).toHaveLength(1)
+    expect(ctx.diff).toEqual([{ sessionID: "root" }])
+    expect(ctx.store.data.session_diff.root).toEqual(diffs)
+    ctx.store.remember({ ...info, summary: { ...info.summary, diffs: [] } })
+    expect(ctx.store.data.session_diff.root).toEqual([])
+    expect(ctx.store.get("root")?.summary?.diffs).toBeUndefined()
+  })
+
   test("resolves lineage by session ID without directory", async () => {
     const ctx = setup({ child: session("child", "root"), root: session("root") })
 

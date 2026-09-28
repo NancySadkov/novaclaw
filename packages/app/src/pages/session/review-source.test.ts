@@ -39,6 +39,8 @@ describe("review controller", () => {
     const controller = createReviewController({
       source: () => source,
       recorded: () => ["recorded"],
+      recordedCount: () => 1,
+      recordedError: () => undefined,
       recordedRevision: () => "tree_2",
       vcs: () => ["live"],
       vcsFetched: () => true,
@@ -57,5 +59,30 @@ describe("review controller", () => {
     error = new Error("offline")
     expect(controller.diffs()).toEqual([])
     expect(controller.error()).toBe(error)
+  })
+
+  test("saved changes keep their count while patches load and surface read failures", () => {
+    let recorded: string[] | undefined
+    let error: unknown
+    const controller = createReviewController({
+      source: () => ({ mode: "turn", kind: "recorded" }),
+      recorded: () => recorded,
+      recordedCount: () => 12,
+      recordedError: () => error,
+      recordedRevision: () => "tree",
+      vcs: () => undefined,
+      vcsFetched: () => false,
+      vcsPending: () => false,
+      vcsError: () => undefined,
+    })
+    expect(controller.count()).toBe(12)
+    expect(controller.ready()).toBe(false)
+    error = new Error("unreachable")
+    expect(controller.ready()).toBe(true)
+    expect(controller.error()).toBe(error)
+    error = undefined
+    recorded = []
+    expect(controller.ready()).toBe(true)
+    expect(controller.count()).toBe(0)
   })
 })

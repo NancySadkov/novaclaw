@@ -15,7 +15,7 @@ import {
   type VcsCache,
 } from "./types"
 import { canDisposeDirectory, pickDirectoriesToEvict } from "./eviction"
-import { useQuery } from "@tanstack/solid-query"
+import { useQuery } from "@/utils/query"
 import { QueryOptionsApi } from "../server-sync"
 import { directoryKey, type DirectoryKey } from "./utils"
 import type { ServerScope } from "@/utils/server-scope"

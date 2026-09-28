@@ -115,7 +115,12 @@ export function createServerSession(
   const remember = (input: Session) => {
     // Store-boundary contract: time fields are epoch millis (live-event payloads carry ISO
     // strings — see utils/session-time.ts).
-    const session = normalizeSessionTimes(input)
+    const normalized = normalizeSessionTimes(input)
+    const session = normalized.summary
+      ? { ...normalized, summary: { ...normalized.summary, diffs: undefined } }
+      : normalized
+    if (normalized.summary?.diffs && data.session_diff[session.id] !== undefined)
+      setData("session_diff", session.id, reconcile(cleanDiffs([...normalized.summary.diffs]), { key: "file" }))
     setData("info", session.id, reconcile(session))
     // Completion is durable while `session.status` is live-only. Folding a completed session must
     // therefore repair a missed or overwritten terminal event instead of preserving stale `busy`.
@@ -471,13 +476,17 @@ export function createServerSession(
       if (data.session_diff[sessionID] !== undefined && !options?.force) return Promise.resolve()
       return runInflight(inflightDiff, sessionID, () => {
         const active = generation(sessionID)
-        return retryRequest(() => client.v2.session.get({ sessionID })).then((result) => {
+        return withRequestDeadline({
+          timeoutMs: settings?.requestTimeoutMs,
+          label: "Loading session changes",
+          run: (signal) => client.v2.session.diff({ sessionID }, { signal }),
+        }).then((result) => {
           if (generations.get(sessionID) !== active) return
-          // V1-nuke slice C: the drain-end changes summary rides the native record (Session.Info.summary).
+          if (result.error) throw result.error
           setData(
             "session_diff",
             sessionID,
-            reconcile(cleanDiffs([...(result.data?.data?.summary?.diffs ?? [])]), { key: "file" }),
+            reconcile(cleanDiffs([...(result.data?.data ?? [])]), { key: "file" }),
           )
         })
       })

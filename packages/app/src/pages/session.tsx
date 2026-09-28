@@ -1,5 +1,5 @@
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import { createQuery, skipToken, useQueryClient } from "@tanstack/solid-query"
+import { createQuery, skipToken, useQueryClient } from "@/utils/query"
 import {
   onCleanup,
   Show,
@@ -361,9 +361,8 @@ export default function Page() {
     return open
   }, desktopReviewOpen())
 
-  // Native: the session-changes review reads the session record's summary diffs
-  // (`info().summary.diffs`), not a per-user-message summary (native user messages carry none).
-  const turnDiffs = createMemo(() => list(info()?.summary?.diffs))
+  const turnDiffs = () => params.id ? sync().data.session_diff[params.id] : undefined
+  const [diffError, setDiffError] = createSignal<unknown>()
   const changesOptions = createMemo<ChangeMode[]>(() => {
     const list: ChangeMode[] = []
     const vcs = sync().data.vcs
@@ -383,7 +382,7 @@ export default function Page() {
   const executionQuery = createQuery(() => ({
     queryKey: ["session-execution", server.current?.http.url ?? "", params.id ?? ""],
     enabled: !!server.current && !!params.id,
-    queryFn: () => sessionExecutions(server.current!.http, params.id),
+    queryFn: ({ signal }) => sessionExecutions(server.current!.http, params.id, signal),
     refetchInterval: 2_000,
   }))
   const executionAttempt = createMemo(() => executionQuery.data?.find((item) => item.sessionID === params.id))
@@ -538,9 +537,9 @@ export default function Page() {
       queryKey: [...vcsKey(), mode] as const,
       enabled,
       queryFn: mode
-        ? () =>
+        ? ({ signal }) =>
             sdk()
-              .client.v2.vcs.diff({ mode })
+              .client.v2.vcs.diff({ mode }, { signal })
               .then((result) => list(result.data?.data))
         : skipToken,
     }
@@ -549,6 +548,8 @@ export default function Page() {
   const review = createReviewController({
     source: reviewSource,
     recorded: turnDiffs,
+    recordedCount: () => info()?.summary?.files ?? 0,
+    recordedError: diffError,
     recordedRevision: () => info()?.summary?.to,
     vcs: () => vcsQuery.data,
     vcsFetched: () => vcsQuery.isFetched,
@@ -701,6 +702,16 @@ export default function Page() {
     terminalOpen: () => view().terminal.opened(),
     activeTerminal: terminal.active,
   })
+
+  const loadSessionDiff = (id: string, force = false) => {
+    const key = sessionKey()
+    setDiffError(undefined)
+    void sync().session.diff(id, { force }).catch((error) => {
+      if (sessionKey() === key) setDiffError(error)
+    })
+  }
+
+  createEffect(on(() => [sessionKey(), wantsReview()] as const, () => setDiffError(undefined)))
 
   createEffect(() => {
     if (!sync().data.vcs) return
@@ -976,15 +987,16 @@ export default function Page() {
     if (!id) return
 
     if (!wantsReview()) return
+    if (diffError()) return
     if (sync().data.session_diff[id] !== undefined) return
     if (sync().status === "loading") return
 
-    void sync().session.diff(id)
+    loadSessionDiff(id)
   })
 
   createEffect(
     on(
-      () => [sessionKey(), wantsReview()] as const,
+      () => [sessionKey(), wantsReview(), info()?.summary?.to] as const,
       ([key, wants]) => {
         if (diffFrame !== undefined) cancelAnimationFrame(diffFrame)
         if (diffTimer !== undefined) window.clearTimeout(diffTimer)
@@ -1001,7 +1013,7 @@ export default function Page() {
           diffTimer = window.setTimeout(() => {
             diffTimer = undefined
             if (sessionKey() !== key) return
-            void sync().session.diff(id, { force: true })
+            loadSessionDiff(id, true)
           }, 0)
         })
       },

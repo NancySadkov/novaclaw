@@ -22,7 +22,9 @@ export function resolveReviewSource(input: {
 
 export function createReviewController<T>(input: {
   source: () => ReviewSource
-  recorded: () => T[]
+  recorded: () => T[] | undefined
+  recordedCount: () => number
+  recordedError: () => unknown
   recordedRevision: () => string | undefined
   vcs: () => T[] | undefined
   vcsFetched: () => boolean
@@ -31,7 +33,7 @@ export function createReviewController<T>(input: {
 }) {
   const usesVcs = () => input.source().mode === "git" || input.source().mode === "branch"
   const diffs = () => {
-    if (!usesVcs()) return input.recorded()
+    if (!usesVcs()) return input.recorded() ?? []
     if (!input.vcsFetched() || input.vcsError()) return []
     return input.vcs() ?? []
   }
@@ -40,9 +42,9 @@ export function createReviewController<T>(input: {
     source: input.source,
     usesVcs,
     diffs,
-    count: () => diffs().length,
-    ready: () => !usesVcs() || !input.vcsPending(),
-    error: () => (usesVcs() ? input.vcsError() : undefined),
+    count: () => (usesVcs() ? diffs().length : (input.recorded()?.length ?? input.recordedCount())),
+    ready: () => (usesVcs() ? !input.vcsPending() : input.recorded() !== undefined || !!input.recordedError()),
+    error: () => (usesVcs() ? input.vcsError() : input.recordedError()),
     revision: () => (input.source().kind === "recorded" ? input.recordedRevision() : undefined),
   }
 }

@@ -9,7 +9,8 @@
 // Threads and throughput are free (already synced per session). Memory is the one number that has to
 // be asked for, so it is polled on a slow cadence and degrades to "unknown" rather than to zero —
 // `pressure.ts` is emphatic that an unmeasurable host must never read as a healthy one.
-import { createMemo, createResource, onCleanup, onMount } from "solid-js"
+import { createMemo, onCleanup, onMount } from "solid-js"
+import { createSettledResource } from "@/utils/settled-resource"
 import { useGlobal } from "@/context/global"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
@@ -86,15 +87,10 @@ export function useSystemLoad(): () => SystemLoad {
   const server = useServer()
   const global = useGlobal()
   const connection = createMemo(() => server.current ?? global.servers.list()[0])
-  // 🔴 `.catch`, and it is the whole difference between a degraded tile and a dead app. This
-  // resource polls the INSTANCE, so it fails exactly when the instance is down — and a rejected
-  // resource read inside the memo below throws out of the memo into the app's ErrorBoundary, which
-  // replaces the entire UI with "Something went wrong" while the supervisor is calmly restarting
-  // the sidecar underneath. Measured 2026-08-18 in dev Electron: the error page appeared ~2 s after
-  // the sidecar was killed, BEFORE the connection banner's 2 s anti-flicker gate could show it, and
-  // it never cleared when the sidecar came back. An unreachable host is the "cannot be measured"
-  // case this file already documents — so it degrades to `undefined` and the tile reads "—".
-  const [usage, actions] = createResource(connection, (value) => instancePressure(value.http).catch(() => undefined))
+  const [usage, actions] = createSettledResource(
+    connection,
+    (value, { signal }): ReturnType<typeof instancePressure> => instancePressure(value.http, signal),
+  )
 
   // 🔴 GATED ON VISIBILITY, and that is not an optimisation (review H3, 2026-08-23).
   //
@@ -139,9 +135,7 @@ export function useSystemLoad(): () => SystemLoad {
   })
 
   return createMemo<SystemLoad>(() => {
-    // `.latest`, not `usage()`: a refetch every 10 s would otherwise blank the number it is
-    // refreshing, so the tile would flicker to "—" and back forever.
-    const report = usage.latest
+    const report = usage()
     const memory = report?.memory
     return {
       ...activity(),

@@ -10,7 +10,7 @@ import { and, asc, desc, eq, gt, isNull, like, lt, or, type SQL } from "drizzle-
 import { Effect } from "effect"
 import type { Database } from "../database/database"
 import type { SessionV2 } from "../session"
-import { fromRow } from "./info"
+import { fromRow, metadataColumns } from "./info"
 import { SessionSchema } from "./schema"
 import { SessionTable } from "./sql"
 import { SessionLocationRecovery } from "./location-recovery"
@@ -54,7 +54,7 @@ export const list = (db: Db, input: SessionV2.ListInput = {}): Effect.Effect<Ses
       )
     }
     const query = db
-      .select()
+      .select(metadataColumns)
       .from(SessionTable)
       .where(conditions.length > 0 ? and(...conditions) : undefined)
       .orderBy(
@@ -67,11 +67,22 @@ export const list = (db: Db, input: SessionV2.ListInput = {}): Effect.Effect<Ses
 
 export const get = (db: Db, sessionID: SessionSchema.ID): Effect.Effect<SessionSchema.Info | undefined> =>
   db
-    .select()
+    .select(metadataColumns)
     .from(SessionTable)
     .where(eq(SessionTable.id, sessionID))
     .get()
     .pipe(
       Effect.orDie,
       Effect.map((row) => (row ? fromRow(row) : undefined)),
+    )
+
+export const diff = (db: Db, sessionID: SessionSchema.ID) =>
+  db
+    .select({ diffs: SessionTable.summary_diffs })
+    .from(SessionTable)
+    .where(eq(SessionTable.id, sessionID))
+    .get()
+    .pipe(
+      Effect.orDie,
+      Effect.map((row) => (row ? (row.diffs ?? []) : undefined)),
     )

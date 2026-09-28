@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
-import { createQuery } from "@tanstack/solid-query"
+import { createQuery } from "@/utils/query"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import type { AgentTeamChatMessage } from "@novaclaw/sdk/v2"
 import { AgentPortrait } from "@/components/agent-portrait"
@@ -119,8 +119,8 @@ export function TeamChatScreen(props: { agentID: string; roster: readonly AgentL
 
   const initialQuery = createQuery(() => ({
     queryKey: ["agent-team-chat", server.key, sdk().directory, props.agentID],
-    queryFn: async () => {
-      const response = await sdk().client.v2.agent.teamChat({ agentID: props.agentID, limit: "50" })
+    queryFn: async ({ signal }) => {
+      const response = await sdk().client.v2.agent.teamChat({ agentID: props.agentID, limit: "50" }, { signal })
       if (response.error) throw response.error
       return response.data?.data
     },
@@ -129,12 +129,12 @@ export function TeamChatScreen(props: { agentID: string; roster: readonly AgentL
   const tailQuery = createQuery(() => ({
     queryKey: ["agent-team-chat-tail", server.key, sdk().directory, props.agentID, latestCursor()],
     enabled: Boolean(latestCursor()),
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const response = await sdk().client.v2.agent.teamChat({
         agentID: props.agentID,
         limit: "50",
         after: latestCursor(),
-      })
+      }, { signal })
       if (response.error) throw response.error
       return response.data?.data
     },

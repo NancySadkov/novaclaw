@@ -27,7 +27,7 @@ import { trimSessions } from "./global-sync/session-trim"
 import type { ProjectMeta } from "./global-sync/types"
 import { SESSION_RECENT_LIMIT } from "./global-sync/types"
 import { formatServerError } from "@/utils/server-errors"
-import { queryOptions, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/solid-query"
+import { queryOptions, useMutation, useQuery, useQueryClient } from "@/utils/query"
 import { createInstanceRecovery } from "./global-sync/instance-recovery"
 import { createRefreshQueue } from "./global-sync/queue"
 import { directoryKey } from "./global-sync/utils"
@@ -118,9 +118,9 @@ export function createServerSyncContextInner(serverSDK: ServerSDK, projects: Ret
 
   const queryOptionsApi = makeQueryOptionsApi(serverSDK.scope, () => serverSDK.client, sdkFor)
 
-  const [configQuery, providerQuery, pathQuery] = useQueries(() => ({
-    queries: [queryOptionsApi.globalConfig(), queryOptionsApi.providers(null), queryOptionsApi.path(null)],
-  }))
+  const configQuery = useQuery(() => queryOptionsApi.globalConfig())
+  const providerQuery = useQuery(() => queryOptionsApi.providers(null))
+  const pathQuery = useQuery(() => queryOptionsApi.path(null))
 
   // ⚠️ Hoisted and ANNOTATED, not inlined into `createStore`. `ready` derives from `error`, so a
   // getter naming `globalStore` makes that binding's type circular through its own initializer

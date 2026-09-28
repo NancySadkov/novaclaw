@@ -2,8 +2,7 @@ export * as UsageStats from "./usage-stats"
 
 import { DateTime, Effect } from "effect"
 import { Database } from "./database/database"
-import { SessionTable } from "./session/sql"
-import { fromRow } from "./session/info"
+import { SessionRead } from "./session/read"
 import { SessionMessageRead } from "./session/message-read"
 
 /**
@@ -98,7 +97,7 @@ const phaseDuration = (
 
 export const allSessions = Effect.fnUntraced(function* () {
   const { db } = yield* Database.Service
-  return (yield* db.select().from(SessionTable).all().pipe(Effect.orDie)).map((row) => fromRow(row))
+  return yield* SessionRead.list(db)
 })
 
 export const aggregate = Effect.fn("UsageStats.aggregate")(function* (

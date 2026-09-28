@@ -1,4 +1,4 @@
-import { createMemo, createResource } from "solid-js"
+import { createMemo, createResource, onCleanup } from "solid-js"
 
 /**
  * **A `createResource` whose accessor cannot throw, and which can tell a failure from an empty
@@ -79,6 +79,7 @@ export interface SettledActions<T> {
 }
 
 export interface SettledFetcherInfo<T> {
+  readonly signal: AbortSignal
   /** The previous value, with a previous FAILURE reported as `undefined` rather than leaking. */
   readonly value: T | undefined
   readonly refetching: unknown
@@ -101,12 +102,16 @@ export function createSettledResource<T, S>(
     return value === undefined || value === null || value === false
   })
 
+  let controller: AbortController | undefined
+  onCleanup(() => controller?.abort())
   const [raw, actions] = createResource<T | Failed, S>(src, async (value, info) => {
+    controller?.abort()
+    controller = new AbortController()
     // `async` is load-bearing: it converts a SYNCHRONOUS throw in the caller's fetcher into a
     // rejection this `catch` can see, which a `.catch` on the returned promise cannot do.
     try {
       const previous = info.value === FAILED ? undefined : (info.value as T | undefined)
-      return await fetcher(value, { value: previous, refetching: info.refetching })
+      return await fetcher(value, { value: previous, refetching: info.refetching, signal: controller.signal })
     } catch {
       return FAILED
     }

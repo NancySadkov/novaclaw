@@ -565,6 +565,19 @@ export const makeSessionGroups = <
             }),
           ),
       )
+      .add(
+        HttpApiEndpoint.get("session.diff", "/api/session/:sessionID/diff", {
+          params: { sessionID: Session.ID },
+          success: Schema.Struct({ data: Schema.Array(Session.ChangeDiff) }),
+          error: SessionNotFoundError,
+        })
+          .middleware(sessionLocationMiddleware)
+          .annotateMerge(OpenApi.annotations({
+            identifier: "v2.session.diff",
+            summary: "Get session changes",
+            description: "Read saved file patches when opening a session's changes review.",
+          })),
+      )
       // V1-nuke A0 (todo.md ☢️): the native twins of the last live bare-/session reads/ops —
       // children (threads tree), update (rename/metadata), remove, fork, todo. Same core ops the V1
       // handlers already routed to (F1c/F1f); only the wire shape changes (native Session.Info).

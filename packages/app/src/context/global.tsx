@@ -1,5 +1,6 @@
 import { createSimpleContext } from "@novaclaw/ui/context"
-import { createEffect, createMemo, createResource, createRoot, createSignal, onCleanup } from "solid-js"
+import { createEffect, createMemo, createRoot, createSignal, onCleanup } from "solid-js"
+import { createSettledResource } from "@/utils/settled-resource"
 import { createServerProjects, ServerConnection, useServer } from "./server"
 import { useServerHealth } from "@/utils/server-health"
 import { createServerSdkContext } from "./server-sdk"
@@ -123,18 +124,12 @@ function createServerCtx(
    * round trips for identical data — and the dialog's own in-flight window is what made it possible
    * to save a colleague's brief away as `""` before its record had arrived (D3).
    *
-   * ⚠️ `.catch(() => [])` is not optional. `createResource.read()` re-throws into whatever memo
-   * reads it, and this app has exactly ONE ErrorBoundary — at its root — so an unreachable instance
-   * used to replace the entire UI, including on the boot route. A roster we cannot read degrades to
-   * "nobody listed", never to a dead app; the surfaces that must distinguish "empty" from "failed"
-   * keep their own error signal.
-   *
    * ⚠️ It is DELIBERATELY the v2 list and not the sync store's `data.agent`, which is the legacy
    * `GET /agent` projection: entries keyed by `name`, carrying no `title`, `personality`, `avatar`
    * or `memory` (`apps/agent-list.ts`).
    */
   const [rosterError, setRosterError] = createSignal<unknown>(undefined)
-  const [agentRoster, agentRosterActions] = createResource(
+  const [agentRoster, agentRosterActions] = createSettledResource(
     () => sdk.client.v2,
     (client) =>
       listAgents(client).then(
@@ -179,7 +174,7 @@ function createServerCtx(
   })
 
   const agents = {
-    list: (): readonly AgentLike[] => agentRoster.latest ?? [],
+    list: (): readonly AgentLike[] => agentRoster() ?? [],
     loading: () => agentRoster.loading,
     /** The last failure, or `undefined` once a read succeeds. */
     error: () => rosterError(),

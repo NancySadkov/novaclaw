@@ -29,7 +29,7 @@ import {
 import type { SessionSchema } from "./schema"
 import type { SessionTable } from "./sql"
 
-type Row = typeof SessionTable.$inferSelect
+type Row = Pick<typeof SessionTable.$inferSelect, SessionConfigColumn>
 type RowInsert = typeof SessionTable.$inferInsert
 
 /**

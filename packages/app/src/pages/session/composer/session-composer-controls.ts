@@ -1,4 +1,4 @@
-import { createQuery } from "@tanstack/solid-query"
+import { createQuery } from "@/utils/query"
 import { applyOptimistic } from "./optimistic-write"
 import { useSearchParams } from "@solidjs/router"
 import { type Accessor, createMemo, onCleanup, onMount } from "solid-js"

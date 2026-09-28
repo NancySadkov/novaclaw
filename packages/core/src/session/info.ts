@@ -1,4 +1,5 @@
 import { DateTime } from "effect"
+import { getTableColumns } from "drizzle-orm"
 import { Location } from "../location"
 import { AbsolutePath, RelativePath } from "../schema"
 import { SessionConfigColumns } from "./config-columns"
@@ -8,7 +9,14 @@ import { SessionTable } from "./sql"
 import { SessionMessage } from "./message"
 import { Snapshot } from "../snapshot"
 
-export function fromRow(row: typeof SessionTable.$inferSelect): SessionSchema.Info {
+const { summary_diffs, ...metadataColumns } = getTableColumns(SessionTable)
+export { metadataColumns }
+
+type SessionRow = typeof SessionTable.$inferSelect
+
+export function fromRow(
+  row: Omit<SessionRow, "summary_diffs"> & Partial<Pick<SessionRow, "summary_diffs">>,
+): SessionSchema.Info {
   return SessionSchema.Info.make({
     id: SessionSchema.ID.make(row.id),
     slug: row.slug,

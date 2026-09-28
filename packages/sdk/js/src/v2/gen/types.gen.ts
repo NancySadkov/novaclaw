@@ -14027,6 +14027,43 @@ export type V2SessionRemoveResponses = {
 
 export type V2SessionRemoveResponse = V2SessionRemoveResponses[keyof V2SessionRemoveResponses]
 
+export type V2SessionDiffData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/diff"
+}
+
+export type V2SessionDiffErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionDiffError = V2SessionDiffErrors[keyof V2SessionDiffErrors]
+
+export type V2SessionDiffResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: Array<SessionChangeDiff>
+  }
+}
+
+export type V2SessionDiffResponse = V2SessionDiffResponses[keyof V2SessionDiffResponses]
+
 export type V2SessionChildrenData = {
   body?: never
   path: {

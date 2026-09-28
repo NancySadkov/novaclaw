@@ -1,5 +1,5 @@
 import { createMemo, Show } from "solid-js"
-import { createQuery } from "@tanstack/solid-query"
+import { createQuery } from "@/utils/query"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
@@ -54,8 +54,8 @@ export function SessionActivityIndicators(props: { sessionID: string }) {
 
   const shellQuery = createQuery(() => ({
     queryKey: ["session-running-shells", server.key, sdk().directory, props.sessionID],
-    queryFn: async () => {
-      const response = await sdk().client.v2.session.bash.list({ sessionID: props.sessionID })
+    queryFn: async ({ signal }) => {
+      const response = await sdk().client.v2.session.bash.list({ sessionID: props.sessionID }, { signal })
       return response.data?.data ?? []
     },
     refetchInterval: 2_000,

@@ -82,7 +82,6 @@ const ASYNC_WINDOW = 400
 const LEDGER: { resources: Record<string, number>; folds: Record<string, number> } = {
   resources: {
     "app.tsx": 2,
-    "apps/system-load.ts": 1,
     "components/dialog-select-directory-v2.tsx": 2,
     "components/dialog-select-server.tsx": 1,
     "components/settings-v2/appearance.tsx": 1,
@@ -95,8 +94,6 @@ const LEDGER: { resources: Record<string, number>; folds: Record<string, number>
     "components/settings-v2/nova-health.tsx": 2,
     "components/settings-v2/policies.tsx": 1,
     "components/settings-v2/servers.tsx": 1,
-    "components/titlebar.tsx": 1,
-    "context/global.tsx": 1,
     "context/language.tsx": 1,
     "pages/directory-layout.tsx": 1,
     "pages/session/composer/session-responder-dock.tsx": 1,

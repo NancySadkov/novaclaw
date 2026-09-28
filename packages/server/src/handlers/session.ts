@@ -33,6 +33,7 @@ import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attemp
 import { SessionReceipt } from "@novaclaw/core/session/receipt"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionSchema } from "@novaclaw/core/session/schema"
+import { SessionRead } from "@novaclaw/core/session/read"
 import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
 import { EventV2 } from "@novaclaw/core/event"
 import { SessionEvent } from "@novaclaw/core/session/event"
@@ -341,6 +342,18 @@ const SessionCatalogHandler = handlerLayer(
                   ),
                 ),
               }
+            }),
+          )
+          .handle(
+            "session.diff",
+            Effect.fn(function* (ctx) {
+              const { db } = yield* Database.Service
+              const data = yield* SessionRead.diff(db, ctx.params.sessionID)
+              if (!data) return yield* new SessionNotFoundError({
+                sessionID: ctx.params.sessionID,
+                message: `Session not found: ${ctx.params.sessionID}`,
+              })
+              return { data }
             }),
           )
           // v0.2.0 batch 4.4 — the resolved-config view. See `./session-config.ts` for why the shape is

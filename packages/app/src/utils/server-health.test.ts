@@ -43,7 +43,7 @@ describe("checkServerHealth", () => {
     })
   })
 
-  test("allows slow servers thirty seconds by default", async () => {
+  test("bounds each probe so startup can retry a newly available server", async () => {
     const timeout = Object.getOwnPropertyDescriptor(AbortSignal, "timeout")
     let timeoutMs = 0
     Object.defineProperty(AbortSignal, "timeout", {
@@ -65,7 +65,7 @@ describe("checkServerHealth", () => {
       if (!timeout) Reflect.deleteProperty(AbortSignal, "timeout")
     })
 
-    expect(timeoutMs).toBe(30_000)
+    expect(timeoutMs).toBe(2_000)
   })
 
   test("returns unhealthy when request fails", async () => {

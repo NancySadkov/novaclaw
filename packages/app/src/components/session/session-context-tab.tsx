@@ -3,7 +3,7 @@ import type { JSX } from "solid-js"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { SessionPortability } from "@novaclaw/core/session/portability"
-import { createQuery } from "@tanstack/solid-query"
+import { createQuery } from "@/utils/query"
 import { useSync } from "@/context/sync"
 import { useServerSync } from "@/context/server-sync"
 import { Icon } from "@novaclaw/ui/v2/icon"
@@ -124,10 +124,10 @@ export function SessionContextTab() {
   // The captured wire bodies (for Export Prompt) come from `session.promptCapture` on demand.
   const promptSource = createQuery(() => ({
     queryKey: ["session-prompt-source", server.key, sdk().directory, params.id],
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       const id = params.id
       if (!id) return {}
-      const response = await sdk().client.v2.session.promptSource({ sessionID: id })
+      const response = await sdk().client.v2.session.promptSource({ sessionID: id }, { signal })
       return response.data?.data ?? {}
     },
     enabled: params.id !== undefined,

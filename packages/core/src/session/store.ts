@@ -9,7 +9,7 @@ import { MessageDecodeError } from "./error"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
 import { SessionMessageTable, SessionTable } from "./sql"
-import { fromRow } from "./info"
+import { SessionRead } from "./read"
 
 export interface Interface {
   readonly get: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info | undefined>
@@ -34,8 +34,7 @@ export const layer = Layer.effect(
 
     return Service.of({
       get: Effect.fn("SessionStore.get")(function* (sessionID) {
-        const row = yield* db.select().from(SessionTable).where(eq(SessionTable.id, sessionID)).get().pipe(Effect.orDie)
-        return row ? fromRow(row) : undefined
+        return yield* SessionRead.get(db, sessionID)
       }),
       children: Effect.fn("SessionStore.children")(function* (sessionID) {
         const rows = yield* db

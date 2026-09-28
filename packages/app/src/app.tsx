@@ -737,6 +737,7 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
         const reach = serverReachability(yield* Effect.promise(() => checkServerHealth(http)))
         if (reach !== "unreachable") return reach
         if (checkMode() === "background" || type === "http") return reach
+        yield* Effect.sleep("250 millis")
       }
     }).pipe(
       Effect.timeoutOrElse({

@@ -1,6 +1,8 @@
-import { createEffect, createMemo, createResource, createSignal, untrack } from "solid-js"
+import { createEffect, createMemo, createSignal, untrack } from "solid-js"
+import { createSettledResource } from "@/utils/settled-resource"
 import { createStore } from "solid-js/store"
 import { useLocation, useNavigate } from "@solidjs/router"
+import type { SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 
@@ -148,7 +150,7 @@ export function Titlebar() {
         const tabs = useTabs()
         const tabsStore = tabs.store
         const tabsStoreActions = tabs
-        const [session] = createResource(
+        const [session] = createSettledResource(
           () => {
             const route = layout.route()
             if (route.type !== "session") return undefined
@@ -157,11 +159,10 @@ export function Titlebar() {
               .find((item) => ServerConnection.key(item) === (route.server ?? server.key))
             return conn ? { route, sdk: global.ensureServerCtx(conn).sdk } : undefined
           },
-          ({ route, sdk }) =>
+          ({ route, sdk }, { signal }): Promise<Session | undefined> =>
             sdk.client.v2.session
-              .get({ sessionID: route.sessionId })
-              .then((x) => x.data?.data)
-              .catch(() => {}),
+              .get({ sessionID: route.sessionId }, { signal })
+              .then((x) => x.data?.data),
         )
 
         const matchRoute = (route: LayoutRoute) => {
