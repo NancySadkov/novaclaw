@@ -1,8 +1,20 @@
 import { rename } from "node:fs/promises"
 import { dialog, shell } from "electron"
+import { Cause } from "effect"
 import { movedAsideNotice, movedAsidePath, recoveryChoices } from "./boot-recovery"
 import { describeSidecarFailure } from "./boot"
 import { exportDebugLogs, write as writeLog } from "./logging"
+
+export async function handleBootFailure(
+  error: unknown,
+  stage: "startup" | "health",
+  logger: { error(message: string, metadata: unknown): void },
+  quit: (relaunch: boolean, code: number) => Promise<void>,
+) {
+  const failure = describeSidecarFailure(Cause.fail(error), stage)
+  logger.error("local server failed", { stage, kind: failure.kind, summary: failure.summary, detail: failure.detail })
+  if (stage === "startup") await offerBootRecovery(failure, quit)
+}
 
 export async function offerBootRecovery(
   failure: ReturnType<typeof describeSidecarFailure>,

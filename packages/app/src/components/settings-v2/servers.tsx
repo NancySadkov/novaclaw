@@ -16,21 +16,18 @@ import { DialogServerV2 } from "./dialog-server-v2"
 import { InstancesAccess } from "./instances-access"
 import { SettingsIdentityV2 } from "./identity"
 import { SettingsListV2 } from "./parts/list"
-import { AddServerMenu, isWslServer, useFilteredWslServers, WslServerSettings } from "@/wsl/settings"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 
 export const SettingsServersV2: Component = () => {
   const dialog = useDialog()
   const language = useLanguage()
   const controller = useServerManagementController()
   const [store, setStore] = createStore({ filter: "" })
-  const wslServers = useFilteredWslServers(() => store.filter)
 
-  const showSearch = createMemo(
-    () => controller.sortedItems().filter((item) => !isWslServer(item)).length + wslServers().length > 1,
-  )
+  const showSearch = createMemo(() => controller.sortedItems().length > 1)
 
   const filtered = createMemo(() => {
-    const items = controller.sortedItems().filter((item) => !isWslServer(item))
+    const items = controller.sortedItems()
     const query = store.filter.trim()
     if (!query) return items
     return fuzzysort
@@ -51,7 +48,7 @@ export const SettingsServersV2: Component = () => {
   // R7: the LAN scan runs on an INSTANCE (the UI can't open multicast sockets) — prefer the
   // local one (it shares the user's network); any known instance works as a fallback.
   const scanner = createMemo(() => {
-    const candidates = controller.sortedItems().filter((item) => !isWslServer(item))
+    const candidates = controller.sortedItems()
     return candidates.find((item) => ServerConnection.local(item)) ?? candidates[0]
   })
   const [discovered, discoveredActions] = createResource(
@@ -79,7 +76,9 @@ export const SettingsServersV2: Component = () => {
       >
         <div class="settings-v2-tab-header-row">
           <h2 class="settings-v2-tab-title">{language.t("settings.tab.instances")}</h2>
-          <AddServerMenu onAddServer={openAdd} />
+          <ButtonV2 variant="ghost-muted" icon="plus" onClick={openAdd}>
+            {language.t("dialog.server.add.button")}
+          </ButtonV2>
         </div>
         <Show when={showSearch()}>
           <div class="settings-v2-tab-search">
@@ -116,7 +115,7 @@ export const SettingsServersV2: Component = () => {
         <SettingsIdentityV2 />
         <InstancesAccess />
         <Show
-          when={filtered().length > 0 || wslServers().length > 0}
+          when={filtered().length > 0}
           fallback={
             <div class="settings-v2-servers-status">
               <span>{store.filter ? language.t("palette.empty") : language.t("dialog.server.empty")}</span>
@@ -127,7 +126,6 @@ export const SettingsServersV2: Component = () => {
           }
         >
           <SettingsListV2>
-            <WslServerSettings controller={controller} servers={wslServers} />
             <For each={filtered()}>
               {(item) => {
                 const key = ServerConnection.key(item)

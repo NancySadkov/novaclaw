@@ -152,6 +152,9 @@ describe("JhProcessRunner.plannedRunner", () => {
             cwd: input.cwd,
             worktree: input.cwd,
             consent: "none",
+            ...(process.platform === "win32"
+              ? { processEnv: { SystemRoot: process.env.SystemRoot, Path: `${process.env.SystemRoot}\\System32` } }
+              : {}),
           }),
       })
       const startedAt = Date.now()

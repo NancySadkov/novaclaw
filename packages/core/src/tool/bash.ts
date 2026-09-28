@@ -400,14 +400,10 @@ export const layer = Layer.effectDiscard(
                 }
 
               if ((yield* fs.stat(target.canonical)).type !== "Directory")
-                return yield* Effect.fail(new Error(`Working directory is not a directory: ${displayPath(target.canonical)}`))
+                return yield* Effect.fail(
+                  new Error(`Working directory is not a directory: ${displayPath(target.canonical)}`),
+                )
 
-              // Agents use NovaClaw's supplied POSIX shell. Resolved above the approval reduction so
-              // parsing and execution use the exact same shell.
-              // `bash -c` is not a login shell: prepend the bash's own userland to PATH
-              // so git + coreutils resolve even on a machine with neither installed
-              // (no-op for non-MSYS shells — bundleOverlay returns undefined for them).
-              const bundleEnv = HostExec.bundleOverlay(shell)
               // OFF-C (layer 9): in offline mode, point the child's HTTP clients (curl/pip/
               // npm/git) at a dead proxy sink with the allowlist in NO_PROXY, so the model's
               // own shell fails closed on WAN egress (no-op when offline mode is off).
@@ -468,7 +464,6 @@ export const layer = Layer.effectDiscard(
                 hostileInput,
                 backend,
                 safeMode,
-                overlay: bundleEnv,
                 egress,
                 credentials: peerEnv,
               })

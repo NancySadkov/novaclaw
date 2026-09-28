@@ -1,11 +1,8 @@
 import { createHash } from "node:crypto"
-import path from "path"
 import { Context, Effect, Layer } from "effect"
 import { makeGlobalNode } from "../effect/app-node"
 import { FSUtil } from "../fs-util"
-import { Global } from "../global"
 import { bundledToolFile } from "../bundled-tool"
-import { which } from "../util/which"
 
 export namespace RipgrepBinary {
   export const VERSION = "15.1.0"
@@ -19,49 +16,6 @@ export namespace RipgrepBinary {
     "x64-win32": { platform: "x86_64-pc-windows-msvc", extension: "zip" },
   } as const
 
-  /**
-   * ─── the integrity pin ─────────────────────────────────────────────────────────────────────────
-   *
-   * SHA-256 of the release **archive** we fetch and of the **executable** it must yield, keyed
-   * *version → platform triple*. Until 2026-07-30 the only check on this path was
-   * `bytes.byteLength === 0`: whatever the network handed back was written to `Global.Path.bin`,
-   * extracted, `chmod 0755`'d and executed as the tree-search engine of an agent OS. A swapped
-   * release asset, a box with a poisoned trust store, or an upstream account compromise was
-   * therefore arbitrary code execution inside NovaClaw — the same "one-key arbitrary-code-execution
-   * path" ruling 12 (`notes/reports/decisions-v0.2.0.md`) refused to create for the update feed,
-   * except already shipped and with no key at all.
-   *
-   * **Why two digests and not one.** The archive digest alone protects a *fresh install only*:
-   * `target` carries no version in its name, so an `rg` left behind by a pre-pin build — i.e. every
-   * existing user — is short-circuited to forever, unverified, and the fix would protect nobody who
-   * already has one. The executable digest is what makes the real invariant true: **the path
-   * `filepath` returns has always hashed to a pinned digest**, whether it was downloaded now or
-   * inherited from an earlier build. It also fixes a latent bug — bumping `VERSION` never replaced
-   * an already-installed rg — and keeps an *offline* box working, since an inherited-but-genuine
-   * binary verifies in place with no network at all.
-   *
-   * **Provenance (2026-07-30).** Archive digests: two independent derivations agreeing on all seven
-   * — each asset's sibling `<asset>.sha256` published by the release, fetched raw over HTTPS, and
-   * the asset downloaded and hashed locally with `sha256sum`. Executable digests: extracted from
-   * those verified archives and hashed locally; `x64-win32` additionally matches the `rg.exe` winget
-   * had installed on the author's machine from a separate download. Recording them *after review* is
-   * the actual security property — the pin turns "whatever a remote host serves today" into "the exact
-   * bytes a human vetted once", which a digest fetched at install time could never do, since
-   * anything able to swap the asset can swap its sibling.
-   *
-   * ⚠️ **A missing digest is a REFUSAL, never a skip.** The guard-shaped no-op — fall through to
-   * `extract` when the table has no entry — leaves the download unverified while *reading* as
-   * verified, which is ruling 2's *a fault is never described falsely* broken on the exact path this
-   * finding is about. `verifyDigest` throws on absent-or-malformed before it looks at any bytes.
-   *
-   * ⚠️ **To bump `VERSION`:** re-fetch every `<asset>.sha256` for the new tag, re-extract for the
-   * executable digests, and add a whole new block here. `CHECKSUM[VERSION]` below is the mechanical
-   * half of that instruction — the index stops typechecking the moment `VERSION` names a release
-   * this table has never heard of, and the `Record<keyof typeof PLATFORM, …>` shape means a block
-   * covering six of seven triples, or one missing an `executable`, does not compile either. The
-   * runtime twin of every one of those checks lives in `test/ripgrep-integrity.test.ts`, so they
-   * still bite where `tsgo` is not run.
-   */
   export const CHECKSUM = {
     "15.1.0": {
       "arm64-darwin": {
@@ -95,7 +49,6 @@ export namespace RipgrepBinary {
     },
   } satisfies Record<string, Record<keyof typeof PLATFORM, { archive: string; executable: string }>>
 
-  /** The digest set for the release `VERSION` actually asks the network for. See the ⚠️ above. */
   const PINNED: Record<keyof typeof PLATFORM, { archive: string; executable: string }> = CHECKSUM[VERSION]
 
   const HEX_SHA256 = /^[0-9a-f]{64}$/
@@ -122,25 +75,6 @@ export namespace RipgrepBinary {
         `refusing to install ${source}: SHA-256 mismatch — pinned ${expected}, got ${actual}. ` +
           `ripgrep was not installed.`,
       )
-  }
-
-  /**
-   * The non-throwing twin, for the one question that is a *decision* rather than a fault: is the
-   * binary already on disk one of ours, or must it be re-downloaded? Delegating to `verifyDigest`
-   * rather than re-implementing the comparison is deliberate — two copies of a fail-closed check are
-   * two chances for one of them to drift open.
-   *
-   * ⚠️ The parameter is `candidate`, not `bytes`, on purpose: `ripgrep-integrity.test.ts` locates the
-   * archive gate by the literal `verifyDigest(bytes`, and a second call spelled that way would make
-   * its ordering assertion match *this* line instead — a guard quietly checking the wrong thing.
-   */
-  export const matchesDigest = (candidate: Uint8Array, expected: string | undefined): boolean => {
-    try {
-      verifyDigest(candidate, expected, "the installed ripgrep")
-      return true
-    } catch {
-      return false
-    }
   }
 
   interface Interface {
@@ -176,22 +110,8 @@ export namespace RipgrepBinary {
               verifyDigest(bytes, pin.executable, embedded)
               return embedded
             }
-
-            // A system rg is the user's own OS package (winget/apt/brew), not an artefact NovaClaw
-            // downloaded. The pin below governs only our embedded path; refusing a user-selected
-            // system version would turn supply-chain verification into package-manager policy.
-            const system = yield* Effect.sync(() => which(process.platform === "win32" ? "rg.exe" : "rg"))
-            if (system && (yield* fs.isFile(system).pipe(Effect.orDie))) return system
-
-            // An already-installed copy is ours to trust only when it hashes to the pinned executable.
-            // A genuine inherited binary passes here without any network access.
-            const target = path.join(Global.Path.bin, `rg${process.platform === "win32" ? ".exe" : ""}`)
-            if (yield* fs.isFile(target).pipe(Effect.orDie)) {
-              const existing = yield* fs.readFile(target).pipe(Effect.orElseSucceed(() => undefined))
-              if (existing !== undefined && matchesDigest(existing, pin.executable)) return target
-            }
             throw new Error(
-              "ripgrep is unavailable. Desktop builds embed a verified local copy; other installs must provide rg through the OS package manager.",
+              "NovaClaw's bundled ripgrep is missing. Restore the third-party/ripgrep folder from the NovaClaw distribution.",
             )
           }),
         ),

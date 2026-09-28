@@ -86,7 +86,7 @@
  *
  * `connect-src` (via `default-src`) permits arbitrary http/https/ws/wss because the UI is a thin
  * client that reaches an instance **by URL**: the built-in
- * sidecar on a random loopback port, a WSL distro's server, and — the shipped remote-access
+ * sidecar on a random loopback port and — the shipped remote-access
  * feature (R1–R8) — any peer instance the user types in at runtime, plus its terminal WebSocket.
  * That list changes after the document has loaded, and a CSP cannot. Hardcoding localhost would
  * break remote-instance mode. Passive fetches (img/font/media) are left equally open on purpose:

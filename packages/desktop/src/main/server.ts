@@ -387,17 +387,23 @@ export async function superviseLocalServer(
     unresponsive = false
     reason = "crash"
     startedAt = Date.now()
-    const handle = await spawnLocalServer(hostname, port, password, {
-      ...options,
-      onExit: (code) => {
-        options.onExit?.(code)
-        // Pre-ready exits reject spawnOnce's await and are counted by the caller — only a child
-        // that made it past ready is handled here (readySeen is set before any later event fires).
-        // `stopping` is the proof of an intentional shutdown. Any exit observed here—including 0—
-        // is unexpected and must heal; otherwise a buggy clean exit silently leaves a dead port.
-        if (readySeen && !stopping) onChildGone(unresponsive || code === 0 ? 1 : code)
+    const handle = await spawnLocalServer(
+      hostname,
+      port,
+      password,
+      {
+        ...options,
+        onExit: (code) => {
+          options.onExit?.(code)
+          // Pre-ready exits reject spawnOnce's await and are counted by the caller — only a child
+          // that made it past ready is handled here (readySeen is set before any later event fires).
+          // `stopping` is the proof of an intentional shutdown. Any exit observed here—including 0—
+          // is unexpected and must heal; otherwise a buggy clean exit silently leaves a dead port.
+          if (readySeen && !stopping) onChildGone(unresponsive || code === 0 ? 1 : code)
+        },
       },
-    }, runtime)
+      runtime,
+    )
     readySeen = true
     return handle
   }
@@ -578,14 +584,15 @@ export function createLocalServerEnvironment(): Record<string, string> {
     // already ships.
     env.NODE_PATH = join(process.resourcesPath, "app.asar.unpacked", "node_modules")
   }
-  if (process.platform === "win32" && app.isPackaged) {
-    env.NOVACLAW_RIPGREP_PATH = join(process.resourcesPath, "third-party", "ripgrep", "rg.exe")
-    env.NOVACLAW_W64DEVKIT_PATH = join(process.resourcesPath, "third-party", "w64devkit")
-    env.NOVACLAW_PORTABLE_GIT_PATH = join(process.resourcesPath, "third-party", "portable-git")
+  if (process.platform === "win32") {
+    const resources = app.isPackaged ? process.resourcesPath : join(app.getAppPath(), "resources")
+    env.NOVACLAW_RIPGREP_PATH = join(resources, "third-party", "ripgrep", "rg.exe")
+    env.NOVACLAW_W64DEVKIT_PATH = join(resources, "third-party", "w64devkit")
+    env.NOVACLAW_PORTABLE_GIT_PATH = join(resources, "third-party", "portable-git")
     // The embedded `magick` (owner, 2026-08-23). Same shape and the same reason as the line above:
     // `shell.ts` puts it on the agent's PATH, and without this the binary ships and is unreachable —
     // a capability that exists on disk and not in the product.
-    env.NOVACLAW_IMAGEMAGICK_PATH = join(process.resourcesPath, "third-party", "imagemagick")
+    env.NOVACLAW_IMAGEMAGICK_PATH = join(resources, "third-party", "imagemagick")
   }
   return env
 }

@@ -38,6 +38,29 @@ const advance = async () => {
   for (let i = 0; i < 4; i++) await Promise.resolve()
 }
 
+for (const hook of ["afterWindow", "afterCredentials"] as const) {
+  test(`${hook} failure cannot block the local server or its health result`, async () => {
+    for (const asynchronous of [false, true]) {
+      const optional: unknown[] = []
+      const error = new Error("optional capability unavailable")
+      const f = fixture({
+        [hook]: () => {
+          if (asynchronous) return Promise.reject(error)
+          throw error
+        },
+        optionalFailure: (error) => optional.push(error),
+      })
+      f.ready.resolve()
+      f.started.resolve({ credentials, healthy: Promise.resolve() })
+      await f.lifecycle.run()
+      expect(await f.lifecycle.awaitInitialization()).toEqual(credentials)
+      expect(f.lifecycle.phase()).toBe("sidecar-healthy")
+      expect(f.failures).toEqual([])
+      expect(optional).toEqual([error])
+    }
+  })
+}
+
 test("one run opens the window before starting the instance and publishes credentials once", async () => {
   const f = fixture()
   const run = f.lifecycle.run()
@@ -87,7 +110,7 @@ test("quit closes boot before Electron readiness and stops all owners under one 
     instances: [
       {
         stop: () => {
-          calls.push("wsl")
+          calls.push("auxiliary")
           return second.promise
         },
       },
@@ -105,7 +128,7 @@ test("quit closes boot before Electron readiness and stops all owners under one 
   const run = f.lifecycle.run()
   const quit = f.lifecycle.quit()
   expect(f.lifecycle.quit()).toBe(quit)
-  expect(calls).toEqual(["local", "wsl"])
+  expect(calls).toEqual(["local", "auxiliary"])
   f.ready.resolve()
   await run
   expect(f.events).toEqual([])
@@ -150,7 +173,7 @@ test("one deadline bounds a hung owner and a throwing owner cannot skip its sibl
     instances: [
       {
         stop: () => {
-          calls.push("wsl")
+          calls.push("auxiliary")
           return new Promise(() => {})
         },
       },
@@ -164,7 +187,7 @@ test("one deadline bounds a hung owner and a throwing owner cannot skip its sibl
     },
   })
   const quit = f.lifecycle.quit()
-  expect(calls).toEqual(["local", "wsl"])
+  expect(calls).toEqual(["local", "auxiliary"])
   fire()
   expect(await quit).toEqual({ outcome: "forced", failures: [error] })
   expect(f.lifecycle.phase()).toBe("stopped")

@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import { statSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { app } from "electron"
 import { ServerToken } from "@novaclaw/core/server-token"
@@ -33,12 +33,11 @@ const HEALTH_INTERVAL_MS = 100
  */
 export function bundledServerBinary(): string | undefined {
   const override = process.env.NOVACLAW_SERVER_BINARY
-  if (override) return existsSync(override) ? override : undefined
-  // A development run keeps the Electron sidecar: it rebuilds from source in seconds, while the
-  // standalone binary is a full compile. `NOVACLAW_SERVER_BINARY` opts a dev run into the real thing.
-  if (!app.isPackaged) return undefined
-  const candidates = [join(process.resourcesPath, "server", serverExecutableName())]
-  return candidates.find((candidate) => existsSync(candidate))
+  if (!override && !app.isPackaged) return undefined
+  const binary = override ?? join(process.resourcesPath, "server", serverExecutableName())
+  if (!statSync(binary, { throwIfNoEntry: false })?.isFile())
+    throw new Error(`NovaClaw's bundled server is missing or incomplete: ${binary}. Restore the NovaClaw distribution.`)
+  return binary
 }
 
 function serverExecutableName() {
@@ -210,7 +209,9 @@ export function createStandaloneServer(
       child = started
       const url = loopbackUrl(options.hostname, port)
       const id = randomUUID()
-      started.stdout?.on("data", (chunk: Buffer) => writeLog("server", "stdout", { message: chunk.toString("utf8").trimEnd() }))
+      started.stdout?.on("data", (chunk: Buffer) =>
+        writeLog("server", "stdout", { message: chunk.toString("utf8").trimEnd() }),
+      )
       started.stderr?.on("data", (chunk: Buffer) => {
         const message = chunk.toString("utf8").trimEnd()
         writeLog("server", "stderr", { message }, "warn")
@@ -278,4 +279,3 @@ export function createStandaloneServer(
     })
   }
 }
-

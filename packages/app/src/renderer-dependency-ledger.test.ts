@@ -66,6 +66,8 @@ const KEPT_WITHOUT_IMPORTS: Record<string, Record<string, string>> = {
       "zero DIRECT imports, but this top-level pin is what resolves motion-dom's `^12.29.2` to 12.29.2. Drop it and the transitive floats to the newest 12.x.",
   },
   desktop: {
+    "@lydell/node-pty":
+      "The copied Node server runtime leaves this native terminal module external. Electron resolves it from the desktop installation when a terminal opens.",
     "jsonc-parser":
       "zero imports in this package, but `packages/novaclaw/script/build-node.ts` leaves it EXTERNAL in the sidecar bundle (its Node entry is UMD and cannot be inlined), and the desktop copies those chunks into `out/main/chunks`. The packaged app resolves it from THIS manifest's node_modules; drop it and the sidecar dies at load in the packaged app only.",
     "@ladybugdb/wasm-core":

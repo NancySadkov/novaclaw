@@ -42,7 +42,7 @@ void mock.module("./store", () => ({
   },
 }))
 
-const { createStandaloneServer } = await import("./standalone-server")
+const { createStandaloneServer, bundledServerBinary } = await import("./standalone-server")
 
 const roots: string[] = []
 const spawned: number[] = []
@@ -60,8 +60,8 @@ function fakeServerScript(root: string) {
       'import http from "node:http"',
       'const port = Number(process.argv.find((arg) => arg.startsWith("--port=")).slice("--port=".length))',
       "const server = http.createServer((_request, response) => {",
-      '  response.statusCode = 200',
-      '  response.end(JSON.stringify({ healthy: true }))',
+      "  response.statusCode = 200",
+      "  response.end(JSON.stringify({ healthy: true }))",
       "})",
       'server.listen(port, "127.0.0.1")',
     ].join("\n"),
@@ -111,6 +111,33 @@ async function waitGone(pid: number) {
 }
 
 describe("standalone server owner", () => {
+  test("a missing selected or packaged server cannot select the development runtime", async () => {
+    const { app } = await import("electron")
+    const saved = process.env.NOVACLAW_SERVER_BINARY
+    const packaged = Object.getOwnPropertyDescriptor(app, "isPackaged")!
+    const resources = Object.getOwnPropertyDescriptor(process, "resourcesPath")
+    try {
+      delete process.env.NOVACLAW_SERVER_BINARY
+      expect(bundledServerBinary()).toBeUndefined()
+      const root = mkdtempSync(join(tmpdir(), "novaclaw-standalone-binary-"))
+      roots.push(root)
+      process.env.NOVACLAW_SERVER_BINARY = join(root, "novaclaw.exe")
+      expect(() => bundledServerBinary()).toThrow(/bundled server is missing or incomplete/)
+      writeFileSync(process.env.NOVACLAW_SERVER_BINARY, "fixture")
+      expect(bundledServerBinary()).toBe(process.env.NOVACLAW_SERVER_BINARY)
+      delete process.env.NOVACLAW_SERVER_BINARY
+      Object.defineProperty(app, "isPackaged", { value: true, configurable: true })
+      Object.defineProperty(process, "resourcesPath", { value: root, configurable: true })
+      expect(() => bundledServerBinary()).toThrow(/bundled server is missing or incomplete/)
+    } finally {
+      Object.defineProperty(app, "isPackaged", packaged)
+      if (resources) Object.defineProperty(process, "resourcesPath", resources)
+      else Reflect.deleteProperty(process, "resourcesPath")
+      if (saved === undefined) delete process.env.NOVACLAW_SERVER_BINARY
+      else process.env.NOVACLAW_SERVER_BINARY = saved
+    }
+  })
+
   test("starts the binary, publishes credentials from the live endpoint, and stops the tree", async () => {
     const root = mkdtempSync(join(tmpdir(), "novaclaw-standalone-"))
     roots.push(root)

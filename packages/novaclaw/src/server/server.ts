@@ -1,6 +1,6 @@
 import { armBodyIdle } from "./body-idle"
 
-import { NodeHttpServer } from "@effect/platform-node"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import { ConfigProvider, Context, Effect, Exit, Layer, Scope } from "effect"
 import { HttpIncomingMessage, HttpRouter, HttpServer } from "effect/unstable/http"
 import * as FileSystem from "effect/FileSystem"
@@ -255,8 +255,8 @@ function setupMdns(opts: ListenOptions, port: number, scope: Scope.Scope) {
         Effect.map((id) => ({ id, v: InstallationVersion })),
         Effect.catch(() => Effect.succeed(undefined)),
       )
-      yield* Effect.sync(() => MDNS.publish(port, opts.mdnsDomain, txt))
       yield* Scope.addFinalizer(scope, unpublish)
+      yield* Effect.promise(() => MDNS.publish(port, opts.mdnsDomain, txt))
       return unpublish
     }
     if (opts.mdns) {

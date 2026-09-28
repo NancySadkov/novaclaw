@@ -13,6 +13,7 @@ import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
 import { testEffect } from "./lib/effect"
 import { bypassedPolicyGate, toolIdentity, executeTool, settleTool, toolDefinitions } from "./lib/tool"
 import { ToolPolicyGate } from "@novaclaw/core/tool-policy-gate"
+import { ToolDeadline } from "@novaclaw/core/tool-deadline"
 
 const sessionID = SessionV2.ID.make("ses_webfetch_test")
 const requests: Array<{ readonly url: string; readonly headers: Record<string, string> }> = []
@@ -80,10 +81,10 @@ describe("WebFetchTool helpers", () => {
     expect(() => decode({ url: "https://example.com", timeout: WebFetchTool.MAX_TIMEOUT_SECONDS + 1 })).toThrow()
   })
 
-  test("ports HTML text and markdown conversions without active content", () => {
+  test("ports HTML text and markdown conversions without active content", async () => {
     const html = "<h1>Hello</h1><script>bad()</script><p>world <strong>wide</strong></p><style>.bad {}</style>"
     expect(WebFetchTool.extractTextFromHTML(html)).toBe("Helloworld wide")
-    expect(WebFetchTool.convertHTMLToMarkdown(html)).toBe("# Hello\n\nworld **wide**")
+    expect(await WebFetchTool.convertHTMLToMarkdown(html)).toBe("# Hello\n\nworld **wide**")
   })
 })
 
@@ -376,7 +377,7 @@ describe("WebFetchTool registration", () => {
       ).pipe(Effect.forkChild)
       yield* TestClock.adjust(Duration.seconds(1))
 
-      expect(yield* Fiber.join(fiber)).toEqual({ type: "error", value: "Unable to fetch https://1.1.1.1/slow" })
+      expect(yield* Fiber.join(fiber)).toEqual({ type: "error", value: ToolDeadline.expired("webfetch", 1000) })
     }),
   )
 

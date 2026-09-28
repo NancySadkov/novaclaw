@@ -1,10 +1,6 @@
 export * as NpmConfig from "./npm-config"
 
 import { fileURLToPath } from "url"
-// @ts-expect-error npm does not publish types for this internal config API.
-import Config from "@npmcli/config"
-// @ts-expect-error npm does not publish types for this internal config API.
-import { definitions, flatten, nerfDarts, shorthands } from "@npmcli/config/lib/definitions/index.js"
 import { Effect } from "effect"
 
 const npmPath = fileURLToPath(new URL("..", import.meta.url))
@@ -69,6 +65,12 @@ export const load = (dir: string) =>
   Effect.tryPromise({
     try: async () =>
       preservingNodeEnv(async () => {
+        const [{ default: Config }, { definitions, flatten, nerfDarts, shorthands }] = await Promise.all([
+          // @ts-expect-error npm does not publish types for this internal config API.
+          import("@npmcli/config"),
+          // @ts-expect-error npm does not publish types for this internal config API.
+          import("@npmcli/config/lib/definitions/index.js"),
+        ])
         const config = new Config({
           npmPath,
           cwd: dir,

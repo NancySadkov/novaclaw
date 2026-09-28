@@ -24,6 +24,7 @@ void mock.module("bonjour-service", () => ({
 
 // Import Server AFTER the mock so the MDNS module picks up the stub.
 const { Server } = await import("../../src/server/server")
+const MDNS = await import("../../src/server/mdns")
 
 const original = {
   NOVACLAW_SERVER_PASSWORD: Flag.NOVACLAW_SERVER_PASSWORD,
@@ -39,6 +40,13 @@ afterEach(async () => {
 })
 
 describe("HttpApi Server.listen mDNS", () => {
+  test("shutdown during library loading cannot publish a late advertisement", async () => {
+    const pending = MDNS.publish(43210)
+    MDNS.unpublish()
+    await pending
+    expect(events).toEqual([])
+  })
+
   test("skips publish for loopback hostnames", async () => {
     Flag.NOVACLAW_SERVER_PASSWORD = "mdns-secret"
     Flag.NOVACLAW_SERVER_USERNAME = "novaclaw"

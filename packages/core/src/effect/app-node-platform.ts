@@ -1,4 +1,5 @@
-import { NodeFileSystem, NodePath } from "@effect/platform-node"
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as NodePath from "@effect/platform-node/NodePath"
 import { LLMClient, RequestExecutor } from "@novaclaw/llm/route"
 import { Effect, FileSystem, Layer, Path } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"

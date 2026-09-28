@@ -8,6 +8,8 @@ import { WindowsGit } from "./windows-git"
 
 const savedGit = process.env.NOVACLAW_PORTABLE_GIT_PATH
 const savedKit = process.env.NOVACLAW_W64DEVKIT_PATH
+const savedMagick = process.env.NOVACLAW_IMAGEMAGICK_PATH
+const savedRipgrep = process.env.NOVACLAW_RIPGREP_PATH
 const roots: string[] = []
 
 afterEach(() => {
@@ -15,6 +17,10 @@ afterEach(() => {
   else process.env.NOVACLAW_PORTABLE_GIT_PATH = savedGit
   if (savedKit === undefined) delete process.env.NOVACLAW_W64DEVKIT_PATH
   else process.env.NOVACLAW_W64DEVKIT_PATH = savedKit
+  if (savedMagick === undefined) delete process.env.NOVACLAW_IMAGEMAGICK_PATH
+  else process.env.NOVACLAW_IMAGEMAGICK_PATH = savedMagick
+  if (savedRipgrep === undefined) delete process.env.NOVACLAW_RIPGREP_PATH
+  else process.env.NOVACLAW_RIPGREP_PATH = savedRipgrep
   Git.binary.reset()
   Shell.agentDefault.reset()
   Shell.preferred.reset()
@@ -27,32 +33,44 @@ test("Windows Git resolves from the packaged tree and precedes host PATH in the 
   roots.push(root)
   const gitRoot = path.join(root, "portable-git")
   const kitRoot = path.join(root, "w64devkit")
+  const magickRoot = path.join(root, "imagemagick")
+  const searchRoot = path.join(root, "ripgrep")
   mkdirSync(path.join(gitRoot, "cmd"), { recursive: true })
   mkdirSync(path.join(gitRoot, "usr", "bin"), { recursive: true })
   mkdirSync(path.join(kitRoot, "bin"), { recursive: true })
+  mkdirSync(magickRoot)
+  mkdirSync(searchRoot)
+  writeFileSync(path.join(magickRoot, "magick.exe"), "stub")
+  writeFileSync(path.join(searchRoot, "rg.exe"), "stub")
   writeFileSync(path.join(gitRoot, "cmd", "git.exe"), "stub")
   writeFileSync(path.join(gitRoot, "usr", "bin", "bash.exe"), "stub")
   writeFileSync(path.join(kitRoot, "bin", "sh.exe"), "stub")
   writeFileSync(path.join(kitRoot, "bin", "gcc.exe"), "stub")
   process.env.NOVACLAW_PORTABLE_GIT_PATH = gitRoot
   process.env.NOVACLAW_W64DEVKIT_PATH = kitRoot
+  process.env.NOVACLAW_IMAGEMAGICK_PATH = magickRoot
+  process.env.NOVACLAW_RIPGREP_PATH = path.join(searchRoot, "rg.exe")
   Git.binary.reset()
   Shell.agentDefault.reset()
 
   expect(Git.binary()).toBe(path.join(gitRoot, "cmd", "git.exe"))
   expect(Shell.agentDefault()).toBe(path.join(gitRoot, "usr", "bin", "bash.exe"))
   const overlay = Shell.toolchainEnv(path.join(kitRoot, "bin", "sh.exe"), { Path: "C:\\host" })
-  expect(overlay?.Path?.split(path.delimiter)).toEqual([
+  expect(overlay?.PATH?.split(path.delimiter)).toEqual([
     path.join(kitRoot, "bin"),
     path.join(gitRoot, "cmd"),
+    searchRoot,
+    magickRoot,
     "C:\\host",
   ])
   const bashOverlay = Shell.toolchainEnv(path.join(gitRoot, "usr", "bin", "bash.exe"), { Path: "C:\\host" })
-  expect(bashOverlay?.Path?.split(path.delimiter)).toEqual([
+  expect(bashOverlay?.PATH?.split(path.delimiter)).toEqual([
     path.join(gitRoot, "mingw64", "bin"),
     path.join(gitRoot, "usr", "bin"),
     path.join(gitRoot, "cmd"),
     path.join(kitRoot, "bin"),
+    searchRoot,
+    magickRoot,
     "C:\\host",
   ])
 })
@@ -65,4 +83,6 @@ test("an incomplete packaged Git fails clearly instead of silently using a host 
   Git.binary.reset()
   expect(() => WindowsGit.binary()).toThrow(/embedded Git installation is incomplete/)
   expect(() => Git.binary()).toThrow(/embedded Git installation is incomplete/)
+  expect(() => Shell.agentDefault()).toThrow(/embedded Bash installation is incomplete/)
+  expect(() => Shell.preferred()).toThrow(/embedded Bash installation is incomplete/)
 })

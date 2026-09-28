@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs"
 import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 
 /**
  * Where a tool NovaClaw ships with itself lives, when the launcher did not name one.
@@ -20,6 +21,14 @@ export function bundledToolRoot(
   if (fromEnv) return fromEnv
   const beside = dirname(execPath)
   for (const candidate of [join(beside, "third-party", tool), join(beside, "..", "third-party", tool)]) {
+    if (existsSync(candidate)) return candidate
+  }
+  if (
+    process.platform === "win32" &&
+    execPath === process.execPath &&
+    import.meta.url.endsWith("/core/src/bundled-tool.ts")
+  ) {
+    const candidate = fileURLToPath(new URL(`../../desktop/resources/third-party/${tool}`, import.meta.url))
     if (existsSync(candidate)) return candidate
   }
   return undefined

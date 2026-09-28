@@ -1000,10 +1000,7 @@ const SESSION_MESSAGE_PURGE_BATCH = 2_000
  * SQLite connection. Draining `session_message` here first — chunked, yielding between batches —
  * leaves the cascade to delete only the small satellite rows, so no removal step can stall the loop.
  */
-const purgeSessionMessages = (
-  db: Database.Interface["db"],
-  sessionID: SessionSchema.ID,
-): Effect.Effect<void> =>
+const purgeSessionMessages = (db: Database.Interface["db"], sessionID: SessionSchema.ID): Effect.Effect<void> =>
   Effect.gen(function* () {
     for (;;) {
       const batch = yield* db
@@ -1083,13 +1080,17 @@ export const removeSessionRecord = (
     }
     yield* purgeSessionMessages(db, sessionID)
     const deletedInfo = fromRow(row)
-    yield* events.publish(SessionRecordEvent.Deleted, {
-      sessionID,
-      info: SessionSchema.Info.make({
-        ...deletedInfo,
-        ...(deletedInfo.summary ? { summary: { ...deletedInfo.summary, diffs: undefined } } : {}),
-      }),
-    }, { location })
+    yield* events.publish(
+      SessionRecordEvent.Deleted,
+      {
+        sessionID,
+        info: SessionSchema.Info.make({
+          ...deletedInfo,
+          ...(deletedInfo.summary ? { summary: { ...deletedInfo.summary, diffs: undefined } } : {}),
+        }),
+      },
+      { location },
+    )
     yield* events.remove(sessionID)
   })
 
@@ -1305,11 +1306,7 @@ export const layer = Layer.effect(
             const at =
               target.time.archived === undefined
                 ? input.sessionID
-                : yield* resolveFiledChat(
-                    { db, events, projects, store, agentConfigs },
-                    target,
-                    input.sessionID,
-                  )
+                : yield* resolveFiledChat({ db, events, projects, store, agentConfigs }, target, input.sessionID)
             const prompt = resolvePrompt(input.prompt)
             const messageID = input.id ?? SessionMessage.ID.create()
             // A public prompt is a new user turn. Harness interjections use `SessionInput.steer`
@@ -1366,7 +1363,7 @@ export const layer = Layer.effect(
           const command = ChildProcess.make(shellPath, Shell.args(shellPath, input.command, loc.directory), {
             cwd: loc.directory,
             extendEnv: true,
-            env: { TERM: "dumb" },
+            env: { ...Shell.toolchainEnv(shellPath), TERM: "dumb" },
             stdin: "ignore",
             forceKillAfter: Duration.seconds(3),
           })
@@ -1427,7 +1424,7 @@ export const layer = Layer.effect(
                 const command = ChildProcess.make(shellPath, Shell.args(shellPath, match[1], loc.directory), {
                   cwd: loc.directory,
                   extendEnv: true,
-                  env: { TERM: "dumb" },
+                  env: { ...Shell.toolchainEnv(shellPath), TERM: "dumb" },
                   stdin: "ignore",
                   forceKillAfter: Duration.seconds(3),
                 })

@@ -60,20 +60,25 @@ describe("finding the embedded ImageMagick", () => {
     expect(Shell.imagemagick()).toBe(path.join(root, exe("magick")))
   })
 
-  test("🔴 a path that names NOTHING resolves to undefined", async () => {
-    // The failure this guards. Putting an empty directory on the agent's PATH would teach the model
-    // it has a tool it does not have, and the confusion then surfaces mid-task as the model's own,
-    // rather than up front as a missing capability.
+  test("an incomplete Windows image toolchain is an installation error", async () => {
     const root = await fakeMagick(false)
     process.env["NOVACLAW_IMAGEMAGICK_PATH"] = root
-    expect(Shell.imagemagickRoot()).toBeUndefined()
-    expect(Shell.imagemagick()).toBeUndefined()
+    if (process.platform === "win32") {
+      expect(() => Shell.imagemagickRoot()).toThrow(/bundled ImageMagick/)
+      expect(() => Shell.imagemagick()).toThrow(/bundled ImageMagick/)
+    } else {
+      expect(Shell.imagemagickRoot()).toBeUndefined()
+      expect(Shell.imagemagick()).toBeUndefined()
+    }
     process.env["NOVACLAW_IMAGEMAGICK_PATH"] = path.join(root, "nope")
-    expect(Shell.imagemagickRoot()).toBeUndefined()
+    if (process.platform === "win32") expect(() => Shell.imagemagickRoot()).toThrow(/bundled ImageMagick/)
+    else expect(Shell.imagemagickRoot()).toBeUndefined()
   })
 
-  test("an install without it is simply absent, not broken", () => {
-    expect(Shell.imagemagickRoot()).toBeUndefined()
+  test("a missing Windows image toolchain cannot fall back to a host copy", () => {
+    process.env["NOVACLAW_IMAGEMAGICK_PATH"] = path.join(os.tmpdir(), `novaclaw-absent-magick-${process.pid}`)
+    if (process.platform === "win32") expect(() => Shell.imagemagickRoot()).toThrow(/bundled ImageMagick/)
+    else expect(Shell.imagemagickRoot()).toBeUndefined()
   })
 })
 
@@ -85,7 +90,7 @@ describe("the agent's child environment", () => {
     process.env["NOVACLAW_W64DEVKIT_PATH"] = kit
     process.env["NOVACLAW_IMAGEMAGICK_PATH"] = magick
     const env = Shell.toolchainEnv(path.join(kit, "bin", "sh.exe"), { Path: "C:\\Windows" })
-    const paths = env?.["Path"]?.split(path.delimiter)
+    const paths = env?.["PATH"]?.split(path.delimiter)
     expect(paths).toContain(magick)
     // ⚠️ MAGICK_HOME is how `magick` finds its own configure/delegates/policy XML. Without it the
     // binary starts and silently loses colour-name lookup, format delegates, and the security policy
@@ -94,27 +99,29 @@ describe("the agent's child environment", () => {
     expect(env?.["MAGICK_CONFIGURE_PATH"]).toBe(magick)
   })
 
-  test("⚠️ it goes LAST, and never displaces the kit's own bin", async () => {
-    // The ordering rule that protects the BusyBox userland from being shadowed is a rule about
-    // POSITION. A third entry inserted in the middle is how that measured failure comes back.
+  test("bundled ImageMagick follows the kit and precedes host PATH", async () => {
     if (process.platform !== "win32") return
     const kit = await fakeKit()
     const magick = await fakeMagick()
     process.env["NOVACLAW_W64DEVKIT_PATH"] = kit
     process.env["NOVACLAW_IMAGEMAGICK_PATH"] = magick
-    const paths = Shell.toolchainEnv(path.join(kit, "bin", "sh.exe"), { Path: "C:\\Windows" })?.["Path"]?.split(
+    const paths = Shell.toolchainEnv(path.join(kit, "bin", "sh.exe"), { Path: "C:\\Windows" })?.["PATH"]?.split(
       path.delimiter,
     )
     expect(paths?.[0]).toBe(path.join(kit, "bin"))
-    expect(paths?.at(-1)).toBe(magick)
+    expect(paths?.at(-2)).toBe(magick)
+    expect(paths?.at(-1)).toBe("C:\\Windows")
   })
 
-  test("an install WITHOUT ImageMagick produces the same environment as before", async () => {
+  test("an incomplete Windows bundle cannot create a host-dependent shell environment", async () => {
     if (process.platform !== "win32") return
     const kit = await fakeKit()
     process.env["NOVACLAW_W64DEVKIT_PATH"] = kit
-    const env = Shell.toolchainEnv(path.join(kit, "bin", "sh.exe"), { Path: "C:\\Windows" })
-    expect(env?.["MAGICK_HOME"]).toBeUndefined()
-    expect(env?.["Path"]?.split(path.delimiter)).toEqual([path.join(kit, "bin"), "C:\\Windows"])
+    process.env["NOVACLAW_IMAGEMAGICK_PATH"] = path.join(kit, "absent-magick")
+    expect(() => Shell.toolchainEnv(path.join(kit, "bin", "sh.exe"), { Path: "C:\\Windows" })).toThrow(
+      /bundled ImageMagick/,
+    )
+    process.env["NOVACLAW_W64DEVKIT_PATH"] = path.join(kit, "absent-kit")
+    expect(() => Shell.toolchainEnv(path.join(kit, "bin", "sh.exe"))).toThrow(/bundled w64devkit/)
   })
 })

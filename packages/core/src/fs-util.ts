@@ -1,5 +1,5 @@
 import * as CanonicalPath from "./util/canonical-path"
-import { NodeFileSystem } from "@effect/platform-node"
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import { dirname, join, parse, relative, resolve as pathResolve } from "path"
 import { homedir } from "os"
 import { realpathSync } from "fs"

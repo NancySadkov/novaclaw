@@ -150,49 +150,6 @@ describe("verifyDigest is fail-closed", () => {
   })
 })
 
-describe("matchesDigest agrees with verifyDigest in every direction", () => {
-  const bytes = payload("an installed ripgrep")
-  const pin = digest(bytes)
-
-  test("true exactly when the bytes are the pinned ones", () => {
-    expect(RipgrepBinary.matchesDigest(bytes, pin)).toBe(true)
-  })
-
-  test("false for other bytes, empty bytes, and a stale pin", () => {
-    expect(RipgrepBinary.matchesDigest(payload("some other binary"), pin)).toBe(false)
-    expect(RipgrepBinary.matchesDigest(new Uint8Array(0), pin)).toBe(false)
-    expect(RipgrepBinary.matchesDigest(bytes, digest(payload("some other binary")))).toBe(false)
-  })
-
-  test("an UNPINNED platform never matches, whatever is on disk", () => {
-    // The fail-open shape this replaced: comparing `undefined` to `undefined` and calling it a match,
-    // i.e. handing back an unverified binary precisely where there is no pin to judge it by.
-    expect(RipgrepBinary.matchesDigest(bytes, undefined)).toBe(false)
-    expect(RipgrepBinary.matchesDigest(new Uint8Array(0), undefined)).toBe(false)
-    expect(RipgrepBinary.matchesDigest(bytes, "")).toBe(false)
-    expect(RipgrepBinary.matchesDigest(bytes, "not-a-hash")).toBe(false)
-  })
-
-  test("it is the same check, not a second copy of it", () => {
-    // Two independent fail-closed comparisons are two chances for one to drift open, so the predicate
-    // must delegate. Property-checked over both outcomes rather than asserted about the source.
-    for (const [candidate, expected] of [
-      [bytes, pin],
-      [bytes, undefined],
-      [new Uint8Array(0), pin],
-      [payload("x"), pin],
-    ] as const) {
-      let threw = false
-      try {
-        RipgrepBinary.verifyDigest(candidate, expected, "probe")
-      } catch {
-        threw = true
-      }
-      expect(RipgrepBinary.matchesDigest(candidate, expected)).toBe(!threw)
-    }
-  })
-})
-
 describe("the local acquisition paths are verified and never download", () => {
   // ④/⑤. Every assertion here is on comment-stripped source: prose about verification is not proof.
 
@@ -201,10 +158,9 @@ describe("the local acquisition paths are verified and never download", () => {
     expect(SOURCE).toContain("NOVACLAW_RIPGREP_PATH")
   })
 
-  test("the two local verify call sites cover embedded and inherited executables", () => {
-    expect(SOURCE.match(/verifyDigest\(/g)?.length, "unexpected local verifyDigest(...) call count").toBe(2)
+  test("the bundled executable is verified before use", () => {
+    expect(SOURCE.match(/verifyDigest\(/g)?.length, "unexpected local verifyDigest(...) call count").toBe(1)
     expect(SOURCE).toMatch(/verifyDigest\(\s*bytes\s*,\s*pin\.executable\s*,\s*embedded\s*\)/)
-    expect(SOURCE).toMatch(/verifyDigest\(\s*candidate\s*,\s*expected\s*,/)
   })
 
   test("there is no remote downloader or archive extraction path", () => {
@@ -213,11 +169,11 @@ describe("the local acquisition paths are verified and never download", () => {
     expect(SOURCE).not.toContain("extract(archive")
   })
 
-  test("the pre-installed binary is digest-gated, not a bare isFile short-circuit", () => {
-    // ⑤. The shipped shape was `if (yield* fs.isFile(target)) return target`, which trusts whatever
-    // an earlier unverified build left on disk forever. Deleting the check restores it silently.
-    expect(SOURCE).toMatch(/matchesDigest\(\s*existing\s*,\s*pin\.executable\s*\)/)
-    expect(SOURCE).toContain("fs.readFile(target)")
+  test("a missing bundled binary cannot fall back to a host or cached copy", () => {
+    expect(SOURCE).not.toContain("which(")
+    expect(SOURCE).not.toContain("Global.Path.bin")
+    expect(SOURCE).not.toContain("matchesDigest")
+    expect(SOURCE).toContain("NovaClaw's bundled ripgrep is missing")
   })
 })
 

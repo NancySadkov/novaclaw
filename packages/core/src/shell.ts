@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process"
 import { readFileSync, statSync } from "fs"
 import * as osModule from "node:os"
 import { Flag } from "./flag/flag"
-import { bundledToolRoot } from "./bundled-tool"
+import { bundledToolFile, bundledToolRoot } from "./bundled-tool"
 import { FSUtil } from "./fs-util"
 import { WindowsGit } from "./windows-git"
 import { which } from "./util/which"
@@ -66,22 +66,11 @@ function resolve(file: string) {
   return which(shell) ?? undefined
 }
 
-function win() {
-  return Array.from(
-    new Set(
-      [w64devkitShell(), which("pwsh"), which("powershell"), process.env.COMSPEC || "cmd.exe"]
-        .filter((item): item is string => Boolean(item))
-        .map(full),
-    ),
-  )
-}
-
 function select(file: string | undefined) {
   if (file) {
     const shell = resolve(file)
     if (shell) return shell
   }
-  if (process.platform === "win32") return win()[0]
   return fallback()
 }
 
@@ -89,10 +78,11 @@ function select(file: string | undefined) {
 export function w64devkitRoot() {
   if (process.platform !== "win32") return
   const root = bundledToolRoot("w64devkit", Flag.NOVACLAW_W64DEVKIT_PATH)
-  if (!root) return
+  if (!root) throw new Error("NovaClaw's bundled w64devkit is missing. Restore the third-party/w64devkit folder.")
   const shell = path.join(root, "bin", "sh.exe")
   const gcc = path.join(root, "bin", "gcc.exe")
   if (stat(shell)?.isFile() && stat(gcc)?.isFile()) return root
+  throw new Error(`NovaClaw's bundled w64devkit is incomplete: ${root}`)
 }
 
 export function w64devkitShell() {
@@ -114,9 +104,14 @@ export function w64devkitShell() {
  */
 export function imagemagickRoot() {
   const root = bundledToolRoot("imagemagick", Flag.NOVACLAW_IMAGEMAGICK_PATH)
-  if (!root) return
-  const binary = path.join(root, process.platform === "win32" ? "magick.exe" : "magick")
-  if (stat(binary)?.isFile()) return root
+  if (root) {
+    const binary = path.join(root, process.platform === "win32" ? "magick.exe" : "magick")
+    if (stat(binary)?.isFile()) return root
+  }
+  if (process.platform === "win32")
+    throw new Error(
+      "NovaClaw's bundled ImageMagick is missing or incomplete. Restore the third-party/imagemagick folder.",
+    )
 }
 
 /** The embedded `magick`, if this install has one. */
@@ -129,7 +124,10 @@ export function imagemagick() {
 export function toolchainEnv(file: string, base: NodeJS.ProcessEnv = process.env): Record<string, string> | undefined {
   if (process.platform !== "win32") return
   const root = w64devkitRoot()
-  const key = Object.keys(base).find((item) => item.toLowerCase() === "path") ?? "PATH"
+  const key =
+    Object.keys(base)
+      .reverse()
+      .find((item) => item.toLowerCase() === "path") ?? "PATH"
   const existing = base[key]
   const bin = root ? path.join(root, "bin") : undefined
   const inKit = root
@@ -137,21 +135,21 @@ export function toolchainEnv(file: string, base: NodeJS.ProcessEnv = process.env
         .toLowerCase()
         .startsWith(`${FSUtil.windowsPath(root).toLowerCase()}\\`)
     : false
-  // ⚠️ ImageMagick goes LAST, always. It ships exactly one binary named `magick`, which shadows
-  // nothing, but the ordering rule that protects the BusyBox userland from being shadowed by a later
-  // toolchain is a rule about position, not about this particular kit — and a third entry inserted
-  // in the middle is how that measured failure comes back wearing a different name.
   const magick = imagemagickRoot()
+  const ripgrep = bundledToolFile("ripgrep", "rg.exe", process.env.NOVACLAW_RIPGREP_PATH)
+  if (!ripgrep || !stat(ripgrep)?.isFile())
+    throw new Error("NovaClaw's bundled ripgrep is missing. Restore the third-party/ripgrep folder.")
+  const search = path.dirname(ripgrep)
   const git = WindowsGit.commandDirectory()
   const paths = inKit
-    ? [bin, git, existing, magick]
+    ? [bin, git, search, magick, existing]
     : name(file) === "bash"
-      ? [...WindowsGit.pathPrepend(), bin, existing, magick]
-      : [git, existing, bin, magick]
+      ? [...WindowsGit.pathPrepend(), bin, search, magick, existing]
+      : [git, bin, search, magick, existing]
   const value = Array.from(new Set(paths.filter((item): item is string => Boolean(item)))).join(path.delimiter)
   if (!value) return
   return {
-    [key]: value,
+    PATH: value,
     ...(root ? { W64DEVKIT_HOME: root, W64DEVKIT: readVersion(root) } : {}),
     // `MAGICK_HOME` is how `magick` finds its own `configure.xml`/`delegates.xml`/`policy.xml` when
     // it is invoked through a symlink or from another directory. Without it a shipped `magick` runs
@@ -184,6 +182,7 @@ export function name(file: string) {
 }
 
 export function login(file: string) {
+  if (process.platform === "win32") return false
   return meta(file)?.login === true
 }
 
@@ -197,6 +196,7 @@ export function ps(file: string) {
 
 export function args(file: string, command: string, cwd: string) {
   const n = name(file)
+  if (process.platform === "win32" && n === "bash") return ["--noprofile", "--norc", "-c", command]
   if (n === "nu" || n === "fish") return ["-c", command]
   if (n === "zsh") {
     return [
@@ -241,7 +241,7 @@ let defaultAgent: string | undefined
  */
 export function agentDefault(): string {
   defaultAgent ??= (() => {
-    if (process.platform === "win32") return WindowsGit.bash() ?? w64devkitShell() ?? process.env.ComSpec ?? "cmd.exe"
+    if (process.platform === "win32") return WindowsGit.bash()!
     return which("bash") ?? "/bin/sh"
   })()
   return defaultAgent
@@ -317,8 +317,7 @@ agentPlatform.reset = () => {
 }
 
 export function preferred() {
-  defaultPreferred ??=
-    process.platform === "win32" ? (WindowsGit.bash() ?? w64devkitShell() ?? select(process.env.SHELL)) : select(process.env.SHELL)
+  defaultPreferred ??= process.platform === "win32" ? WindowsGit.bash()! : select(process.env.SHELL)
   return defaultPreferred
 }
 preferred.reset = () => {

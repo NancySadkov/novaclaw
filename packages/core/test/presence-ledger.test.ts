@@ -72,6 +72,11 @@ interface Entry {
  * ⚠️ Ordered by package then path so a diff on this list reads as one line added, not as a reshuffle.
  */
 const LEDGER: readonly Entry[] = [
+  {
+    file: "core/src/bundled-tool.ts",
+    kind: "fallback",
+    why: "selects among the shipped standalone, desktop, and prepared source layouts; the tool consumer validates the chosen file and rejects a missing bundle.",
+  },
   // ── core ──────────────────────────────────────────────────────────────────────────────────────
   {
     file: "core/src/community/dht.ts",
@@ -124,12 +129,6 @@ const LEDGER: readonly Entry[] = [
     file: "core/src/util/kill-tree.ts",
     kind: "fallback",
     why: "detects `/proc` to choose a process-walk strategy; a miss selects the other strategy.",
-  },
-  // ── desktop ───────────────────────────────────────────────────────────────────────────────────
-  {
-    file: "desktop/src/main/wsl/runtime.ts",
-    kind: "fallback",
-    why: "resolves a command to an absolute path, falling back to the bare command name.",
   },
   // ── host ──────────────────────────────────────────────────────────────────────────────────────
   {

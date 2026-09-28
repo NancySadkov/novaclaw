@@ -568,7 +568,10 @@ export const FORK_RETENTION_MS = 3 * 24 * 60 * 60 * 1000
  * inspection" only means anything for a few days; after that it is litter in the user's temp dir.
  * Best-effort and never throws — a sweep failure must not affect the run.
  */
-export async function sweepStaleForks(now: number = Date.now(), retentionMs: number = FORK_RETENTION_MS): Promise<number> {
+export async function sweepStaleForks(
+  now: number = Date.now(),
+  retentionMs: number = FORK_RETENTION_MS,
+): Promise<number> {
   let removed = 0
   let entries: string[]
   try {
@@ -865,9 +868,6 @@ export function runTask(args: RunArgs): Effect.Effect<StrictReport> {
   // ONE supplied shell for the whole product. `environmentFor` below follows this value, so what
   // the model is told tracks what actually runs.
   const agentShell = HostExec.resolveShell()
-  // `bash -c` is not a login shell, so an MSYS bash needs its own userland prepended or `ls`/`head`
-  // don't resolve (no-op for non-MSYS shells).
-  const shellEnv = HostExec.bundleOverlay(agentShell)
   // Every command the engine runs goes through the gate: the jail decision (raw / bwrap-confined /
   // denied), and an environment that NEVER contains the serve process's secrets. It used to be
   // `{ ...process.env }` — provider API keys and `NOVACLAW_INSTANCE_*_TOKEN` handed to arbitrary
@@ -878,7 +878,6 @@ export function runTask(args: RunArgs): Effect.Effect<StrictReport> {
         command: input.command,
         cwd: input.cwd,
         shell: agentShell,
-        overlay: shellEnv,
         ...(args.host === undefined ? {} : { host: args.host }),
       }),
   })

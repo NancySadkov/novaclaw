@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import path from "path"
 import { Shell } from "@novaclaw/core/shell"
-import { which } from "@novaclaw/core/util/which"
+import { WindowsGit } from "@novaclaw/core/windows-git"
 
 const withShell = async (shell: string | undefined, fn: () => void | Promise<void>) => {
   const prev = process.env.SHELL
@@ -27,7 +27,7 @@ describe("shell", () => {
   })
 
   test("detects login shells", () => {
-    expect(Shell.login("/bin/bash")).toBe(true)
+    expect(Shell.login("/bin/bash")).toBe(process.platform !== "win32")
     expect(Shell.login("C:/tools/pwsh.exe")).toBe(false)
   })
 
@@ -62,20 +62,20 @@ describe("shell", () => {
     expect(zsh[0]).toBe("-l")
     expect(zsh[1]).toBe("-c")
     expect(zsh.at(-1)).toBe("/tmp")
+    if (process.platform === "win32")
+      expect(Shell.args(Shell.agentDefault(), "echo hi", "/tmp")).toEqual(["--noprofile", "--norc", "-c", "echo hi"])
   })
 
   if (process.platform === "win32") {
-    test("resolves bare PowerShell shells", async () => {
-      const shell = which("pwsh") || which("powershell")
-      if (!shell) return
-      await withShell(path.win32.basename(shell), async () => {
-        expect(Shell.preferred()).toBe(shell)
+    test("host shell preferences cannot override the bundled Windows Bash", async () => {
+      await withShell("pwsh.exe", async () => {
+        expect(Shell.preferred()).toBe(WindowsGit.bash()!)
       })
     })
 
     test("the supplied agent shell uses embedded Bash when the distribution is present", () => {
       const bundled = process.env.NOVACLAW_PORTABLE_GIT_PATH
-      if (bundled) expect(Shell.agentDefault()).toBe(path.join(bundled, "bin", "bash.exe"))
+      if (bundled) expect(Shell.agentDefault()).toBe(path.join(bundled, "usr", "bin", "bash.exe"))
     })
   }
 })

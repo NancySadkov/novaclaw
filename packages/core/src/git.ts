@@ -14,16 +14,11 @@ import { File } from "./file"
 import { KeyedMutex } from "./effect/keyed-mutex"
 import { Flock } from "./util/flock"
 import { WindowsGit } from "./windows-git"
-import { which } from "./util/which"
 import { displayPath } from "./util/path"
 
 let cachedBinary: string | undefined
-/**
- * Windows distributions name their verified, embedded Git explicitly. Source development on a
- * machine without that distribution uses the host's Git.
- */
 export function binary(): string {
-  cachedBinary ??= WindowsGit.binary() ?? which("git") ?? "git"
+  cachedBinary ??= process.platform === "win32" ? WindowsGit.binary()! : "git"
   return cachedBinary
 }
 binary.reset = () => {
@@ -921,7 +916,9 @@ export const layer = Layer.effect(
                     operation: "capture",
                     directory: input.path,
                     message:
-                      result.stderr.trim() || result.text.trim() || `Failed to capture untracked change: ${displayPath(file)}`,
+                      result.stderr.trim() ||
+                      result.text.trim() ||
+                      `Failed to capture untracked change: ${displayPath(file)}`,
                   }),
                 ),
           ),

@@ -1,5 +1,6 @@
 // @refresh reload
 
+import { startupServerKey } from "./startup-server"
 import {
   ACCEPTED_FILE_EXTENSIONS,
   AppBaseProviders,
@@ -13,7 +14,6 @@ import {
   PlatformProvider,
   ServerConnection,
   useCommand,
-  useWslServers,
 } from "@novaclaw/app"
 import type { AsyncStorage } from "@solid-primitives/storage"
 import { MemoryRouter } from "@solidjs/router"
@@ -28,7 +28,6 @@ import { initI18n, t } from "./i18n"
 import { initializationData, initializationReady } from "./initialization"
 import { splashMessageKey, splashPhase, type SplashPhase } from "./splash"
 import { setPinchZoomEnabled, webviewZoom } from "./webview-zoom"
-import { availableStartupServer, readyWslConnections } from "./wsl/connections"
 import "./styles.css"
 import { useTheme } from "@novaclaw/ui/theme/context"
 
@@ -102,8 +101,6 @@ const createPlatform = (): Platform => {
       return api
     }
   })()
-
-  const wslServersApi = os === "windows" ? window.api.wslServers : undefined
 
   return {
     platform: "desktop",
@@ -219,8 +216,6 @@ const createPlatform = (): Platform => {
       await window.api.setDefaultServerUrl(url)
     },
 
-    wslServers: wslServersApi,
-
     getDisplayBackend: async () => {
       return window.api.getDisplayBackend().catch(() => null)
     },
@@ -314,7 +309,6 @@ render(() => {
   }
 
   function App() {
-    const wslServers = useWslServers()
     // The main process now opens this window immediately, so the splash is what a user sees while
     // the local server comes up — including when it never does. Say which it is.
     const [phase, setPhase] = createSignal<SplashPhase>("starting")
@@ -353,12 +347,9 @@ render(() => {
           },
         })
       }
-      list.push(...readyWslConnections(wslServers.data))
       return list
     })
-    const effectiveDefaultServer = createMemo(() =>
-      ServerConnection.Key.make(availableStartupServer(defaultServer.latest, wslServers.data)),
-    )
+    const effectiveDefaultServer = createMemo(() => ServerConnection.Key.make(startupServerKey(defaultServer.latest)))
 
     return (
       <Show when={ready()} fallback={splash}>

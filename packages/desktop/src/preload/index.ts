@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
-import type { ElectronAPI, SuperviseStatus, WslServersEvent } from "./types"
+import type { ElectronAPI, SuperviseStatus } from "./types"
 
 const api: ElectronAPI = {
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
@@ -18,29 +18,6 @@ const api: ElectronAPI = {
     },
   },
   awaitInitialization: () => ipcRenderer.invoke("await-initialization"),
-  wslServers: {
-    getState: () => ipcRenderer.invoke("wsl-servers-get-state"),
-    subscribe: (cb) => {
-      const handler = (_: unknown, event: WslServersEvent) => cb(event)
-      ipcRenderer.on("wsl-servers-event", handler)
-      void ipcRenderer.invoke("wsl-servers-subscribe")
-      return () => {
-        ipcRenderer.removeListener("wsl-servers-event", handler)
-        void ipcRenderer.invoke("wsl-servers-unsubscribe")
-      }
-    },
-    probeRuntime: () => ipcRenderer.invoke("wsl-servers-probe-runtime"),
-    refreshDistros: () => ipcRenderer.invoke("wsl-servers-refresh-distros"),
-    installWsl: () => ipcRenderer.invoke("wsl-servers-install-wsl"),
-    installDistro: (name) => ipcRenderer.invoke("wsl-servers-install-distro", name),
-    probeDistro: (name) => ipcRenderer.invoke("wsl-servers-probe-distro", name),
-    probeNovaclaw: (name) => ipcRenderer.invoke("wsl-servers-probe-novaclaw", name),
-    installNovaclaw: (name) => ipcRenderer.invoke("wsl-servers-install-novaclaw", name),
-    openTerminal: (name) => ipcRenderer.invoke("wsl-servers-open-terminal", name),
-    addServer: (distro) => ipcRenderer.invoke("wsl-servers-add", distro),
-    removeServer: (id) => ipcRenderer.invoke("wsl-servers-remove", id),
-    startServer: (id) => ipcRenderer.invoke("wsl-servers-start", id),
-  },
   consumeInitialDeepLinks: () => ipcRenderer.invoke("consume-initial-deep-links"),
   consumeInitialRecipePackages: () => ipcRenderer.invoke("consume-initial-recipe-packages"),
   getDefaultServerUrl: () => ipcRenderer.invoke("get-default-server-url"),

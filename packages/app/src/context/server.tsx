@@ -171,16 +171,8 @@ export namespace ServerConnection {
   export type Sidecar = {
     type: "sidecar"
     http: HttpBase
-  } & (
-    | // Regular desktop server
-    { variant: "base" }
-    // WSL server (windows only)
-    | {
-        variant: "wsl"
-        distro: string
-      }
-  ) &
-    Base
+    variant: "base"
+  } & Base
 
   // Remote server desktop can SSH into
   export type Ssh = {
@@ -200,7 +192,6 @@ export namespace ServerConnection {
       case "http":
         return Key.make(conn.http.url)
       case "sidecar": {
-        if (conn.variant === "wsl") return Key.make(`wsl:${conn.distro}`)
         return Key.make("sidecar")
       }
       case "ssh":
@@ -212,8 +203,7 @@ export namespace ServerConnection {
   export const Key = { make: (v: string) => v as Key }
 
   export const builtin = (conn: Any) => conn.type === "sidecar" && conn.variant === "base"
-  export const local = (conn?: Any) =>
-    !!conn && (builtin(conn) || (conn.type === "http" && isLocalHost(conn.http.url)))
+  export const local = (conn?: Any) => !!conn && (builtin(conn) || (conn.type === "http" && isLocalHost(conn.http.url)))
 }
 
 export function nextServerAfterRemoval(

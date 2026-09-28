@@ -9,7 +9,7 @@ import path from "path"
 import { mergeDeep } from "remeda"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import * as Formatter from "./formatter"
+import type * as Formatter from "./formatter"
 import { Log } from "@novaclaw/schema/log"
 
 export const Status = Schema.Struct({
@@ -148,13 +148,14 @@ export const layer = Layer.effect(
           }
         }
 
-        for (const item of Object.values(Formatter)) {
+        const registry = yield* Effect.promise(() => import("./formatter"))
+        for (const item of Object.values(registry)) {
           formatters[item.name] = item
         }
 
         if (cfg.formatter !== true) {
           for (const [name, item] of Object.entries(cfg.formatter)) {
-            const builtIn = Formatter[name as keyof typeof Formatter]
+            const builtIn = registry[name as keyof typeof registry]
 
             // Ruff and uv are both the same formatter, so disabling either should disable both.
             if (["ruff", "uv"].includes(name) && (cfg.formatter.ruff?.disabled || cfg.formatter.uv?.disabled)) {

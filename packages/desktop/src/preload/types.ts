@@ -1,27 +1,11 @@
-import type { WslServersPlatform } from "@novaclaw/app/wsl/types"
 import type { SuperviseStatus } from "@novaclaw/script/supervise"
 export type { SuperviseStatus }
-export type {
-  WslDistroProbe,
-  WslInstalledDistro,
-  WslJob,
-  WslOnlineDistro,
-  WslNovaclawCheck,
-  WslRuntimeCheck,
-  WslServerConfig,
-  WslServerItem,
-  WslServerRuntime,
-  WslServersEvent,
-  WslServersState,
-} from "@novaclaw/app/wsl/types"
-
 export type ServerReadyData = {
   url: string
   username: string | null
   password: string | null
 }
 
-export type WslServersAPI = WslServersPlatform
 /**
  * The sidecar supervisor, as the renderer sees it.
  *
@@ -50,7 +34,6 @@ export type ElectronAPI = {
   killSidecar: () => Promise<void>
   supervisor: SupervisorAPI
   awaitInitialization: () => Promise<ServerReadyData>
-  wslServers: WslServersAPI
   consumeInitialDeepLinks: () => Promise<string[]>
   consumeInitialRecipePackages: () => Promise<{ name: string; bytes: Uint8Array }[]>
   getDefaultServerUrl: () => Promise<string | null>

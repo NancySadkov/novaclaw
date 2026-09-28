@@ -200,7 +200,6 @@ export interface EnvRequest {
   /** Defaults to `AgentJail.probe()` (the real host). Injected in tests and by callers that already
    *  probed, so one command never probes twice. */
   readonly backend?: AgentJail.BackendInfo
-  /** Functional, non-secret overlay — the MSYS bundle PATH (`bundleOverlay`). */
   readonly overlay?: Record<string, string> | undefined
   /** OFF-C egress overlay from the SHARED `Offline` service (undefined when offline mode is off).
    *  Never loaded here: a second policy load would drift from the one the HttpClient enforces. */
@@ -250,11 +249,6 @@ export type Decision = AgentJail.BashDecision
 /** ONE supplied agent shell for the whole product. */
 export function resolveShell(): string {
   return Shell.agentDefault()
-}
-
-/** The embedded toolchain PATH prefix for Windows agent commands. */
-export function bundleOverlay(shell: string): Record<string, string> | undefined {
-  return process.platform === "win32" ? Shell.toolchainEnv(shell) : undefined
 }
 
 /**
@@ -545,7 +539,14 @@ export function plan(request: Request): Plan {
     ...(request.safeMode === undefined ? {} : { safeMode: request.safeMode }),
     backend,
   })
-  const env = childEnv({ ...request, backend })
+  const overlay =
+    request.shape.kind === "shell-command" && (request.platform ?? process.platform) === "win32"
+      ? {
+          ...request.overlay,
+          ...Shell.toolchainEnv(request.shape.shell, { ...(request.processEnv ?? process.env), ...request.overlay }),
+        }
+      : request.overlay
+  const env = childEnv({ ...request, backend, overlay })
   if (decision === "deny")
     return {
       via: "none",

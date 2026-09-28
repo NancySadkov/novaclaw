@@ -48,18 +48,20 @@ const windowsOutputEncoding = (): iconv.Encoding => {
   if (process.platform !== "win32") return "utf8"
 
   const configured = process.env.NOVACLAW_OUTPUT_CODE_PAGE?.trim()
-  const detected = configured || (() => {
-    try {
-      const output = execFileSync(process.env.ComSpec ?? "cmd.exe", ["/d", "/c", "chcp"], {
-        encoding: "buffer",
-        timeout: 1_000,
-        windowsHide: true,
-      })
-      return /\b(\d{3,5})\b/.exec(output.toString("ascii"))?.[1]
-    } catch {
-      return undefined
-    }
-  })()
+  const detected =
+    configured ||
+    (() => {
+      try {
+        const output = execFileSync(process.env.ComSpec ?? "cmd.exe", ["/d", "/c", "chcp"], {
+          encoding: "buffer",
+          timeout: 1_000,
+          windowsHide: true,
+        })
+        return /\b(\d{3,5})\b/.exec(output.toString("ascii"))?.[1]
+      } catch {
+        return undefined
+      }
+    })()
 
   if (detected === "65001") return "utf8"
   if (detected && iconv.encodingExists(detected)) return detected
@@ -68,14 +70,14 @@ const windowsOutputEncoding = (): iconv.Encoding => {
 }
 
 /** The one process-output decoder used by buffered errors and streaming lines. */
-export const processOutputEncoding = windowsOutputEncoding()
+let outputEncoding: iconv.Encoding | undefined
 
-export const decodeProcessOutput = (bytes: Uint8Array, encoding: iconv.Encoding = processOutputEncoding): string => {
+export const decodeProcessOutput = (bytes: Uint8Array, encoding?: iconv.Encoding): string => {
   try {
     // Prefer UTF-8 for runtimes/tools that deliberately emit it, even on a legacy-code-page host.
     return new TextDecoder("utf-8", { fatal: true }).decode(bytes)
   } catch {
-    return iconv.decode(bytes, encoding)
+    return iconv.decode(bytes, encoding ?? (outputEncoding ??= windowsOutputEncoding()))
   }
 }
 

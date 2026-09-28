@@ -4,7 +4,6 @@ import { ToolFailure } from "@novaclaw/llm"
 import { Duration, Effect, Layer, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { Parser } from "htmlparser2"
-import TurndownService from "turndown"
 import { makeLocationNode } from "../effect/app-node"
 import { LayerNodePlatform } from "../effect/app-node-platform"
 import { PermissionV2 } from "../permission"
@@ -168,10 +167,10 @@ const emptyExtractionNote = (bytes: number, format: Format, title: string) =>
   `succeeded, so this is an extraction result and not a network failure; requesting the same URL ` +
   `again will return the same thing.]`
 
-const convert = (content: string, contentType: string, format: Format) => {
+const convert = async (content: string, contentType: string, format: Format) => {
   if (!contentType.includes("text/html")) return content
   if (format !== "markdown" && format !== "text") return content
-  const extracted = format === "markdown" ? convertHTMLToMarkdown(content) : extractTextFromHTML(content)
+  const extracted = format === "markdown" ? await convertHTMLToMarkdown(content) : extractTextFromHTML(content)
   // ⚠️ The DECISION reads the body; the RETURN is still the full conversion. Those are two different
   // questions and collapsing them would throw away a real page whose body text is thin but present.
   if (content.length === 0 || bodyTextFromHTML(content) !== "") return extracted
@@ -237,7 +236,7 @@ export const layer = Layer.effectDiscard(
                 ),
               })
               const content = new TextDecoder().decode(body)
-              const output = yield* Effect.try({
+              const output = yield* Effect.tryPromise({
                 try: () => convert(content, contentType, input.format),
                 catch: (error) => error,
               })
@@ -350,7 +349,8 @@ export function extractTextFromHTML(html: string) {
   return text.trim()
 }
 
-export function convertHTMLToMarkdown(html: string) {
+export async function convertHTMLToMarkdown(html: string) {
+  const { default: TurndownService } = await import("turndown")
   const turndown = new TurndownService({
     headingStyle: "atx",
     hr: "---",

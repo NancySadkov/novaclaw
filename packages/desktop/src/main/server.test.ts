@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
+import path from "node:path"
 
 /**
  * `preferAppEnv` is the packaging seam that shipped v0.1.0 unusable (AGENTS.md → Known pitfalls #0).
@@ -34,7 +35,7 @@ const FORK_SLOT = Symbol.for("novaclaw.desktop.test.sidecar-fork")
 const forkSlot = globalThis as unknown as Record<symbol, (() => unknown) | undefined>
 void mock.module("electron", () => ({
   default: {},
-  app: { on: () => {}, off: () => {}, isPackaged: false },
+  app: { on: () => {}, off: () => {}, isPackaged: false, getAppPath: () => "/development/desktop" },
   screen: { getCursorScreenPoint: () => ({ x: 0, y: 0 }) },
   utilityProcess: {
     fork: () => {
@@ -59,7 +60,17 @@ void mock.module("./shell-env", () => ({
   loadShellEnv: () => null,
 }))
 
-const { preferAppEnv } = await import("./server")
+const { preferAppEnv, createLocalServerEnvironment } = await import("./server")
+
+test("development Windows servers use the prepared bundled tools", () => {
+  if (process.platform !== "win32") return
+  const env = createLocalServerEnvironment()
+  const root = path.join("/development/desktop", "resources", "third-party")
+  expect(env.NOVACLAW_PORTABLE_GIT_PATH).toBe(path.join(root, "portable-git"))
+  expect(env.NOVACLAW_W64DEVKIT_PATH).toBe(path.join(root, "w64devkit"))
+  expect(env.NOVACLAW_RIPGREP_PATH).toBe(path.join(root, "ripgrep", "rg.exe"))
+  expect(env.NOVACLAW_IMAGEMAGICK_PATH).toBe(path.join(root, "imagemagick"))
+})
 
 const XDG_HOMES = ["XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME"] as const
 const MANAGED_KEYS = [

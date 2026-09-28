@@ -1,7 +1,8 @@
-import { Bonjour } from "bonjour-service"
+import type { Bonjour } from "bonjour-service"
 
 let bonjour: Bonjour | undefined
 let currentPort: number | undefined
+let publication = 0
 
 // Remote-access R7: advertise a NovaClaw-SPECIFIC service type (`_novaclaw._tcp`) instead of the
 // generic `http` — browsing `http` would surface every printer/NAS on the LAN and give no way to
@@ -9,11 +10,13 @@ let currentPort: number | undefined
 // client can dedup the SAME instance seen behind different addresses (mDNS name vs IP).
 export const SERVICE_TYPE = "novaclaw"
 
-export function publish(port: number, domain?: string, txt?: Record<string, string>) {
-  if (currentPort === port) return
-  if (bonjour) unpublish()
-
+export async function publish(port: number, domain?: string, txt?: Record<string, string>) {
+  const pending = ++publication
   try {
+    const { Bonjour } = await import("bonjour-service")
+    if (pending !== publication) return
+    if (currentPort === port) return
+    if (bonjour) unpublish()
     const host = domain ?? "novaclaw.local"
     const name = `novaclaw-${port}`
     bonjour = new Bonjour()
@@ -40,6 +43,7 @@ export function publish(port: number, domain?: string, txt?: Record<string, stri
 }
 
 export function unpublish() {
+  publication++
   if (bonjour) {
     try {
       bonjour.unpublishAll()
@@ -70,7 +74,10 @@ function pickAddress(addresses: string[] | undefined, host: string | undefined) 
 /** One bounded scan of the LAN for advertised NovaClaw instances. Opens a fresh mDNS browser,
  *  collects responses for `timeoutMs`, and tears the socket down — discovery is a point-in-time
  *  question, not a standing subscription. Never rejects: a socket error reports an empty LAN. */
-export function browse(timeoutMs = 2500): Promise<DiscoveredInstance[]> {
+export async function browse(timeoutMs = 2500): Promise<DiscoveredInstance[]> {
+  const library = await import("bonjour-service").catch(() => undefined)
+  if (!library) return []
+  const { Bonjour } = library
   return new Promise((resolve) => {
     let scanner: Bonjour
     try {

@@ -25,8 +25,9 @@ export interface DesktopLifecyclePorts {
   local: LocalInstanceOwner
   instances: readonly InstanceOwner[]
   /** Optional initialization begins behind the visible window. Its owner is already registered above. */
-  afterWindow?(): void
-  afterCredentials?(): void
+  afterWindow?(): void | Promise<void>
+  afterCredentials?(): void | Promise<void>
+  optionalFailure?(error: unknown): void
   phase?(phase: DesktopPhase): void
   failure(error: unknown, stage: "electron" | "window" | "startup" | "health"): void
   deadline?: {
@@ -94,7 +95,7 @@ export function createDesktopLifecycle(ports: DesktopLifecyclePorts) {
     transition("window-open")
     try {
       if (abort.signal.aborted) return
-      ports.afterWindow?.()
+      startOptional(ports.afterWindow)
       const started = await ports.local.start(abort.signal)
       // A late acquisition still owns a health rejection even if quit prevents publication.
       void started.healthy.catch(() => undefined)
@@ -106,7 +107,7 @@ export function createDesktopLifecycle(ports: DesktopLifecyclePorts) {
       if (!initialized) {
         initialized = true
         initialization.resolve(started.credentials)
-        ports.afterCredentials?.()
+        startOptional(ports.afterCredentials)
       }
       try {
         await started.healthy
@@ -116,6 +117,18 @@ export function createDesktopLifecycle(ports: DesktopLifecyclePorts) {
       }
     } catch (error) {
       fail(error, "startup")
+    }
+  }
+  const startOptional = (start: (() => void | Promise<void>) | undefined) => {
+    const report = (error: unknown) => {
+      try {
+        ports.optionalFailure?.(error)
+      } catch {}
+    }
+    try {
+      void Promise.resolve(start?.()).catch(report)
+    } catch (error) {
+      report(error)
     }
   }
   return {
@@ -131,8 +144,6 @@ export function createDesktopLifecycle(ports: DesktopLifecyclePorts) {
       transition("quitting")
       const failures: unknown[] = []
       const timer = deadline.schedule(() => completion.resolve({ outcome: "forced", failures: [...failures] }), 5_000)
-      // Invoke every stop before waiting for any. A rejected or stuck local child cannot prevent
-      // WSL children from being asked to stop under this same deadline.
       const stops = [...new Set([ports.local, ...ports.instances])].map(async (owner) => {
         try {
           await owner.stop()

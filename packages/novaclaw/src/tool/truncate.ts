@@ -1,5 +1,5 @@
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { NodePath } from "@effect/platform-node"
+import * as NodePath from "@effect/platform-node/NodePath"
 import { Duration, Effect, Layer, Option, Schedule, Context } from "effect"
 import path from "path"
 import type { Agent } from "../agent/agent"
