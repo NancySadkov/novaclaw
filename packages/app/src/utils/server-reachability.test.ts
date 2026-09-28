@@ -45,8 +45,18 @@ describe("server reachability", () => {
   })
 
   test("the gate says CREDENTIALS for a rejection and OUTAGE for an unreachable instance", () => {
-    const rejected = connectionErrorCopy({ hasServer: true, reachability: "rejected", supervisorGaveUp: false })
-    const unreachable = connectionErrorCopy({ hasServer: true, reachability: "unreachable", supervisorGaveUp: false })
+    const rejected = connectionErrorCopy({
+      hasServer: true,
+      reachability: "rejected",
+      supervisorGaveUp: false,
+      supervisorStarting: false,
+    })
+    const unreachable = connectionErrorCopy({
+      hasServer: true,
+      reachability: "unreachable",
+      supervisorGaveUp: false,
+      supervisorStarting: false,
+    })
 
     expect(rejected.headline).toBe("app.server.rejected")
     expect(rejected.detail).toBe("app.server.rejectedHint")
@@ -61,8 +71,18 @@ describe("server reachability", () => {
   })
 
   test("a rejection does not promise a retry, and does not probe at the outage cadence", () => {
-    const rejected = connectionErrorCopy({ hasServer: true, reachability: "rejected", supervisorGaveUp: false })
-    const unreachable = connectionErrorCopy({ hasServer: true, reachability: "unreachable", supervisorGaveUp: false })
+    const rejected = connectionErrorCopy({
+      hasServer: true,
+      reachability: "rejected",
+      supervisorGaveUp: false,
+      supervisorStarting: false,
+    })
+    const unreachable = connectionErrorCopy({
+      hasServer: true,
+      reachability: "unreachable",
+      supervisorGaveUp: false,
+      supervisorStarting: false,
+    })
 
     expect(rejected.probeEveryMs).toBeGreaterThan(unreachable.probeEveryMs)
     // ...but it must still probe: a credential repaired on the server side has to clear this screen.
@@ -71,16 +91,107 @@ describe("server reachability", () => {
   })
 
   test("the no-instance and supervisor-stopped screens are unchanged", () => {
-    const none = connectionErrorCopy({ hasServer: false, reachability: "unreachable", supervisorGaveUp: false })
-    const stopped = connectionErrorCopy({ hasServer: true, reachability: "unreachable", supervisorGaveUp: true })
+    const none = connectionErrorCopy({
+      hasServer: false,
+      reachability: "unreachable",
+      supervisorGaveUp: false,
+      supervisorStarting: false,
+    })
+    const stopped = connectionErrorCopy({
+      hasServer: true,
+      reachability: "unreachable",
+      supervisorGaveUp: true,
+      supervisorStarting: false,
+    })
 
     expect(none).toEqual({ headline: "app.server.none", detail: "app.server.noneHint", probeEveryMs: 1_000 })
     expect(stopped.headline).toBe("app.server.unreachable")
     expect(stopped.detail).toBe("app.connection.stopped.description")
     expect(stopped.probeEveryMs).toBe(1_000)
     // A rejection outranks the local supervisor's phase: the instance the shell is DRIVING answered.
-    expect(connectionErrorCopy({ hasServer: true, reachability: "rejected", supervisorGaveUp: true }).headline).toBe(
-      "app.server.rejected",
-    )
+    expect(
+      connectionErrorCopy({
+        hasServer: true,
+        reachability: "rejected",
+        supervisorGaveUp: true,
+        supervisorStarting: false,
+      }).headline,
+    ).toBe("app.server.rejected")
+  })
+
+  /**
+   * 🔴 THE REGRESSION, AS A PAIR.
+   *
+   * Measured 2026-09-28 in the packaged app (0.1.81): the renderer was handed `phase: "running"`
+   * for an instance whose port was not yet bound, the gate exhausted its 10 s budget, and the screen
+   * said *"Could not reach Local Server / Retrying automatically..."* for 30 s — against a server
+   * that was healthy from 8.7 s and answered `/global/health` in 15 ms. Two facts had to be
+   * conflated for that sentence to be reachable: an owner reporting `running` before verification,
+   * and a copy function with no word for "coming up". Asserted together because each alone passes
+   * on the broken tree.
+   */
+  test("an instance that is STARTING is never reported as an outage", () => {
+    const starting = connectionErrorCopy({
+      hasServer: true,
+      reachability: "unreachable",
+      supervisorGaveUp: false,
+      supervisorStarting: true,
+    })
+    const outage = connectionErrorCopy({
+      hasServer: true,
+      reachability: "unreachable",
+      supervisorGaveUp: false,
+      supervisorStarting: false,
+    })
+
+    expect(starting.headline).not.toBe(outage.headline)
+    expect(starting.headline).toBe("app.server.starting")
+    // The false claim, in the two ways it reached a person.
+    expect(en[starting.headline].toLowerCase()).not.toContain("could not reach")
+    expect(en[starting.detail].toLowerCase()).not.toContain("retrying automatically")
+  })
+
+  test("a start is probed faster than an outage, because it is a countdown and not a fault", () => {
+    const starting = connectionErrorCopy({
+      hasServer: true,
+      reachability: "unreachable",
+      supervisorGaveUp: false,
+      supervisorStarting: true,
+    })
+    const outage = connectionErrorCopy({
+      hasServer: true,
+      reachability: "unreachable",
+      supervisorGaveUp: false,
+      supervisorStarting: false,
+    })
+
+    expect(starting.probeEveryMs).toBeLessThan(outage.probeEveryMs)
+    expect(starting.probeEveryMs).toBeGreaterThan(0)
+  })
+
+  test("a start that turns into a refusal reports the REFUSAL, not the start", () => {
+    // The instance came up and said no. No amount of starting resolves that, and showing
+    // "starting up" here would send the user to wait for a repair only they can make.
+    const rejected = connectionErrorCopy({
+      hasServer: true,
+      reachability: "rejected",
+      supervisorGaveUp: false,
+      supervisorStarting: true,
+    })
+
+    expect(rejected.headline).toBe("app.server.rejected")
+    expect(rejected.detail).toBe("app.server.rejectedHint")
+  })
+
+  test("a give-up outranks a start: the ladder stopped, so nothing is coming", () => {
+    const gaveUpWhileStarting = connectionErrorCopy({
+      hasServer: true,
+      reachability: "unreachable",
+      supervisorGaveUp: true,
+      supervisorStarting: true,
+    })
+
+    expect(gaveUpWhileStarting.headline).toBe("app.server.unreachable")
+    expect(gaveUpWhileStarting.detail).toBe("app.connection.stopped.description")
   })
 })

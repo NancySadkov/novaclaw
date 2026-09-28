@@ -718,6 +718,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
 function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
   const server = useServer()
   const checkServerHealth = useCheckServerHealth()
+  const { starting: supervisorStarting } = useSupervisorPhase()
 
   const [checkMode, setCheckMode] = createSignal<"blocking" | "background">("blocking")
 
@@ -741,7 +742,16 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
       }
     }).pipe(
       Effect.timeoutOrElse({
-        duration: "10 seconds",
+        // 🔴 Ten seconds is an OUTAGE budget, and applying it to a start is what turned a 9 s boot
+        // into a 39 s hang: the gate gave up at 10 s, handed the user a full-screen "Could not reach
+        // Local Server", and the app then sat on the SSE ladder's 250 ms→30 s backoff for another
+        // 29 s while the instance it was describing was healthy and answering in 15 ms.
+        //
+        // A start is on a countdown the SHELL is keeping, and its own bound is 60 s
+        // (`SIDECAR_START_STALL_TIMEOUT`). The gate waits on that bound while the supervisor says
+        // `starting`, and keeps the 10 s budget for everything else — where a fast, honest answer is
+        // the right one. The splash escalates at 8 s and 25 s, so a slow start is still narrated.
+        duration: supervisorStarting() ? "55 seconds" : "10 seconds",
         orElse: () => Effect.succeed("unreachable" as ServerReachability),
       }),
     )
@@ -842,7 +852,7 @@ function ConnectionError(props: {
   const language = useLanguage()
   const server = useServer()
   const platform = usePlatform()
-  const { phase, gaveUp: supervisorGaveUp } = useSupervisorPhase()
+  const { phase, gaveUp: supervisorGaveUp, starting: supervisorStarting } = useSupervisorPhase()
   const restartReason = createMemo(() => {
     const current = phase()
     if (current?.phase !== "restarting" && current?.phase !== "gave-up") return undefined
@@ -859,6 +869,7 @@ function ConnectionError(props: {
       hasServer: !!server.current,
       reachability: props.reachability ?? "unreachable",
       supervisorGaveUp: !!supervisorGaveUp(),
+      supervisorStarting: !!supervisorStarting(),
     }),
   )
   const headline = createMemo(() => language.t(copy().headline, { server: serverToken }).split(serverToken))

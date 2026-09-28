@@ -220,13 +220,39 @@ export function createDesktopService(instance: ServiceInstancePaths, options: De
   let descriptor: Descriptor | undefined
   let retained = false
   let stopping = false
-  const state = (): SuperviseStatus => ({ phase: stopping ? "stopped" : "running" })
+  /**
+   * The LAST REPORTED phase, and the reason this is a variable rather than a derivation from
+   * `stopping`: "not stopped" is not "running". Deriving it that way answered the renderer's
+   * "is my instance up?" with yes before the watchdog had been spawned — the same premature claim
+   * the other three owners had.
+   */
+  let phase: SuperviseStatus = { phase: "starting" }
+  const state = (): SuperviseStatus => (stopping ? { phase: "stopped" } : phase)
+  const listeners = new Set<(state: SuperviseStatus) => void>()
+  const report = (next: SuperviseStatus) => {
+    phase = next
+    for (const listener of listeners) {
+      try {
+        listener(next)
+      } catch {}
+    }
+  }
   return {
     state,
-    subscribe: () => () => undefined,
+    subscribe: (listener: (state: SuperviseStatus) => void) => {
+      listeners.add(listener)
+      listener(state())
+      return () => {
+        listeners.delete(listener)
+      }
+    },
     retain: () => { retained = true },
     async start(signal) {
       signal.throwIfAborted()
+      // `starting` until the watchdog answers AND the health gate passes. This owner reported
+      // `running` from construction, which is the same premature claim the sidecar and standalone
+      // owners had — see the note in `standalone-server.ts`.
+      report({ phase: "starting" })
       descriptor = readOrRepairService(home)
       const running = descriptor !== undefined && alive(descriptor.watchdogPid) && await control(descriptor, "ping")
       if (running && descriptor && descriptor.databaseFile !== databaseFile)
@@ -288,6 +314,8 @@ export function createDesktopService(instance: ServiceInstancePaths, options: De
             credentials,
             healthy: checkHealth(credentials.url, credentials.password).then((healthy) => {
               if (!healthy) throw new Error("The retained server did not pass its health check")
+              // Observed to answer. Only now is `running` true.
+              report({ phase: "running" })
             }),
           }
         }
@@ -297,6 +325,7 @@ export function createDesktopService(instance: ServiceInstancePaths, options: De
     },
     async stop() {
       stopping = true
+      report({ phase: "stopped" })
       if (retained || !descriptor) return
       const current = readService(home)
       if (current?.id === descriptor.id) writeService(home, { ...current, closeRequested: true })

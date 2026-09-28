@@ -14,7 +14,12 @@ export function createDeferredInstance(load: () => Promise<LocalOwner>): LocalOw
   let stopping: Promise<void> | undefined
   let unsubscribe: (() => void) | undefined
   const listeners = new Set<(state: SuperviseStatus) => void>()
-  const state = (): SuperviseStatus => owner?.state() ?? { phase: closed ? "stopped" : "running" }
+  // 🔴 `starting` while the real owner is still being acquired, and after a stop `stopped`. This
+  // used to answer `running` for an instance that did not exist yet — the same premature claim as
+  // every other owner, and the one the renderer's gate is most likely to read first, because this
+  // wrapper is what the desktop installs before the sidecar has even been chosen.
+  const state = (): SuperviseStatus =>
+    owner?.state() ?? (closed ? { phase: "stopped" } : { phase: "starting" })
   return {
     state,
     subscribe(listener) {

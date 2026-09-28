@@ -522,6 +522,14 @@ export const dict = {
 
   "app.server.unreachable": "Could not reach {{server}}",
   "app.server.retrying": "Retrying automatically...",
+  // A start in progress is not an outage, and this screen used to call it one. "Retrying
+  // automatically..." sat under "Could not reach {{server}}" for 30 seconds against an instance that
+  // was healthy and answering in 15 ms — the promise was true in the smallest possible sense and
+  // useless in every way a person cares about. These two say what is actually true: it is coming,
+  // and coming up is what this screen is for.
+  "app.server.starting": "Starting {{server}}",
+  "app.server.startingHint":
+    "NovaClaw is bringing its instance up. This clears by itself the moment it is ready — nothing to do here.",
   "app.server.otherServers": "Other servers",
   "app.server.none": "No instance connected",
   "app.server.noneHint":

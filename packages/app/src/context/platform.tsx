@@ -111,6 +111,8 @@ type PlatformBase = {
 
 /** What the shell needs to say whether a local instance is coming back — and when it is not. */
 export type SupervisorPhase =
+  /** Spawned and not yet observed to answer. NOT an outage, and never reported as one. */
+  | { phase: "starting" }
   | { phase: "running" }
   | { phase: "stopped" }
   | { phase: "restarting"; reason: string; attempt: number; nextAttemptInMs: number }
