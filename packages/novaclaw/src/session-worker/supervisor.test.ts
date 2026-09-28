@@ -704,15 +704,27 @@ test("one crashing session leaves its concurrent peer alive", async () => {
   expect(activeWorkerCount()).toBe(0)
 })
 
-test("reported worker memory pressure is contained without allocating it in the test host", async () => {
+test("a worker over the ceiling is killed on memory MEASURED FROM OUTSIDE, not on what it claims", async () => {
+  // 🔴 This test used to spawn a fixture that reported `rssBytes: 2_000_000` in its heartbeat and assert
+  // the supervisor killed on that number. That was the defect: a self-reported working set is one the
+  // operating system may shrink, which is how a worker holding 6.32 GB of commit at 18.5 MB resident
+  // was never stopped. The fixture is unchanged — it still runs and still heartbeats — but it no longer
+  // carries the number, and the ceiling is placed where a real process is genuinely over it.
   const worker = spawn({
     command: [process.execPath, fixture, "memory"],
     lease: { ...lease, sessionID: SessionSchema.ID.make("ses_worker_memory"), attemptID: "exe_memory" },
     directory: process.cwd(),
     force: false,
-    memoryLimitBytes: 1_000_000,
+    memoryLimitBytes: 1,
   })
-  expect(await worker.result).toEqual({ type: "memory-limit", rssBytes: 2_000_000, limitBytes: 1_000_000 })
+  const outcome = await worker.result
+  expect(outcome.type).toBe("memory-limit")
+  // The reading is the OS's, so its exact value is not asserted — only that it is a real measurement
+  // above a 1-byte ceiling, and that the metric travels with it.
+  if (outcome.type !== "memory-limit") throw new Error(`unreachable: ${outcome.type}`)
+  expect(outcome.heldBytes).toBeGreaterThan(1)
+  expect(outcome.limitBytes).toBe(1)
+  expect(["commit", "rss"]).toContain(outcome.metric)
   expect(activeWorkerCount()).toBe(0)
 })
 

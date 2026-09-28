@@ -1,29 +1,36 @@
-export * as WorkerCommit from "./worker-commit"
+export * as ProcessCommit from "./process-commit"
 
 import { spawn } from "node:child_process"
 import fs from "node:fs"
 
 /**
- * WHAT EACH LIVE SESSION WORKER IS COSTING THE HOST — read from OUTSIDE the worker, in one query.
+ * WHAT A PROCESS IS COSTING THE HOST — read from OUTSIDE it, in one query, for the whole fleet.
  *
- * 🔴 **Why this exists beside `pressure.ts`'s `processMemory`.** That one answers a different
- * question and says so: *"deliberately RSS/working set, not host commit charge"*. Two things make it
- * the wrong instrument for a fleet watchdog, both measured 2026-08-24
- * (`notes/reports/worker-memory-guard-2026-08-24.md`):
+ * 🔴 **This is the product's ONLY memory instrument, and that is the whole point of it living here.**
+ * It used to live in `packages/novaclaw/src/storage/worker-commit.ts`, where the session worker could
+ * reach it and `core` could not — so the memory-graph worker's ceiling in `kb-graph/isolated-engine.ts`
+ * had no way to use the correct reader and read a self-reported one instead. A guard that only one
+ * caller can afford is a guard the other callers route around. `core` is the lowest package both can
+ * import, so the instrument belongs here and every bound in the product reads it.
  *
- *   1. **Working set hides the failure.** A trimmed process owes the system gigabytes of commit at a
- *      working set near zero — the zombie-bun shape already on the record. A watchdog reading working
- *      set would report a worker as small precisely while it is the reason the host is dying.
- *   2. **It spawns a shell PER PID.** Sampling a fleet that way costs a process per worker per tick,
- *      which is a memory guard that is itself a memory problem. This takes ONE reading for every pid
- *      at once, so the cost does not grow with the fleet.
+ * 🔴 **WHY COMMIT AND NOT WORKING SET — the defect this file exists to stop repeating.**
+ * Working set is a number the operating system is free to shrink. Measured 2026-09-28 on a live
+ * instance: a `novaclaw` process held **6.32 GB of commit at 18.5 MB of working set**, idle, and the
+ * per-worker limit (2 GiB) never fired — because the limit was evaluated against the worker's
+ * SELF-REPORTED `process.memoryUsage.rss()`. 18.5 MB is 31× under the ceiling, so the process that
+ * was starving the host looked tiny to the only code that could have stopped it. The host's commit
+ * budget is what actually runs out, so commit is the quantity a bound must be written against.
  *
- * ⚠️ **The metric is platform-specific ON PURPOSE, and the choice is "what predicts exhaustion here".**
- * On Windows that is COMMIT (`PagedMemorySize64`), because Windows charges commit against a hard
- * system-wide limit and refuses allocations when it runs out. On Linux it is RSS, because Linux
- * overcommits by design — `VmSize` there is mostly unbacked address space and would condemn healthy
- * processes. Reporting one number under one name across both would be a lie in whichever direction
- * the reader guessed, so `metric` rides WITH the reading.
+ * ⚠️ **The metric is platform-specific ON PURPOSE, and it rides WITH the reading.** On Windows that is
+ * COMMIT (`PagedMemorySize64`), because Windows charges commit against a hard system-wide limit and
+ * refuses allocations when it runs out. On Linux it is RSS, because Linux overcommits by design and
+ * `VmSize` there is mostly unbacked address space that would condemn healthy processes. Reporting one
+ * number under one name across both would be a lie in whichever direction the reader guessed — so a
+ * caller that shows this number to a person carries {@link Metric} with it.
+ *
+ * ⚠️ **Why a shell, and why one.** Reading another process's commit portably needs the OS. This spawns
+ * ONE process for the WHOLE fleet: sampling per-pid instead would make a memory guard that is itself a
+ * memory problem, costing a shell per worker per reading. A fleet of nothing spawns nothing at all.
  */
 
 /** Which number `bytes` is, so a caller never has to infer it from `process.platform`. */
@@ -138,4 +145,21 @@ export const sample = (pids: ReadonlyArray<number>, platform: string = process.p
     metric: metricFor(platform),
     unavailable: `worker memory is not measured on ${platform}`,
   })
+}
+
+/**
+ * The reading for ONE pid, or `undefined` when it could not be read.
+ *
+ * ⚠️ **`undefined` means UNKNOWN, never "small".** A caller bounding a process must treat this as
+ * "cannot enforce right now", not as permission to continue silently — a guard that reads a missing
+ * measurement as a passing one is the defect this file's header is about, one level up.
+ */
+export const read = async (
+  pid: number,
+  platform: string = process.platform,
+): Promise<{ readonly bytes: number; readonly metric: Metric } | undefined> => {
+  const result = await sample([pid], platform)
+  if (result.unavailable !== undefined) return undefined
+  const found = result.readings.find((reading) => reading.pid === pid)
+  return found === undefined ? undefined : { bytes: found.bytes, metric: result.metric }
 }

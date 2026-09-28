@@ -47,11 +47,14 @@ describe("SessionWorkerProtocol", () => {
     expect(line.endsWith("\n")).toBe(true)
     expect(SessionWorkerProtocol.decodeHostLine(line.trimEnd())).toEqual({ ok: true, message: start })
 
+    // A heartbeat is a receipt of life and carries NO resource claim. It used to carry a self-reported
+    // `rssBytes`, which the supervisor then bounded against — and a self-reported working set is a
+    // number Windows may shrink, which is how a worker holding 6.32 GB of commit at 18.5 MB of working
+    // set was never stopped. The bound is now read from outside; see `Heartbeat` in the protocol.
     const heartbeat = {
       ...identity,
       type: "heartbeat" as const,
       at: 1234,
-      rssBytes: 128 * 1024 * 1024,
     } satisfies typeof SessionWorkerProtocol.Heartbeat.Type
     expect(SessionWorkerProtocol.decodeWorkerLine(SessionWorkerProtocol.encodeLine(heartbeat).trimEnd())).toEqual({
       ok: true,
@@ -287,11 +290,14 @@ describe("SessionWorkerProtocol", () => {
       ok: false,
       error: "worker message is not valid JSON",
     })
+    // The negative-`rssBytes` case that used to sit here is gone with the field: there is no longer a
+    // number in a heartbeat that could be negative, which is the point. What still has to be refused
+    // is a heartbeat missing the one field it does carry.
     for (const value of [
       { ...identity, type: "invented" },
       { ...identity, version: 2, type: "settled" },
       { ...identity, type: "heartbeat", at: "invented" },
-      { ...identity, type: "heartbeat", at: 1, rssBytes: -1 },
+      { ...identity, type: "heartbeat" },
     ])
       expect(SessionWorkerProtocol.decodeWorkerLine(JSON.stringify(value))).toEqual({
         ok: false,

@@ -79,7 +79,11 @@ export const failureDetail = (outcome: SessionWorkerSupervisor.Outcome): string 
     case "failed":
       return `${outcome.classification}${outcome.detail ? `: ${outcome.detail}` : ""}`
     case "memory-limit":
-      return `session worker exceeded its memory limit (${Math.ceil(outcome.rssBytes / MIB)} MiB used; ${Math.ceil(outcome.limitBytes / MIB)} MiB allowed)`
+      // ⚠️ The metric is NAMED, because "used" is otherwise ambiguous: on Windows this is committed
+      // memory and on Linux it is resident. A person reading "6.3 GiB used" deserves to know which.
+      return `session worker exceeded its memory limit (${Math.ceil(outcome.heldBytes / MIB)} MiB ${
+        outcome.metric === "commit" ? "committed" : "resident"
+      }; ${Math.ceil(outcome.limitBytes / MIB)} MiB allowed)`
     case "protocol-error":
       return `session worker protocol error: ${outcome.detail}`
     // The two the supervisor learns from the child's own `exit` event. Naming the code or the signal

@@ -6,7 +6,7 @@ import { Log } from "@novaclaw/schema/log"
 import { SessionWorkerCommand } from "@/session-worker/command"
 import { workerMemoryLimitBytes } from "@/session-worker/execution"
 import { WorkerBudget } from "./worker-budget"
-import { WorkerCommit } from "./worker-commit"
+import { ProcessCommit } from "@novaclaw/core/util/process-commit"
 import { WorkerRegistry } from "./worker-registry"
 
 /**
@@ -44,7 +44,7 @@ export const CONSECUTIVE = 3
 export const observe = Effect.gen(function* () {
   const pids = WorkerRegistry.pids()
   if (pids.length === 0) return "idle" as const
-  const sample = yield* Effect.promise(() => WorkerCommit.sample(pids))
+  const sample = yield* Effect.promise(() => ProcessCommit.sample(pids))
   // ⚠️ An unmeasurable fleet is NOT a healthy one and must not be logged as a zero — the same rule
   // `pressure.ts` holds for the host. Say nothing rather than say "fine".
   if (sample.unavailable !== undefined) return "unmeasured" as const
