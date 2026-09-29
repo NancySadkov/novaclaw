@@ -62,22 +62,15 @@ export function SessionSidePanel(props: {
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
 
-  // Review/context is a modal and remains reachable at every width. Only the docked file tree is
-  // desktop-only; coupling both to `isDesktop()` made a narrow context-button click update hidden
-  // state with no dialog on screen.
+  // Review and the context inspector are modals and remain reachable at every width. Coupling them
+  // to `isDesktop()` made a narrow context-button click update hidden state with no dialog on
+  // screen.
   const reviewOpen = createMemo(() => view().reviewPanel.opened())
-  const fileOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
-  const open = createMemo(() => reviewOpen() || fileOpen())
-  /**
-   * Review floats; the file tree does not. `asModal` is the one switch, so every rule below reads
-   * from it rather than re-deriving "is this the review?" in four places.
-   */
+  const open = createMemo(() => reviewOpen())
   const asModal = createMemo(() => reviewOpen())
   const panelWidth = createMemo(() => {
     if (!open()) return "0px"
-    // An overlay sizes itself; a rail is sized by the layout that contains it.
-    if (asModal()) return "min(960px, calc(100vw - 16px))"
-    return `${layout.fileTree.width()}px`
+    return "min(960px, calc(100vw - 16px))"
   })
   const diffs = createMemo(() => props.diffs().filter(renderDiff))
 
@@ -110,11 +103,6 @@ export function SessionSidePanel(props: {
   const openedTabs = tabState.openedTabs
   const activeTab = tabState.activeTab
   const activeFileTab = tabState.activeFileTab
-
-  const showAllFiles = () => {
-    if (layout.fileTree.tab() !== "changes") return
-    layout.fileTree.setTab("all")
-  }
 
   const [store, setStore] = createStore({
     activeDraggable: undefined as string | undefined,
@@ -314,7 +302,7 @@ export function SessionSidePanel(props: {
                                   class="!rounded-md"
                                   onClick={() => {
                                     void import("@/components/dialog-select-file").then((x) => {
-                                      dialog.show(() => <x.DialogSelectFile mode="files" onOpenFile={showAllFiles} />)
+                                      dialog.show(() => <x.DialogSelectFile mode="files" />)
                                     })
                                   }}
                                   aria-label={language.t("command.file.open")}

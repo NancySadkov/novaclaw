@@ -209,15 +209,11 @@ export default function Page() {
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const size = createSizing()
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
-  const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
-  const desktopSidePanelOpen = createMemo(() => desktopReviewOpen() || desktopFileTreeOpen())
-  const sessionPanelWidth = createMemo(() => {
-    // The REVIEW no longer takes width from the conversation — it floats above it (owner,
-    // 2026-08-12). Only the file tree, which is a navigation rail rather than a document, still
-    // shares the row.
-    if (!desktopFileTreeOpen()) return "100%"
-    return `calc(100% - ${layout.fileTree.width()}px)`
-  })
+  const desktopSidePanelOpen = createMemo(() => desktopReviewOpen())
+  // Nothing shares the row with the conversation any more. The review floats above it, and the file
+  // lists moved into the context inspector, which floats too — and the layout store still defaults
+  // `fileTree.opened` to TRUE, so reserving width for it renders a permanent empty gap.
+  const sessionPanelWidth = createMemo(() => "100%")
   const centered = createMemo(() => isDesktop() && !desktopReviewOpen())
 
   function normalizeTab(tab: string) {
@@ -256,6 +252,7 @@ export default function Page() {
   })
   const activeTab = tabState.activeTab
   const activeFileTab = tabState.activeFileTab
+  const contextOpen = tabState.contextOpen
   const revertMessageID = createMemo(() => info()?.revert?.messageID)
   const timeline = createTimelineModel({ sessionID: () => params.id, revertMessageID })
   const createTimelineViewport = (key: string): NativeTimelineViewport => {
@@ -371,9 +368,7 @@ export default function Page() {
     return list
   })
   const wantsReview = createMemo(() =>
-    isDesktop()
-      ? desktopFileTreeOpen() || (desktopReviewOpen() && activeTab() === "review")
-      : store.mobileTab === "changes",
+    isDesktop() ? desktopReviewOpen() && activeTab() === "review" : store.mobileTab === "changes",
   )
   const sessionStatus = () => sync().data.session_status[params.id ?? ""]?.type ?? "idle"
   const executionQuery = createQuery(() => ({
@@ -703,7 +698,6 @@ export default function Page() {
   )
 
   const fileTreeTab = () => layout.fileTree.tab()
-  const setFileTreeTab = (value: "changes" | "all") => layout.fileTree.setTab(value)
 
   const [tree, setTree] = createStore({
     reviewScroll: undefined as HTMLDivElement | undefined,
@@ -727,7 +721,7 @@ export default function Page() {
 
   const showAllFiles = () => {
     if (fileTreeTab() !== "changes") return
-    setFileTreeTab("all")
+    layout.fileTree.setTab("all")
   }
 
   const focusInput = () => {
@@ -989,11 +983,11 @@ export default function Page() {
   let treeDir: string | undefined
   createEffect(() => {
     const dir = sdk().directory
-    if (!isDesktop()) return
-    if (!layout.fileTree.opened()) return
+    if (!contextOpen()) return
     if (sync().status === "loading") return
 
-    fileTreeTab()
+    // The file lists render inside the context inspector now, so the tree is populated when THAT is
+    // open. It used to be the docked file-tree panel, which no longer exists.
     const refresh = treeDir !== dir
     treeDir = dir
     void (refresh ? file.tree.refresh("") : file.tree.list(""))

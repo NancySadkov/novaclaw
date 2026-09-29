@@ -29,7 +29,6 @@ export const dict = {
   "command.context.addSelection.description": "Додати вибрані рядки з поточного файлу",
   "command.input.focus": "Фокус на полі введення",
   "command.terminal.toggle": "Перемкнути термінал",
-  "command.fileTree.toggle": "Перемкнути дерево файлів",
   "command.review.toggle": "Перемкнути огляд",
   "command.terminal.new": "Новий термінал",
   "command.terminal.new.description": "Створити нову вкладку термінала",

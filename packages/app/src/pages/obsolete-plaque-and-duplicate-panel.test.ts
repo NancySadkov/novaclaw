@@ -75,6 +75,32 @@ describe("the panel keeps ONE official road, and the file lists live in the insp
     expect(code(CONTEXT)).toContain("props.files")
   })
 
+  test("🔴 nothing can OPEN the file tree any more, because there is no longer one to open", () => {
+    // The dead end this removal created, found by sweeping the store's consumers rather than by
+    // looking at the panel: `layout.fileTree` is still in the layout store, it still DEFAULTS
+    // `opened` to true, and the session page still reserved a rail's width from the conversation
+    // for it. So the pill's removal left a command (`mod+\`) that opened a panel rendering nothing,
+    // with a permanent empty gap beside the chat. A user pressing it gets no file list and no way
+    // to tell that anything happened.
+    const commands = readFileSync(
+      path.resolve(import.meta.dir, "session", "use-session-commands.tsx"),
+      "utf8",
+    )
+    expect(code(commands), "a command can still toggle the removed file tree").not.toContain("fileTree.toggle")
+    expect(code(SESSION), "the conversation still reserves a rail for the removed tree").not.toContain(
+      "layout.fileTree.width()",
+    )
+    expect(code(PANEL), "the side panel still reads the removed tree").not.toContain("layout.fileTree")
+  })
+
+  test("the file tree is populated for the INSPECTOR, which is what renders it now", () => {
+    // The refresher used to be gated on the docked panel being open. Left pointing there, the
+    // inspector's two lists would render against a tree nobody ever loaded.
+    const session = code(SESSION)
+    expect(session).toContain("if (!contextOpen()) return")
+    expect(session).toContain('file.tree.refresh("")')
+  })
+
   test("the KIND map is not re-inlined in the component, so it cannot drift from the tested copy", () => {
     // The semantics — a changed file AND its folders registered, a Windows path normalized — are
     // owned by `session-files-derive.test.ts`, which proves them by RUNNING them. What belongs here

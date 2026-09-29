@@ -242,7 +242,6 @@ export const dict = {
   "command.context.addSelection.description": "Add selected lines from the current file",
   "command.input.focus": "Focus input",
   "command.terminal.toggle": "Toggle terminal",
-  "command.fileTree.toggle": "Toggle file tree",
   "fileTree.loadFailed": "Could not load this folder",
   "fileTree.retry": "Try again",
   "command.review.toggle": "Toggle review",
