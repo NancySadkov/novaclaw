@@ -524,6 +524,24 @@ const loadWasm = (): Promise<any> => {
 /** How long `close()` will wait for a final flush before giving up and saying so. */
 const CLOSE_FLUSH_DEADLINE_MS = 10_000
 
+/**
+ * Hand a Ladybug native handle back. `close()` is the only thing that calls `delete()` on the
+ * object underneath — `QueryResult`, `PreparedStatement`, `Connection`, `Database` — so a handle
+ * the engine borrows and does not release is memory the process never gets back. The WASM heap is
+ * process-wide and never shrinks, so this is not a cheapness: it is the whole budget.
+ *
+ * ⚠️ Best-effort by design. A release that throws while a statement is already failing must not
+ * replace the failure the caller was told about, and a half-built handle that never got one must
+ * not turn into a second failure.
+ */
+const releaseHandle = (handle: any): void => {
+  try {
+    handle?.close?.()
+  } catch {
+    /* already released, or never had a native handle at all */
+  }
+}
+
 export class WasmMemory {
   private readonly lbug: any
   private readonly db: any
@@ -680,9 +698,13 @@ export class WasmMemory {
       }
       clearScratch()
       for (const [name, bytes] of files) FS.writeFile(`${memfsDir}/${name}`, bytes)
+      // Hoisted out of the `try` so the `catch` can release them: a candidate that will not open is
+      // still a database, and a database the engine does not return must not stay open.
+      let db: any
+      let conn: any
       try {
-        const db = new lbug.Database(`${memfsDir}/graph`)
-        const conn = new lbug.Connection(db)
+        db = new lbug.Database(`${memfsDir}/graph`)
+        conn = new lbug.Connection(db)
         const candidate = new WasmMemory(lbug, db, conn, memfsDir, realDir, dim)
         await candidate.ensureSchema()
         // ⚠️ The DDL alone is not proof: `ensureSchema` swallows "already exists", which is exactly
@@ -703,6 +725,17 @@ export class WasmMemory {
         recovery.opened = gen.name
         break
       } catch (error) {
+        // 🔴 **A REJECTED CANDIDATE MUST BE RELEASED, and this loop is the only place in the engine
+        // that opens a `Database` it does not return.** A Ladybug database owns a buffer pool and a
+        // preallocated file, both of which live in the WASM heap — and that heap is process-wide and
+        // never shrinks, so abandoning one here charges a whole database to every later open in the
+        // process, for as long as the process lives. This is the branch the recovery tests exist to
+        // reach, so it is the branch most likely to be taken.
+        //
+        // ⚠️ Closed in the order they were opened, and best-effort: a release that throws while
+        // unwinding a failure must not replace the failure the caller was told about.
+        releaseHandle(conn)
+        releaseHandle(db)
         recovery.skipped.push({ name: gen.name, reason: (error as Error).message.slice(0, 200) })
         const held = GraphSnapshot.quarantine(realDir, gen)
         if (held) recovery.quarantined.push(held)
@@ -728,17 +761,46 @@ export class WasmMemory {
     return store
   }
 
-  // Ladybug params go through prepare→execute (query() alone runs a bare statement). The sync build's
-  // calls may be sync or promise-returning — awaiting a non-promise is harmless.
-  private async q(cypher: string, params?: Record<string, unknown>): Promise<any> {
-    if (!params) return this.conn.query(cypher)
+  /**
+   * 🔴 **EVERY NATIVE HANDLE THIS ENGINE BORROWS IS RELEASED HERE.**
+   *
+   * A Ladybug `QueryResult` and a `PreparedStatement` are embind handles over native objects, and
+   * `close()` on each is the only thing that calls `delete()` on the native side. JavaScript never
+   * releases them on its own, and this engine has one WASM heap for its whole life, so a handle
+   * nobody closes is memory nobody gets back. Measured on `snapshot-recovery.test.ts`: the engine
+   * issues hundreds of `rows()` calls per case, each of which leaked one result and one prepared
+   * statement.
+   *
+   * ⚠️ The release is best-effort and NEVER masks the statement's own outcome — a `close()` that
+   * throws while unwinding a failure would replace the failure the caller was told about.
+   *
+   * Ladybug params go through prepare→execute (query() alone runs a bare statement). The sync build's
+   * calls may be sync or promise-returning — awaiting a non-promise is harmless. No caller wants the
+   * result back: every one of them either discards it or materialises it through `rows`.
+   */
+  private async q(cypher: string, params?: Record<string, unknown>): Promise<void> {
+    if (!params) {
+      releaseHandle(await this.conn.query(cypher))
+      return
+    }
     const stmt = await this.conn.prepare(cypher)
-    return this.conn.execute(stmt, params)
+    try {
+      releaseHandle(await this.conn.execute(stmt, params))
+    } finally {
+      releaseHandle(stmt)
+    }
   }
 
   private async rows(cypher: string, params?: Record<string, unknown>): Promise<Record<string, unknown>[]> {
-    const result = await this.q(cypher, params)
-    return (await result.getAllObjects()) as Record<string, unknown>[]
+    const stmt = await this.conn.prepare(cypher)
+    let result: any
+    try {
+      result = await this.conn.execute(stmt, params)
+      return (await result.getAllObjects()) as Record<string, unknown>[]
+    } finally {
+      releaseHandle(result)
+      releaseHandle(stmt)
+    }
   }
 
   private async ddl(cypher: string): Promise<void> {
