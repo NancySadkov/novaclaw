@@ -232,6 +232,15 @@ export function Titlebar() {
           tabs.select(tab)
         }
 
+        /**
+         * Routes whose tab this effect has already created.
+         *
+         * 🔴 A guard, not a cache: it exists because the effect WRITES the store it READS, and in
+         * Solid that makes it re-enter itself (see the `route.type === "agent"` branch). Holding the
+         * routes already done is what turns a self-retriggering write into a one-shot reconciliation.
+         */
+        const seenRoutes = new Set<string>()
+
         createEffect(() => {
           const route = layout.route()
           if (!tabs.ready()) return
@@ -256,6 +265,33 @@ export function Titlebar() {
               tabsStoreActions.remember(existing)
               return
             }
+            /**
+             * 🔴 **THIS EFFECT MUST NOT BE RE-ENTERED BY ITS OWN WRITE.**
+             *
+             * Measured on the owner's machine, 2026-09-29, reproduced twice through a scripted click:
+             * opening an officer who had NO tab threw `RangeError: Maximum call stack size exceeded`,
+             * and the stack was pure Solid scheduler —
+             * `runUpdates` → `completeUpdates` → `runUpdates` → … with no application frame in it.
+             *
+             * The cause is structural, not accidental. This effect READS the tab store (through
+             * `currentTab()`, and the `tabsStore.find` above) and then WROTE it with
+             * `addSessionTab`. In Solid a write inside an effect marks the same effect dirty again,
+             * `completeUpdates` re-runs the queue before the first frame returns, and the pair
+             * recurses until the stack dies. `addSessionTab` is the only UNGUARDED write on this
+             * path — `remember` and `clearRemoved` both no-op when the value is unchanged — which is
+             * why the fault appeared exactly on "an officer with no tab yet" and never on re-clicking
+             * one that already had a tab. Controlled test: re-clicking an existing officer tab threw
+             * nothing; opening a new one threw every time.
+             *
+             * The reconciliation is a one-shot PER ROUTE, not a standing watch: once this route has
+             * had its tab, the work is done and a later store change must not restart it. `seen`
+             * holds the routes already reconciled, which also keeps a genuine re-entry (the user
+             * navigated away and came back) working — the key is a function of the route, so leaving
+             * and returning reconciles again, while the write's own re-trigger does not.
+             */
+            const routeKey = `agent:${key}:${route.agentID}`
+            if (seenRoutes.has(routeKey)) return
+            seenRoutes.add(routeKey)
             const created = tabsStoreActions.addSessionTab({ server: key, sessionId: "", agent: route.agentID })
             tabsStoreActions.select(created)
             return
@@ -284,6 +320,16 @@ export function Titlebar() {
             // Removing a tab re-runs this effect before its lifecycle navigation settles. Do not put
             // that same tab back during the transition.
             if (tabsStoreActions.removedKey() === tabKey({ type: "session", ...next })) return
+            /**
+             * 🔴 The SAME self-retriggering write as the `agent` branch above, and fixed the same way.
+             * `addSessionTab` writes the store this effect reads, so without this the route→tab
+             * reconciliation re-entered itself and overflowed the stack. One shot per route: a later
+             * store change must not restart work this route has already done, while genuinely
+             * arriving at this route again (a different id) still reconciles.
+             */
+            const sessionRouteKey = `session:${next.server}:${next.sessionId}`
+            if (seenRoutes.has(sessionRouteKey)) return
+            seenRoutes.add(sessionRouteKey)
             const tab = tabsStoreActions.addSessionTab(next)
             if (tab.type === "session" && tab.sessionId !== sessionId) tabsStoreActions.select(tab)
           }
