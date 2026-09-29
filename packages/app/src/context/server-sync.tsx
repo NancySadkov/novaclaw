@@ -204,19 +204,40 @@ export function createServerSyncContextInner(serverSDK: ServerSDK, projects: Ret
   // DIRECTORY stores and none of these is one. See `instance-recovery.ts` for the class.
   const recovery = createInstanceRecovery()
   // Tags component bootstrap (notes/reports/entities-review-2026-07-06.md T0) — instance-wide.
-  recovery.register("session.tags", () => void session.loadTags())
+  // ⚠️ Each returns its promise so `sweep` can see a failure and name this bootstrap; `() => void p()`
+  // compiles to nothing the sweep can observe, and the rejection becomes an unowned one.
+  recovery.register("session.tags", () => session.loadTags())
   // Presence — who is attached to what, right now. Everything after the read arrives as
   // `session.presence.updated`. This read doubles as the instance's sweep for rooms whose last
   // viewer vanished without saying goodbye, which is precisely why it must run again on reconnect:
   // the viewers that vanished DURING the outage are the ones nothing else will report.
-  recovery.register("session.presence", () => void session.loadPresence())
+  recovery.register("session.presence", () => session.loadPresence())
   // Persisted app manifests. `app.registered` refreshes them while connected; nothing refreshed them
   // after an outage, so an app registered while the stream was down stayed invisible.
-  recovery.register(
-    "apps.persisted",
-    () => void loadPersistedApps(serverSDK.server.http, ServerConnection.key(serverSDK.server)),
+  recovery.register("apps.persisted", () =>
+    loadPersistedApps(serverSDK.server.http, ServerConnection.key(serverSDK.server)),
   )
-  recovery.sweep()
+  /**
+   * 🔴 **A SWEEP FAILURE MUST REACH A PERSON, and this is the door.**
+   *
+   * The sweep records what failed rather than logging it, because `console.error` is a place no
+   * person without a console ever looks — the silent-write ledger's form A, and the reason a stale
+   * instance read used to report nothing at all. This is the only layer here that can raise a calm
+   * line, so it is the one that does. The wording matches `projects.loadFailed`: what broke, that
+   * it is already retrying, and that nothing is lost.
+   */
+  const sweepAndReport = () => {
+    void recovery.sweep().then(() => {
+      const failed = recovery.failures()
+      if (!failed.length) return
+      showToast({
+        variant: "error",
+        title: language.t("app.instance.refreshFailed"),
+        description: failed.map((failure) => failure.name).join(", "),
+      })
+    })
+  }
+  sweepAndReport()
   const nativeMessages = createNativeMessageStore(serverSDK.client)
   // A live transport is not yet a recovered client. Keep the connection unavailable until every
   // resident transcript has been authoritatively re-read; a failed read makes the stream loop
@@ -500,7 +521,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK, projects: Ret
         if (recent) return
         // Instance-scoped state first: it has no directory to be queued under, and it is the half
         // that had no sweep at all before 2026-09-04.
-        recovery.sweep()
+        sweepAndReport()
         for (const directory of Object.keys(children.children)) {
           queue.push(directory)
         }

@@ -8,6 +8,11 @@ export const dict = {
   "projects.new": "New project",
   "projects.loadFailed": "Projects unavailable — reconnecting. Your projects are safe.",
   "projects.retry": "Retry now",
+  // A background instance refresh failed. Said in the same voice as `projects.loadFailed`, and for
+  // the same reason: the fault happened, nothing a person can see is different afterwards, and the
+  // only honest options are a calm line or silence. Silence WAS the bug — the recovery sweep
+  // discarded its rejections, so a stale instance read reported nothing at all. Measured 2026-09-29.
+  "app.instance.refreshFailed": "Some instance data could not be refreshed — reconnecting. Your conversations are safe.",
   "projects.connecting": "Connecting to your instance…",
   "projects.loading": "Loading projects…",
   "projects.list": "Project list",
