@@ -4,6 +4,8 @@ import { join } from "node:path"
 import {
   BACKOFF_RESET_ALIVE_MS,
   FAST_CRASH_GIVEUP,
+  FAST_CRASH_MS,
+  HISTORY_RESET_ALIVE_MS,
   RESTART_BACKOFF_CAP_MS,
   RESTART_BACKOFF_START_MS,
 } from "./supervise"
@@ -85,6 +87,24 @@ describe("the Rust watchdog and the TypeScript supervisor agree on the numbers t
   // while the inner one believes every start succeeded.
   test("and on how long a start must survive to count as healthy", () => {
     expect(constant(code(), "HEALTHY_AFTER_MS")).toBe(BACKOFF_RESET_ALIVE_MS)
+  })
+
+  // 🔴 ADDED 2026-09-29 after measuring the opposite. The watchdog and the supervisor disagreed about
+  // what a crash-LOOP is, and the disagreement was invisible from inside the supervisor: its single
+  // counter reset at `FAST_CRASH_MS` (10 s) while the watchdog considered a start healthy at
+  // `BACKOFF_RESET_ALIVE_MS` (60 s). A child living six minutes therefore counted as healthy to the
+  // watchdog and as brand-new to the supervisor's giveup ladder, so the supervisor restarted it
+  // forever — measured live: 01:18, 01:54, 02:09, `code 1` each time, `restarting in 1s`.
+  //
+  // The fix adds a SECOND, much longer history window (`HISTORY_RESET_ALIVE_MS`, 60 minutes) on the
+  // supervisor's giveup counters. It is pinned here for the same reason the 60 s one already was: the
+  // watchdog has no giveup of its own and so no history window to match, but the supervisor's two
+  // windows must stay ordered — and if a third threshold ever appears, it is this test that should
+  // make a person look at both layers before choosing a number.
+  test("and on the LONGER window a start must survive to have its fault history forgiven", () => {
+    expect(code()).not.toContain("HISTORY_RESET_ALIVE_MS")
+    expect(HISTORY_RESET_ALIVE_MS).toBeGreaterThan(BACKOFF_RESET_ALIVE_MS)
+    expect(HISTORY_RESET_ALIVE_MS).toBeGreaterThan(FAST_CRASH_MS)
   })
 
   test("the ladder doubles from the floor to the ceiling without a gap or a step backwards", () => {

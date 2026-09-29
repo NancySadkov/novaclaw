@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { RECONNECT_BASE_MS, RECONNECT_CAP_MS, reconnectDelayMs } from "./reconnect-schedule"
+import { RECONNECT_BASE_MS, RECONNECT_CAP_MS, START_POLL_MS, reconnectDelayMs, streamRetryDelayMs } from "./reconnect-schedule"
 
 /**
  * ⚠️ The schedule is asserted, never slept through. A test that waits on the real clock measures the
@@ -51,5 +51,55 @@ describe("reconnectDelayMs", () => {
   test("a negative or fractional attempt cannot escape the schedule", () => {
     expect(reconnectDelayMs(-5, () => 1)).toBe(RECONNECT_BASE_MS)
     expect(reconnectDelayMs(1.9, () => 1)).toBe(500)
+  })
+})
+
+describe("streamRetryDelayMs", () => {
+  test("a start polls flat, and never inherits an accumulated backoff", () => {
+    // 🔴 The 29 seconds, measured 2026-09-28 across nine real boots. `reconnectDelayMs` is a pure
+    // function of the failure count, and a client starting a server burns attempts against a port that
+    // is not bound — so the count climbs for a reason the ladder knows nothing about, and the sleep
+    // that follows outlives the moment the server became reachable.
+    for (const attempt of [0, 1, 5, 8, 40, 5000]) {
+      expect(streamRetryDelayMs({ attempt, starting: true }, () => 1)).toBe(START_POLL_MS)
+    }
+  })
+
+  test("a start never sleeps longer than the ladder once the ladder starts to hurt", () => {
+    // ⚠️ Deliberately NOT "faster than the ladder's FIRST retry". At 500ms a start is slower than an
+    // outage's opening 125–250ms, and that is the right way round: a start polls a port that is not
+    // bound yet, so four times a second buys nothing and is precisely the churn the ladder exists to
+    // stop. What must hold is that the start never reaches the part of the schedule that outlives the
+    // server coming up.
+    expect(START_POLL_MS).toBeLessThan(reconnectDelayMs(4, () => 0))
+    expect(START_POLL_MS).toBeLessThan(reconnectDelayMs(9, () => 0))
+    for (const attempt of [4, 9, 100]) {
+      expect(streamRetryDelayMs({ attempt, starting: true })).toBeLessThan(reconnectDelayMs(attempt, () => 0))
+    }
+  })
+
+  test("not starting is EXACTLY the outage schedule, jitter included", () => {
+    // The restraint is the whole point of the ladder and must survive this untouched. Any drift here
+    // is a four-hertz reconnect storm wearing a fix's clothes.
+    for (const attempt of [0, 1, 7, 20]) {
+      for (const random of [() => 0, () => 0.5, () => 1]) {
+        expect(streamRetryDelayMs({ attempt, starting: false }, random)).toBe(reconnectDelayMs(attempt, random))
+      }
+    }
+  })
+
+  test("the exhausted outage schedule really is the length of the stall it explains", () => {
+    // Pins the diagnosis rather than the fix: the total a client sleeps through before its next
+    // attempt, with the jitter the schedule actually applies. The four slow boots on record measured
+    // 27.7s, 29.5s, 29.8s and 29.9s, and this is the band they came from.
+    const total = (jitter: number) => {
+      let elapsed = 0
+      for (let attempt = 0; attempt < 7; attempt++) elapsed += reconnectDelayMs(attempt, () => jitter)
+      return elapsed
+    }
+    expect(total(0)).toBeLessThan(30_000)
+    expect(total(1)).toBeGreaterThan(27_000)
+    // And the flat start poll beats the fastest end of that band by an order of magnitude.
+    expect(START_POLL_MS).toBeLessThan(total(0) / 10)
   })
 })

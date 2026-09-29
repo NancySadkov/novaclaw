@@ -12,6 +12,24 @@ async function* oneEvent<T>(event: T, after?: () => void): AsyncGenerator<T> {
 
 async function* noEvents<T>(): AsyncGenerator<T> {}
 
+/**
+ * A `wait` that records the delay it was asked for, and separately every delay the start window CUT.
+ *
+ * ⚠️ The one-tick fallback is load-bearing: a wait that is never cut must still resolve, or a missing
+ * release shows up as a hung suite instead of as a wrong number. Measuring a release by a flag is only
+ * trustworthy when not being released is cheap to observe.
+ */
+function measuredWait(delays: number[], cut: number[]): (ms: number, signal?: AbortSignal) => Promise<void> {
+  return (ms, signal) => {
+    delays.push(ms)
+    if (signal?.aborted) {
+      cut.push(ms)
+      return Promise.resolve()
+    }
+    return new Promise<void>((resolve) => setTimeout(resolve, 1))
+  }
+}
+
 test("page suspension cancels a backed-off retry so its replacement can start immediately", async () => {
   const controller = new AbortController()
   const pending = waitForStreamRetry(30_000, controller.signal)
@@ -21,6 +39,114 @@ test("page suspension cancels a backed-off retry so its replacement can start im
 }, 100)
 
 describe("runReconnectingStream", () => {
+  test("a finished start abandons the sleep in progress AND discards the failures it was repeating", async () => {
+    // 🔴 This is the 29 seconds measured 2026-09-28. The client burned attempts against a port that
+    // was not bound, backed off, and stayed asleep through the moment the server came up. Two things
+    // have to be true for that to stop, and this case pins both: the sleep in progress is RELEASED,
+    // and the count it was repeating is DISCARDED — because a delay has no memory, and the memory is
+    // the count. Asserting only the release would leave the first genuine outage after a slow boot
+    // starting from a 30-second backoff it never earned.
+    let active = true
+    let opens = 0
+    const startWindow = new AbortController()
+    const delays: number[] = []
+    const cut: number[] = []
+
+    await runReconnectingStream({
+      active: () => active,
+      open: async () => {
+        opens += 1
+        // The shell reports the instance up on the fourth attempt, and only then does it answer.
+        if (opens === 4) startWindow.abort()
+        if (opens <= 5) throw new Error("sidecar not listening")
+        return oneEvent("sync")
+      },
+      recover: async () => {},
+      accept: () => {
+        active = false
+      },
+      wait: measuredWait(delays, cut),
+      delay: (failure) => failure * 1000,
+      state: () => {},
+      retryNow: () => startWindow.signal,
+    })
+
+    // The 3000ms sleep was cut rather than served...
+    expect(delays).toEqual([0, 1000, 2000, 3000, 0])
+    expect(cut).toEqual([3000])
+    // ...and the attempt after it starts from zero, not from the count that was thrown away.
+    expect(opens).toBe(6)
+  })
+
+  test("a spent start window is not honoured twice, so a finished start cannot become a spin", async () => {
+    // The same window stays aborted for the rest of the page's life. Consulting it on every wait would
+    // cut every wait short and retry flat out — the four-hertz storm `reconnect-schedule` was written
+    // to prevent. It is honoured once, and a LATER start is a different signal and is honoured too.
+    let active = true
+    let opens = 0
+    const first = new AbortController()
+    const second = new AbortController()
+    const delays: number[] = []
+    const cut: number[] = []
+
+    await runReconnectingStream({
+      active: () => active,
+      open: async () => {
+        opens += 1
+        if (opens === 2) first.abort()
+        // A crash and a restart: the shell opens a NEW window for the new start.
+        if (opens === 4) second.abort()
+        if (opens <= 5) throw new Error("sidecar not listening")
+        return oneEvent("sync")
+      },
+      recover: async () => {},
+      accept: () => {
+        active = false
+      },
+      wait: measuredWait(delays, cut),
+      delay: (failure) => failure * 1000,
+      state: () => {},
+      retryNow: () => (opens <= 3 ? first : second).signal,
+    })
+
+    // Exactly one release per window, and NONE on the waits in between — the counts restart at 0 and
+    // the spent window stops being consulted, which is what keeps this from becoming a spin.
+    expect(delays).toEqual([0, 1000, 0, 1000, 0])
+    expect(cut).toEqual([1000, 1000])
+    expect(opens).toBe(6)
+  })
+
+  test("no supervisor means no window, so a down instance keeps every bit of its backoff", async () => {
+    // The protection this change must not cost. An instance that is simply down never passes through
+    // `starting`, so no window is ever opened and the ladder keeps its full restraint.
+    let active = true
+    let opens = 0
+    const failures: number[] = []
+
+    await runReconnectingStream({
+      active: () => active,
+      open: async () => {
+        opens += 1
+        if (opens <= 4) throw new Error("connection refused")
+        return oneEvent("sync")
+      },
+      recover: async () => {},
+      accept: () => {
+        active = false
+      },
+      wait: async () => {},
+      delay: (failure) => {
+        failures.push(failure)
+        return 0
+      },
+      state: () => {},
+      retryNow: () => undefined,
+    })
+
+    expect(failures).toEqual([0, 1, 2, 3])
+    expect(opens).toBe(5)
+  })
+
   test("an attempt aborted during recovery retries while its owner is still active", async () => {
     let active = true
     let opens = 0

@@ -17,7 +17,7 @@ import { ServeLiveness } from "../serve-liveness"
 // child process (same CLI, `--no-supervise`), so a crashed instance heals itself instead of handing
 // the user a dead port. `--no-supervise` opts out (and is how the child itself runs). The restart
 // policy itself lives in ../supervise.ts (pure, unit-tested).
-import { FAST_CRASH_GIVEUP, FAST_CRASH_MS, initialSuperviseState, superviseDecision } from "../supervise"
+import { FAST_CRASH_GIVEUP, FAST_CRASH_MS, SLOW_CRASH_GIVEUP, initialSuperviseState, superviseDecision } from "../supervise"
 import { ExitIntent } from "../exit-intent"
 
 /**
@@ -159,7 +159,12 @@ const superviseLoop = async (): Promise<"clean" | "giveup"> => {
     }
     if (decision.action === "giveup") {
       console.error(
-        `[supervise] crash loop: ${FAST_CRASH_GIVEUP} consecutive exits within ${FAST_CRASH_MS / 1000}s — giving up. ` +
+        // 🔴 Both ladders named, because they are different faults. Measured 2026-09-29 on a live
+        // instance: the child was restarted at 01:18, 01:54 and 02:09, `code 1` each time on a
+        // ~6-minute cycle. `fastCrashes` reset at 10 s, so each of those six-minute lives scored as a
+        // clean first start and this giveup was unreachable for the fault that was actually happening.
+        `[supervise] crash loop — ${FAST_CRASH_GIVEUP} consecutive exits within ${FAST_CRASH_MS / 1000}s, ` +
+          `or ${SLOW_CRASH_GIVEUP} that each lived past that — giving up. ` +
           `Check the log above for the cause (an occupied port stays occupied), then run \`nova-cli serve\` again.`,
       )
       return "giveup"

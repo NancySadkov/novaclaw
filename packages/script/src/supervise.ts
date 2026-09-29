@@ -9,12 +9,42 @@ export const FAST_CRASH_MS = 10_000
 export const FAST_CRASH_GIVEUP = 5
 export const LIVENESS_FAILURE_LIMIT = 3
 
+/**
+ * 🔴 How long a child must stay up before its history is forgiven — a SECOND, much longer bound.
+ *
+ * Measured 2026-09-29 on a live instance: the server child was restarted at 01:18, 01:54 and 02:09,
+ * and the desktop log carried `sidecar exited (code 1) - restarting in 1s` on a ~6-minute cycle going
+ * back to 2026-09-23. The existing ladder could not stop it, because **both** of its forgiveness
+ * thresholds are shorter than the child's actual lifetime:
+ *
+ *   - `fastCrashes` reset at `FAST_CRASH_MS` (10 s) and `backoffMs` reset at
+ *     `BACKOFF_RESET_ALIVE_MS` (60 s), so a child that lived six minutes was scored as a healthy
+ *     first start, every single time. `FAST_CRASH_GIVEUP` was unreachable in exactly the case it
+ *     exists for;
+ *   - so the loop ran forever, silently, restarting a broken server roughly every six minutes and
+ *     reporting a normal `restarting` phase each time.
+ *
+ * The window has to be longer than any legitimately long-lived server, because the thing being
+ * forgiven is *history*, not a transient. Sixty minutes: a server that survives an hour of real work
+ * is not crash-looping, and the ones that are cannot reach it between restarts.
+ */
+export const HISTORY_RESET_ALIVE_MS = 60 * 60_000
+
+/** A long-lived child that still died is a fault, and it is counted as one — just not a FAST one. */
+export const SLOW_CRASH_GIVEUP = 3
+
 export interface SuperviseState {
   readonly fastCrashes: number
+  /** Faults since the last child that stayed up long enough to be forgiven. The slow-crash counter. */
+  readonly slowCrashes: number
   readonly backoffMs: number
 }
 
-export const initialSuperviseState: SuperviseState = { fastCrashes: 0, backoffMs: RESTART_BACKOFF_START_MS }
+export const initialSuperviseState: SuperviseState = {
+  fastCrashes: 0,
+  slowCrashes: 0,
+  backoffMs: RESTART_BACKOFF_START_MS,
+}
 
 export type SuperviseDecision =
   | { readonly action: "stop-clean" }
@@ -86,16 +116,47 @@ export function livenessDecision(failures: number, healthy: boolean): LivenessDe
   return { action: next >= LIVENESS_FAILURE_LIMIT ? "restart" : "continue", failures: next }
 }
 
-/** One child exit → what the supervisor does next. Exit 0 stops (an intentional shutdown must not
- *  be fought); a fast crash climbs toward giveup; a long-lived child earns a backoff reset. */
+/**
+ * One child exit → what the supervisor does next.
+ *
+ * Exit 0 stops: an intentional shutdown must not be fought. Otherwise the fault is counted on TWO
+ * ladders, because a crash loop has two shapes and the old policy could only see one.
+ *
+ * 🔴 **The fast ladder is for a child that never got going** — a bad path, a port already taken, a
+ * crash on boot. `FAST_CRASH_GIVEUP` consecutive sub-`FAST_CRASH_MS` exits and it gives up, which is
+ * right: the executable is broken and retrying cannot fix it.
+ *
+ * 🔴 **The slow ladder is for a child that ran for minutes and then died anyway**, and it is the one
+ * that was missing. Measured 2026-09-29: this instance restarted its server child at 01:18, 01:54 and
+ * 02:09, `code 1` each time, on a ~6-minute cycle. `fastCrashes` reset at 10 s, so each six-minute life
+ * scored as a clean first start and `FAST_CRASH_GIVEUP` could never be reached — the loop was
+ * structurally invisible to the one guard meant to catch it. A child that lives long enough to have
+ * done real work and then dies is *still a fault*, and now it accumulates.
+ *
+ * ⚠️ Forgiving happens on ONE threshold, and it is the long one. Two thresholds is how the two
+ * ladders came to disagree about what counted as healthy: a 60 s `backoffMs` reset and a 10 s
+ * `fastCrashes` reset meant a child could be "healthy" for backoff purposes and "brand new" for
+ * giveup purposes at the same time. `backoffMs` still resets sooner, because backing off for a long
+ * run that then failed is not what the delay is for — but that reset no longer touches the counters.
+ */
 export function superviseDecision(state: SuperviseState, exit: { code: number; aliveMs: number }): SuperviseDecision {
   if (exit.code === 0) return { action: "stop-clean" }
-  const fastCrashes = exit.aliveMs < FAST_CRASH_MS ? state.fastCrashes + 1 : 0
+  const forgiven = exit.aliveMs >= HISTORY_RESET_ALIVE_MS
+  // ⚠️ A fast crash does NOT advance the slow counter. A child that dies on boot is one fault, and
+  // counting it on both ladders meant a boot-crash loop reached the SLOW ceiling (3) in three
+  // attempts — so the fast ladder's own, more specific diagnosis became unreachable, which is the
+  // mirror of the bug this ladder was added to fix. The two shapes are counted separately and either
+  // one alone is enough to give up.
+  const fastCrashes = forgiven || exit.aliveMs >= FAST_CRASH_MS ? 0 : state.fastCrashes + 1
+  const slowCrashes = forgiven || exit.aliveMs < FAST_CRASH_MS ? 0 : state.slowCrashes + 1
   if (fastCrashes >= FAST_CRASH_GIVEUP) return { action: "giveup" }
+  // Checked AFTER the fast ladder, so a boot-crash still reports as a boot-crash: a child that dies in
+  // 100 ms three times and then lives 5 minutes and dies is a slow crash, and only reaches here.
+  if (slowCrashes >= SLOW_CRASH_GIVEUP) return { action: "giveup" }
   const backoffMs = exit.aliveMs >= BACKOFF_RESET_ALIVE_MS ? RESTART_BACKOFF_START_MS : state.backoffMs
   return {
     action: "restart",
     delayMs: backoffMs,
-    next: { fastCrashes, backoffMs: Math.min(backoffMs * 2, RESTART_BACKOFF_CAP_MS) },
+    next: { fastCrashes, slowCrashes, backoffMs: Math.min(backoffMs * 2, RESTART_BACKOFF_CAP_MS) },
   }
 }

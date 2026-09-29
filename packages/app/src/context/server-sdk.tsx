@@ -2,7 +2,7 @@ import type { Event } from "@novaclaw/sdk/v2/client"
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { type Accessor, batch, createMemo, createSignal, onCleanup, onMount } from "solid-js"
+import { type Accessor, batch, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { createSdkForServer } from "@/utils/server"
 import { useLanguage } from "./language"
 import { usePlatform } from "./platform"
@@ -10,7 +10,8 @@ import { ServerConnection, useServer } from "./server"
 import { createRefCountMap } from "@/utils/refcount"
 import { useGlobal } from "./global"
 import { ServerScope } from "@/utils/server-scope"
-import { reconnectDelayMs } from "@/utils/reconnect-schedule"
+import { streamRetryDelayMs } from "@/utils/reconnect-schedule"
+import { useSupervisorPhase } from "@/hooks/use-supervisor-phase"
 import { runReconnectingStream, waitForStreamRetry } from "./reconnect-stream"
 import { enqueueEvent, EventBacklogOverflowError } from "./global-sync/event-backlog"
 
@@ -66,7 +67,46 @@ export function resumeStreamAfterPageShow(event: PageTransitionEvent, start: () 
 
 function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerScope) {
   const platform = usePlatform()
+  const { phase: supervisorPhase } = useSupervisorPhase()
   const abort = new AbortController()
+
+  /**
+   * 🔴 THE START IS NOT AN OUTAGE, AND THE SHELL IS THE ONLY WITNESS THAT PROVES IT.
+   *
+   * Measured 2026-09-28 across nine real boots of the packaged app, the delay between the supervisor
+   * reporting the server healthy and the client actually connecting was bimodal: five boots at
+   * 0.2–1.2 s, four at 27.7–29.9 s. On the slow boots the server was provably answering — live
+   * CORS preflight returned `204` with `Access-Control-Allow-Origin: nc://renderer` — and its own log
+   * recorded no client for 35 s. The client was asleep on a backoff it had earned against a port
+   * that was not bound yet, and it stayed asleep through the moment the server came up.
+   *
+   * So two things travel from the shell to the ladder, and only these two:
+   *
+   *   - `starting` selects a short poll instead of the outage schedule, because sparing a server that
+   *     is down is worth nothing while the shell is deliberately bringing this one up;
+   *   - the `starting` → `running` edge fires `startWindow`, which abandons the sleep in progress AND
+   *     discards the failure count, because every failure in it was earned against a server that did
+   *     not exist. A shorter delay cannot express that — the delay has no memory and the count is the
+   *     memory — which is why the loop is told rather than merely given a smaller number.
+   *
+   * ⚠️ **An instance that is simply down must not be affected**, and cannot be: no start ever
+   * *begins* without passing through `starting`, so a `running` or `gave-up` instance never opens a
+   * window and the ladder keeps every bit of its restraint. A client with no supervisor reports no
+   * phase and is likewise untouched.
+   */
+  let startWindow: AbortController | undefined
+  let lastPhase: string | undefined
+  createEffect(() => {
+    const current = supervisorPhase()?.phase
+    const previous = lastPhase
+    lastPhase = current
+    // ⚠️ Guarded on the TRANSITION, not on the value. `useSupervisorPhase` delivers the phase twice —
+    // once from the subscription and once from the read that follows it — so an unguarded effect would
+    // mint a second window for one start and strand the loop waiting on a signal nobody will ever
+    // abort. A second start, and only a second start, mints a new one.
+    if (current === "starting" && previous !== "starting") startWindow = new AbortController()
+    if (current === "running" && previous !== "running") startWindow?.abort()
+  })
 
   const eventFetch = (() => {
     if (!platform.fetch || !server) return
@@ -256,8 +296,9 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
             })
           }
         },
-        wait: (ms) => waitForStreamRetry(ms, lifecycle.signal),
-        delay: reconnectDelayMs,
+        wait: (ms, signal) => waitForStreamRetry(ms, signal ?? lifecycle.signal),
+        delay: (failure) => streamRetryDelayMs({ attempt: failure, starting: supervisorPhase()?.phase === "starting" }),
+        retryNow: () => startWindow?.signal,
       })
     })().finally(() => {
       if (run !== current) return

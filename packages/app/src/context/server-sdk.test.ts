@@ -19,6 +19,63 @@ describe("resumeStreamAfterPageShow", () => {
   })
 })
 
+describe("the stream ladder is told when the instance is still starting", () => {
+  // 🔴 Measured 2026-09-28 across nine real boots of the packaged app: the gap between the supervisor
+  // reporting the server healthy and the client connecting was bimodal — five boots at 0.2–1.2s, four
+  // at 27.7–29.9s. The slow boots had a server that was provably answering CORS correctly and whose
+  // own log recorded no client for 35s. The client was asleep on a backoff earned against a port that
+  // was not bound yet, and it slept through the server arriving.
+  //
+  // The ratchet holds the WIRE, not the maths. `streamRetryDelayMs` and `retryNow` are pinned
+  // behaviourally in `reconnect-schedule.test.ts` and `reconnect-stream.test.ts`; what a future author
+  // can silently break is the wiring — handing `reconnectDelayMs` straight back to the loop, or
+  // dropping the window — and neither shows up as a failing number anywhere else.
+  const source = () => {
+    const code = fs
+      .readFileSync(path.join(import.meta.dir, "server-sdk.tsx"), "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("//"))
+      .join("\n")
+    expect(code.length, "server-sdk.tsx must be readable — a moved file must fail LOUDLY").toBeGreaterThan(500)
+    return code
+  }
+
+  test("the loop is given the start-aware delay, never the bare outage schedule", () => {
+    const code = source()
+    expect(code).toContain("streamRetryDelayMs")
+    // The bare schedule has no way to know about a start; handing it to the loop is the defect itself.
+    expect(code).not.toMatch(/delay:\s*reconnectDelayMs/)
+    expect(code).toMatch(/starting:\s*supervisorPhase\(\)\?\.phase === "starting"/)
+  })
+
+  test("the loop is given the window, so the failures earned against a dead port are discarded", () => {
+    const code = source()
+    expect(code).toContain("useSupervisorPhase")
+    expect(code).toMatch(/retryNow:\s*\(\) => startWindow\?\.signal/)
+  })
+
+  test("a window is opened only on the TRANSITION into starting, and spent on the way out", () => {
+    // `useSupervisorPhase` delivers the phase twice — from the subscription and from the read that
+    // follows it. An unguarded effect would mint a second window for one start and strand the loop
+    // waiting on a signal nobody would ever abort, which reintroduces the very stall this removes.
+    const code = source()
+    expect(code).toMatch(/current === "starting" && previous !== "starting"/)
+    expect(code).toMatch(/current === "running" && previous !== "running"/)
+  })
+
+  test("an instance that is merely down opens no window, so the ladder's restraint is untouched", () => {
+    // The regression this must never cause: a four-hertz reconnect storm against a server that is
+    // down or refusing. Only a phase that passed THROUGH `starting` may open one, so a `running` or
+    // `gave-up` instance — and every client with no supervisor at all — is left exactly as it was.
+    const code = source()
+    const opens = code.match(/startWindow = new AbortController\(\)/g) ?? []
+    expect(opens).toHaveLength(1)
+    // And it is reachable ONLY from the `starting` branch, never on a phase check alone.
+    expect(code).not.toMatch(/if \(current === "running"\) startWindow/)
+  })
+})
+
 describe("event backlog", () => {
   test("forces resynchronization at the fixed queue limit", () => {
     const queue: number[] = []
