@@ -1232,6 +1232,74 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/project/instance-store.ts",
   },
+  /**
+   * 🔴 CORS DIAGNOSTICS — a preflight the client saw refused, and one it saw allowed.
+   *
+   * Measured 2026-09-29, packaged 0.1.81: a client was refused with "No 'Access-Control-Allow-Origin'
+   * header is present" on `/log`, `/provider` and `/path`, and minutes later a live probe of the
+   * same routes on the same port returned 204 with the correct header — including the
+   * `authorization` preflight the renderer actually sends. The policy was right, so something else
+   * answered, and which layer did it was invisible: the server only records what it handled.
+   *
+   * These four exist so the next slow boot names its own cause. `allowed` is `debug` because a
+   * preflight fires on every cross-origin fetch and would drown the file at any louder level; the
+   * other three are `warn` because a preflight that did NOT get an allow-origin is a real event, and
+   * `passthrough` is separated from `refused` because that distinction is the whole question — 2xx
+   * means CORS ran and said no, anything else means CORS never ran.
+   */
+  "http.cors.preflight.allowed": {
+    level: "debug",
+    message: "cors preflight allowed",
+    attributes: {
+      "http.route": "text",
+      "http.cors.origin": "id",
+      "http.cors.method": "id",
+      "http.cors.headers": "text",
+      "http.cors.status": "count",
+    },
+    content: "none",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/middleware/cors-outcome-log.ts",
+  },
+  /** No `Origin` header: CORS did not apply and the route answered on its own merits. */
+  "http.cors.preflight.no-origin": {
+    level: "warn",
+    message: "cors preflight without an origin",
+    attributes: { "http.route": "text", "http.cors.method": "id", "http.cors.status": "count" },
+    content: "none",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/middleware/cors-outcome-log.ts",
+  },
+  /** An origin was present and the policy did not allow it. A 2xx status is the policy saying no. */
+  "http.cors.preflight.refused": {
+    level: "warn",
+    message: "cors preflight refused by policy",
+    attributes: {
+      "http.route": "text",
+      "http.cors.origin": "id",
+      "http.cors.method": "id",
+      "http.cors.headers": "text",
+      "http.cors.status": "count",
+    },
+    content: "user",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/middleware/cors-outcome-log.ts",
+  },
+  /**
+   * An origin was present, and the request left WITHOUT an allow-origin header and a non-2xx status:
+   * CORS never ran for it. This is the exact shape the client reported as "doesn't pass access control
+   * check", and before these events it was indistinguishable from a refusal.
+   */
+  "http.cors.preflight.passthrough": {
+    level: "warn",
+    message: "cors preflight answered without an allow-origin header",
+    attributes: {
+      "http.route": "text",
+      "http.cors.origin": "id",
+      "http.cors.method": "id",
+      "http.cors.headers": "text",
+      "http.cors.status": "count",
+    },
+    content: "user",
+    file: "packages/novaclaw/src/server/routes/instance/httpapi/middleware/cors-outcome-log.ts",
+  },
   /** Every cached instance is about to be disposed. */
   "instance.store.dispose.all": {
     level: "info",
