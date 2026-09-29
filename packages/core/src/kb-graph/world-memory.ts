@@ -205,6 +205,43 @@ export const layerFromConfig = (
       }
 
       const dbDir = cfg.dbDir ?? join(Global.Path.data, "memory", "world")
+
+      // 🔴 THE USER'S SWITCH GATES THE SPAWN, NOT JUST THE WORK.
+      //
+      // Measured 2026-09-29 on a live instance whose `runtime_setting['memory']` row did not exist —
+      // memory therefore OFF, correctly, under the opt-in rule. A `__memory-worker` was spawned anyway,
+      // grew past 5 GB and was killed, repeatedly, and the only gate that noticed was a retention loop
+      // running *inside* an engine that had already been opened. `cfg.enabled` is the CAPABILITY flag
+      // (`NOVACLAW_WORLD_MEMORY`), which is on by default and says nothing about the user's choice.
+      //
+      // This is the whole cost of being wrong, and it is the cost `memory-setting.ts` itself records:
+      // the engine is LadybugDB compiled to Wasm, `WasmMemory.open` costs ~1.3 GB resident for a store
+      // holding ZERO memories, it is a fixed arena rather than a function of the data, and Wasm linear
+      // memory cannot shrink — so `close()` returns none of it and only process exit does. A privacy
+      // switch checked *after* the arena exists is not a privacy switch.
+      //
+      // ⚠️ Read ONCE, at layer construction, deliberately. `MemorySetting.memoryEnabled()` is a
+      // synchronous SQLite read with a 2s TTL, and this is an Effect layer — a sync read inside it
+      // would block the runtime. It is also the right cadence for a SPAWN decision: the question is
+      // "may this process ever hold a 1.3 GB arena", and re-asking it every 5s cannot un-spawn an
+      // arena that already exists. Turning memory ON is picked up by the flows that consult it live.
+      //
+      // No argument, deliberately: `Config` has a `dbDir` (the GRAPH's directory) and no `dbFile`, so
+      // passing one would have read a different database than the instance's and quietly answered a
+      // question nobody asked. The no-arg form is the instance database, which is the only one that
+      // carries the user's choice.
+      const memoryOff = !MemorySetting.memoryEnabled()
+      if (memoryOff) {
+        // The management surface stays reachable, so a person can still see and clear what is stored —
+        // the same carve-out the disabled-capability path makes, and the reason this is a client
+        // rather than an error.
+        currentRuntimeStatus = { stage: "disabled" }
+        return MemoryObserved.observed(
+          MemoryClient.disabled("memory is turned off in Settings"),
+          { events, ledger },
+        )
+      }
+
       currentRuntimeStatus = { stage: "not-loaded" }
       publishBlockedRead = () => undefined
       workerFaultRead = () => undefined
