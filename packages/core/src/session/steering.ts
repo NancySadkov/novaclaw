@@ -1,10 +1,16 @@
+import { eq } from "drizzle-orm"
 import { Effect } from "effect"
 import { Log } from "@novaclaw/schema/log"
+import { AgentV2 } from "../agent"
+import { AgentConfigStore } from "../agent-config-store"
+import { AgentConfigTable } from "../agent-config/sql"
 import type { Database } from "../database/database"
 import type { EventV2 } from "../event"
+import { agentOf, sessionConfigChain } from "./config-resolve"
 import { SessionInput } from "./input"
 import { SessionMessage } from "./message"
 import { resolveSessionMode } from "./mode"
+import { SessionRead } from "./read"
 import { Prompt } from "./prompt"
 import { SessionSchema } from "./schema"
 import { applySteerProvenance } from "./steer-provenance"
@@ -74,6 +80,112 @@ export interface Injection {
 type DatabaseService = Database.Interface["db"]
 
 /**
+ * 🔴 **THE SAME SEAM ALSO OWNS WHO MAY RESUME ON THEIR OWN.**
+ *
+ * `inject` above governs an interjection: text pushed into a session. It does not govern the other
+ * half of the same question — *may this model be started at all, with nobody asking?* That half was
+ * ungated, and it is how Xenia kept speaking.
+ *
+ * **Measured 2026-09-29, on the owner's own instance.** `ses_xenia` reached `generation: 65` with two
+ * `session_input` rows in its entire life, both days old — and her last message landed four minutes
+ * after an instance launch that requested nothing. Every launch, she spoke on her own. Her row's
+ * `short_chat` is **NULL**, so a gate written against that column would have passed straight through
+ * the bug; `resolveSessionMode` is the authority, exactly as it is for `inject`.
+ *
+ * The route in was boot recovery: `recoverStale` classifies an abandoned attempt and
+ * `SessionRecoveryDecision.decide` returns `automatic: true` on every branch. `decide` is not wrong —
+ * it answers *"is this turn safe to continue?"* and answers correctly. It was never asked whether
+ * there **was** a turn to continue, so a Chat conversation with no goal was resumed exactly like an
+ * officer's unfinished work, and the model invented an opening.
+ *
+ * ⚠️ **This is the same rule as `inject`, not a second rule.** A session that may not be steered must
+ * not be resumed either: both mean "this model does not run unless a person starts it."
+ */
+export interface ResumeAuthority {
+  readonly allowed: boolean
+  /** Why it was withheld, for the log. Never absent when `allowed` is false. */
+  readonly reason?: "chat" | "human" | "interactive" | "idle"
+}
+
+/**
+ * The pure half of the rule, so it is assertable without a database and so the two gates cannot drift.
+ *
+ * ⚠️ `idle` is tested first on purpose: a session with nothing in flight is ineligible for the
+ * uninteresting reason whatever its owner is, and reporting `chat` for it would make the log claim a
+ * policy decision the code never made.
+ *
+ * ⚠️ Workers inherit their officer's answer rather than deciding for themselves. A spawned worker is
+ * part of its parent's turn, so an unattended officer's workers resume with it and an interactive
+ * officer's do not — which is the owner's call to make, not the worker's.
+ */
+export function mayResume(input: {
+  readonly mode: "agent" | "chat" | "human"
+  readonly operationMode: "interactive" | "unattended" | undefined
+  /** Does this session have work to continue? Absent means "not known", which is treated as yes. */
+  readonly hasWork?: boolean
+}): ResumeAuthority {
+  if (input.hasWork === false) return { allowed: false, reason: "idle" }
+  if (input.mode !== "agent") return { allowed: false, reason: input.mode }
+  if (input.operationMode === "interactive") return { allowed: false, reason: "interactive" }
+  return { allowed: true }
+}
+
+/**
+ * May this session be resumed without being asked — by boot recovery, a nudge, or any other
+ * system-initiated wake?
+ *
+ * Returns the authority, and records the refusal. Callers do not check and must not: this is the one
+ * place the rule lives, the same bargain `inject` makes.
+ */
+export const resume = Effect.fn("Session.steering.resume")(function* (
+  db: DatabaseService,
+  sessionID: SessionSchema.ID,
+  input?: { readonly reason?: string; readonly hasWork?: boolean },
+) {
+  const mode = yield* resolveSessionMode(db, sessionID)
+  // A worker's own posture is its officer's; `sessionConfigChain` inside `resolveSessionMode` already
+  // walks the parent chain, so the mode above is the OWNER's mode for a spawned worker. The human
+  // case is already refused by the mode check, so only an officer reaches the operationMode read.
+  const operationMode = mode === "agent" ? yield* resolveOperationMode(db, sessionID) : undefined
+  const authority = mayResume({
+    mode,
+    operationMode,
+    ...(input?.hasWork === undefined ? {} : { hasWork: input.hasWork }),
+  })
+  if (!authority.allowed) {
+    yield* Log.event("session.steering.refused", {
+      "session.id": sessionID,
+      "steering.mode": mode,
+      "steering.reason": input?.reason ?? "resume",
+    })
+  }
+  return authority
+})
+
+/**
+ * The owning officer's `operationMode`, or `undefined` for the autonomous default.
+ *
+ * Absent is unattended by design (`config/agent.ts`: *"How this officer's durable root session
+ * behaves. Absent keeps the autonomous officer default."*), so only an explicit `interactive`
+ * withholds consent.
+ */
+const resolveOperationMode = Effect.fn("Session.steering.operationMode")(function* (
+  db: DatabaseService,
+  sessionID: SessionSchema.ID,
+) {
+  const chain = yield* sessionConfigChain(sessionID, (id) => SessionRead.get(db, SessionSchema.ID.make(id)))
+  const agentID = agentOf(chain) ?? AgentV2.DEFAULT_COLLEAGUE_ID
+  if (agentID === AgentV2.OWNER_ID) return undefined
+  const row = yield* db
+    .select()
+    .from(AgentConfigTable)
+    .where(eq(AgentConfigTable.name, agentID))
+    .get()
+    .pipe(Effect.orDie)
+  return AgentV2.operationModeOf(AgentConfigStore.fold(row?.layers ?? []))
+})
+
+/**
  * Admit ONE harness interjection, if the session is allowed to receive one.
  *
  * Returns the admitted input, or `undefined` for a `chat` or `human` session. Callers do not check and
@@ -112,4 +224,4 @@ export const inject = Effect.fn("Session.steering.inject")(function* (
 })
 
 /** The namespace every caller imports, matching `SessionInput` and `SessionMessage`. */
-export const Steering = { inject }
+export const Steering = { inject, resume, mayResume }
