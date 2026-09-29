@@ -107,18 +107,18 @@ describe("the four outcomes are distinguishable", () => {
     // running, which is the shape the client reported. Collapsing them is what made the boot
     // unanswerable: both look like "no ACAO header" from the outside.
     expect(middleware).toMatch(/status >= 200 && status < 300 \? "refused" : "passthrough"/)
-    expect(middleware).toContain('"http.cors.preflight.passthrough"')
-    expect(middleware).toContain('"http.cors.preflight.refused"')
+    expect(middleware).toContain('"server.cors.preflight.passthrough"')
+    expect(middleware).toContain('"server.cors.preflight.refused"')
   })
 
   test("a missing Origin is its own outcome, not a silent pass", () => {
     // A preflight with no Origin is a different shape entirely, and treating it as "allowed" would
     // bury the case where something upstream stripped the header.
-    expect(middleware).toContain('"http.cors.preflight.no-origin"')
+    expect(middleware).toContain('"server.cors.preflight.noorigin"')
   })
 
   test("the status is recorded on EVERY outcome, since it is the discriminator", () => {
-    expect(middleware).toContain('"http.cors.status": status')
+    expect(middleware).toContain('"server.cors.status": status')
   })
 })
 
@@ -126,10 +126,10 @@ describe("the events are declared, and the boring one is quiet", () => {
   const events = code(EVENTS)
 
   test.each([
-    "http.cors.preflight.allowed",
-    "http.cors.preflight.no-origin",
-    "http.cors.preflight.refused",
-    "http.cors.preflight.passthrough",
+    "server.cors.preflight.allowed",
+    "server.cors.preflight.noorigin",
+    "server.cors.preflight.refused",
+    "server.cors.preflight.passthrough",
   ])("%s is declared in the log schema", (name) => {
     expect(events).toContain(`"${name}"`)
   })
@@ -138,11 +138,11 @@ describe("the events are declared, and the boring one is quiet", () => {
     // The asymmetry is deliberate and load-bearing: `allowed` is the overwhelming majority, and at
     // `warn` it would drown the log file — which is how a real signal gets lost. The three unexpected
     // shapes are `warn`, because a preflight that did not get an allow-origin IS the event.
-    const allowed = /"http\.cors\.preflight\.allowed":\s*\{[\s\S]*?level: "(\w+)"/.exec(events)?.[1]
+    const allowed = /"server\.cors\.preflight\.allowed":\s*\{[\s\S]*?level: "(\w+)"/.exec(events)?.[1]
     expect(allowed, "the allowed case must declare a level").toBeDefined()
     expect(allowed).toBe("debug")
-    for (const name of ["no-origin", "refused", "passthrough"]) {
-      const level = new RegExp(`"http\\.cors\\.preflight\\.${name}":\\s*\\{[\\s\\S]*?level: "(\\w+)"`).exec(
+    for (const name of ["noorigin", "refused", "passthrough"]) {
+      const level = new RegExp(`"server\\.cors\\.preflight\\.${name}":\\s*\\{[\\s\\S]*?level: "(\\w+)"`).exec(
         events,
       )?.[1]
       expect(level, `${name} must declare a level`).toBeDefined()
@@ -154,7 +154,7 @@ describe("the events are declared, and the boring one is quiet", () => {
     // `content: "user"` is what puts the line in front of a person reading their own log. A boot that
     // cannot be explained is exactly when someone else is looking at it.
     for (const name of ["refused", "passthrough"]) {
-      const block = new RegExp(`"http\\.cors\\.preflight\\.${name}":[\\s\\S]*?content: "(\\w+)"`).exec(events)?.[1]
+      const block = new RegExp(`"server\\.cors\\.preflight\\.${name}":[\\s\\S]*?content: "(\\w+)"`).exec(events)?.[1]
       expect(block, `${name} must declare content`).toBeDefined()
       expect(block).toBe("user")
     }

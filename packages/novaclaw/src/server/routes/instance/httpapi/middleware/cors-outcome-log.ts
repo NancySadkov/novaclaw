@@ -56,17 +56,17 @@ const record = (
   const allowOrigin = response.headers["access-control-allow-origin"]
   const status = response.status
   const base = {
-    "http.route": request.url,
-    "http.cors.method": request.headers["access-control-request-method"],
-    "http.cors.status": status,
+    "server.route": request.url,
+    "server.cors.method": request.headers["access-control-request-method"],
+    "server.cors.status": status,
   } as const
-  const asked = { ...base, "http.cors.headers": request.headers["access-control-request-headers"] }
+  const asked = { ...base, "server.cors.headers": request.headers["access-control-request-headers"] }
 
-  if (!origin) return Log.event("http.cors.preflight.no-origin", base)
-  if (allowOrigin) return Log.event("http.cors.preflight.allowed", { ...asked, "http.cors.origin": origin })
+  if (!origin) return Log.event("server.cors.preflight.noorigin", base)
+  if (allowOrigin) return Log.event("server.cors.preflight.allowed", { ...asked, "server.cors.origin": origin })
   const kind = status >= 200 && status < 300 ? "refused" : "passthrough"
   return Log.event(
-    kind === "refused" ? "http.cors.preflight.refused" : "http.cors.preflight.passthrough",
-    { ...asked, "http.cors.origin": origin },
+    kind === "refused" ? "server.cors.preflight.refused" : "server.cors.preflight.passthrough",
+    { ...asked, "server.cors.origin": origin },
   )
 }

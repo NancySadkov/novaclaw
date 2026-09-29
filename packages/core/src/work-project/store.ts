@@ -14,6 +14,7 @@ import { EventV2 } from "../event"
 import { ProjectV2 } from "../project"
 import { ensureLiveChat } from "../session"
 import { SessionInput } from "../session/input"
+import { Steering } from "../session/steering"
 import { SessionMessage } from "../session/message"
 import { Prompt } from "../session/prompt"
 import { applySteerProvenance } from "../session/steer-provenance"
@@ -109,7 +110,8 @@ export const primeContext = (db: Db, events: EventV2.Interface, sessionID: Sessi
       .where(eq(SessionInputTable.session_id, sessionID))
       .all()
       .pipe(Effect.orDie)
-    if (!pending.some((item) => item.prompt.text === text)) yield* SessionInput.steer(db, events, sessionID, text)
+    if (!pending.some((item) => item.prompt.text === text))
+      yield* Steering.inject(db, events, { sessionID, reason: "queued-work", text })
   })
 
 export const fromParts = (input: {

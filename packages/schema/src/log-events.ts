@@ -1225,6 +1225,36 @@ export const EVENTS = {
     content: "none",
     file: "packages/novaclaw/src/storage/worker-watch.ts",
   },
+  /**
+   * A harness interjection was ADMITTED to an agent session.
+   *
+   * 🔴 Written because a chat LLM ran 61 unprompted generations and the only witness was a
+   * `session_input` row nobody was reading. The reason is recorded at the one seam every interjection
+   * passes through, so "why did this session wake up on its own" is answerable from the log.
+   */
+  "session.steering.injected": {
+    level: "debug",
+    message: "harness interjection admitted",
+    attributes: { "session.id": "correlate", "steering.reason": "id" },
+    // "none", NOT "user": an event carrying a session id may not egress, and the house guard enforces
+    // that from the declaration rather than from a scrubber. The refusal is still `warn`, which is
+    // what makes it findable — being user-visible would have been a claim the redaction model forbids.
+    content: "correlated",
+    file: "packages/core/src/session/steering.ts",
+  },
+  /**
+   * A harness interjection was REFUSED because the session is a chat or a human.
+   *
+   * `warn`, and `user` content: this is a Chat LLM being told to recover and proceed, which is how a
+   * companion with no `exit` tool becomes a loop that cannot end. It should be rare enough to read.
+   */
+  "session.steering.refused": {
+    level: "warn",
+    message: "harness interjection refused: not an agent session",
+    attributes: { "session.id": "correlate", "steering.mode": "id", "steering.reason": "id" },
+    content: "correlated",
+    file: "packages/core/src/session/steering.ts",
+  },
   "instance.store.dispose": {
     level: "info",
     message: "disposing instance",
@@ -1247,37 +1277,37 @@ export const EVENTS = {
    * `passthrough` is separated from `refused` because that distinction is the whole question — 2xx
    * means CORS ran and said no, anything else means CORS never ran.
    */
-  "http.cors.preflight.allowed": {
+  "server.cors.preflight.allowed": {
     level: "debug",
     message: "cors preflight allowed",
     attributes: {
-      "http.route": "text",
-      "http.cors.origin": "id",
-      "http.cors.method": "id",
-      "http.cors.headers": "text",
-      "http.cors.status": "count",
+      "server.route": "text",
+      "server.cors.origin": "id",
+      "server.cors.method": "id",
+      "server.cors.headers": "text",
+      "server.cors.status": "count",
     },
-    content: "none",
+    content: "user",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/middleware/cors-outcome-log.ts",
   },
   /** No `Origin` header: CORS did not apply and the route answered on its own merits. */
-  "http.cors.preflight.no-origin": {
+  "server.cors.preflight.noorigin": {
     level: "warn",
     message: "cors preflight without an origin",
-    attributes: { "http.route": "text", "http.cors.method": "id", "http.cors.status": "count" },
-    content: "none",
+    attributes: { "server.route": "text", "server.cors.method": "id", "server.cors.status": "count" },
+    content: "user",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/middleware/cors-outcome-log.ts",
   },
   /** An origin was present and the policy did not allow it. A 2xx status is the policy saying no. */
-  "http.cors.preflight.refused": {
+  "server.cors.preflight.refused": {
     level: "warn",
     message: "cors preflight refused by policy",
     attributes: {
-      "http.route": "text",
-      "http.cors.origin": "id",
-      "http.cors.method": "id",
-      "http.cors.headers": "text",
-      "http.cors.status": "count",
+      "server.route": "text",
+      "server.cors.origin": "id",
+      "server.cors.method": "id",
+      "server.cors.headers": "text",
+      "server.cors.status": "count",
     },
     content: "user",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/middleware/cors-outcome-log.ts",
@@ -1287,15 +1317,15 @@ export const EVENTS = {
    * CORS never ran for it. This is the exact shape the client reported as "doesn't pass access control
    * check", and before these events it was indistinguishable from a refusal.
    */
-  "http.cors.preflight.passthrough": {
+  "server.cors.preflight.passthrough": {
     level: "warn",
     message: "cors preflight answered without an allow-origin header",
     attributes: {
-      "http.route": "text",
-      "http.cors.origin": "id",
-      "http.cors.method": "id",
-      "http.cors.headers": "text",
-      "http.cors.status": "count",
+      "server.route": "text",
+      "server.cors.origin": "id",
+      "server.cors.method": "id",
+      "server.cors.headers": "text",
+      "server.cors.status": "count",
     },
     content: "user",
     file: "packages/novaclaw/src/server/routes/instance/httpapi/middleware/cors-outcome-log.ts",

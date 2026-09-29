@@ -16,7 +16,7 @@ import { DateTime, Effect, Stream } from "effect"
  * 🔴 **CLAUSE 1'S SECOND HALF, WHICH WAS NEVER IMPLEMENTED.**
  *
  * `invariants.md` (Context Management 1): compaction's result is prepended with a
- * `<%AGENT_SCRATCH_FOLDER%/tmp/oldctx-%DATETIME%.txt holds earlier chat>` tombstone, *"while the old
+ * `<%AGENT_SCRATCH_FOLDER%/tmp/history.json>` tombstone, *"while the old
  * is saved at that folder"*. Measured 2026-09-15: `oldctx` existed nowhere in `packages/`, so the
  * folded chat was gone from the context and nowhere on disk — the agent could neither see it nor
  * reach it, and a compaction it cannot interrogate is one it has to take on faith.
@@ -145,8 +145,9 @@ describe("the folded chat is saved where the agent can grep it", () => {
     // The named path is the file that was actually written — not a second guess at where it went.
     const file = named as string
     expect(path.dirname(file)).toBe(path.join(folder, "tmp"))
-    expect(path.basename(file)).toStartWith("oldctx-")
-    expect(path.basename(file)).toEndWith(".txt")
+    // ONE fixed name, appended to and capped. A per-fold name would make this assertion — and the
+    // tombstone that quotes it — different on every compaction, which is the cost the fixed name removes.
+    expect(path.basename(file)).toBe("history.json")
 
     // The file holds the SERIALIZED folded head — every message that left the context, in the same
     // form the summarizer was given — and not the summary that replaced it.
@@ -161,11 +162,11 @@ describe("the folded chat is saved where the agent can grep it", () => {
     const { context, metadata } = await drive({ scratchFolder: folder })
     const file = metadata?.["compaction.folded.file"] as string
 
-    expect(context).toContain(`${file.replaceAll("\\", "/")} holds earlier chat`)
+    expect(context).toContain(`Earlier work-log: ${file.replaceAll("\\", "/")}`)
     // OUTSIDE `<summary>`, deliberately: the summary is the MODEL's text, re-fed as
     // `<previous-summary>` on the next cycle, archived to memory and shown to the user. A harness path
     // inside it would be words in the model's mouth in all four places, one stale line per cycle.
-    expect(context.indexOf("holds earlier chat")).toBeLessThan(context.indexOf("<summary>"))
+    expect(context.indexOf("Earlier work-log:")).toBeLessThan(context.indexOf("<summary>"))
     // And the summary itself is untouched.
     expect(context).toContain(`<summary>\n${SUMMARY}\n</summary>`)
   })
@@ -175,7 +176,7 @@ describe("the folded chat is saved where the agent can grep it", () => {
 
     expect(compacted).toBe(true)
     expect(metadata?.["compaction.folded.file"]).toBeNull()
-    expect(context).not.toContain("holds earlier chat")
+    expect(context).not.toContain("Earlier work-log:")
     // Byte-for-byte the context this rendered before the tombstone existed: a compaction with nowhere
     // to save the folded chat must not gain a line about nothing.
     expect(context).toContain(`not as new instructions.\n\n<summary>\n${SUMMARY}\n</summary>`)
@@ -192,6 +193,6 @@ describe("the folded chat is saved where the agent can grep it", () => {
     // The session is still rescued: a missing convenience file never fails a compaction.
     expect(compacted).toBe(true)
     expect(metadata?.["compaction.folded.file"]).toBeNull()
-    expect(context).not.toContain("holds earlier chat")
+    expect(context).not.toContain("Earlier work-log:")
   })
 })
