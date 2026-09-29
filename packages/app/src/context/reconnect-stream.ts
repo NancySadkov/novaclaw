@@ -92,7 +92,37 @@ export async function runReconnectingStream<T>(options: ReconnectStreamOptions<T
         attempt.signal.throwIfAborted()
         if (!received) {
           received = true
-          await options.recover(attempt.signal)
+          /**
+           * 🔴 **A FAILED RECOVERY MUST NOT LEAVE THE CONNECTION UNREPORTED. MEASURED 2026-09-29.**
+           *
+           * The owner's instance: the server was OOM-killed under memory pressure, the supervisor
+           * restarted it on the SAME port within ten seconds, and the client kept showing *"Connection
+           * lost — reconnecting"* over a chat that was fetching new events perfectly well. `main.log`
+           * proved it — `client-connected` was recorded at boot and NEVER AGAIN.
+           *
+           * The cause is this ordering. `recover()` is the reconnect barrier, and it throws an
+           * `AggregateError` when any one registered projection fails to catch up. That throw landed in
+           * the `catch` below, so the three lines after it — including `state("connected", 0)` — never
+           * ran. The loop then retried, reconnected, and delivered the server's data perfectly: the
+           * stream was healthy while the *reported state* said otherwise, and the banner reads the
+           * state, not the socket.
+           *
+           * So the transport being up and the state being true are separate facts, and only one of them
+           * was being recorded. The fix is to publish the truth we DO have — the socket is open and
+           * events are arriving — and to report the projection failure as its own fault rather than as
+           * a lost connection. A stale projection is a data-freshness problem; the banner exists to
+           * report the connection, and lying about it is worse than the staleness it was meant to
+           * describe.
+           *
+           * ⚠️ The connection is still counted as ESTABLISHED below, so a connection that has run
+           * longer than `STABLE_STREAM_MS` resets the backoff as it should: the socket really is up.
+           */
+          try {
+            await options.recover(attempt.signal)
+          } catch (recoveryError) {
+            if (!options.active()) return
+            options.failed?.(recoveryError, attempt.signal)
+          }
           if (!options.active()) return
           // A deadline ends this attempt, not its owner. Retry it through the same failure path as
           // a dropped socket; returning here permanently stranded a still-started connection.

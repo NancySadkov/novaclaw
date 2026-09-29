@@ -39,6 +39,89 @@ test("page suspension cancels a backed-off retry so its replacement can start im
 }, 100)
 
 describe("runReconnectingStream", () => {
+
+    /**
+     * 🔴 THE OWNER'S INSTANCE, 2026-09-29. The server was OOM-killed under memory pressure and the
+     * supervisor restarted it on the SAME port inside ten seconds. The client kept showing
+     * *"Connection lost - reconnecting"* over a chat that was fetching new events perfectly well, and
+     * `main.log` proved it: `client-connected` recorded at boot, never again.
+     *
+     * The stream was healthy while the REPORTED state said otherwise, because `recover()` - the
+     * reconnect barrier - throws an `AggregateError` when any one registered projection fails, and that
+     * throw skipped the `state("connected", 0)` on the line after it. The banner reads the state, not
+     * the socket, so it told a lie for as long as the instance was working.
+     */
+    test("a failed reconnect recovery still reports the connection, and still delivers the event", async () => {
+      // `active` stays true so the loop reaches its own conclusion; the owner is torn down by
+      // `accept`, which is the first thing that runs AFTER the state is published.
+      let active = true
+      const states: ReconnectStreamState[] = []
+      const accepted: string[] = []
+      const failures: unknown[] = []
+      await runReconnectingStream<string>({
+        active: () => active,
+        open: async () => oneEvent("first"),
+        // The barrier a broken projection makes reject, built exactly as the real one builds it.
+        recover: async () => {
+          throw new AggregateError([new Error("projection failed")], "reconnect recovery failed")
+        },
+        accept: (event) => {
+          accepted.push(event)
+          active = false
+        },
+        wait: async () => {},
+        delay: () => 0,
+        state: (status) => void states.push(status),
+        failed: (error) => void failures.push(error),
+      })
+      // The decisive assertion: the banner must not be left claiming a dead connection over a live one.
+      expect(states).toContain("connected")
+      // And the failure is still REPORTED - swallowing it would be the opposite repair.
+      expect(failures).toHaveLength(1)
+      // And the stream's data still flows, because the socket really was up.
+      expect(accepted).toEqual(["first"])
+    })
+
+    test("a recovery that fails because the OWNER was torn down reports nothing", async () => {
+      // The non-vacuity control for the case above. If `recover` throws because the client is going
+      // away, there is no connection to report, and publishing "connected" would resurrect a dead
+      // client. `active()` is what separates the two, and it is consulted first.
+      const states: ReconnectStreamState[] = []
+      let active = true
+      await runReconnectingStream<string>({
+        active: () => active,
+        open: async () => oneEvent("x"),
+        recover: async () => {
+          active = false
+          throw new Error("torn down")
+        },
+        accept: () => {},
+        wait: async () => {},
+        delay: () => 0,
+        state: (status) => void states.push(status),
+      })
+      expect(states).not.toContain("connected")
+    })
+
+    test("a clean recovery is unchanged: one connect, no failure reported", async () => {
+      const states: ReconnectStreamState[] = []
+      const failures: unknown[] = []
+      let active = true
+      await runReconnectingStream<string>({
+        active: () => active,
+        open: async () => oneEvent("only"),
+        recover: async () => {},
+        accept: () => {
+          active = false
+        },
+        wait: async () => {},
+        delay: () => 0,
+        state: (status) => void states.push(status),
+        failed: (error) => void failures.push(error),
+      })
+      expect(states).toEqual(["connected"])
+      expect(failures).toHaveLength(0)
+    })
   test("a finished start abandons the sleep in progress AND discards the failures it was repeating", async () => {
     // 🔴 This is the 29 seconds measured 2026-09-28. The client burned attempts against a port that
     // was not bound, backed off, and stayed asleep through the moment the server came up. Two things
@@ -374,17 +457,31 @@ describe("runReconnectingStream", () => {
     expect(accepted).toEqual(["sync"])
   })
 
-  test("a failed recovery becomes another retry and cannot publish connected", async () => {
+  test("a failed recovery still reports connected, and the failure is not swallowed", async () => {
+    // 🔴 CONTRACT CHANGED 2026-09-29, deliberately, and the old name of this case was the defect.
+    //
+    // It read *"a failed recovery becomes another retry and CANNOT PUBLISH CONNECTED"*, and the
+    // measured bug on the owner's own instance was exactly that: the server was OOM-killed, the
+    // supervisor restarted it on the same port, and the client showed *"Connection lost -
+    // reconnecting"* over a chat that was fetching new events perfectly well. `main.log` recorded
+    // `client-connected` at boot and never again.
+    //
+    // The socket being up and the connection being REPORTED are two different facts, and the old code
+    // only ever recorded one of them. A failed reconnect barrier is a DATA-FRESHNESS problem, not a
+    // lost connection, and the banner exists to report the connection. So the truth we do have is now
+    // published, and the failure is reported as its own fault rather than impersonating a dead socket.
+    //
+    // ⚠️ The retry is not lost with it: the barrier is idempotent and re-runs on the next reconnect,
+    // and the owning stores carry their own recovery. What is gone is the LIE, not the repair.
     let active = true
-    let recoveries = 0
     const states: Array<[ReconnectStreamState, number]> = []
+    const failures: unknown[] = []
 
     await runReconnectingStream({
       active: () => active,
       open: async () => oneEvent("sync"),
       recover: async () => {
-        recoveries += 1
-        if (recoveries === 1) throw new Error("transcript still unavailable")
+        throw new Error("transcript still unavailable")
       },
       accept: () => {
         active = false
@@ -392,13 +489,14 @@ describe("runReconnectingStream", () => {
       wait: async () => {},
       delay: () => 0,
       state: (status, attempt) => states.push([status, attempt]),
+      failed: (error) => failures.push(error),
     })
 
-    expect(recoveries).toBe(2)
-    expect(states).toEqual([
-      ["reconnecting", 1],
-      ["connected", 0],
-    ])
+    // Connected, because the socket was up and an event arrived.
+    expect(states).toContainEqual(["connected", 0])
+    // And nobody was left in the dark about WHY the barrier did not settle.
+    expect(failures).toHaveLength(1)
+    expect(String((failures[0] as Error).message)).toContain("transcript still unavailable")
   })
 
   test("stopping during recovery cannot resurrect a stale connected state", async () => {
