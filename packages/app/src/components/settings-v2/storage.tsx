@@ -40,8 +40,16 @@ type LogLevel = "debug" | "info" | "warn" | "error"
 interface LogConfig {
   level?: LogLevel
   retention_days?: number
+  /**
+   * The work-log ceiling, in MB. Mirrors `ConfigLog.Info["work_log_max_mb"]`; the screen keeps its own
+   * view of the config shape (as it does for `retention_days`) rather than importing the server schema
+   * into the browser bundle.
+   */
+  work_log_max_mb?: number
   subsystems?: Record<string, LogLevel | undefined>
 }
+/** The shipped default, restated for the picker. The server is the authority; this only picks a row. */
+const WORK_LOG = { mb: 256 }
 interface DatabaseStorageConfig {
   max_database_mib?: number
   prune_interval_hours?: number
@@ -81,6 +89,21 @@ export const SettingsStorageV2: Component = () => {
       id: String(value),
       value,
       label: language.t("settings.storage.logs.retention.days", { days: value }),
+    })),
+  )
+  /**
+   * The work-log ceiling, in the same shape as the retention picker.
+   *
+   * 64 MB is offered as well as the larger steps because the ceiling is the only thing standing between
+   * a long unattended agent and an unbounded file: before the cap existed, one agent's scratch reached
+   * 5,187 files and 0.66 GB with nothing trimming it. A machine that is tight on disk wants the small
+   * number, and offering only 256 MB upwards would make the setting useless exactly when it is needed.
+   */
+  const workLogOptions = createMemo(() =>
+    [16, 64, 128, 256, 512, 1024, 2048, 4096].map((value) => ({
+      id: String(value),
+      value,
+      label: value < 1024 ? `${value} MB` : `${value / 1024} GB`,
     })),
   )
   const saveLog = async (next: LogConfig) => {
@@ -223,6 +246,30 @@ export const SettingsStorageV2: Component = () => {
       </div>
 
       <SettingsListV2>
+        <SettingsRowV2
+          title="Agent work-log ceiling"
+          description={
+            "How much one agent's saved chat history may reach. When it passes this, the oldest half is dropped so the newest is always kept. " +
+            "This is the whole earlier chat, kept in one file per agent that the agent can search."
+          }
+          minLevel="advanced"
+        >
+          <SelectV2
+            appearance="inline"
+            data-action="settings-work-log-max"
+            options={workLogOptions()}
+            current={
+              workLogOptions().find((option) => option.value === (logConfig().work_log_max_mb ?? WORK_LOG.mb)) ??
+              workLogOptions()[3]
+            }
+            value={(option) => option.id}
+            label={(option) => option.label}
+            onSelect={(option) => {
+              if (!option || option.value === (logConfig().work_log_max_mb ?? WORK_LOG.mb)) return
+              void saveLog({ ...logConfig(), work_log_max_mb: option.value })
+            }}
+          />
+        </SettingsRowV2>
         <SettingsRowV2
           title={language.t("settings.storage.logs.retention")}
           description={language.t("settings.storage.logs.retention.description", {

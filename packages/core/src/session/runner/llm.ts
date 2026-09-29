@@ -65,6 +65,7 @@ import { SessionCompactionRequest } from "../compaction-request"
 import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
 import { SessionInput } from "../input"
+import { Steering } from "../steering"
 import { SessionMessage } from "../message"
 import { SessionPatch } from "../patch"
 import { SessionSchema } from "../schema"
@@ -406,8 +407,8 @@ const prepareDispatch = Effect.fnUntraced(function* (input: {
   if (input.scratchFolder === undefined) return ProviderDispatch.prepare(base)
   const scratchFolder = input.scratchFolder
   const at = DateTime.toDate(yield* DateTime.now)
-  const id = OldContext.identity()
-  const file = OldContext.file({ scratchFolder, at, id })
+
+  const file = OldContext.file({ scratchFolder })
   const dispatch = ProviderDispatch.prepare({ ...base, droppedContextFile: file })
   if (dispatch.packed.droppedMessages.length === 0) return dispatch
   const text = OldContext.render(dispatch.packed.droppedMessages)
@@ -415,10 +416,10 @@ const prepareDispatch = Effect.fnUntraced(function* (input: {
     // `save` recomputes the path from the SAME `at` the request was packed against, so the file
     // written is the file named by construction rather than by two call sites agreeing.
     try: async () => {
-      const saved = await OldContext.save({ scratchFolder, at, text, id })
+      const saved = await OldContext.append({ scratchFolder, at, text })
       // The JSON work-log sibling, named by the prompt template. Best-effort: the `.txt` was already
       // promised by the tombstone, and a second convenience file must not lose it.
-      await OldContext.saveWorkLog({ scratchFolder, at, text }).catch(() => undefined)
+
       return saved
     },
     catch: (cause) => cause,
@@ -511,7 +512,8 @@ export const layer = Layer.effect(
         directory: location.directory,
         event,
       })
-      for (const nudge of claimed) yield* SessionInput.steer(db, events, sessionID, Nudge.prompt(nudge, event))
+      for (const nudge of claimed)
+      yield* Steering.inject(db, events, { sessionID, reason: "nudge", text: Nudge.prompt(nudge, event) })
       return claimed.length
     })
     /**
@@ -686,12 +688,11 @@ export const layer = Layer.effect(
         ...("exit" in failed && typeof failed.exit === "number" ? { exitCode: failed.exit } : {}),
         ...(failed.timedOut === true ? { timedOut: true } : {}),
       })
-      yield* SessionInput.steer(
-        db,
-        events,
+      yield* Steering.inject(db, events, {
         sessionID,
-        Quality.failureMessage({ label: check.label, command: check.command, ...failed }),
-      )
+        reason: "quality",
+        text: Quality.failureMessage({ label: check.label, command: check.command, ...failed }),
+      })
       return true
     })
     const getSession = Effect.fn("SessionRunner.getSession")(function* (sessionID: SessionSchema.ID) {
@@ -958,7 +959,7 @@ export const layer = Layer.effect(
         if (generated.trim()) interjection = generated.trim()
       }
       yield* Log.event("session.introspection.interject", { "session.id": sessionID })
-      yield* SessionInput.steer(db, events, sessionID, interjection)
+      yield* Steering.inject(db, events, { sessionID, reason: "interjection", text: interjection })
     })
     const failInterruptedTools = Effect.fn("SessionRunner.failInterruptedTools")(function* (
       sessionID: SessionSchema.ID,
@@ -1358,7 +1359,7 @@ export const layer = Layer.effect(
                     ? undefined
                     : yield* Effect.promise(() => ProjectGrounding.readListing(directory, 256))
                 const workLog =
-                  scratch === undefined ? undefined : yield* Effect.promise(() => OldContext.latestWorkLog(scratch))
+                  scratch === undefined ? undefined : OldContext.file({ scratchFolder: scratch })
                 return {
                   directory,
                   scratch,
@@ -2480,7 +2481,8 @@ export const layer = Layer.effect(
         const wasCalm = Affective.intervention(previous) === undefined
         if (nudge && wasCalm) {
           const rootType = yield* rootSessionType(session.id, (id) => store.get(id as SessionSchema.ID))
-          if (!AgentJail.attendedRoot(rootType)) yield* SessionInput.steer(db, events, session.id, nudge)
+          if (!AgentJail.attendedRoot(rootType))
+        yield* Steering.inject(db, events, { sessionID: session.id, reason: "jail", text: nudge })
         }
       }
       // THE ONE SYSTEM MESSAGE. `PromptManager` built it when this context epoch was established (a
@@ -4537,12 +4539,11 @@ export const layer = Layer.effect(
         // stopped behind a reassuring banner. Admit the continuation DURABLY before clearing the
         // latch. `SessionInput.steer` prepends the 1N provenance prefix, so a small model reads the
         // nudge as an automated check rather than an empty user turn.
-        const restart = yield* SessionInput.steer(
-          db,
-          events,
-          input.sessionID,
-          "Session restarted. Recover and proceed.",
-        )
+        const restart = yield* Steering.inject(db, events, {
+          sessionID: input.sessionID,
+          reason: "restart",
+          text: "Session restarted. Recover and proceed.",
+        })
         // `promotion` and `shouldRun` below are derived from this snapshot. The recovery branch has
         // just changed the durable queue, so leaving the old `false` here passes the first no-work
         // gate only to stop at the second one.
@@ -4648,7 +4649,7 @@ export const layer = Layer.effect(
       ) {
         provisionNudged.add(input.sessionID)
         if (provisionNudged.size > 500) provisionNudged.clear()
-        yield* SessionInput.steer(db, events, input.sessionID, QualityProvision.NUDGE)
+        yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "quality", text: QualityProvision.NUDGE })
       }
       let promotion: SessionInput.Delivery | undefined = hasSteer ? "steer" : hasQueue ? "queue" : undefined
       let shouldRun = input.force || hasSteer || hasQueue || providerRecovery !== undefined
@@ -4766,7 +4767,7 @@ export const layer = Layer.effect(
               step,
               recoveries: finishRecovery.recoveries,
             })
-            yield* SessionInput.steer(db, events, input.sessionID, truncation.message)
+            yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "truncation", text: truncation.message })
             needsContinuation = true
             continue
           }
@@ -4808,7 +4809,7 @@ export const layer = Layer.effect(
                 "session.id": input.sessionID,
                 "session.shells.running": runningShells.length,
               })
-              yield* SessionInput.steer(db, events, input.sessionID, UnfinishedShells.exitNudge(runningShells))
+              yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "unfinished-shell", text: UnfinishedShells.exitNudge(runningShells) })
               needsContinuation = true
               continue
             }
@@ -4867,7 +4868,7 @@ export const layer = Layer.effect(
               break
             }
             if (audit === "no") {
-              yield* SessionInput.steer(db, events, input.sessionID, FinishAudit.CONTINUE_NUDGE)
+              yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "finish-audit", text: FinishAudit.CONTINUE_NUDGE })
               needsContinuation = true
               continue
             }
@@ -4911,7 +4912,7 @@ export const layer = Layer.effect(
             const key = looping ? `${looping.name}\x00${looping.input}` : undefined
             if (looping && key !== undefined && !nudged.has(key)) {
               nudged.add(key)
-              yield* SessionInput.steer(db, events, input.sessionID, redirectMessage(looping))
+              yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "doom-loop", text: redirectMessage(looping) })
             }
             // 1N/A2: target-keyed failure streak over the tool calls made since the last user
             // message. Catches failed loops the byte-identical detector misses when a small model
@@ -4925,7 +4926,7 @@ export const layer = Layer.effect(
                 "session.target": streak.target,
                 count: streak.count,
               })
-              yield* SessionInput.steer(db, events, input.sessionID, failureStreakMessage(streak))
+              yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "failure-streak", text: failureStreakMessage(streak) })
             }
             // P2 (2A): cadence-gated introspection judge — an out-of-band model call that
             // asks "is this agent stuck?"; a YES steers the interjection (2B). Best-effort:
@@ -5003,7 +5004,7 @@ export const layer = Layer.effect(
               if (consecutiveEmpty === 1) {
                 yield* Log.event("session.turn.empty.recovered", { "session.id": input.sessionID })
                 if (ShortChat.enabled((yield* effective.resolve(input.sessionID)).shortChat)) needsContinuation = true
-                else yield* SessionInput.steer(db, events, input.sessionID, EMPTY_TURN_RECOVERY)
+                else yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "empty-turn", text: EMPTY_TURN_RECOVERY })
               } else {
                 yield* Log.event("session.turn.empty.paused", { "session.id": input.sessionID })
                 // T4 (1N residue): the user must see WHY the chat went quiet — surface the calm
@@ -5028,7 +5029,7 @@ export const layer = Layer.effect(
               announcedRecovered = true
               consecutiveEmpty = 0
               yield* Log.event("session.turn.announced.recovered", { "session.id": input.sessionID })
-              yield* SessionInput.steer(db, events, input.sessionID, ANNOUNCED_TOOL_RECOVERY)
+              yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "announced-tool-recovery", text: ANNOUNCED_TOOL_RECOVERY })
             } else {
               consecutiveEmpty = 0
               const finalText = lastAssistantText(context)
@@ -5054,7 +5055,7 @@ export const layer = Layer.effect(
                     "session.tool.tell": attempted.tell,
                     "session.tool.detail": attempted.detail,
                   })
-                  yield* SessionInput.steer(db, events, input.sessionID, TextualCall.recoveryMessage(attempted))
+                  yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "textual-call", text: TextualCall.recoveryMessage(attempted) })
                 }
               }
               // 🔴 The turn answered about SOME of a set the HARNESS enumerated and stopped. Measured
@@ -5327,16 +5328,15 @@ export const layer = Layer.effect(
                     "session.id": input.sessionID,
                     "session.children.unaccounted": orphaned.length,
                   })
-                  yield* SessionInput.steer(
-                    db,
-                    events,
-                    input.sessionID,
-                    UnjoinedChildren.restartMessage({
+                  yield* Steering.inject(db, events, {
+                    sessionID: input.sessionID,
+                    reason: "unjoined-children",
+                    text: UnjoinedChildren.restartMessage({
                       spawned: kids.length,
                       joined: joined.size,
                       unaccounted: orphaned,
                     }),
-                  )
+                  })
                   needsContinuation = true
                 }
               }
@@ -5515,7 +5515,7 @@ export const layer = Layer.effect(
               shouldRun = pendingSteer || (yield* SessionInput.hasPending(db, input.sessionID, "queue"))
               promotion = shouldRun ? (pendingSteer ? "steer" : "queue") : undefined
             } else {
-              yield* SessionInput.steer(db, events, input.sessionID, decision.message)
+              yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "goal-drive", text: decision.message })
               shouldRun = true
               promotion = "steer"
             }
@@ -5526,7 +5526,7 @@ export const layer = Layer.effect(
               "session.id": input.sessionID,
               round: driveState.rounds,
             })
-            yield* SessionInput.steer(db, events, input.sessionID, decision.message)
+            yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "goal-drive", text: decision.message })
             shouldRun = true
             promotion = "steer"
           }

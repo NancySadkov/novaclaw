@@ -1,37 +1,54 @@
 export * as OldContext from "./old-context"
 
+import { randomUUID } from "node:crypto"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { randomUUID } from "node:crypto"
 import type { Message, SystemPart } from "@novaclaw/llm"
-import { stampOf } from "../observability/log-file"
+import { LogSettings } from "../observability/log-settings"
 import { displayPath } from "../util/path"
 
 /** Inside the agent's scratch folder, beside its other throwaway work. */
 export const DIR = "tmp"
 
-/** `oldctx-20260915T174500123Z.txt`. The stamp form the log segments already use, so it sorts. */
-export const name = (at: Date): string => `oldctx-${stampOf(at)}.txt`
+/**
+ * ONE work-log per agent: appended to, never a new file per compaction, and capped.
+ *
+ * 🔴 **Rewritten 2026-09-29 after measuring what the old shape cost.** Compaction minted a fresh
+ * `oldctx-<DATETIME>.txt` plus an `oldlog-<date>-<time>-<n>.json` sibling on every pass, so a long
+ * unattended session accumulated an unbounded chain — Nova's `tmp` held **5,187 files, 0.66 GB**,
+ * written about every 20 s. Three things were wrong with that, and they are one thing:
+ *
+ *   1. **A chain is hostile to the agent.** Agents grep their own history; a directory of timestamped
+ *      segments means guessing which one holds what, and grepping all of them. One file greps once.
+ *   2. **The path was a per-compaction cost.** The tombstone names the file, so a timestamp in the
+ *      name is tokens spent on a filename, every compaction, forever.
+ *   3. **Nothing bounded it.** A scratch horizon does prune, but it is keyed on the age of the
+ *      *session* rather than the contents of the *folder*, so a freshly created session suppresses
+ *      pruning of files days old (`scratch/horizon.ts`). A cap on the file depends on nobody's
+ *      birthday.
+ *
+ * The cap is what makes "one big log" safe. Without it the single file is simply the single file that
+ * eats the disk — a smaller pile of one, which is worse, because the agent can no longer find
+ * anything.
+ */
+export const HISTORY_NAME = "history.json"
 
-/** `<agent scratch>/tmp/oldctx-<DATETIME>.txt` — the path the invariant spells, built in one place. */
-export const file = (input: { readonly scratchFolder: string; readonly at: Date; readonly id?: string }): string =>
-  path.join(
-    input.scratchFolder,
-    DIR,
-    input.id === undefined ? name(input.at) : name(input.at).replace(".txt", `-${input.id}.txt`),
-  )
+/** The default ceiling on one agent's work-log. Generous: a log too small to grep is not a log. */
+export const DEFAULT_MAX_BYTES = LogSettings.DEFAULT_WORK_LOG_MAX_MB * 1024 * 1024
 
-/** Reserve once before packing; the same identity is passed to save. */
-export const identity = randomUUID
+/** `<agent scratch>/tmp/history.json` — the path the invariant spells, built in one place. */
+export const file = (input: { readonly scratchFolder: string }): string =>
+  path.join(input.scratchFolder, DIR, HISTORY_NAME)
 
 /**
- * The line that goes into the compacted context, naming the file the folded text landed in.
+ * The line that goes into the compacted context, naming the log the folded text landed in.
  *
- * It is prepended to the summary rather than buried in it: an agent that cannot see the earlier chat
- * must be told, in the place it looks, that the chat is not gone. `file` is absolute, because the
- * agent's working directory is not necessarily its scratch folder.
+ * Prepended to the summary rather than buried in it: an agent that cannot see the earlier chat must
+ * be told, in the place it looks, that the chat is not gone. Absolute, because the agent's working
+ * directory is not necessarily its scratch folder, and free of a timestamp so the same string serves
+ * every compaction.
  */
-export const tombstone = (file: string): string => `${displayPath(file)} holds earlier chat`
+export const tombstone = (file: string): string => `Earlier work-log: ${displayPath(file)}`
 
 /** Shared by rendering and compaction budgeting: measure the actual replacement envelope. */
 export const checkpoint = (input: { summary: string; recent: string; file?: string }): string =>
@@ -102,61 +119,113 @@ const stringify = (value: unknown): string => {
   }
 }
 
-export const save = async (input: {
-  readonly scratchFolder: string
-  readonly at: Date
+export interface HistoryEntry {
+  readonly at: string
   readonly text: string
-  readonly id?: string
-}): Promise<string> => {
-  const target = file({ ...input, id: input.id ?? identity() })
-  await fs.mkdir(path.dirname(target), { recursive: true })
-  await fs.writeFile(target, input.text, { encoding: "utf8", flag: "wx" })
-  return target
 }
 
-export const workLogName = (at: Date, counter = 1): string => {
-  const iso = at.toISOString()
-  return `oldlog-${iso.slice(0, 10)}-${iso.slice(11, 19).replaceAll(":", "")}-${counter}.json`
+/** Per-log write chain, so a fixed filename is still written by one writer at a time. See `append`. */
+const writes = new Map<string, Promise<void>>()
+
+interface HistoryFile {
+  readonly version: 1
+  readonly entries: HistoryEntry[]
 }
 
-export const workLogFile = (input: { readonly scratchFolder: string; readonly at: Date; readonly counter?: number }): string =>
-  path.join(input.scratchFolder, DIR, workLogName(input.at, input.counter))
-
-export const saveWorkLog = async (input: {
-  readonly scratchFolder: string
-  readonly at: Date
-  readonly text: string
-}): Promise<string> => {
-  const directory = path.join(input.scratchFolder, DIR)
-  await fs.mkdir(directory, { recursive: true })
-  const body = JSON.stringify({ at: input.at.toISOString(), text: input.text }, undefined, 2)
-  for (let counter = 1; ; counter++) {
-    const target = workLogFile({ scratchFolder: input.scratchFolder, at: input.at, counter })
-    try {
-      await fs.writeFile(target, body, { encoding: "utf8", flag: "wx" })
-      return target
-    } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code !== "EEXIST") throw cause
-    }
+const readHistory = async (target: string): Promise<HistoryEntry[]> => {
+  try {
+    const parsed = JSON.parse(await fs.readFile(target, "utf8")) as Partial<HistoryFile>
+    if (parsed.version !== 1 || !Array.isArray(parsed.entries)) return []
+    // One malformed entry must not cost the agent the rest of its log.
+    return parsed.entries.filter(
+      (entry): entry is HistoryEntry => typeof entry?.at === "string" && typeof entry?.text === "string",
+    )
+  } catch {
+    // A missing file is the normal first run. A corrupt one is replaced rather than refused, because
+    // refusing to append leaves every future compaction's text named in a prompt with nowhere to go.
+    return []
   }
 }
 
-const WORK_LOG = /^oldlog-.*\.json$/
-const workLogSortKey = (name: string): string => {
-  const match = /^oldlog-(\d{4}-\d{2}-\d{2})-(\d{6})-(\d+)\.json$/.exec(name)
-  return match === null ? name : `${match[1]}${match[2]}${match[3]!.padStart(20, "0")}`
+/**
+ * Drop the OLDEST half until the payload fits `maxBytes`.
+ *
+ * ⚠️ Halving rather than trimming to exactly the limit is deliberate. A log cut to fit exactly
+ * re-triggers on the very next compaction, so the agent watches its own history evaporate one entry
+ * at a time. Halving bounds how often history is lost and leaves headroom to grow back into.
+ *
+ * ⚠️ The loop stops at ONE entry even if that entry alone is over the cap. A single compaction's text
+ * is the newest thing the agent has, and the cap is a retention policy rather than a correctness
+ * bound — refusing to write it would leave the tombstone pointing at a file that does not exist.
+ */
+export const halveToFit = (entries: ReadonlyArray<HistoryEntry>, maxBytes: number): HistoryEntry[] => {
+  let kept = [...entries]
+  const size = () => Buffer.byteLength(JSON.stringify({ version: 1, entries: kept } satisfies HistoryFile), "utf8")
+  while (kept.length > 1 && size() > maxBytes) kept = kept.slice(Math.ceil(kept.length / 2))
+  return kept
 }
 
-/** The newest work-log in the agent's scratch, or `undefined` when there is none. */
-export const latestWorkLog = async (scratchFolder: string): Promise<string | undefined> => {
+/** How many entries the cap discarded, so the caller can say so rather than let history vanish quietly. */
+export const trimmed = (before: number, after: number): number => before - after
+
+/**
+ * Append one compaction's folded text to the agent's work-log, and enforce the cap.
+ *
+ * Atomic: written to a sibling temp file and renamed, so a crash mid-write cannot leave a half-parsed
+ * log — which `readHistory` reads as empty, silently losing real history.
+ *
+ * Returns the path, which is the same path every time. That is the point: the tombstone can name it
+ * once and the agent can grep it forever.
+ */
+export const append = async (input: {
+  readonly scratchFolder: string
+  readonly at: Date
+  readonly text: string
+  readonly maxBytes?: number
+}): Promise<string> => {
+  const target = file({ scratchFolder: input.scratchFolder })
+  await fs.mkdir(path.dirname(target), { recursive: true })
+  // The cap comes from Settings → Storage (or its 256 MB default) rather than a constant here, so the
+  // owner can bound an agent's history without a rebuild. `maxBytes` stays for tests and for a caller
+  // that has a reason to name its own.
+  const maxBytes = input.maxBytes ?? LogSettings.workLogMaxBytes()
+  // Read-modify-write is a critical section ONCE the log has a fixed name: before, every fold had its
+  // own file and no two writers could collide. Two concurrent folds would each read the same entries
+  // and the second rename would silently discard the first fold's text — a lost compaction, with the
+  // tombstone still pointing at the file as though nothing went. A per-log chain makes the window
+  // single-writer without a lock file, which is another file to leak.
+  const previous = writes.get(target) ?? Promise.resolve()
+  const mine = previous.then(async () => {
+    const entries = halveToFit(
+      [...(await readHistory(target)), { at: input.at.toISOString(), text: input.text }],
+      maxBytes,
+    )
+    const body = JSON.stringify({ version: 1, entries } satisfies HistoryFile, undefined, 2)
+    // The temp name is per-CALL too. The chain above already serialises writers, but a temp path that
+    // is shared is one stray `rm`, one antivirus handle or one crash-kill away from a second failure
+    // mode, and uniqueness costs nothing.
+    const temporary = `${target}.${randomUUID()}.tmp`
+    await fs.writeFile(temporary, body, { encoding: "utf8" })
+    await fs.rename(temporary, target)
+  })
+  // The chain must survive a rejected link, or one failed fold would wedge every later one.
+  writes.set(
+    target,
+    mine.catch(() => undefined),
+  )
   try {
-    const names = await fs.readdir(path.join(scratchFolder, DIR))
-    const newest = names
-      .filter((name) => WORK_LOG.test(name))
-      .sort((left, right) => workLogSortKey(left).localeCompare(workLogSortKey(right)))
-      .at(-1)
-    return newest === undefined ? undefined : path.join(scratchFolder, DIR, newest)
+    await mine
+  } finally {
+    if (writes.get(target) === undefined) writes.delete(target)
+  }
+  return target
+}
+
+/** Byte size of the agent's work-log, or 0 when there is none. For the Storage screen. */
+export const sizeOf = async (scratchFolder: string): Promise<number> => {
+  try {
+    return (await fs.stat(file({ scratchFolder }))).size
   } catch {
-    return undefined
+    return 0
   }
 }

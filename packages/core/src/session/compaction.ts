@@ -548,18 +548,13 @@ export const make = (dependencies: Dependencies) => {
     readonly text: string
     readonly sessionID: SessionSchema.ID
     readonly at: Date
-    readonly id: string
   }) {
     const at = input.at
     return yield* Effect.tryPromise({
       try: async () => {
-        const saved = await OldContext.save({ scratchFolder: input.scratchFolder, at, text: input.text, id: input.id })
-        // The JSON sibling rides the same fold; a failure to write it must not lose the `.txt` file,
-        // so it is best-effort and separate.
-        await OldContext.saveWorkLog({ scratchFolder: input.scratchFolder, at, text: input.text }).catch(
-          () => undefined,
-        )
-        return saved
+        // ONE append-only log per agent, capped inside the append. The second sibling file is
+        // gone: the whole point is that the agent greps a single path.
+        return await OldContext.append({ scratchFolder: input.scratchFolder, at, text: input.text })
       },
       catch: (cause) => cause,
     }).pipe(
@@ -624,11 +619,8 @@ export const make = (dependencies: Dependencies) => {
     const transcript = entries === input.entries ? original : render(entries)
     const before = Token.estimate(original) + Math.max(0, input.replacedPrefixTokens ?? 0)
     const archiveAt = DateTime.toDate(yield* DateTime.now)
-    const archiveID = OldContext.identity()
     const archiveFile =
-      input.scratchFolder === undefined
-        ? undefined
-        : OldContext.file({ scratchFolder: input.scratchFolder, at: archiveAt, id: archiveID })
+      input.scratchFolder === undefined ? undefined : OldContext.file({ scratchFolder: input.scratchFolder })
     const replacementTokens = (summary: string, recent: string) =>
       PromptEstimate.whole(
         {
@@ -785,7 +777,6 @@ export const make = (dependencies: Dependencies) => {
             text: original,
             sessionID: input.sessionID,
             at: archiveAt,
-            id: archiveID,
           })
     yield* dependencies.events.publish(
       SessionEvent.Compaction.Ended,

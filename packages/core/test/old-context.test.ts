@@ -2,25 +2,37 @@ import { afterAll, describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { DIR, file, latestWorkLog, name, render, save, saveWorkLog, tombstone, workLogName } from "../src/session/old-context"
+import {
+  DEFAULT_MAX_BYTES,
+  DIR,
+  HISTORY_NAME,
+  append,
+  file,
+  halveToFit,
+  render,
+  sizeOf,
+  tombstone,
+} from "../src/session/old-context"
 import { Message } from "@novaclaw/llm"
 
 /**
- * `invariants.md` (Context Management 1 and 2) names a file the code never wrote: compaction is
- * supposed to store the folded-away chat at `%AGENT_SCRATCH_FOLDER%/tmp/oldctx-%DATETIME%.txt` and
- * tell the agent, in the compacted context, that it is there. Measured 2026-09-15, the string
- * `oldctx` did not exist anywhere in `packages/`; the folded text went to the KB as passages instead.
+ * 🔴 ONE work-log per agent: appended to, capped, and named the same way every time.
  *
- * These pin the naming, the line that names it, and the write. The write is pinned here because the
- * two ways it can go wrong are both SILENT: a folder that was not there turns a tombstone into a lie
- * about a file nobody created, and a name that already exists turns a second fold into either a
- * failed compaction (`wx`) or one file holding two conversations glued together (`a`). The test picks
- * the timestamp, so the collision is exact rather than a race it has to hope for.
+ * `invariants.md` (Context Management 1 and 2) asked for a file the agent "can still grep". The first
+ * implementation satisfied the letter and failed the purpose: compaction minted a fresh
+ * `oldctx-<DATETIME>.txt` plus an `oldlog-<date>-<time>-<n>.json` sibling on every pass, so Nova's
+ * `tmp` accumulated **5,187 files, 0.66 GB** at roughly 20 s each. A pile of timestamped segments is
+ * not a log an agent can grep — it is a guessing game about which segment holds what — and the
+ * timestamp in the name is tokens spent on a filename, at every compaction, forever.
+ *
+ * So the name is fixed, the file is appended to, and it is CAPPED. The cap is what makes one big log
+ * safe: without it the single file is simply the single file that eats the disk, which is worse,
+ * because the agent can then no longer find anything.
  */
 
 const dirs: string[] = []
 const tempRoot = async (label: string): Promise<string> => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), `oldctx-${label}-`))
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), `worklog-${label}-`))
   dirs.push(dir)
   return dir
 }
@@ -29,134 +41,155 @@ afterAll(async () => {
   await Promise.all(dirs.map((dir) => fs.rm(dir, { recursive: true, force: true })))
 })
 
-describe("the folded-away chat has a name the agent can be handed", () => {
-  test("the name is the stamp form the log segments already use, so it sorts", () => {
-    const at = new Date("2026-09-15T17:45:00.123Z")
-    expect(name(at)).toBe("oldctx-20260915T174500123Z.txt")
+const readEntries = async (target: string): Promise<{ at: string; text: string }[]> =>
+  JSON.parse(await fs.readFile(target, "utf8")).entries
 
-    // Lexicographic order is chronological order — the property that makes a directory listing of
-    // these readable, and the reason this reuses `stampOf` instead of `toISOString()`.
-    const earlier = name(new Date("2026-09-15T09:00:00.000Z"))
-    const later = name(new Date("2026-09-15T17:45:00.123Z"))
-    expect([later, earlier].sort()).toEqual([earlier, later])
-  })
-
-  test("the file lands in the agent's scratch tmp, spelled exactly as the invariant spells it", () => {
+describe("the work-log has one name, and it never changes", () => {
+  test("the name is fixed, so the tombstone is byte-identical at every compaction", () => {
+    // This is the token saving, and it is the reason the timestamp went: a name that varies is a
+    // prompt that varies, so the prefix cache loses the segment on every single fold.
+    expect(HISTORY_NAME).toBe("history.json")
     const scratch = path.join("C:", "Users", "someone", "scratch", "geryon")
-    const at = new Date("2026-09-15T17:45:00.123Z")
-    const target = file({ scratchFolder: scratch, at })
+    const first = file({ scratchFolder: scratch })
+    const second = file({ scratchFolder: scratch })
 
-    expect(target).toBe(path.join(scratch, "tmp", "oldctx-20260915T174500123Z.txt"))
-    expect(path.dirname(target)).toBe(path.join(scratch, DIR))
-    // Absolute, because the agent's working directory is not necessarily its scratch folder: a
-    // relative path would point somewhere else the moment the agent is pointed at a project.
-    expect(path.isAbsolute(target)).toBe(true)
+    expect(first).toBe(second)
+    expect(first).toBe(path.join(scratch, DIR, "history.json"))
+    // Absolute, because the agent's working directory is not necessarily its scratch folder.
+    expect(path.isAbsolute(first)).toBe(true)
   })
 
-  test("the tombstone names the file and says what is in it", () => {
-    const target = path.join("C:", "scratch", "geryon", "tmp", "oldctx-20260915T174500123Z.txt")
+  test("the tombstone names the log and says what it is", () => {
+    const target = path.join("C:", "scratch", "geryon", "tmp", "history.json")
     const line = tombstone(target)
 
-    const shown = target.replaceAll("\\", "/")
-    expect(line).toBe(`${shown} holds earlier chat`)
-    expect(line).toContain(shown)
-    // No placeholder may survive into the context the model reads: `%DATETIME%` reaching a model is
-    // the same defect as a config value reaching it, and it is invisible in a summary.
+    expect(line).toBe(`Earlier work-log: ${target.replaceAll("\\", "/")}`)
+    // No placeholder may survive into the context the model reads.
     expect(line).not.toContain("%")
   })
 })
 
-describe("the harness can always write it, whatever is already on disk", () => {
+describe("compaction appends to the log instead of creating a new file", () => {
   test("it creates the whole folder chain when none of it exists", async () => {
     const root = await tempRoot("missing")
-    // Nothing is created beforehand: no agent folder, no `tmp`. This is the state a colleague reached
-    // before its own provisioning ran, or a scratch folder deleted under a running instance.
+    // Nothing exists beforehand: no agent folder, no `tmp`. This is a colleague reached before its own
+    // provisioning ran, or a scratch folder deleted under a running instance.
     const scratch = path.join(root, "agent", "scratch")
-    const at = new Date("2026-09-15T17:45:00.123Z")
 
-    const written = await save({ scratchFolder: scratch, at, text: "earlier chat" })
+    const written = await append({ scratchFolder: scratch, at: new Date(0), text: "earlier chat" })
 
-    expect(written).not.toBe(file({ scratchFolder: scratch, at }))
-    expect(await fs.readFile(written, "utf8")).toBe("earlier chat")
+    // The path it RETURNS is the file it WROTE — a tombstone built from anything else is a promise
+    // about a file the harness may never have created.
+    expect(written).toBe(file({ scratchFolder: scratch }))
     expect(path.dirname(written)).toBe(path.join(scratch, DIR))
+    expect((await readEntries(written)).map((entry) => entry.text)).toEqual(["earlier chat"])
   })
 
-  test("a colliding timestamp preserves the earlier archive", async () => {
-    const root = await tempRoot("collision")
+  test("N compactions leave ONE file holding N entries, in order", async () => {
+    const root = await tempRoot("append")
     const scratch = path.join(root, "geryon")
-    const at = new Date("2026-09-15T17:45:00.123Z")
-    const target = file({ scratchFolder: scratch, at })
 
-    // A previous fold that landed on the same millisecond, or a clock that stepped backwards after an
-    // NTP correction or a resume — both produce this exact state.
-    await fs.mkdir(path.dirname(target), { recursive: true })
-    await fs.writeFile(target, "the fold that was here first", "utf8")
+    for (const text of ["first fold", "second fold", "third fold"]) {
+      await append({ scratchFolder: scratch, at: new Date(0), text })
+    }
 
-    const written = await save({ scratchFolder: scratch, at, text: "the fold that replaced it" })
-
-    expect(written).not.toBe(target)
-    expect(await fs.readFile(target, "utf8")).toBe("the fold that was here first")
-    const content = await fs.readFile(written, "utf8")
-    expect(content).toBe("the fold that replaced it")
-    // The seam is what an append would leave behind: two conversations in one file, with nothing
-    // marking where the first ends. An agent grepping it would read them as one chat.
-    expect(content).not.toContain("the fold that was here first")
+    const target = file({ scratchFolder: scratch })
+    // The whole point: one file to grep, not a chain to walk.
+    expect((await fs.readdir(path.join(scratch, DIR))).length).toBe(1)
+    expect((await readEntries(target)).map((entry) => entry.text)).toEqual([
+      "first fold",
+      "second fold",
+      "third fold",
+    ])
   })
 
-  test("the same instant writes distinct recoverable archives", async () => {
-    const root = await tempRoot("idempotent")
+  test("a corrupt log is replaced, never refused", async () => {
+    // Refusing to append would leave every future compaction's text named in a prompt with nowhere to
+    // go — a tombstone pointing at a file that cannot be written, silently, forever.
+    const root = await tempRoot("corrupt")
     const scratch = path.join(root, "geryon")
-    const at = new Date("2026-09-15T17:45:00.123Z")
+    await fs.mkdir(path.join(scratch, DIR), { recursive: true })
+    await fs.writeFile(file({ scratchFolder: scratch }), "{ this is not json", "utf8")
 
-    const first = await save({ scratchFolder: scratch, at, text: "first" })
-    const second = await save({ scratchFolder: scratch, at, text: "second" })
+    const written = await append({ scratchFolder: scratch, at: new Date(0), text: "the next fold" })
 
-    // The name carries no uniqueness beyond the millisecond, which is exactly why `save` must own the
-    // flag: the caller cannot make a collision safe by choosing differently.
-    expect(second).not.toBe(first)
-    expect(await fs.readFile(second, "utf8")).toBe("second")
-    expect(await fs.readFile(first, "utf8")).toBe("first")
-    expect((await fs.readdir(path.join(scratch, DIR))).length).toBe(2)
+    expect((await readEntries(written)).map((entry) => entry.text)).toEqual(["the next fold"])
   })
 
-  test("the path it returns is the file it wrote, not one it intended to write", async () => {
-    const root = await tempRoot("returned")
+  test("one malformed entry does not cost the agent the rest of its log", async () => {
+    const root = await tempRoot("partial")
     const scratch = path.join(root, "geryon")
-    const at = new Date("2026-09-15T17:45:00.123Z")
+    await fs.mkdir(path.join(scratch, DIR), { recursive: true })
+    await fs.writeFile(
+      file({ scratchFolder: scratch }),
+      JSON.stringify({ version: 1, entries: [{ at: "a", text: "kept" }, { at: 5 }, null] }),
+      "utf8",
+    )
 
-    const written = await save({ scratchFolder: scratch, at, text: "earlier chat" })
+    const written = await append({ scratchFolder: scratch, at: new Date(0), text: "appended" })
 
-    // A tombstone built from anything but this return value is a promise about a file the harness may
-    // never have created; `oldctx-` and the `tmp/` segment are the invariant's spelling, not a guess.
-    expect(path.basename(written)).toMatch(/^oldctx-20260915T174500123Z-[a-f0-9-]+\.txt$/)
-    expect(path.basename(path.dirname(written))).toBe("tmp")
-    await expect(fs.stat(written)).resolves.toBeDefined()
+    expect((await readEntries(written)).map((entry) => entry.text)).toEqual(["kept", "appended"])
+  })
+
+  test("the write is atomic, so a crash cannot leave a half-parsed log", async () => {
+    const root = await tempRoot("atomic")
+    const scratch = path.join(root, "geryon")
+    await append({ scratchFolder: scratch, at: new Date(0), text: "real history" })
+
+    // No temp file survives a successful append — a `.tmp` left behind is the seam a crash would use.
+    expect(await fs.readdir(path.join(scratch, DIR))).toEqual([HISTORY_NAME])
   })
 })
 
-describe("the work-log keeps the prompt reference short and collision-safe", () => {
-  test("the name carries a per-second counter, not a UUID", () => {
-    const at = new Date("2026-09-22T09:43:33.606Z")
+describe("the cap keeps the log bounded and keeps the NEWEST history", () => {
+  const entry = (text: string) => ({ at: new Date(0).toISOString(), text })
 
-    expect(workLogName(at)).toBe("oldlog-2026-09-22-094333-1.json")
-    expect(workLogName(at, 2)).toBe("oldlog-2026-09-22-094333-2.json")
-    expect(workLogName(at, 10)).toBe("oldlog-2026-09-22-094333-10.json")
+  test("halving drops the oldest half, never the newest", () => {
+    const entries = [entry("1"), entry("2"), entry("3"), entry("4")]
+    // A cap that fits exactly two entries: the survivors must be the two the agent has not read yet.
+    const kept = halveToFit(entries, 1)
+
+    expect(kept.length).toBeLessThan(entries.length)
+    expect(kept.at(-1)).toEqual(entry("4"))
+    expect(kept.map((item) => item.text)).not.toContain("1")
   })
 
-  test("two compactions at one instant get distinct numbered files", async () => {
-    const root = await tempRoot("work-log")
+  test("a log under the cap is left completely alone", () => {
+    const entries = [entry("a"), entry("b")]
+    expect(halveToFit(entries, DEFAULT_MAX_BYTES)).toEqual(entries)
+  })
+
+  test("a SINGLE oversized entry is still written — the cap is retention, not correctness", () => {
+    // Refusing would leave the tombstone pointing at a file that does not exist, which is the exact
+    // lie this whole mechanism exists to avoid.
+    const entries = [entry("enormous")]
+    expect(halveToFit(entries, 1)).toEqual(entries)
+  })
+
+  test("appending past the cap shrinks the file rather than growing it without bound", async () => {
+    const root = await tempRoot("cap")
     const scratch = path.join(root, "geryon")
-    const at = new Date("2026-09-22T09:43:33.606Z")
+    const chunk = "x".repeat(400)
 
-    const [first, second] = await Promise.all([
-      saveWorkLog({ scratchFolder: scratch, at, text: "first" }),
-      saveWorkLog({ scratchFolder: scratch, at, text: "second" }),
-    ])
+    for (let i = 0; i < 12; i++) await append({ scratchFolder: scratch, at: new Date(0), text: `${i}${chunk}`, maxBytes: 2000 })
 
-    expect(new Set([path.basename(first), path.basename(second)])).toEqual(
-      new Set(["oldlog-2026-09-22-094333-1.json", "oldlog-2026-09-22-094333-2.json"]),
-    )
-    expect(await latestWorkLog(scratch)).toBe(path.join(scratch, DIR, "oldlog-2026-09-22-094333-2.json"))
+    const target = file({ scratchFolder: scratch })
+    const entries = await readEntries(target)
+    // Bounded, and the newest fold is still in it — the agent's most recent context is the one thing
+    // that must never be the thing that got trimmed.
+    expect(entries.length).toBeLessThan(12)
+    expect(entries.at(-1)?.text.startsWith("11")).toBe(true)
+  })
+
+  test("sizeOf reports the real size, and zero when there is no log", async () => {
+    const root = await tempRoot("size")
+    const scratch = path.join(root, "geryon")
+    expect(await sizeOf(scratch)).toBe(0)
+
+    await append({ scratchFolder: scratch, at: new Date(0), text: "earlier chat" })
+
+    const written = file({ scratchFolder: scratch })
+    expect(await sizeOf(scratch)).toBe((await fs.stat(written)).size)
   })
 })
 
