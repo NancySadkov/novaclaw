@@ -11,6 +11,7 @@ import { SessionInput } from "./input"
 import { SessionSchema } from "./schema"
 import { SessionExecutionTable, SessionTable } from "./sql"
 import type { SessionStore } from "./store"
+import { Steering } from "./steering"
 
 /**
  * **What a dead host leaves behind, and who re-drives it.**
@@ -180,6 +181,7 @@ export const holdStopped = (input: {
   })
 
 export const adoptRecovered = (input: {
+  readonly db: Database.Interface["db"]
   readonly recovered: readonly SessionExecutionAttempt.Recovered[]
   readonly adopt: (sessionID: SessionSchema.ID) => Effect.Effect<void, unknown>
   readonly parentOf?: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.ID | undefined, unknown>
@@ -187,11 +189,44 @@ export const adoptRecovered = (input: {
   Effect.gen(function* () {
     // Spawned workers are included: leaving one interrupted strands its parent's durable wait and
     // loses delegated work. Recovery reconstructs the worker from persisted state instead.
-    const resumable = yield* descendantsFirst({
+    const ordered = yield* descendantsFirst({
       sessionIDs: input.recovered.map((entry) => entry.sessionID),
       parentOf: input.parentOf,
     })
-    if (resumable.length === 0) return 0
+    if (ordered.length === 0) return 0
+    /**
+     * 🔴 **RECOVERY MUST ASK THE SEAM WHETHER IT MAY RESUME ANYONE.**
+     *
+     * Measured 2026-09-29 on the owner's own instance: `ses_xenia` reached `generation: 65` with two
+     * `session_input` rows in its whole life and spoke four minutes after a launch that asked for
+     * nothing. She is a pure Chat entity — no goal, no tools, no `exit` — so an abandoned attempt on
+     * her is not unfinished business, and resuming it makes the model invent an opening.
+     *
+     * The `SessionRecoveryDecision` verdict computed upstream is not at fault: it answers *"is this
+     * turn safe to continue?"* and returns `automatic: true` correctly. It was never asked whether
+     * there WAS a turn to continue. That question now goes through `Steering.resume`, the same seam
+     * that refuses to steer a Chat session — because a session that may not be steered may not be
+     * resumed either.
+     *
+     * ⚠️ Workers are covered by the same call, deliberately. A worker is part of its officer's turn,
+     * so it inherits the officer's answer: an unattended officer's workers come back with it, an
+     * interactive officer's stay down. That is the owner's decision to make, not the worker's.
+     */
+    const resumable: SessionSchema.ID[] = []
+    for (const sessionID of ordered) {
+      const authority = yield* Steering.resume(input.db, sessionID, {
+        reason: "boot-recovery",
+        hasWork: true,
+      })
+      if (authority.allowed) resumable.push(sessionID)
+    }
+    if (resumable.length === 0) {
+      yield* Log.event("session.boot.recovery.held", {
+        "session.id": ordered[0]!,
+        "session.reason": "not-resumable",
+      })
+      return 0
+    }
     yield* Log.event("session.interrupted.resumed", {
       "session.resumed": resumable.length,
       "session.paused": input.recovered.length - resumable.length,
@@ -294,6 +329,25 @@ export const wakeAbandonedInput = Effect.fn("SessionBootRecovery.wakeAbandonedIn
         .from(SessionExecutionTable).where(eq(SessionExecutionTable.session_id, sessionID)).get().pipe(Effect.orDie)
       if (!pendingQueue && recovery?.recovery == null) continue
     }
+    /**
+     * 🔴 **THE OTHER BOOT ARM ASKS THE SAME SEAM.**
+     *
+     * The `shortChat` check above is a narrower, older version of this rule and it is not equivalent:
+     * `config.shortChat` is the legacy spelling, optional, and the live `ses_xenia` row carries
+     * `short_chat = NULL` — so on the owner's own instance that check passed straight through the very
+     * session this exists to stop. It also cannot express `operationMode`, which is what actually
+     * decides whether a durable root may start by itself.
+     *
+     * Kept above rather than replaced, because it carries one thing the seam does not: a Chat session
+     * holding durable QUEUED INPUT or a provider recovery is a real person waiting, and that is
+     * resumed on purpose. The seam below answers the separate question — may this model be STARTED
+     * with nobody asking — and a queued prompt is somebody asking.
+     */
+    const authority = yield* Steering.resume(input.db, sessionID, { reason: "boot-queued-input" })
+    if (!authority.allowed) {
+      const pendingQueue = yield* SessionInput.hasPending(input.db, sessionID, "queue")
+      if (!pendingQueue) continue
+    }
     // This is the sibling boot-time fan-out source. Pending prompts are durable, so joining each
     // drain bounds adoption without losing work.
     yield* input.adopt(sessionID).pipe(Effect.catchCause(() => Effect.void))
@@ -394,6 +448,7 @@ export const start = (input: {
         Effect.gen(function* () {
           yield* recoveryLane.withPermits(1)(
             adoptRecovered({
+              db: input.db,
               recovered,
               adopt,
               parentOf: (sessionID) =>

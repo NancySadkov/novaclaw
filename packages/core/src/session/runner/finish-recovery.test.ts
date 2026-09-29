@@ -141,6 +141,11 @@ describe("what the model and the user are actually told", () => {
 
 const RUNNER_LLM = path.join(import.meta.dir, "llm.ts")
 const runnerSource = fs.readFileSync(RUNNER_LLM, "utf8")
+/** The seam that owns the rule the re-pinned assertion below is really about. */
+const steeringSource = fs.readFileSync(
+  path.resolve(import.meta.dir, "..", "steering.ts"),
+  "utf8",
+)
 
 describe("runner/llm.ts wiring", () => {
   test("guards the guard: the file was found and is the runner", () => {
@@ -160,9 +165,26 @@ describe("runner/llm.ts wiring", () => {
   })
 
   test("the continuation reaches the model ONLY through the provenance-stamping steer primitive", () => {
-    expect(runnerSource).toContain("SessionInput.steer(db, events, input.sessionID, truncation.message)")
+    // ⚠️ RE-PINNED 2026-09-29, and the reason is worth recording.
+    //
+    // This asserted `SessionInput.steer(db, events, input.sessionID, truncation.message)` — a call
+    // site that NO LONGER EXISTS. The steering work moved that continuation behind `Steering.inject`,
+    // which stamps provenance AND refuses a chat session, and this ratchet was left pointing at the
+    // primitive it replaced. It therefore went red on a tree where the property it guards was in fact
+    // still true, and it was still red when this was found, so it had stopped being evidence for
+    // anything. A guard that names a deleted line is worse than no guard: it trains its reader to
+    // ignore red.
+    //
+    // The PROPERTY is what matters and it is unchanged: the truncation continuation reaches the model
+    // only through a steer that stamps provenance, and only once. Pinned against the seam, which is
+    // the primitive that now owns the rule.
+    expect(runnerSource).toContain(
+      'Steering.inject(db, events, { sessionID: input.sessionID, reason: "truncation", text: truncation.message })',
+    )
     // Exactly one use — a second would be a bypass (e.g. published raw as a Synthetic/user message).
     expect(runnerSource.split("truncation.message").length - 1).toBe(1)
+    // And the seam itself must still be the only thing that stamps provenance for a steer.
+    expect(steeringSource).toContain("applySteerProvenance(injection.text)")
   })
 
   test("the stop arm surfaces a notice and ends the RUN, not just the step loop", () => {
