@@ -49,7 +49,6 @@ import {
 } from "@/utils/session-execution-api"
 import { formatServerError } from "@/utils/server-errors"
 import { shouldSuppressSessionExecutionError } from "@/utils/session-execution-error"
-import { recoveryChangesNote } from "./session-recovery-note"
 import { PromptInput } from "@/components/prompt-input"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { TeamChatButton } from "@/components/team-chat-button"
@@ -87,7 +86,6 @@ import { presenceHandoffNotice, presenceView } from "./session/session-presence"
 import { createSessionPresence } from "./session/session-presence-controller"
 import { createReviewController, resolveReviewSource, type ChangeMode } from "./session/review-source"
 import { visibleProviderRecovery } from "./session/composer/session-provider-recovery"
-import { visibleExecutionAttention } from "./session/session-execution-attention"
 
 type VcsMode = "git" | "branch"
 
@@ -428,34 +426,6 @@ export default function Page() {
     const attempt = executionAttempt()
     return attempt?.state === "starting" || attempt?.state === "busy"
   })
-  /** Wording lives in `session-recovery-note.ts` so its branches are provable — the zero-and-
-   *  incomplete case in particular must never read as "nothing happened". */
-  const recoveryChanges = createMemo(() => recoveryChangesNote(info()?.summary))
-
-  /**
-   * The banner's third affordance — what the session-recovery gate called `reconcile`.
-   *
-   * ⚠️ It is deliberately NOT a third verb. The gate named a word that appeared nowhere in the
-   * product, and the honest reading of it is *make the record agree with what actually happened* —
-   * which nobody can do without first SEEING what happened. Everything needed for the two real
-   * answers already ships: the Changes panel shows the diff, and the per-prompt Revert undoes the
-   * turn. What was missing is only the step between "at least 2 files changed" and either of them,
-   * so the banner now takes you there instead of naming a fourth thing to learn.
-   *
-   * ⚠️ BOTH calls are required, and the first version of this shipped only `setTab`. `setTab` sets
-   * `opened: true` ONLY when the fileTree store is still unset — after any prior interaction it
-   * changes the tab and leaves a closed panel closed. Caught by clicking the button in a browser
-   * against a genuinely paused session, not by reading `layout.tsx`: the signature reads like it
-   * opens.
-   */
-  const showChangedFiles = () => {
-    if (!isDesktop()) {
-      setStore("mobileTab", "changes")
-      return
-    }
-    layout.fileTree.open()
-    layout.fileTree.setTab("changes")
-  }
 
   // 🔴 A second press while the first is still in flight JOINS it instead of silently
   // returning. The old `stopRequest() === id` early-return made repeat clicks — the exact thing a
@@ -788,10 +758,6 @@ export default function Page() {
     revertToPrompt,
     rolled,
   } = revertController
-  const executionAttention = createMemo(() =>
-    visibleExecutionAttention(executionAttempt(), params.id ? busy(params.id) : false),
-  )
-
   const unpinDevice = async (sessionID: string) => {
     try {
       await unpinSessionDevice(sdk().client, sessionID)
@@ -1197,50 +1163,6 @@ export default function Page() {
 
   return (
     <div class="relative size-full overflow-hidden flex flex-col">
-      <Show when={executionAttention()}>
-        {(attempt) => (
-          <Show when={["recovering", "paused", "failed", "interrupted"].includes(attempt().state)}>
-            <div class="mx-2 mt-2 flex select-text items-center gap-3 rounded-[10px] border border-v2-state-border-warning bg-v2-state-bg-warning px-3 py-2 text-xs text-v2-text-text-muted">
-              <span class="min-w-0 flex-1">
-                <strong class="text-v2-text-text-base">
-                  {attempt().state === "recovering"
-                    ? "This chat is recovering automatically."
-                    : "This chat needs attention."}
-                </strong>{" "}
-                {attempt().failureDetail ??
-                  attempt().failureClass ??
-                  "The previous worker stopped before it could confirm the outcome."}{" "}
-                {/*
-                  What already happened to the workspace, because that — not the failure class — is
-                  what decides whether retrying is safe. `complete: false` means the recording was
-                  still open when this stopped (`markChangesIncomplete` sets it at drain entry), so
-                  the count is a FLOOR, not a total.
-
-                  ⚠️ The dangerous case is zero-and-incomplete. Rendering "No files changed" there
-                  would be a false reassurance at exactly the moment someone is deciding whether to
-                  re-run a side effect, so it says the recording never finished instead.
-                */}
-                <span class="text-v2-text-text-muted">{recoveryChanges()}</span>
-              </span>
-              {/* Before Retry on purpose: "is retrying safe?" is answered by looking, and a banner
-                  that offers the irreversible action first is teaching the wrong order. */}
-              <ButtonV2 size="small" variant="neutral" onClick={showChangedFiles}>
-                See changes
-              </ButtonV2>
-              <Show when={attempt().state !== "recovering"}>
-                <ButtonV2 size="small" variant="neutral" onClick={() => void executionAction("retry")}>
-                  Retry
-                </ButtonV2>
-              </Show>
-              <Show when={attempt().state === "recovering"}>
-                <ButtonV2 size="small" variant="neutral" onClick={() => void executionAction("stop")}>
-                  Stop
-                </ButtonV2>
-              </Show>
-            </div>
-          </Show>
-        )}
-      </Show>
       {/*
         Presence. Deliberately NOT styled as a warning: two people in one chat is an ordinary thing
         that happens, and rendering it in the same red as a stalled execution would teach a normal

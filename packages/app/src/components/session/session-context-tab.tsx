@@ -58,7 +58,14 @@ function Detail(props: { label: string; value: JSX.Element }) {
 
 const emptyMessages: SessionMessage[] = []
 
-export function SessionContextTab() {
+export function SessionContextTab(props: {
+  /**
+   * The file list and the changes list, ported here from the side panel's `Changes`/`All files` pill.
+   * Injected rather than fetched so this component keeps no dependency on the diff store — the panel
+   * already holds it, and the seam stays one line.
+   */
+  readonly files?: JSX.Element
+}) {
   const sync = useSync()
   const serverSync = useServerSync()
   const language = useLanguage()
@@ -737,6 +744,7 @@ export function SessionContextTab() {
               }}
             />
           </div>
+          {props.files}
         </div>
       </div>
     </ScrollView>
