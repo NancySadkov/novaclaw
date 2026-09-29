@@ -75,12 +75,15 @@ describe("the panel keeps ONE official road, and the file lists live in the insp
     expect(code(CONTEXT)).toContain("props.files")
   })
 
-  test("the diff KIND map registers the file and its directories, as the pill did", () => {
-    // Dropping the file-level registration colours directories but leaves the changed file itself
-    // uncoloured — a regression that looks like a theming bug and is not.
+  test("the KIND map is not re-inlined in the component, so it cannot drift from the tested copy", () => {
+    // The semantics — a changed file AND its folders registered, a Windows path normalized — are
+    // owned by `session-files-derive.test.ts`, which proves them by RUNNING them. What belongs here
+    // is only the delegation: the first version of this port inlined a second copy of the kind map
+    // and got it wrong in the one way that is invisible until a tree is miscoloured.
     const section = code(SECTION)
-    expect(section).toContain('out.set(file, kind)')
-    expect(section).toContain('out.set(dir, merge(out.get(dir), kind))')
+    expect(section, "the component inlines its own kind map again").toContain("diffKinds(props.diffs)")
+    expect(section, "the component inlines its own path list again").toContain("diffPaths(props.diffs)")
+    expect(section, "the component re-normalizes paths itself").not.toMatch(/replace(All)?\(/)
   })
 })
 

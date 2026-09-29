@@ -1,11 +1,8 @@
 import { Match, Show, Switch, createMemo } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useFile } from "@/context/file"
-import type { SessionChangeDiff, VcsFileDiff } from "@novaclaw/sdk/v2"
 import FileTree from "@/components/file-tree"
-
-/** The panel's own narrowed diff shape — reused rather than re-narrowed, so the two cannot drift. */
-type RenderedDiff = (SessionChangeDiff & { file: string }) | VcsFileDiff
+import { diffKinds, diffPaths, type RenderedDiff } from "./session-files-derive"
 
 /**
  * The file list and the changes list, moved here from the side panel's `Changes`/`All files` pill.
@@ -30,31 +27,8 @@ export function SessionFilesSection(props: {
   const file = useFile()
   const language = useLanguage()
 
-  const kinds = createMemo(() => {
-    const merge = (a: "add" | "del" | "mix" | undefined, b: "add" | "del" | "mix") => {
-      if (!a) return b
-      if (a === b) return a
-      return "mix" as const
-    }
-    const normalize = (p: string) => p.replaceAll("\\\\", "/").replace(/\/+$/, "")
-    const out = new Map<string, "add" | "del" | "mix">()
-    for (const diff of props.diffs) {
-      const path = diff.file
-      if (!path) continue
-      const file = normalize(path)
-      const kind = diff.status === "added" ? "add" : diff.status === "deleted" ? "del" : "mix"
-      // The file itself, then every directory above it, so both are coloured.
-      out.set(file, kind)
-      const parts = file.split("/")
-      for (const [idx] of parts.slice(0, -1).entries()) {
-        const dir = parts.slice(0, idx + 1).join("/")
-        if (!dir) continue
-        out.set(dir, merge(out.get(dir), kind))
-      }
-    }
-    return out
-  })
-  const diffFiles = createMemo(() => props.diffs.map((diff) => diff.file).filter((f): f is string => !!f))
+  const kinds = createMemo(() => diffKinds(props.diffs))
+  const diffFiles = createMemo(() => diffPaths(props.diffs))
   const nofiles = createMemo(() => {
     const state = file.tree.state("")
     if (!state?.loaded) return false
