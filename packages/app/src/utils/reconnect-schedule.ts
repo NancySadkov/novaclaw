@@ -37,3 +37,40 @@ export function reconnectDelayMs(attempt: number, random: () => number = Math.ra
   const factor = JITTER_FLOOR + Math.min(1, Math.max(0, random())) * (1 - JITTER_FLOOR)
   return Math.round(ceiling * factor)
 }
+
+/**
+ * The cadence while the shell says the instance is still STARTING.
+ *
+ * 🔴 **A START IS NOT AN OUTAGE, and running the outage ladder through one is what this cost.**
+ * Measured 2026-09-28 across nine real boots of the packaged app: the gap between the supervisor
+ * reporting the server healthy and the client actually connecting was **bimodal** — five boots at
+ * 0.2–1.2 s, four boots at 27.7 s, 29.5 s, 29.8 s and 29.9 s. On the slow boots the server was
+ * provably up, answering `/global/health` with `Access-Control-Allow-Origin: nc://renderer`, and its
+ * own log recorded no client at all for 35 s.
+ *
+ * The cause is that `reconnectDelayMs` is a pure function of the failure count, and the client
+ * burns attempts against a port that is not bound yet. Exhausted, that schedule sleeps 15.9–31.8 s
+ * before the next try — which is the band the four slow boots landed in, jitter included. The
+ * ladder's restraint is real and worth keeping: it exists so a server that is DOWN, or a rotated
+ * token, is not re-requested four times a second forever. None of that applies while the local
+ * shell is deliberately bringing the instance up, watching it, and holding it to a 60 s bound.
+ *
+ * So the client polls a start at a flat, short interval instead, and
+ * {@link import("./context/reconnect-stream").runReconnectingStream} is told to discard the failures
+ * it counted — they were earned against a server that did not exist — the moment the start ends.
+ */
+export const START_POLL_MS = 500
+
+/**
+ * The delay before a retry, for a client that knows whether the instance is on its way up.
+ *
+ * ⚠️ `starting` is a REQUIRED argument rather than an optional flag on purpose: a caller that forgets
+ * it silently gets the outage ladder over a start, which is the defect this function exists to end.
+ */
+export function streamRetryDelayMs(
+  input: { readonly attempt: number; readonly starting: boolean },
+  random: () => number = Math.random,
+): number {
+  if (input.starting) return START_POLL_MS
+  return reconnectDelayMs(input.attempt, random)
+}
