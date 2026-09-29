@@ -14,7 +14,9 @@ import {
   livenessDecision,
   superviseDecision,
   FAST_CRASH_GIVEUP,
+  FAST_CRASH_MS,
   LIVENESS_FAILURE_LIMIT,
+  SLOW_CRASH_GIVEUP,
   type StopReason,
   type SuperviseStatus,
 } from "@novaclaw/script/supervise"
@@ -418,7 +420,13 @@ export async function superviseLocalServer(
     }
     if (decision.action === "giveup") {
       note(
-        `crash loop: ${FAST_CRASH_GIVEUP} consecutive fast exits — giving up; the connection banner will show the outage`,
+        // 🔴 Both ladders are named, because they mean different faults. Measured 2026-09-29 on a live
+        // instance: the child was restarted at 01:18, 01:54 and 02:09, `code 1` each time on a
+        // ~6-minute cycle, and the old policy reset `fastCrashes` at 10 s — so every one of those
+        // six-minute lives scored as a clean first start and this guard could never be reached. A
+        // message that named only the fast ladder would have been actively misleading about what had
+        // just been given up on.
+        `crash loop: ${FAST_CRASH_GIVEUP} consecutive fast exits, or ${SLOW_CRASH_GIVEUP} that lived past ${FAST_CRASH_MS / 1000}s - giving up; the connection banner will show the outage`,
       )
       report({ phase: "gave-up", reason, attempts })
       return
