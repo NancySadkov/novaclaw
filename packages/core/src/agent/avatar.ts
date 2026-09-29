@@ -10,6 +10,7 @@ import { Global } from "../global"
 import { AvatarAssignment } from "./avatar-assignment"
 import { files as poolFiles } from "./avatar-pool"
 import novaPortraitFile from "../../../app/public/assets/agents/portraits/nova.webp" with { type: "file" }
+import ownerPortraitFile from "../../../app/public/assets/agents/portraits/owner.webp" with { type: "file" }
 
 /** The avatar is a small identity component, not an arbitrary file upload. */
 export const MAX_BYTES = 5 * 1024 * 1024
@@ -36,8 +37,22 @@ export type Portrait =
 
 const extensions = Object.values(TYPES)
 
+/**
+ * Portraits that ship with the product, keyed by the lowercased agent id.
+ *
+ * `nova` and `owner` are the two the instance itself is made of — the officer who acts and the person
+ * it acts for — so they carry art rather than a draw from the 104-slot pool. Everything else takes
+ * whatever slot the assignment hands out.
+ *
+ * ⚠️ **A built-in is only reached when nothing is STORED for the agent**, because `portraitIn`
+ * resolves `stored` → `glyph` → `builtin` → `pool`. That is what makes this safe: an owner who
+ * deliberately sets their own portrait keeps it, and the shipped art is only the default. The pool
+ * claim an officer may already hold is RELEASED on the way (`AvatarAssignment.releaseIn`), so the
+ * slot returns to the pool for a colleague rather than being stranded.
+ */
 const BUILTIN_PORTRAITS: Readonly<Record<string, string>> = {
   nova: novaPortraitFile,
+  owner: ownerPortraitFile,
 }
 
 /** Bun's file loader emits an absolute path in source runs and a chunk-relative path in a bundle. */
@@ -125,8 +140,25 @@ export const writeIn = async (
   const hash = digest(bytes)
   const normalizedAgentID = agentID.trim().toLowerCase()
   if (normalizedAgentID === "nova") throw new Error("Nova always uses its star portrait")
-  const novaPortrait = await builtin("nova")
-  if (novaPortrait?.hash === hash) throw new Error("Nova's star portrait is reserved for Nova")
+  if (normalizedAgentID === "owner") throw new Error("The owner always uses the owner's portrait")
+  // 🔴 A BUILT-IN'S BYTES ARE RESERVED FOR ITS OWN AGENT, for every built-in and not just Nova.
+  //
+  // Nova's guard was written when Nova was the only one, and read as a special case about Nova. It is
+  // actually a property of BUILTIN_PORTRAITS: the shipped art is the instance's own identity, so
+  // storing a copy of it under some colleague's id would put Nova's face on an officer who never chose
+  // it. Enumerating the table means the next built-in added is covered by construction — the failure
+  // mode is a forgotten line here, not a missing `if`.
+  for (const builtInID of Object.keys(BUILTIN_PORTRAITS)) {
+    const shipped = await builtin(builtInID)
+    if (shipped?.hash === hash) {
+      // ⚠️ The DISPLAY name, not the id. `BUILTIN_PORTRAITS` is keyed by id (`nova`, `owner`), and
+      // interpolating that key into a sentence a person reads produces "nova's portrait is reserved
+      // for nova" — which is the worse English the contract already pins, so capitalise it here rather
+      // than edit a test that was right.
+      const name = builtInID.charAt(0).toUpperCase() + builtInID.slice(1)
+      throw new Error(`${name}'s portrait is reserved for ${name}`)
+    }
+  }
   const root = rootIn(dataDirectory)
   await fs.mkdir(root, { recursive: true })
   const blob = blobPath(root, agentID, hash, format)
@@ -192,10 +224,19 @@ export const portraitIn = async (
   storedGlyph: string | undefined,
   name?: string,
 ): Promise<Portrait> => {
-  if (agentID.trim().toLowerCase() === "nova") {
+  // 🔴 BUILT-IN AGENTS ARE PINNED, NOT MERELY PREFERRED.
+  //
+  // A built-in reachable only by FALL-THROUGH is not a default, it is a last resort: a stale blob or a
+  // pool claim left over from before the art shipped would keep winning, and the shipped portrait would
+  // never appear. So a built-in agent is resolved FIRST, unconditionally, and its stored avatar and
+  // pool claim are cleared on the way. That is the same treatment Nova has always had — it was written
+  // inline and keyed on the literal "nova", so the owner's art would have been a fall-through by
+  // default. Deriving it from BUILTIN_PORTRAITS means the next built-in is pinned by construction.
+  const normalized = agentID.trim().toLowerCase()
+  if (BUILTIN_PORTRAITS[normalized] !== undefined) {
     await Promise.all([AvatarAssignment.releaseIn(dataDirectory, agentID), removeIn(dataDirectory, agentID)])
-    const nova = await builtin("nova")
-    if (nova !== undefined) return { kind: "image", ...nova }
+    const shipped = await builtin(normalized)
+    if (shipped !== undefined) return { kind: "image", ...shipped }
   }
   const stored = await readIn(dataDirectory, agentID)
   if (stored !== undefined) return { kind: "image", ...stored }
