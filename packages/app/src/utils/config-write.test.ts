@@ -86,9 +86,12 @@ function chainedCatch(text: string, from: number): { index: number; handler: str
  * were moved onto `reportedWrite`. Every number may only DECREASE.
  */
 const LEDGER: { console: Record<string, number>; discarded: Record<string, number> } = {
+  // `pages/session/timeline/model.ts` was here at 1 and is now GONE. Its console-only catch became a
+  // real state the transcript renders — a calm "couldn't be displayed" card with a Retry — so the
+  // failure reaches a person and the console line is only diagnostics. The ledger is shrink-only, so
+  // a converted site leaves rather than lingering as a stale line.
   console: {
     "context/terminal.tsx": 1,
-    "pages/session/timeline/model.ts": 1,
   },
   discarded: {
     "components/dialog-select-directory-v2.tsx": 1,

@@ -1156,6 +1156,45 @@ export default function Page() {
     )
   }
 
+  /**
+   * 🔴 **THE GATE MUST HAVE A STATE FOR EVERY VALUE IT CAN HOLD.**
+   *
+   * This is the fallback for the transcript's `messagesReady` gate. It existed because the gate had
+   * none: `<Show when={ready} keyed>` with no fallback renders NOTHING while false, and the
+   * `ErrorBoundary` sat inside it, so the empty region could not even be caught. Measured on the
+   * owner's 0.1.81, 2026-09-29: one rejected `nativeMessages.load` left a permanently blank window —
+   * tab strip drawn, conversation and composer both gone, 0% CPU, no log line, window still
+   * responsive to Windows — until the SSE stream happened to reconnect and `reconcileAll` re-read
+   * the transcript by luck. The client could not fix it; only the network could.
+   *
+   * Two states, because "still fetching" and "fetching failed" are different things to a person,
+   * and only one of them is worth a button. Neither is a stack trace, and neither is a dead end.
+   */
+  const transcriptPending = () => (
+    <div
+      class="flex h-full w-full items-center justify-center p-8"
+      aria-busy="true"
+      data-slot="transcript-pending"
+    >
+      <span class="size-2 animate-pulse rounded-full bg-v2-text-text-muted" />
+    </div>
+  )
+
+  const transcriptUnavailable = () => (
+    <div
+      class="flex h-full w-full flex-col items-center justify-center gap-3 p-6 text-center"
+      data-slot="transcript-unavailable"
+    >
+      <p class="max-w-80 text-12-regular text-text-muted">{language.t("session.timeline.degraded")}</p>
+      <ButtonV2 size="small" variant="neutral" onClick={timeline.retry}>
+        {language.t("session.review.retry")}
+      </ButtonV2>
+    </div>
+  )
+
+  /** What the transcript region shows while `ready` is false — never nothing. */
+  const transcriptGateFallback = () => (timeline.failed() ? transcriptUnavailable() : transcriptPending())
+
   return (
     <div class="relative size-full overflow-hidden flex flex-col">
       <Show when={executionAttention()}>
@@ -1253,7 +1292,11 @@ export default function Page() {
             <div class="flex-1 min-h-0 overflow-hidden">
               <Switch>
                 <Match when={params.id}>
-                  <Show when={messagesReady() ? params.id : undefined} keyed>
+                  <Show
+                    when={messagesReady() ? params.id : undefined}
+                    keyed
+                    fallback={transcriptGateFallback()}
+                  >
                     {(_id) => (
                       /**
                        * 🔴 **The transcript gets its OWN boundary, because a row it cannot read is a
