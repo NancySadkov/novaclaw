@@ -97,7 +97,36 @@ export interface ProbeResult {
   readonly hadOpenTab: boolean
   readonly clicked: boolean
   readonly answeredAfter: boolean
+  /** The browser endpoint answered — so the app is alive and only the renderer is wedged. */
+  readonly browserAlive: boolean
   readonly notes: readonly string[]
+}
+
+/**
+ * 🔴 **THE PROBE CANNOT ASK THE BLOCKED RENDERER WHETHER IT IS BLOCKED.**
+ *
+ * The first version of this file did exactly that: it attached over CDP and then evaluated `1 + 1`
+ * to decide "answered". Measured 2026-09-29: a locked renderer fails to answer its own debugger
+ * endpoint — 3/3 timeouts at 8 s, while the main process stayed `OS-hung=False`. So the instrument
+ * was measuring the failure with the failed thing. It could only ever report a lock it had already
+ * caused or inherited, and "the probe locked" was the probe deadlocking itself.
+ *
+ * The fix is to ask a process that is NOT blocked. The BROWSER endpoint (`/json/version`) is served
+ * by the browser process, not the renderer's main thread, so it answers even while every page is
+ * wedged. That makes it an independent liveness signal — and comparing it against a page-level
+ * probe is what distinguishes "the renderer is wedged" from "the whole app is gone".
+ */
+async function browserAnswers(port: number, timeoutMs: number): Promise<boolean> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(cdp(port, "/json/version"), { signal: controller.signal })
+    return response.ok
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 export async function runOfficerOpenProbe(options: ProbeOptions): Promise<ProbeResult> {
@@ -111,6 +140,7 @@ export async function runOfficerOpenProbe(options: ProbeOptions): Promise<ProbeR
       hadOpenTab: false,
       clicked: false,
       answeredAfter: false,
+      browserAlive: await browserAnswers(options.port, 5_000),
       notes: ["no renderer page found — is the client running with --debug-port?"],
     }
   }
@@ -145,12 +175,20 @@ export async function runOfficerOpenProbe(options: ProbeOptions): Promise<ProbeR
     }
     log(`clicked ${officerCard(options.agent)} -> ${clicked}`)
 
-    // The load-bearing check: can the renderer still answer at all?
+    // The load-bearing check, and it must be asked of a process that is NOT the blocked one.
+    // Two independent signals: the browser endpoint (always healthy unless the whole app died) and
+    // the renderer page (the thing that can actually wedge). Only their DISAGREEMENT is a lock —
+    // a browser that also stopped answering is a different, much blunter failure.
+    const browserAlive = await browserAnswers(options.port, 5_000)
     const answeredAfter = await Promise.race([
       evaluate(socket, "1 + 1", 5).then(() => true),
       new Promise<boolean>((resolve) => setTimeout(() => resolve(false), options.timeoutMs ?? 15_000)),
     ])
-    if (!answeredAfter) notes.push("renderer did not answer a trivial evaluation — the main thread is blocked")
+    if (!browserAlive) notes.push("the browser process did not answer either — this is not a page-level lock")
+    else if (!answeredAfter)
+      notes.push(
+        "browser alive but the renderer did not answer: the renderer main thread is blocked (this is the lock)",
+      )
 
     return {
       pass: clicked && answeredAfter && !tabState?.mentionsAgent,
@@ -158,6 +196,7 @@ export async function runOfficerOpenProbe(options: ProbeOptions): Promise<ProbeR
       hadOpenTab: Boolean(tabState?.mentionsAgent),
       clicked,
       answeredAfter,
+      browserAlive,
       notes,
     }
   } finally {
