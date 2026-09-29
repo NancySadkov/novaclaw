@@ -137,6 +137,7 @@ import { disposeMiddleware, locationDisposerLayer } from "./lifecycle"
 import { memoMap } from "@novaclaw/core/effect/memo-map"
 import { compressionLayer } from "./middleware/compression"
 import { corsVaryFix } from "./middleware/cors-vary"
+import { corsOutcomeLog } from "./middleware/cors-outcome-log"
 import { emptyJsonBodyLayer } from "./middleware/empty-json-body"
 import { mutationOriginLayer } from "./middleware/mutation-origin"
 import { peerDoorLayer } from "./middleware/peer-door"
@@ -494,6 +495,11 @@ export function createRoutes(
     Layer.provide([
       errorLayer,
       compressionLayer,
+      // 🔴 AFTER `corsVaryFix` and AFTER `cors(...)`, because it records what the client actually
+      // received. Listed before them it would see the CORS middleware's response before the Vary fix
+      // and before compression had a chance to act, and the allow-origin header it read would be the
+      // wrong one — a diagnostic that reports the wrong answer is worse than none.
+      corsOutcomeLog,
       corsVaryFix,
       fenceLayer,
       // Refuses a mutation carrying a foreign `Origin` — the CSRF shape a passwordless install is
