@@ -1,10 +1,44 @@
-import type { BrowserWindow } from "electron"
 import { write as writeLog } from "./logging"
 
 const sampleInterval = 1000
 const samplePeriod = 15000
 
-export function createUnresponsiveSampler(win: BrowserWindow, name: string) {
+/**
+ * The slice of `BrowserWindow` the sampler drives.
+ *
+ * ⚠️ Declared here rather than imported from `electron`, and that is load-bearing for the tests: the
+ * `electron` package's main export is a path string, so `import ... from "electron"` throws at runtime
+ * under `bun test` ("Export named 'netLog' not found"). A TYPE import is erased and was always safe,
+ * but the moment this module needed a real value from electron it stopped being testable at all — so
+ * the shape is declared locally and the real `BrowserWindow` is passed to it structurally.
+ */
+export interface SampledWindow {
+  isDestroyed(): boolean
+  /**
+   * ⚠️ `BrowserWindow` is an EventEmitter whose `on` is the WIDE `(event: string | symbol, listener:
+   * (...args: any[]) => void)` overload. Narrowing it to one literal name would make a real
+   * `BrowserWindow` structurally UNASSIGNABLE to this interface, which is the opposite of the point —
+   * the whole reason the shape is declared locally is that the real window satisfies it.
+   */
+  on(event: string, listener: (...args: any[]) => void): unknown
+  webContents: {
+    isDestroyed(): boolean
+    isDevToolsOpened(): boolean
+    getURL(): string
+    /**
+     * ⚠️ `collectJavaScriptCallStack(): Promise<string> | Promise<void>` in Electron's own types — the
+     * `void` arm is what a frame that is gone returns. Declaring the narrower
+     * `Promise<string | undefined>` made a real `BrowserWindow` unassignable here, which is how this
+     * mistake was caught: the shape exists to be satisfied BY the real window, so it must be no
+     * stricter than the real window.
+     */
+    mainFrame: { collectJavaScriptCallStack(): Promise<string> | Promise<void> }
+  }
+}
+
+export { rendererRecovery, RENDERER_GRACE_MS, MAX_RENDERER_RELOADS, type RendererRecovery } from "./renderer-watchdog-policy"
+
+export function createUnresponsiveSampler(win: SampledWindow, name: string) {
   let sampleTimer: ReturnType<typeof setTimeout> | undefined
   let stopTimer: ReturnType<typeof setTimeout> | undefined
   let sampling = false

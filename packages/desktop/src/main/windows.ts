@@ -23,6 +23,7 @@ import { resolveRendererDevUrl } from "./renderer-url"
 import { getStore } from "./store"
 import { PINCH_ZOOM_ENABLED_KEY } from "./store-keys"
 import { createUnresponsiveSampler } from "./unresponsive"
+import { createRendererWatchdog } from "./renderer-watchdog"
 import { preloadFailureRecovery } from "./preload-recovery"
 import { mainRuntimeDirectory } from "./runtime-path"
 import { parseRendererByteRange } from "./renderer-byte-range"
@@ -409,15 +410,41 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
       false,
     )
   })
+  // 🔴 The renderer is the one component that holds nothing — every durable thing belongs to the
+  // server — so a window that cannot paint is recoverable by rebuilding it, and that rebuild is also
+  // the only thing that unwedges its main thread and drops the sockets its network service is holding.
+  // Measured 2026-09-29: a client froze mid-session, stopped painting entirely (the tab activity
+  // indicators stopped pulsing), and never came back, while the server answered `/global/health` in
+  // 13 ms. The old response was a dialog offering to relaunch, open the logs, or keep waiting — three
+  // manual escapes. `unresponsive.ts` explains the rest.
+  const watchdog = createRendererWatchdog(win, {
+    onRecovered: (attempt) => {
+      writeLog("window", "renderer recovered by reload", { window: name, attempt }, "warn")
+    },
+    onGivenUp: (attempt) => {
+      // Stopped, not looping. A reload always yields a fresh renderer, so an unbounded watchdog would
+      // flicker this window forever and make the fault harder to read than the freeze it replaced.
+      writeLog("window", "renderer did not recover", { window: name, attempts: attempt }, "error")
+      void show(
+        "NovaClaw could not restart its window",
+        "The interface stopped responding and did not come back. The details are in the logs.",
+        true,
+      )
+    },
+  })
   win.on("unresponsive", () => {
     writeLog("window", "renderer unresponsive", { window: name, currentURL: win.webContents.getURL() }, "error")
     sampler.start()
-    void show("NovaClaw is not responding", "You can relaunch the app, open the logs, or keep waiting.", true)
+    watchdog.arm()
   })
   win.on("responsive", () => {
     writeLog("window", "renderer responsive", { window: name, currentURL: win.webContents.getURL() }, "error")
+    // Disarmed first: a window that came back on its own must never be yanked by a timer that was
+    // already counting down toward a reload.
+    watchdog.disarm()
     sampler.stopAndFlush()
   })
+  win.on("closed", () => watchdog.disarm())
   win.webContents.on("console-message", (_event, level, message, line, sourceId) => {
     if (message.toLowerCase().includes("terminal") || sourceId.toLowerCase().includes("terminal")) {
       writeLog("pty", "console", { window: name, level, message, line, sourceId })
