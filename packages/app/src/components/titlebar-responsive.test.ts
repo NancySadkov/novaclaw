@@ -30,7 +30,10 @@ describe("narrow-window navigation remains reachable", () => {
 
   test("context stats can render as a modal below the desktop breakpoint", () => {
     expect(sidePanel).toContain("const reviewOpen = createMemo(() => view().reviewPanel.opened())")
-    expect(sidePanel).toContain("const fileOpen = createMemo(() => isDesktop() && layout.fileTree.opened())")
     expect(sidePanel).toContain("<Show when={!!params.id && (isDesktop() || reviewOpen())}>")
+    // The file tree is gone — its lists moved into the context inspector — so the panel has no
+    // desktop-only rail left and is a modal at every width, which is what `open()` now says.
+    expect(sidePanel).toContain("const open = createMemo(() => reviewOpen())")
+    expect(sidePanel).not.toContain("layout.fileTree")
   })
 })

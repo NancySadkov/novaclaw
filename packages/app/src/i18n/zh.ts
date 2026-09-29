@@ -37,7 +37,6 @@ export const dict = {
 
   "command.terminal.toggle": "切换终端",
 
-  "command.fileTree.toggle": "切换文件树",
 
   "command.review.toggle": "切换审查",
 

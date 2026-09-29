@@ -72,7 +72,6 @@ const KNOWN_RAW_SOURCE_ORDER_RATCHETS = [
   "packages/app/src/components/settings-v2/settings-screen.test.ts",
   "packages/app/src/context/global-sync/instance-recovery.test.ts",
   "packages/app/src/context/server-sdk.test.ts",
-  "packages/app/src/pages/session/session-execution-attention.test.ts",
   "packages/core/src/jh/store.test.ts",
   "packages/core/src/kb-graph/world-memory-does-not-spawn.test.ts",
   "packages/core/src/session/runner/todo-reminder.test.ts",

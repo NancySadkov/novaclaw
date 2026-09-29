@@ -97,11 +97,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const userMessages = () => messages().filter((m): m is SessionMessageUser => m.type === "user")
   const visibleUserMessages = () => selectVisibleMessages(userMessages(), info()?.revert?.messageID)
 
-  const showAllFiles = () => {
-    if (layout.fileTree.tab() !== "changes") return
-    layout.fileTree.setTab("all")
-  }
-
   const selectionPreview = (path: string, selection: FileSelection) => {
     const content = file.get(path)?.content?.content
     if (!content) return undefined
@@ -158,7 +153,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const openFile = () => {
     void openDialog(
       () => import("@/components/dialog-select-file"),
-      (x) => dialog.show(() => <x.DialogSelectFile onOpenFile={showAllFiles} />),
+      (x) => dialog.show(() => <x.DialogSelectFile />),
     )
   }
 
@@ -346,12 +341,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       title: language.t("command.review.toggle"),
       keybind: "mod+shift+r",
       onSelect: () => view().reviewPanel.toggle(),
-    }),
-    viewCommand({
-      id: "fileTree.toggle",
-      title: language.t("command.fileTree.toggle"),
-      keybind: "mod+\\",
-      onSelect: () => layout.fileTree.toggle(),
     }),
     viewCommand({
       id: "input.focus",

@@ -229,7 +229,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (wantsReview) {
       batch(() => {
         tabs().setActive("review")
-        layout.fileTree.setTab("changes")
         if (!props.controls.session.reviewPanel.opened()) props.controls.session.reviewPanel.open()
       })
       queueCommentFocus()
@@ -240,7 +239,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     batch(() => {
       void tabs().open(tab)
       tabs().setActive(tab)
-      layout.fileTree.setTab("all")
       if (!props.controls.session.reviewPanel.opened()) props.controls.session.reviewPanel.open()
     })
     void Promise.resolve(files.load(item.path)).finally(() => queueCommentFocus())

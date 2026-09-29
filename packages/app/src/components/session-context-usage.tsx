@@ -32,7 +32,7 @@ function openSessionContext(args: {
   batch(() => {
     void args.tabs.open("context")
     args.tabs.setActive("context")
-    if (args.layout.fileTree.opened() && args.layout.fileTree.tab() !== "all") args.layout.fileTree.setTab("all")
+
     if (!args.view.reviewPanel.opened()) args.view.reviewPanel.open()
   })
 }
