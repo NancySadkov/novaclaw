@@ -53,6 +53,7 @@ const mount = async (
   api: Omit<ProjectsApi, "undeploy"> & Partial<Pick<ProjectsApi, "undeploy">>,
   confirm = async () => true,
   pickDirectory?: (select: (directory: string) => void) => void,
+  options: Partial<Parameters<typeof ProjectsPanel>[0]> = {},
 ) => {
   if (!base) {
     base = document.createElement("base")
@@ -67,7 +68,9 @@ const mount = async (
       <MemoryRouter>
         <Route
           path="/"
-          component={() => <ProjectsPanel api={client} t={t} confirm={confirm} pickDirectory={pickDirectory} />}
+          component={() => (
+            <ProjectsPanel api={client} t={t} confirm={confirm} pickDirectory={pickDirectory} advanced {...options} />
+          )}
         />
       </MemoryRouter>
     ),
@@ -85,6 +88,48 @@ const selectProject = async () => {
   host.querySelector<HTMLButtonElement>(".project-card")!.click()
   await settle()
 }
+
+test("normal mode puts a ready result and its Manager first without exposing plan controls", async () => {
+  const ready = {
+    ...project,
+    paused: true,
+    completedPhases: 2,
+    recipe: { slug: "observatory", manager: "iris", officers: ["iris", "lyra"] },
+  }
+  const launched: string[] = []
+  await mount(
+    { list: async () => ({ ...snapshot, projects: [ready] }), execute: async () => snapshot },
+    undefined,
+    undefined,
+    {
+      advanced: false,
+      deployments: [
+        {
+          projectID: project.id,
+          directory: project.directory!,
+          manager: "iris",
+          slug: "observatory",
+          name: project.name,
+          state: "ready",
+        },
+      ],
+      onLaunch: async (value) => {
+        launched.push(value.id)
+      },
+      officerLink: (id) => `/officer/${id}`,
+    },
+  )
+  expect(host.querySelector(".projects-overview b")?.textContent).toBe("0")
+  expect(host.querySelector(".project-card .project-state")?.textContent).toBe("Ready to open")
+  await selectProject()
+  expect(host.querySelector(".project-plan input")).toBeNull()
+  expect(host.querySelector<HTMLDetailsElement>(".project-more")?.open).toBe(false)
+  expect(host.querySelector(".project-primary-actions a")?.getAttribute("href")).toBe("/officer/iris")
+  expect(host.querySelector(".project-team-lead a")?.getAttribute("href")).toBe("/officer/iris")
+  button("Open result").click()
+  await settle()
+  expect(launched).toEqual([project.id])
+})
 
 test("deployed projects keep their team and folder bound and undeploy through the recipe lifecycle", async () => {
   let state: WorkProject.Snapshot = {

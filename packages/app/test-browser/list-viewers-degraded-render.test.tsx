@@ -242,8 +242,8 @@ const VIEWERS: readonly Viewer[] = [
     title: "Recipes",
     page: () => <RecipesPage />,
     target: "recipes",
-    failure: "Could not read your recipes",
-    empty: "No recipes yet",
+    failure: "Connection lost — reconnecting.",
+    empty: "Your first recipe starts with an idea.",
     loaded: "Hundred digits of pi",
   },
 ]

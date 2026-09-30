@@ -1,6 +1,6 @@
 import { A, useLocation, useSearchParams } from "@solidjs/router"
 import { RecipesPage } from "./recipes"
-import { createEffect, createMemo, createSignal, For, Index, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Index, onCleanup, Show, type JSX } from "solid-js"
 import type { WorkProject } from "@novaclaw/schema/work-project"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
@@ -10,7 +10,13 @@ import { useConfirm, type ConfirmOptions } from "@/components/dialog-confirm"
 import { useLanguage } from "@/context/language"
 import { useServerSDK } from "@/context/server-sdk"
 import { createSettledResource } from "@/utils/settled-resource"
-import { publicAssetUrl } from "@/utils/public-asset"
+import { AgentPortrait } from "@/components/agent-portrait"
+import { createRecipeLauncher } from "@/components/recipe-launcher"
+import { useServer } from "@/context/server"
+import { useGlobal } from "@/context/global"
+import { useExpertise } from "@/context/expertise"
+import { agentHref } from "@/utils/session-route"
+import { listDeployedRecipes, type RecipeDeployment } from "@/utils/recipe-api"
 import { projectsApi, type ProjectsApi } from "@/utils/projects-api"
 
 type Translate = ReturnType<typeof useLanguage>["t"]
@@ -27,6 +33,22 @@ export function ProjectsPage() {
   const location = useLocation()
   const [params] = useSearchParams()
   const sdk = useServerSDK()
+  const server = useServer()
+  const global = useGlobal()
+  const expertise = useExpertise()
+  const launcher = createRecipeLauncher(() => server.current)
+  const roster = createMemo(() => (server.current ? global.ensureServerCtx(server.current).agents.list() : []))
+  const [deployments, { refetch: refreshDeployments }] = createSettledResource(
+    () => sdk()?.server.http,
+    listDeployedRecipes,
+  )
+  createEffect(() => {
+    if (!sdk()) return
+    const timer = setInterval(() => {
+      if (!deployments.loading) void refreshDeployments()
+    }, 5000)
+    onCleanup(() => clearInterval(timer))
+  })
   const language = useLanguage()
   const confirm = useConfirm()
   const pickDirectory = useDirectoryPicker()
@@ -46,7 +68,6 @@ export function ProjectsPage() {
         <A href="/recipes" classList={{ active: location.pathname === "/recipes" }}>
           Recipes
         </A>
-        <span>Recipes define the work. Projects give it a home.</span>
       </nav>
       <Show when={location.pathname !== "/recipes"} fallback={<RecipesPage />}>
         <ProjectsPanel
@@ -54,6 +75,21 @@ export function ProjectsPage() {
           api={api()}
           t={language.t}
           confirm={confirm}
+          advanced={expertise.atLeast("advanced")}
+          deployments={deployments()}
+          launchUnavailable={deployments.failed}
+          opening={launcher.opening()}
+          onLaunch={(project) => launcher.open({ projectID: project.id, name: project.name })}
+          officerLink={(id) => agentHref(server.key, id)}
+          portrait={(officer) => (
+            <AgentPortrait
+              id={officer.id}
+              name={officer.name}
+              avatar={roster().find((row) => row.id === officer.id)?.avatar}
+              connection={server.current}
+              class="project-officer-portrait"
+            />
+          )}
           pickDirectory={(onSelect) => {
             const server = sdk()?.server
             if (!server) return
@@ -68,6 +104,7 @@ export function ProjectsPage() {
           }}
         />
       </Show>
+      <launcher.View />
     </div>
   )
 }
@@ -78,6 +115,13 @@ export function ProjectsPanel(props: {
   t: Translate
   confirm: (options: ConfirmOptions) => Promise<boolean>
   pickDirectory?: (onSelect: (directory: string) => void) => void
+  advanced?: boolean
+  deployments?: readonly RecipeDeployment[]
+  launchUnavailable?: boolean
+  opening?: string
+  onLaunch?: (project: WorkProject.Info) => Promise<void>
+  officerLink?: (id: string) => string
+  portrait?: (officer: WorkProject.Officer) => JSX.Element
 }) {
   const t = props.t
   const [data, { refetch, mutate }] = createSettledResource(
@@ -86,30 +130,58 @@ export function ProjectsPanel(props: {
   )
   const [selected, setSelected] = createSignal<string | undefined>(props.selectedID)
   const [query, setQuery] = createSignal("")
-  const [filter, setFilter] = createSignal<"all" | "active" | "paused">("all")
+  const [filter, setFilter] = createSignal<"all" | "active" | "complete" | "paused">("all")
   const [draft, setDraft] = createSignal<Draft>()
   const [dirty, setDirty] = createSignal(false)
   const [busy, setBusy] = createSignal(false)
   const [error, setError] = createSignal<string>()
   const filterOptions = () => [
     { id: "all" as const, label: t("projects.all") },
-    { id: "active" as const, label: t("projects.active") },
+    { id: "active" as const, label: "In progress" },
+    { id: "complete" as const, label: "Completed" },
     { id: "paused" as const, label: t("projects.paused") },
   ]
   const projects = () => data()?.projects ?? []
   const officers = () => data()?.officers ?? []
   const current = createMemo(() => projects().find((project) => project.id === selected()))
+  const complete = (project: WorkProject.Info) =>
+    project.totalPhases > 0 && project.completedPhases === project.totalPhases
+  const deployment = (project: WorkProject.Info) => props.deployments?.find((entry) => entry.projectID === project.id)
+  const state = (project: WorkProject.Info) =>
+    deployment(project)?.state === "ready"
+      ? "ready"
+      : project.paused
+        ? "paused"
+        : complete(project)
+          ? "complete"
+          : project.workingOfficers
+            ? "working"
+            : "idle"
+  const stateLabel = (project: WorkProject.Info) =>
+    ({
+      paused: "Paused",
+      ready: "Ready to open",
+      complete: "Plan complete",
+      working: "Working",
+      idle: "Awaiting work",
+    })[state(project)]
+  const manager = (project: WorkProject.Info) => officers().find((officer) => officer.id === project.recipe?.manager)
   const visible = createMemo(() =>
     projects()
       .filter(
         (project) =>
-          (filter() === "all" || project.paused === (filter() === "paused")) &&
+          (filter() === "all" ||
+            (filter() === "paused"
+              ? project.paused
+              : filter() === "complete"
+                ? complete(project)
+                : !project.paused && !complete(project))) &&
           `${project.name} ${project.objective}`.toLocaleLowerCase().includes(query().trim().toLocaleLowerCase()),
       )
       .map((project) => project.id),
   )
   const totals = createMemo(() => ({
-    active: projects().filter((project) => !project.paused).length,
+    active: projects().filter((project) => !project.paused && !complete(project)).length,
     working: projects().reduce((sum, project) => sum + project.workingOfficers, 0),
   }))
 
@@ -252,16 +324,15 @@ export function ProjectsPanel(props: {
     <AppPage class="projects-page">
       <header class="projects-header">
         <div class="projects-heading">
-          <img src={publicAssetUrl("/assets/skin/glyphs/projects-generated.png")} alt="" />
           <div>
             <h1>{t("home.app.projects.name")}</h1>
-            <p>{t("projects.hint")}</p>
+            <p>Your work, with a team behind it.</p>
           </div>
         </div>
         <div class="projects-overview" aria-label={t("projects.overview")}>
           <span>
             <b>{totals().active}</b>
-            {t("projects.active")}
+            In progress
           </span>
           <span>
             <b>{totals().working}</b>
@@ -315,7 +386,6 @@ export function ProjectsPanel(props: {
           </div>
           <Show when={data() && !visible().length}>
             <div class="projects-empty">
-              <Icon name="checklist" size="large" />
               <h2>{projects().length ? t("projects.noMatches") : t("projects.empty")}</h2>
               <p>{projects().length ? t("projects.adjustSearch") : t("projects.emptyHint")}</p>
             </div>
@@ -336,15 +406,22 @@ export function ProjectsPanel(props: {
                   >
                     <div class="project-card-top">
                       <h2>{project().name}</h2>
-                      <span class="project-state" data-paused={project().paused}>
-                        {project().paused
-                          ? t("projects.paused")
-                          : project().totalPhases > 0 && percent() === 100
-                            ? t("projects.planComplete")
-                            : t("projects.active")}
+                      <span class="project-state" data-state={state(project())}>
+                        {stateLabel(project())}
                       </span>
                     </div>
                     <p class="project-objective-preview">{project().objective}</p>
+                    <Show when={manager(project())}>
+                      {(lead) => (
+                        <div class="project-card-manager">
+                          {props.portrait?.(lead())}
+                          <span>
+                            {lead().name}
+                            <small>Manager</small>
+                          </span>
+                        </div>
+                      )}
+                    </Show>
                     <div class="project-progress-label">
                       <span>
                         {t("projects.phaseCount", {
@@ -540,57 +617,48 @@ export function ProjectsPanel(props: {
           {(project) => (
             <section class="project-detail" aria-label={t("projects.details")}>
               <div class="project-detail-heading">
-                <span class="project-eyebrow">{t("projects.details")}</span>
+                <span class="project-state" data-state={state(project())}>
+                  {stateLabel(project())}
+                </span>
                 <button class="project-button" onClick={() => void open()} aria-label={t("projects.close")}>
                   ×
                 </button>
               </div>
               <h2 class="project-detail-title">{project().name}</h2>
-              <Show when={project().recipe}>
-                {(recipe) => (
-                  <div class="project-recipe-line">
-                    <span>
-                      From recipe <strong>{recipe().slug}</strong>
-                    </span>
-                    <span>
-                      Nova →{" "}
-                      <strong>
-                        {officers().find((officer) => officer.id === recipe().manager)?.name ?? recipe().manager} ·
-                        Manager
-                      </strong>{" "}
-                      → project officers
-                    </span>
-                    <A class="project-button" href="/recipes">
-                      Recipes
-                    </A>
-                  </div>
-                )}
-              </Show>
               <p class="project-objective">{project().objective}</p>
-              <Show when={project().directory}>
-                <p class="project-directory">
-                  <strong>{t("projects.directory")}</strong>
-                  <br />
-                  {project().directory}
-                </p>
-              </Show>
-              <div class="project-controls">
-                <button
-                  class="project-button primary"
-                  disabled={busy()}
-                  onClick={() => void execute({ op: "pause", id: project().id, paused: !project().paused })}
-                >
-                  {project().paused ? t("projects.resume") : t("projects.pause")}
-                </button>
-                <button class="project-button" disabled={busy()} onClick={() => void edit(project())}>
-                  {t("projects.edit")}
-                </button>
-                <button class="project-button danger" disabled={busy()} onClick={() => void remove(project())}>
-                  {project().recipe ? "Undeploy" : t("projects.delete")}
-                </button>
+              <div class="project-primary-actions">
+                <Show when={project().recipe && props.onLaunch && deployment(project())?.state === "ready"}>
+                  <button
+                    class="project-button primary"
+                    disabled={!!props.opening || props.launchUnavailable}
+                    onClick={() => void props.onLaunch?.(project())}
+                  >
+                    {props.opening === project().id ? "Opening…" : "Open result"}
+                  </button>
+                </Show>
+                <Show when={project().recipe && props.officerLink}>
+                  {(unused) => (
+                    <A
+                      class={`project-button ${deployment(project())?.state === "ready" ? "" : "primary"}`}
+                      href={props.officerLink!(project().recipe!.manager)}
+                    >
+                      Talk to Manager
+                    </A>
+                  )}
+                </Show>
+                <Show when={project().recipe && props.launchUnavailable}>
+                  <span class="project-help" role="status">
+                    Result status unavailable — reconnecting.
+                  </span>
+                </Show>
               </div>
               <Show when={project().paused}>
-                <p class="project-pause-note">{t("projects.pauseHint")}</p>
+                <p class="project-pause-note">
+                  Team paused
+                  {deployment(project())?.state === "ready"
+                    ? " · Your result is ready to use."
+                    : ". Resume from Project details."}
+                </p>
               </Show>
               <div class="project-section-heading">
                 <h3>{t("projects.plan")}</h3>
@@ -603,20 +671,31 @@ export function ProjectsPanel(props: {
                   {(phase, index) => (
                     <li data-complete={phase.status === "complete"}>
                       <label>
-                        <input
-                          type="checkbox"
-                          disabled={busy()}
-                          checked={phase.status === "complete"}
-                          onChange={(event) =>
-                            void execute({
-                              op: "phase",
-                              id: project().id,
-                              phaseID: phase.id,
-                              status: event.currentTarget.checked ? "complete" : "pending",
-                            })
+                        <Show
+                          when={props.advanced}
+                          fallback={
+                            <span
+                              class="project-phase-mark"
+                              aria-label={phase.status === "complete" ? "Complete" : "Pending"}
+                            >
+                              {phase.status === "complete" ? "✓" : String(index() + 1).padStart(2, "0")}
+                            </span>
                           }
-                        />
-                        <span class="project-phase-number">{String(index() + 1).padStart(2, "0")}</span>
+                        >
+                          <input
+                            type="checkbox"
+                            disabled={busy()}
+                            checked={phase.status === "complete"}
+                            onChange={(event) =>
+                              void execute({
+                                op: "phase",
+                                id: project().id,
+                                phaseID: phase.id,
+                                status: event.currentTarget.checked ? "complete" : "pending",
+                              })
+                            }
+                          />
+                        </Show>
                         <span>{phase.name}</span>
                         <small>{phase.status === "complete" ? t("projects.complete") : t("projects.pending")}</small>
                       </label>
@@ -633,16 +712,42 @@ export function ProjectsPanel(props: {
                   {t("projects.teamCount", { working: project().workingOfficers, total: project().totalOfficers })}
                 </span>
               </div>
-              <p class="project-help">{t("projects.assignmentHint")}</p>
+              <Show when={project().recipe}>
+                <p class="project-help">The Manager reports to Nova. Officers report to their Manager.</p>
+              </Show>
               <ul class="project-officers">
-                <For each={officers().filter((officer) => officer.projectID === project().id)}>
+                <For
+                  each={officers()
+                    .filter((officer) => officer.projectID === project().id)
+                    .toSorted(
+                      (a, b) => Number(b.id === project().recipe?.manager) - Number(a.id === project().recipe?.manager),
+                    )}
+                >
                   {(officer) => (
-                    <li>
-                      <span class="project-officer-glyph" aria-hidden="true">
-                        {officer.name.slice(0, 1)}
-                      </span>
+                    <li
+                      classList={{
+                        "project-team-lead": officer.id === project().recipe?.manager,
+                        "project-team-member": !!project().recipe && officer.id !== project().recipe?.manager,
+                      }}
+                    >
+                      <Show
+                        when={props.portrait}
+                        fallback={
+                          <span class="project-officer-glyph" aria-hidden="true">
+                            {officer.name.slice(0, 1)}
+                          </span>
+                        }
+                      >
+                        {(portrait) => portrait()(officer)}
+                      </Show>
                       <div>
-                        <strong>{officer.name}</strong>
+                        <Show when={props.officerLink} fallback={<strong>{officer.name}</strong>}>
+                          {(link) => (
+                            <A href={link()(officer.id)} aria-label={`Talk to ${officer.name}`}>
+                              <strong>{officer.name}</strong>
+                            </A>
+                          )}
+                        </Show>
                         <small>
                           {officer.title} ·{" "}
                           {officer.paused
@@ -652,7 +757,7 @@ export function ProjectsPanel(props: {
                               : t("projects.ready")}
                         </small>
                       </div>
-                      <Show when={!project().recipe?.officers.includes(officer.id)}>
+                      <Show when={props.advanced && !project().recipe?.officers.includes(officer.id)}>
                         <button
                           class="project-button"
                           disabled={busy()}
@@ -666,25 +771,61 @@ export function ProjectsPanel(props: {
                   )}
                 </For>
               </ul>
-              <SelectV2
-                class="project-assign"
-                aria-label={t("projects.assign")}
-                placeholder={t("projects.assign")}
-                disabled={busy()}
-                options={officers().filter(
-                  (officer) =>
-                    officer.projectID !== project().id &&
-                    !projects().some((item) => item.recipe?.officers.includes(officer.id)),
-                )}
-                current={undefined}
-                value={(officer) => officer.id}
-                label={(officer) =>
-                  `${officer.name} — ${officer.title}${officer.projectID ? ` (${projects().find((row) => row.id === officer.projectID)?.name ?? ""})` : ""}`
-                }
-                onSelect={(officer) => {
-                  if (officer) void execute({ op: "assign", officer: officer.id, projectID: project().id })
-                }}
-              />
+              <Show when={props.advanced}>
+                <SelectV2
+                  class="project-assign"
+                  aria-label={t("projects.assign")}
+                  placeholder={t("projects.assign")}
+                  disabled={busy()}
+                  options={officers().filter(
+                    (officer) =>
+                      officer.projectID !== project().id &&
+                      !projects().some((item) => item.recipe?.officers.includes(officer.id)),
+                  )}
+                  current={undefined}
+                  value={(officer) => officer.id}
+                  label={(officer) =>
+                    `${officer.name} — ${officer.title}${officer.projectID ? ` (${projects().find((row) => row.id === officer.projectID)?.name ?? ""})` : ""}`
+                  }
+                  onSelect={(officer) => {
+                    if (officer) void execute({ op: "assign", officer: officer.id, projectID: project().id })
+                  }}
+                />
+              </Show>
+              <details class="project-more">
+                <summary>Project details</summary>
+                <div class="project-controls">
+                  <button
+                    class="project-button"
+                    disabled={busy()}
+                    onClick={() => void execute({ op: "pause", id: project().id, paused: !project().paused })}
+                  >
+                    {project().paused ? t("projects.resume") : t("projects.pause")}
+                  </button>
+                  <button class="project-button" disabled={busy()} onClick={() => void edit(project())}>
+                    {t("projects.edit")}
+                  </button>
+                </div>
+
+                <p class="project-help">{t("projects.pauseHint")}</p>
+                <Show when={project().recipe}>
+                  {(recipe) => (
+                    <A class="project-recipe-link" href={`/recipes?recipe=${encodeURIComponent(recipe().slug)}`}>
+                      Open recipe in Studio
+                    </A>
+                  )}
+                </Show>
+                <Show when={project().directory}>
+                  <p class="project-directory">
+                    <strong>{t("projects.directory")}</strong>
+                    <br />
+                    {project().directory}
+                  </p>
+                </Show>
+                <button class="project-button danger" disabled={busy()} onClick={() => void remove(project())}>
+                  {project().recipe ? "Undeploy" : t("projects.delete")}
+                </button>
+              </details>
             </section>
           )}
         </Show>

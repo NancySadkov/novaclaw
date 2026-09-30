@@ -1,4 +1,5 @@
 import { createMemo, Show } from "solid-js"
+import { A } from "@solidjs/router"
 import { Icon } from "@novaclaw/ui/v2/icon"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
@@ -142,17 +143,43 @@ export function ComposerAgentControl(props: { state: ComposerAgentControlState }
             <span aria-hidden="true" class="px-0.5 text-v2-text-text-faint">
               ·
             </span>
-            <button
-              type="button"
-              data-action="prompt-agent-project"
-              class="max-w-[14rem] truncate rounded px-1 text-v2-text-text-faint hover:bg-v2-background-bg-layer-03 hover:text-v2-text-text-base"
-              title={current()!.ownScratch ? language.t("prompt.agent.project.own") : current()!.folder}
-              onClick={() => props.state.onPickProject?.()}
+            <Show
+              when={props.state.project}
+              fallback={
+                <Show
+                  when={!props.state.projectState || props.state.projectState === "ready"}
+                  fallback={
+                    <span class="px-1 text-v2-text-text-faint" role="status">
+                      {props.state.projectState === "failed"
+                        ? "Project unavailable — reconnecting"
+                        : "Loading project…"}
+                    </span>
+                  }
+                >
+                  <button
+                    type="button"
+                    data-action="prompt-agent-project"
+                    class="max-w-[14rem] truncate rounded px-1 text-v2-text-text-faint hover:bg-v2-background-bg-layer-03 hover:text-v2-text-text-base"
+                    title={current()!.ownScratch ? language.t("prompt.agent.project.own") : current()!.folder}
+                    onClick={() => props.state.onPickProject?.()}
+                  >
+                    {current()!.ownScratch
+                      ? language.t("prompt.agent.project.none")
+                      : folderName({ worktree: current()!.folder })}
+                  </button>
+                </Show>
+              }
             >
-              {current()!.ownScratch
-                ? language.t("prompt.agent.project.none")
-                : folderName({ worktree: current()!.folder })}
-            </button>
+              {(project) => (
+                <A
+                  class="max-w-[14rem] truncate rounded px-1 text-v2-text-text-faint hover:bg-v2-background-bg-layer-03 hover:text-v2-text-text-base"
+                  href={`/projects?project=${encodeURIComponent(project().id)}`}
+                  title={`Open ${project().name} in Projects`}
+                >
+                  {project().name}
+                </A>
+              )}
+            </Show>
           </Show>
         </div>
       </Show>

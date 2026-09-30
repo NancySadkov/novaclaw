@@ -18,6 +18,8 @@ export type ComposerAgentOption = {
 }
 
 export type ComposerAgentControlState = {
+  readonly project?: { readonly id: string; readonly name: string }
+  readonly projectState?: "loading" | "failed" | "ready"
   readonly options: readonly ComposerAgentOption[]
   readonly selectedID: string | undefined
   /** Disabled mid-turn: switching who is answering while they are answering is a race, not a choice. */

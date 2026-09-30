@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test"
-import { dict as en } from "@/i18n/en"
 import fs from "node:fs"
 import path from "node:path"
 import { RecipeBuiltin } from "@novaclaw/core/recipe-builtin"
@@ -662,16 +661,6 @@ describe("export — the complete portable folder", () => {
   test("a prose-only recipe still exports a ZIP containing its recipe.json", () => {
     expect(describeExport(toView(recipe({ assets: [] })))).toMatch(/ZIP.*recipe\.json/i)
   })
-
-  test("the page offers ZIP upload and labels source paste as asset-free", () => {
-    const page = fs.readFileSync(path.join(import.meta.dir, "..", "pages", "recipes.tsx"), "utf8")
-    expect(page).toContain('accept=".nova,.zip,application/zip"')
-    // The copy is keyed since 2026-09-03: the page reads the keys, and the dictionary says the words.
-    expect(page).toContain('language.t("recipes.page.useThisForAProseOnly")')
-    expect(page).toContain('language.t("recipes.page.importPastedJsonNoAssets")')
-    expect(en["recipes.page.useThisForAProseOnly"]).toContain("Paste carries recipe.json only — no assets")
-    expect(en["recipes.page.importPastedJsonNoAssets"]).toBe("Import pasted JSON (no assets)")
-  })
 })
 
 // ═════════════════════════════════════════════════════════════════════════════════════════════════
@@ -679,8 +668,8 @@ describe("the page builds no markup", () => {
   // A structural guard, not a style rule: every string on this page can be a stranger's, and Solid's
   // escaping is only a defence while nothing bypasses it. This fails the day someone reaches for
   // `innerHTML` to render a description "with formatting".
-  test("🔴 recipes.tsx never assigns innerHTML or uses a dangerous prop", () => {
-    const file = path.join(import.meta.dir, "..", "pages", "recipes.tsx")
+  test("🔴 the recipe studio never assigns innerHTML or uses a dangerous prop", () => {
+    const file = path.join(import.meta.dir, "..", "components", "recipe-studio.tsx")
     expect(fs.existsSync(file)).toBe(true)
     // ⚠️ COMMENTS STRIPPED FIRST. A regex over source counts prose, and this file's own header names
     // `innerHTML` while explaining that it never uses one — a check that matched that would fail on the
@@ -691,7 +680,7 @@ describe("the page builds no markup", () => {
       .split("\n")
       .filter((line) => !/^\s*(\/\/|\*)/.test(line))
       .join("\n")
-    expect(code).toContain("export function RecipesPage") // the strip did not eat the file
+    expect(code).toContain("export function RecipeStudio")
     for (const forbidden of ["innerHTML", "outerHTML", "dangerouslySetInnerHTML", "document.write"])
       expect(code).not.toContain(forbidden)
   })

@@ -2,12 +2,15 @@
 // permission mode and Strict moved into the agent's configuration on 2026-08-21; the folder chip
 // became the agent identity chip. Each control is a dumb view over a plain state object the
 // composer builds — no controller context reaches in here.
-import { Show } from "solid-js"
+import { createEffect, createMemo, onCleanup, Show } from "solid-js"
+import { createSettledResource } from "@/utils/settled-resource"
+import { projectsApi } from "@/utils/projects-api"
+import type { WorkProject } from "@novaclaw/schema/work-project"
 import { useTunePanelOpener, type ComposerFeaturesControlState } from "./features-control"
 import { ComposerAgentControl } from "./agent-control"
 import { useDirectoryPicker } from "@/components/directory-picker"
 import { useLanguage } from "@/context/language"
-import { useServer } from "@/context/server"
+import { useServer, type ServerConnection } from "@/context/server"
 import { useGlobal } from "@/context/global"
 import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
@@ -30,6 +33,22 @@ export function ComposerControlsRow(props: { state: ComposerControlsRowState }) 
   const server = useServer()
   const global = useGlobal()
   const sync = useServerSync()
+  const [projects, { refetch }] = createSettledResource<WorkProject.Snapshot, ServerConnection.Any>(
+    () => (props.state.features.agent ? server.current : undefined),
+    (connection, { signal }) => projectsApi(connection.http, signal).list(),
+  )
+  const project = createMemo(() => {
+    const snapshot = projects()
+    const assignment = snapshot?.officers.find((officer) => officer.id === props.state.features.agent)
+    return snapshot?.projects.find((entry) => entry.id === assignment?.projectID)
+  })
+  createEffect(() => {
+    if (!props.state.features.agent || !server.current) return
+    const timer = setInterval(() => {
+      if (!projects.loading) void refetch()
+    }, 5000)
+    onCleanup(() => clearInterval(timer))
+  })
 
   /**
    * Assign this colleague a project, from the composer.
@@ -93,6 +112,8 @@ export function ComposerControlsRow(props: { state: ComposerControlsRowState }) 
         <ComposerAgentControl
           state={{
             ...props.state.agent,
+            project: project(),
+            projectState: projects.failed ? "failed" : projects() ? "ready" : "loading",
             onOpenConfig: tune.open,
             onPickProject:
               props.state.features.agent === GOVERNING_ID || !canPickProject(props.state.agent)

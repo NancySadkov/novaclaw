@@ -48,5 +48,5 @@ test("authors officer jobs and timed nudges without losing other team members", 
   click("Remove nudge")
   expect(officers()[0]!.nudges).toEqual([])
   expect(officers()[1]!.title).toBe("Reviewer")
-  expect(host.textContent).toContain("A Manager reports to Nova")
+  expect(host.textContent).toContain("A Manager is included")
 })

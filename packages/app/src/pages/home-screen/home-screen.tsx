@@ -20,9 +20,8 @@ import { ServerConnection, useServer } from "@/context/server"
 import { showToast } from "@/utils/toast"
 import { createSettledResource } from "@/utils/settled-resource"
 import { registeredApps, type HomeApp } from "@/apps/registry"
-import { listDeployedRecipes, launchRecipe, undeployRecipe, type RecipeDeployment } from "@/utils/recipe-api"
-import { sessionHref } from "@/utils/session-route"
-import { usePlatform } from "@/context/platform"
+import { listDeployedRecipes, undeployRecipe, type RecipeDeployment } from "@/utils/recipe-api"
+import { createRecipeLauncher } from "@/components/recipe-launcher"
 import { AppTile } from "./app-tile"
 import { HelpTour, HELP_SEEN_KEY } from "./help-tour"
 import { createHomeTileClickGuard } from "./home-tile-click-guard"
@@ -119,7 +118,6 @@ export const HomeScreen: Component = () => {
   const builtins = useBuiltinApps()
   const manifestApps = useManifestApps()
   const navigate = useNavigate()
-  const platform = usePlatform()
   const server = useServer()
   const global = useGlobal()
   const connection = createMemo(() => server.current ?? global.servers.list()[0])
@@ -128,25 +126,7 @@ export const HomeScreen: Component = () => {
     (http) => listDeployedRecipes(http),
   )
   const [contextTarget, setContextTarget] = createSignal<{ recipe: RecipeDeployment; x: number; y: number }>()
-  const [htmlLaunch, setHtmlLaunch] = createSignal<{ title: string; url: string }>()
-  const openDeployment = async (recipe: RecipeDeployment) => {
-    const conn = connection()
-    if (!conn) return
-    try {
-      const launch = await launchRecipe(conn.http, recipe.slug)
-      if (launch.kind === "chat" && launch.sessionID)
-        navigate(sessionHref(ServerConnection.key(conn), launch.sessionID))
-      else if (launch.kind === "html" && launch.url) {
-        const url = new URL(launch.url, conn.http.url).href
-        if (platform.openRecipeBrowser) await platform.openRecipeBrowser(url, recipe.name)
-        else setHtmlLaunch({ title: recipe.name, url })
-      } else if (launch.kind === "console" && launch.ptyID)
-        navigate(`/terminal?launch=${encodeURIComponent(launch.ptyID)}`)
-      void refreshDeployed()
-    } catch (error) {
-      showToast({ variant: "error", title: `Could not launch ${recipe.name}`, description: String(error) })
-    }
-  }
+  const launcher = createRecipeLauncher(connection)
   const deployedApps = createMemo<HomeApp[]>(() =>
     (deployed() ?? []).map((recipe) => ({
       id: `deployed:${recipe.slug}`,
@@ -156,7 +136,7 @@ export const HomeScreen: Component = () => {
       accent: "#b396dc",
       source: "builtin",
       subtitle: recipe.state === "deploying" ? "Deploying · open Manager chat" : recipe.description || "Launch recipe",
-      open: () => void openDeployment(recipe),
+      open: () => void launcher.open(recipe),
     })),
   )
   const { atLeast } = useExpertise()
@@ -434,32 +414,7 @@ export const HomeScreen: Component = () => {
           </>
         )}
       </Show>
-      <Show when={htmlLaunch()}>
-        {(launch) => (
-          <div
-            class="fixed inset-0 z-50 flex flex-col bg-v2-background-bg-deep"
-            role="dialog"
-            aria-label={launch().title}
-          >
-            <div class="flex items-center justify-between border-b border-v2-border-border-base px-4 py-3">
-              <strong class="text-v2-text-text-base">{launch().title}</strong>
-              <button
-                type="button"
-                class="text-v2-text-text-muted hover:text-v2-text-text-base"
-                onClick={() => setHtmlLaunch(undefined)}
-              >
-                Close
-              </button>
-            </div>
-            <iframe
-              title={launch().title}
-              src={launch().url}
-              sandbox="allow-scripts"
-              class="min-h-0 flex-1 border-0 bg-white"
-            />
-          </div>
-        )}
-      </Show>
+      <launcher.View />
       <Show when={pages().length > 1}>
         <div class="home-page-dots">
           <For each={pages()}>

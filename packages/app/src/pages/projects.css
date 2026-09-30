@@ -6,8 +6,8 @@
 .projects-header {
   display: flex;
   align-items: center;
-  gap: 18px;
-  padding: 16px 20px;
+  gap: 16px;
+  padding: 14px 24px;
   border-bottom: 1px solid var(--v2-border-border-base);
   background: radial-gradient(ellipse at 0 0, #9269cb15, transparent 70%);
 }
@@ -55,7 +55,7 @@
   gap: 6px;
   border: 1px solid var(--v2-border-border-strong);
   border-radius: 8px;
-  min-height: 34px;
+  min-height: 36px;
   padding: 6px 11px;
   font-size: 12px;
   font-weight: 500;
@@ -123,19 +123,19 @@
 }
 .projects-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
+  gap: 12px;
   align-content: start;
 }
 .project-card {
   text-align: left;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
   border: 1px solid color-mix(in srgb, var(--v2-text-text-base) 15%, transparent);
-  border-radius: 14px;
-  padding: 16px 16px 0;
+  border-radius: 10px;
+  padding: 16px;
   background: linear-gradient(
     145deg,
     color-mix(in srgb, var(--v2-background-bg-layer-02) 92%, #8b65c4),
@@ -166,13 +166,19 @@
 .project-state {
   flex-shrink: 0;
   font-size: 10px;
-  color: var(--v2-state-fg-success);
-  padding: 4px 7px;
-  border: 1px solid currentColor;
-  border-radius: 20px;
+  color: var(--v2-text-text-muted);
+  padding: 4px 0;
+  white-space: nowrap;
 }
-.project-state[data-paused="true"] {
+.project-state[data-state="paused"] {
   color: var(--v2-state-fg-warning);
+}
+.project-state[data-state="ready"],
+.project-state[data-state="complete"] {
+  color: var(--v2-state-fg-success);
+}
+.project-state[data-state="working"] {
+  color: var(--nc-accent-solid, #cba765);
 }
 .project-card h2 {
   font-size: 16px;
@@ -188,7 +194,7 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  min-height: 38px;
+  min-height: 0;
   overflow-wrap: anywhere;
 }
 .project-progress-label {
@@ -224,11 +230,8 @@
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  border-top: 1px solid #cba76520;
-  margin: 4px -16px 0;
-  padding: 11px 16px;
-  background: #8874af08;
-  border-radius: 0 0 14px 14px;
+  margin-top: 3px;
+  padding: 3px 0 0;
   font-size: 11px;
   color: var(--v2-text-text-muted);
 }
@@ -264,7 +267,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 .project-detail-heading h2 {
   font-size: 16px;
@@ -280,6 +283,7 @@
   font-size: 22px;
   font-weight: 550;
   overflow-wrap: anywhere;
+  margin-top: 8px;
 }
 .project-objective {
   white-space: pre-wrap;
@@ -384,11 +388,11 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 0;
+  padding: 9px 0;
   font-size: 12px;
-  cursor: pointer;
+  line-height: 18px;
 }
-.project-plan label > span:not(.project-phase-number) {
+.project-plan label > span:not(.project-phase-mark) {
   flex: 1;
   overflow-wrap: anywhere;
   min-width: 0;
@@ -423,6 +427,8 @@
   min-width: 0;
   flex-direction: column;
   gap: 3px;
+  font-size: 12px;
+  line-height: 1.4;
 }
 .project-officers strong {
   font-size: 12px;
@@ -432,7 +438,6 @@
   font-size: 11px;
   color: var(--v2-text-text-muted);
 }
-.project-pause-note,
 .projects-notice {
   border: 1px solid #cba76530;
   background: #cba76509;
@@ -443,7 +448,9 @@
   line-height: 1.6;
 }
 .project-pause-note {
-  margin-top: 14px;
+  margin-top: 12px;
+  color: var(--v2-text-text-muted);
+  font-size: 12px;
 }
 .projects-notice {
   margin: 12px 20px 0;
@@ -498,11 +505,16 @@
     padding: 16px;
   }
   .project-phase-actions button {
-    min-width: 30px;
-    min-height: 40px;
+    min-width: 44px;
+    min-height: 44px;
   }
   .project-button {
-    min-height: 40px;
+    min-height: 44px;
+  }
+  .projects-page [data-component="select-v2"],
+  .projects-page summary,
+  .project-officers a {
+    min-height: 44px;
   }
 }
 .projects-hub {
@@ -521,20 +533,19 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 20px;
-  border-bottom: 1px solid #ba965c30;
-  background: linear-gradient(100deg, #291d3c, #15121f);
+  padding: 4px 20px;
+  border-bottom: 1px solid var(--v2-border-border-base);
+  background: var(--v2-background-bg-base);
 }
 .projects-hub-nav a {
   padding: 7px 16px;
-  border-radius: 7px;
+  border-bottom: 2px solid transparent;
   color: #bcb1ce;
   font-size: 13px;
 }
 .projects-hub-nav a.active {
-  background: #c7a15c20;
   color: #ead1a0;
-  box-shadow: inset 0 0 0 1px #c7a15c55;
+  border-bottom-color: var(--nc-accent-solid, #cba765);
 }
 .projects-hub-nav span {
   margin-left: auto;
@@ -555,9 +566,93 @@
 }
 @media (max-width: 600px) {
   .projects-hub-nav {
-    padding: 8px 12px;
+    padding: 3px 12px;
   }
   .projects-hub-nav span {
     display: none;
   }
+}
+.project-primary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.project-more {
+  border-top: 1px solid var(--v2-border-border-base);
+  margin-top: 24px;
+  padding-top: 16px;
+}
+.project-more summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--v2-text-text-muted);
+  padding: 6px 0;
+}
+.project-more[open] summary {
+  margin-bottom: 12px;
+}
+.project-more .project-directory {
+  margin: 16px 0;
+}
+.project-recipe-link {
+  color: var(--nc-accent-solid, #cba765);
+  font-size: 12px;
+}
+.project-officer-portrait {
+  width: 36px;
+  height: 36px;
+  font-size: 12px;
+}
+.project-card-manager {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 0;
+}
+.project-card-manager > span {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.project-card-manager small {
+  color: var(--v2-text-text-faint);
+  font-size: 10px;
+}
+.project-card-manager .project-officer-portrait {
+  width: 26px;
+  height: 26px;
+  font-size: 10px;
+}
+.project-officers .project-team-member {
+  margin-left: 18px;
+  padding-left: 18px;
+  border-left: 1px solid #a68ac548;
+}
+.project-officers a {
+  display: block;
+  padding: 5px 0;
+}
+.project-officers a:hover {
+  color: var(--nc-accent-solid, #cba765);
+}
+.project-phase-mark {
+  width: 20px;
+  flex-shrink: 0;
+  color: var(--v2-text-text-muted);
+  font-size: 11px;
+}
+.project-plan li[data-complete="true"] .project-phase-mark {
+  color: var(--nc-accent-solid, #cba765);
+}
+.project-button.subtle {
+  border-color: transparent;
+  background: transparent;
+  color: var(--v2-text-text-muted);
+}
+.projects-hub summary:focus-visible,
+.projects-hub a:focus-visible {
+  outline: 2px solid var(--nc-accent-solid, #cba765);
+  outline-offset: 3px;
 }

@@ -29,7 +29,7 @@ export function RecipeOfficersEditor(props: {
       <div class="recipe-team-heading">
         <div>
           <span class="recipe-studio-eyebrow">PROJECT TEAM</span>
-          <h3>Officers</h3>
+          <h3>Project team</h3>
         </div>
         <button
           type="button"
@@ -40,15 +40,17 @@ export function RecipeOfficersEditor(props: {
           + Add officer
         </button>
       </div>
-      <p class="recipe-studio-muted">
-        A Manager reports to Nova and coordinates these officers. Describe each job; the manager assigns the work.
-      </p>
+      <p class="recipe-studio-muted">A Manager is included. Add the specialist roles your recipe needs.</p>
       <div class="recipe-reporting-line">
         <span>Nova</span>
-        <span>↓</span>
+        <span>→</span>
         <strong>Manager</strong>
-        <span>↓</span>
-        <span>{props.officers.length ? `${props.officers.length} officers` : "Works on the recipe"}</span>
+        <span>→</span>
+        <span>
+          {props.officers.length
+            ? `${props.officers.length} ${props.officers.length === 1 ? "officer" : "officers"}`
+            : "Works on the recipe"}
+        </span>
       </div>
       <Index each={props.officers}>
         {(officer, index) => (
@@ -85,143 +87,151 @@ export function RecipeOfficersEditor(props: {
                 onInput={(event) => update(index, { description: event.currentTarget.value })}
               />
             </label>
-            <div class="recipe-team-heading">
-              <strong>Custom nudges</strong>
-              <button
-                type="button"
-                class="project-button"
-                disabled={officer().nudges.length >= 32}
-                onClick={() =>
-                  update(index, {
-                    nudges: [...officer().nudges, { name: "", text: "", hook: { type: "after-compaction" } }],
-                  })
-                }
-              >
-                + Add nudge
-              </button>
-            </div>
-            <Index each={officer().nudges}>
-              {(nudge, n) => (
-                <div class="recipe-nudge-card">
-                  <label>
-                    Name
-                    <input
-                      class="project-field"
-                      value={nudge().name}
-                      maxLength={160}
-                      onInput={(event) => nudgeChange(index, n, { name: event.currentTarget.value })}
-                    />
-                  </label>
-                  <label>
-                    When
-                    <SelectV2
-                      aria-label={`When officer ${index + 1} nudge ${n + 1} fires`}
-                      options={[...triggers]}
-                      current={triggers.find((trigger) => trigger.id === nudge().hook.type)}
-                      value={(trigger) => trigger.id}
-                      label={(trigger) => trigger.label}
-                      onSelect={(trigger) => {
-                        if (!trigger) return
-                        const type = trigger.id
-                        nudgeChange(index, n, {
-                          hook:
-                            type === "interval"
-                              ? { type, minutes: 60 }
-                              : type === "tool-call"
-                                ? { type, tool: "bash", phase: "after" }
-                                : type === "file-write"
-                                  ? { type, extension: "ts" }
-                                  : { type },
-                        })
-                      }}
-                    />
-                  </label>
-                  <Show when={nudge().hook.type === "interval"}>
+            <details class="recipe-nudges">
+              <summary>
+                Custom nudges{officer().nudges.length ? ` · ${officer().nudges.length}` : " · Optional"}
+              </summary>
+              <p class="recipe-studio-muted">Reminders delivered to this officer at the moments you choose.</p>
+              <div class="recipe-team-heading">
+                <strong>Custom nudges</strong>
+                <button
+                  type="button"
+                  class="project-button"
+                  disabled={officer().nudges.length >= 32}
+                  onClick={() =>
+                    update(index, {
+                      nudges: [...officer().nudges, { name: "", text: "", hook: { type: "after-compaction" } }],
+                    })
+                  }
+                >
+                  + Add nudge
+                </button>
+              </div>
+              <Index each={officer().nudges}>
+                {(nudge, n) => (
+                  <div class="recipe-nudge-card">
                     <label>
-                      Minutes
+                      Name
                       <input
                         class="project-field"
-                        type="number"
-                        min={1}
-                        max={1440}
-                        value={(nudge().hook as { minutes: number }).minutes}
-                        onInput={(event) =>
-                          nudgeChange(index, n, {
-                            hook: { type: "interval", minutes: Number(event.currentTarget.value) },
-                          })
-                        }
+                        value={nudge().name}
+                        maxLength={160}
+                        onInput={(event) => nudgeChange(index, n, { name: event.currentTarget.value })}
                       />
                     </label>
-                  </Show>
-                  <Show when={nudge().hook.type === "tool-call"}>
                     <label>
-                      Timing
+                      When
                       <SelectV2
-                        aria-label="Tool nudge timing"
-                        options={[...toolPhases]}
-                        current={toolPhases.find((phase) => phase.id === (nudge().hook as { phase: string }).phase)}
-                        value={(phase) => phase.id}
-                        label={(phase) => phase.label}
-                        onSelect={(phase) => {
-                          if (phase)
-                            nudgeChange(index, n, {
-                              hook: {
-                                ...(nudge().hook as Extract<RecipeNudge["hook"], { type: "tool-call" }>),
-                                phase: phase.id,
-                              },
-                            })
+                        aria-label={`When officer ${index + 1} nudge ${n + 1} fires`}
+                        options={[...triggers]}
+                        current={triggers.find((trigger) => trigger.id === nudge().hook.type)}
+                        value={(trigger) => trigger.id}
+                        label={(trigger) => trigger.label}
+                        onSelect={(trigger) => {
+                          if (!trigger) return
+                          const type = trigger.id
+                          nudgeChange(index, n, {
+                            hook:
+                              type === "interval"
+                                ? { type, minutes: 60 }
+                                : type === "tool-call"
+                                  ? { type, tool: "bash", phase: "after" }
+                                  : type === "file-write"
+                                    ? { type, extension: "ts" }
+                                    : { type },
+                          })
                         }}
                       />
                     </label>
+                    <Show when={nudge().hook.type === "interval"}>
+                      <label>
+                        Minutes
+                        <input
+                          class="project-field"
+                          type="number"
+                          min={1}
+                          max={1440}
+                          value={(nudge().hook as { minutes: number }).minutes}
+                          onInput={(event) =>
+                            nudgeChange(index, n, {
+                              hook: { type: "interval", minutes: Number(event.currentTarget.value) },
+                            })
+                          }
+                        />
+                      </label>
+                    </Show>
+                    <Show when={nudge().hook.type === "tool-call"}>
+                      <label>
+                        Timing
+                        <SelectV2
+                          aria-label="Tool nudge timing"
+                          options={[...toolPhases]}
+                          current={toolPhases.find((phase) => phase.id === (nudge().hook as { phase: string }).phase)}
+                          value={(phase) => phase.id}
+                          label={(phase) => phase.label}
+                          onSelect={(phase) => {
+                            if (phase)
+                              nudgeChange(index, n, {
+                                hook: {
+                                  ...(nudge().hook as Extract<RecipeNudge["hook"], { type: "tool-call" }>),
+                                  phase: phase.id,
+                                },
+                              })
+                          }}
+                        />
+                      </label>
+                      <label>
+                        Tool
+                        <input
+                          class="project-field"
+                          value={(nudge().hook as { tool: string }).tool}
+                          onInput={(event) =>
+                            nudgeChange(index, n, {
+                              hook: {
+                                type: "tool-call",
+                                tool: event.currentTarget.value,
+                                phase: (nudge().hook as { phase: "before" | "after" }).phase,
+                              },
+                            })
+                          }
+                        />
+                      </label>
+                    </Show>
+                    <Show when={nudge().hook.type === "file-write"}>
+                      <label>
+                        File extension
+                        <input
+                          class="project-field"
+                          value={(nudge().hook as { extension: string }).extension}
+                          onInput={(event) =>
+                            nudgeChange(index, n, {
+                              hook: { type: "file-write", extension: event.currentTarget.value },
+                            })
+                          }
+                        />
+                      </label>
+                    </Show>
                     <label>
-                      Tool
-                      <input
+                      Instruction
+                      <textarea
                         class="project-field"
-                        value={(nudge().hook as { tool: string }).tool}
-                        onInput={(event) =>
-                          nudgeChange(index, n, {
-                            hook: {
-                              type: "tool-call",
-                              tool: event.currentTarget.value,
-                              phase: (nudge().hook as { phase: "before" | "after" }).phase,
-                            },
-                          })
-                        }
+                        rows={2}
+                        maxLength={16000}
+                        value={nudge().text}
+                        onInput={(event) => nudgeChange(index, n, { text: event.currentTarget.value })}
                       />
                     </label>
-                  </Show>
-                  <Show when={nudge().hook.type === "file-write"}>
-                    <label>
-                      File extension
-                      <input
-                        class="project-field"
-                        value={(nudge().hook as { extension: string }).extension}
-                        onInput={(event) =>
-                          nudgeChange(index, n, { hook: { type: "file-write", extension: event.currentTarget.value } })
-                        }
-                      />
-                    </label>
-                  </Show>
-                  <label>
-                    Instruction
-                    <textarea
-                      class="project-field"
-                      rows={2}
-                      maxLength={16000}
-                      value={nudge().text}
-                      onInput={(event) => nudgeChange(index, n, { text: event.currentTarget.value })}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    class="project-button"
-                    onClick={() => update(index, { nudges: officer().nudges.filter((_, i) => i !== n) })}
-                  >
-                    Remove nudge
-                  </button>
-                </div>
-              )}
-            </Index>
+                    <button
+                      type="button"
+                      class="project-button"
+                      onClick={() => update(index, { nudges: officer().nudges.filter((_, i) => i !== n) })}
+                    >
+                      Remove nudge
+                    </button>
+                  </div>
+                )}
+              </Index>
+            </details>
           </article>
         )}
       </Index>
