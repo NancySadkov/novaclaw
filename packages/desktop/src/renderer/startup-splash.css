@@ -1,0 +1,264 @@
+.nova-dawn {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100dvh;
+  min-height: 240px;
+  overflow: hidden;
+  background: #080610;
+  color: #c8bdcb;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  -webkit-app-region: drag;
+}
+.nova-dawn-art,
+.nova-dawn-sky,
+.nova-dawn-vignette {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.nova-dawn-nebula {
+  position: absolute;
+  inset: -10%;
+  background:
+    radial-gradient(ellipse at 49% 46%, #7650872e, transparent 39%),
+    radial-gradient(ellipse at 22% 46%, #75529630, transparent 28%),
+    radial-gradient(ellipse at 78% 38%, #36607620, transparent 27%),
+    radial-gradient(ellipse at 53% 70%, #6e398c42, transparent 44%);
+  animation: nova-nebula-drift 32s ease-in-out infinite alternate;
+}
+.nova-dawn-aureole {
+  position: absolute;
+  width: min(80vw, 76vh);
+  aspect-ratio: 1;
+  left: 50%;
+  top: 45%;
+  border-radius: 50%;
+  background: radial-gradient(circle, #a7895830, #60367718 47%, transparent 70%);
+  transform: translate(-50%, -50%);
+  animation: nova-aureole 12s ease-in-out infinite alternate;
+}
+.nova-dawn-floor {
+  position: absolute;
+  inset: 66% 0 0;
+  overflow: hidden;
+  background: linear-gradient(#1b1029, #0c0917 52%, #080610);
+}
+.nova-dawn-floor svg {
+  width: 100%;
+  height: 100%;
+  opacity: 0.32;
+  mask-image: linear-gradient(#000, #0008 48%, transparent);
+}
+.nova-dawn-emblem {
+  position: absolute;
+  width: min(82vw, 88vh, 850px);
+  aspect-ratio: 1;
+  left: 50%;
+  top: 47%;
+  transform: translate(-50%, -50%);
+}
+.nova-dawn-rise {
+  width: 100%;
+  height: 100%;
+  animation: nova-eye-rise 6.8s cubic-bezier(0.18, 0.58, 0.24, 1) both;
+}
+.nova-dawn-seal {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(0 2px 1px #e6c07944) drop-shadow(0 15px 20px #0008);
+}
+.nova-dawn-field {
+  opacity: 0.19;
+}
+.nova-dawn-orbits {
+  opacity: 0.28;
+}
+.nova-dawn-city {
+  opacity: 0.48;
+}
+.nova-dawn-iris {
+  transform-origin: 514px 326px;
+  animation: nova-eye-attention 19s ease-in-out 6.8s infinite;
+}
+.nova-dawn-pupil {
+  transform-origin: 514px 326px;
+  animation: nova-pupil 13s ease-in-out 6.8s infinite alternate;
+}
+.nova-dawn-sheen {
+  animation: nova-metal-light 14s ease-in-out 3s infinite;
+}
+.nova-dawn-veil {
+  position: absolute;
+  inset: 66% 0 0;
+  background: linear-gradient(#1b1029, #080610 76%);
+  animation: nova-horizon-reveal 6.8s ease-out both;
+}
+.nova-dawn-horizon {
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  top: 66%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #6f5398 18%, #e4d0a2 48%, #e4d0a2 52%, #6f5398 82%, transparent);
+  box-shadow:
+    0 0 8px 1px #dac09945,
+    0 0 48px 10px #8e51ba55;
+  opacity: 0.65;
+  animation: nova-horizon-light 10s ease-in-out infinite alternate;
+}
+.nova-dawn-vignette {
+  background: radial-gradient(ellipse at 50% 42%, transparent 25%, #05040b55 80%, #05040bc4);
+}
+.nova-dawn-caption {
+  position: absolute;
+  bottom: max(30px, 5.5vh);
+  left: 24px;
+  right: 24px;
+  text-align: center;
+  animation: nova-caption-appear 1.2s ease-out both;
+}
+.nova-dawn-caption h1 {
+  margin: 0 0 12px;
+  color: #d8bd89;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.42em;
+  text-indent: 0.42em;
+  text-transform: uppercase;
+}
+.nova-dawn-caption p {
+  max-width: 410px;
+  min-height: 3em;
+  margin: 0 auto;
+  color: #b5a9be;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.6;
+  text-wrap: balance;
+}
+@keyframes nova-eye-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, var(--nova-rise-distance, calc(19vh + 18.2% + 12px)), 0) scale(0.94);
+  }
+  18% {
+    opacity: 0.7;
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+@keyframes nova-horizon-reveal {
+  0%,
+  34% {
+    opacity: 1;
+  }
+  84%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes nova-nebula-drift {
+  from {
+    transform: translate3d(-1%, 1%, 0);
+  }
+  to {
+    transform: translate3d(1%, -1%, 0);
+  }
+}
+@keyframes nova-aureole {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 0.95;
+  }
+}
+@keyframes nova-horizon-light {
+  from {
+    opacity: 0.42;
+  }
+  to {
+    opacity: 0.72;
+  }
+}
+@keyframes nova-eye-attention {
+  0%,
+  30%,
+  100% {
+    transform: translate(0, 0);
+  }
+  48%,
+  62% {
+    transform: translate(1.8px, -0.6px);
+  }
+  78% {
+    transform: translate(-1px, 0.5px);
+  }
+}
+@keyframes nova-pupil {
+  from {
+    transform: scale(0.97);
+  }
+  to {
+    transform: scale(1.045);
+  }
+}
+@keyframes nova-metal-light {
+  0%,
+  62% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+  65% {
+    opacity: 0.2;
+  }
+  90%,
+  100% {
+    transform: translateX(2200px);
+    opacity: 0;
+  }
+}
+@keyframes nova-caption-appear {
+  from {
+    opacity: 0.4;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (max-height: 500px) {
+  .nova-dawn {
+    --nova-rise-distance: calc(25vh + 18.2% + 12px);
+  }
+  .nova-dawn-emblem {
+    top: 41%;
+    width: min(67vw, 92vh);
+  }
+  .nova-dawn-caption {
+    bottom: 12px;
+  }
+  .nova-dawn-caption h1 {
+    margin-bottom: 6px;
+  }
+  .nova-dawn-caption p {
+    font-size: 11px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nova-dawn *,
+  .nova-dawn *::before,
+  .nova-dawn *::after {
+    animation: none !important;
+  }
+  .nova-dawn-veil,
+  .nova-dawn-sheen {
+    opacity: 0;
+  }
+}

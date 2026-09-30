@@ -6,7 +6,6 @@ import {
   AppBaseProviders,
   AppInterface,
   handleNotificationClick,
-  publicAssetUrl,
   loadLocaleDict,
   normalizeLocale,
   type Locale,
@@ -17,7 +16,7 @@ import {
 } from "@novaclaw/app"
 import type { AsyncStorage } from "@solid-primitives/storage"
 import { MemoryRouter } from "@solidjs/router"
-import { createEffect, createMemo, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createMemo, createResource, onCleanup, onMount, Show } from "solid-js"
 import { render } from "solid-js/web"
 // `pkg.version` is NOT an independent version source: packages/desktop/package.json is written by
 // `bun run version:sync` from the root package.json (electron-builder requires a literal there), and
@@ -26,7 +25,8 @@ import pkg from "../../package.json"
 import { reportBootPhase, setBootPhaseReporter } from "@novaclaw/app/utils/boot-phase"
 import { initI18n, t } from "./i18n"
 import { initializationData, initializationReady } from "./initialization"
-import { splashMessageKey, splashPhase, type SplashPhase } from "./splash"
+import { splashMessageKey } from "./splash"
+import { StartupSplash } from "./startup-splash"
 import { setPinchZoomEnabled, webviewZoom } from "./webview-zoom"
 import "./styles.css"
 import { useTheme } from "@novaclaw/ui/theme/context"
@@ -306,26 +306,6 @@ render(() => {
   }
 
   function App() {
-    // The main process now opens this window immediately, so the splash is what a user sees while
-    // the local server comes up — including when it never does. Say which it is.
-    const [phase, setPhase] = createSignal<SplashPhase>("starting")
-    onMount(() => {
-      const startedAt = Date.now()
-      const timer = setInterval(() => setPhase(splashPhase(Date.now() - startedAt)), 1000)
-      onCleanup(() => clearInterval(timer))
-    })
-    const splash = (
-      <div class="h-dvh w-screen flex flex-col items-center justify-center gap-6 bg-background-base">
-        <img
-          src={publicAssetUrl("/logo.png")}
-          alt="NovaClaw"
-          draggable={false}
-          class="w-20 h-20 opacity-80 animate-pulse select-none"
-        />
-        <p class="max-w-80 px-6 text-center text-12-regular text-text-muted">{t(splashMessageKey(phase()))}</p>
-      </div>
-    )
-
     const ready = createMemo(
       () => !defaultServer.loading && !sidecar.loading && !windowCount.loading && !locale.loading,
     )
@@ -349,7 +329,7 @@ render(() => {
     const effectiveDefaultServer = createMemo(() => ServerConnection.Key.make(startupServerKey(defaultServer.latest)))
 
     return (
-      <Show when={ready()} fallback={splash}>
+      <Show when={ready()} fallback={<StartupSplash message={(phase) => t(splashMessageKey(phase))} />}>
         <Show when={effectiveDefaultServer()} keyed>
           {(key) => (
             <AppInterface defaultServer={key} servers={servers()} router={MemoryRouter}>
