@@ -2130,8 +2130,6 @@ export const dict = {
   "home.app.contacts.stat.running": "running",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "memory",
-  "home.app.recipes.name": "Recipes",
-  "home.app.recipes.subtitle": "Ready-made prompts your agents can cook",
   "home.app.files.name": "Files",
   "home.app.files.subtitle": "Browse folders and ask AI to work on them",
   "home.app.terminal.name": "Terminal",

@@ -108,21 +108,6 @@ export function useBuiltinApps(): () => HomeApp[] {
       open: () => navigate("/models"),
     },
     {
-      id: "recipes",
-      get title() {
-        return name("recipes")
-      },
-      icon: "checklist",
-      tile: "/assets/skin/glyphs/recipes-generated.png",
-      tileNeedsFrame: true,
-      accent: "#9b8acb",
-      get subtitle() {
-        return sub("recipes")
-      },
-      source: "builtin",
-      open: () => navigate("/recipes"),
-    },
-    {
       id: "files",
       get title() {
         return name("files")

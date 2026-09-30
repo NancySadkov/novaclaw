@@ -507,8 +507,6 @@ export const dict = {
   "home.app.contacts.stat.running": "執行中",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "記憶體",
-  "home.app.recipes.name": "食譜",
-  "home.app.recipes.subtitle": "現成的提示詞，交給代理去烹調",
   "home.app.files.name": "檔案",
   "home.app.files.subtitle": "瀏覽資料夾，讓 AI 處理它們",
   "home.app.terminal.name": "終端機",

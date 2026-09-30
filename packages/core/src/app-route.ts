@@ -9,7 +9,6 @@ export const MANIFEST_ROUTE_TARGETS = {
   contacts: "/tasks",
   models: "/models",
   files: "/files",
-  recipes: "/recipes",
   projects: "/projects",
   debug: "/debug",
   terminal: "/terminal",

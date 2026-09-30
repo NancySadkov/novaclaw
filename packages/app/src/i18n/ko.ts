@@ -457,8 +457,6 @@ export const dict = {
   "home.app.contacts.stat.running": "실행 중",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "메모리",
-  "home.app.recipes.name": "레시피",
-  "home.app.recipes.subtitle": "에이전트가 요리할 수 있는 준비된 프롬프트",
   "home.app.files.name": "파일",
   "home.app.files.subtitle": "폴더를 살펴보고 AI에게 작업을 맡기세요",
   "home.app.terminal.name": "터미널",

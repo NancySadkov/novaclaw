@@ -508,8 +508,6 @@ export const dict = {
   "home.app.contacts.stat.running": "运行中",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "内存",
-  "home.app.recipes.name": "配方",
-  "home.app.recipes.subtitle": "现成的提示词，交给智能体去烹调",
   "home.app.files.name": "文件",
   "home.app.files.subtitle": "浏览文件夹，让 AI 处理它们",
   "home.app.terminal.name": "终端",

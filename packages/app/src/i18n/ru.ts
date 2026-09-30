@@ -529,8 +529,6 @@ export const dict = {
   "home.app.contacts.stat.running": "выполняется",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "память",
-  "home.app.recipes.name": "Рецепты",
-  "home.app.recipes.subtitle": "Готовые запросы, которые могут приготовить ваши агенты",
   "home.app.files.name": "Файлы",
   "home.app.files.subtitle": "Просматривайте папки и поручайте ИИ работу над ними",
   "home.app.terminal.name": "Терминал",

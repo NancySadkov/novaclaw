@@ -525,8 +525,6 @@ export const dict = {
   "home.app.contacts.stat.running": "u toku",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "memorija",
-  "home.app.recipes.name": "Recepti",
-  "home.app.recipes.subtitle": "Gotovi upiti koje vaši agenti mogu skuhati",
   "home.app.files.name": "Datoteke",
   "home.app.files.subtitle": "Pregledajte mape i zamolite AI da radi na njima",
   "home.app.terminal.name": "Terminal",

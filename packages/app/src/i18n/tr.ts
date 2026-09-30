@@ -518,8 +518,6 @@ export const dict = {
   "home.app.contacts.stat.running": "çalışıyor",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "bellek",
-  "home.app.recipes.name": "Tarifler",
-  "home.app.recipes.subtitle": "Ajanlarınızın pişirebileceği hazır istemler",
   "home.app.files.name": "Dosyalar",
   "home.app.files.subtitle": "Klasörlere göz atın ve yapay zekâdan üzerlerinde çalışmasını isteyin",
   "home.app.terminal.name": "Terminal",

@@ -462,8 +462,6 @@ export const dict = {
   "home.app.contacts.stat.running": "em execução",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "memória",
-  "home.app.recipes.name": "Receitas",
-  "home.app.recipes.subtitle": "Prompts prontos que seus agentes podem cozinhar",
   "home.app.files.name": "Arquivos",
   "home.app.files.subtitle": "Navegue pelas pastas e peça à IA para trabalhar nelas",
   "home.app.terminal.name": "Terminal",

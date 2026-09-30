@@ -528,8 +528,6 @@ export const dict = {
   "home.app.contacts.stat.running": "виконується",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "пам'ять",
-  "home.app.recipes.name": "Рецепти",
-  "home.app.recipes.subtitle": "Готові запити, які можуть приготувати ваші агенти",
   "home.app.files.name": "Файли",
   "home.app.files.subtitle": "Переглядайте теки й доручайте ШІ працювати з ними",
   "home.app.terminal.name": "Термінал",

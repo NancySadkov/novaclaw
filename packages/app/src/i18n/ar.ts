@@ -455,8 +455,6 @@ export const dict = {
   "home.app.contacts.stat.running": "قيد التشغيل",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "الذاكرة",
-  "home.app.recipes.name": "الوصفات",
-  "home.app.recipes.subtitle": "مطالبات جاهزة يمكن لوكلائك طهيها",
   "home.app.files.name": "الملفات",
   "home.app.files.subtitle": "تصفح المجلدات واطلب من الذكاء الاصطناعي العمل عليها",
   "home.app.terminal.name": "الطرفية",

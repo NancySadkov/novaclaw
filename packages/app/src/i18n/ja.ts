@@ -461,8 +461,6 @@ export const dict = {
   "home.app.contacts.stat.running": "実行中",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "メモリ",
-  "home.app.recipes.name": "レシピ",
-  "home.app.recipes.subtitle": "エージェントが調理できる既製のプロンプト",
   "home.app.files.name": "ファイル",
   "home.app.files.subtitle": "フォルダーを開いて AI に作業を頼む",
   "home.app.terminal.name": "ターミナル",

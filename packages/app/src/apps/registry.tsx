@@ -116,9 +116,11 @@ const RESERVED_IDS = new Set([
   "models",
 ])
 
+export const isReservedAppId = (id: string): boolean => RESERVED_IDS.has(id)
+
 /** Register (or replace, by id) a dynamically-contributed app. */
 export function registerApp(app: HomeApp): void {
-  if (RESERVED_IDS.has(app.id)) {
+  if (isReservedAppId(app.id)) {
     console.warn(`[apps] ignoring registerApp("${app.id}") — that id is reserved by a built-in app`)
     return
   }

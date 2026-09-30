@@ -517,8 +517,6 @@ export const dict = {
   "home.app.contacts.stat.running": "kører",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "hukommelse",
-  "home.app.recipes.name": "Opskrifter",
-  "home.app.recipes.subtitle": "Færdige prompts, dine agenter kan koge",
   "home.app.files.name": "Filer",
   "home.app.files.subtitle": "Gennemse mapper, og bed AI'en arbejde på dem",
   "home.app.terminal.name": "Terminal",

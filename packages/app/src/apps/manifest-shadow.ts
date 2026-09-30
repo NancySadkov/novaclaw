@@ -1,4 +1,4 @@
-import { BUILTIN_APP_LABELS } from "./app-label"
+import { isReservedAppId } from "./registry"
 import type { AppManifest } from "./persisted"
 
 // The read-side half of the reserved-app-id rule.
@@ -7,18 +7,6 @@ import type { AppManifest } from "./persisted"
 // Solid hook and reaches `@solidjs/router` at import, so anything it holds can only be exercised in
 // a browser environment. This rule is pure data and is worth a unit that runs with the app's own
 // suite — the file it guards is a launcher screen nobody renders in a test loop.
-
-/**
- * The ids a built-in tile already owns — **derived from `BUILTIN_APP_LABELS`, never restated.**
- *
- * ⚠️ **Derived, not copied.** The failure this set exists to catch is created by ADDING A TILE, and a
- * tile is added in `builtins.tsx` + `app-label.ts` — nowhere near a hand-kept id list. A fourth copy
- * of the reserved ids would go stale on exactly the event it is meant to notice, so the set is the
- * keys of the labels table that defines what a tile IS. `app-label.test.ts` pins that table to the
- * ids `builtins.tsx` actually registers, and `core/test/app-reserved-ids.test.ts` pins it as a
- * subset of both `RESERVED_IDS` declarations.
- */
-const BUILTIN_TILE_IDS: ReadonlySet<string> = new Set(Object.keys(BUILTIN_APP_LABELS))
 
 /** Said once per id: the launcher recomputes on unrelated traffic and a repeated line is noise. */
 const named = new Set<string>()
@@ -47,7 +35,7 @@ export const forgetNamedShadows = (): void => named.clear()
  */
 export function unshadowedManifests(manifests: readonly AppManifest[]): AppManifest[] {
   return manifests.filter((manifest) => {
-    if (!BUILTIN_TILE_IDS.has(manifest.id)) return true
+    if (!isReservedAppId(manifest.id)) return true
     if (!named.has(manifest.id)) {
       named.add(manifest.id)
       console.warn(

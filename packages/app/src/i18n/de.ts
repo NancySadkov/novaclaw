@@ -467,8 +467,6 @@ export const dict = {
   "home.app.contacts.stat.running": "aktiv",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "Speicher",
-  "home.app.recipes.name": "Rezepte",
-  "home.app.recipes.subtitle": "Fertige Prompts, die deine Agenten kochen können",
   "home.app.files.name": "Dateien",
   "home.app.files.subtitle": "Ordner durchsuchen und die KI daran arbeiten lassen",
   "home.app.terminal.name": "Terminal",

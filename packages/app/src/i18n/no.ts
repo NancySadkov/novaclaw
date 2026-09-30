@@ -520,8 +520,6 @@ export const dict = {
   "home.app.contacts.stat.running": "kjører",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "minne",
-  "home.app.recipes.name": "Oppskrifter",
-  "home.app.recipes.subtitle": "Ferdige ledetekster agentene dine kan koke",
   "home.app.files.name": "Filer",
   "home.app.files.subtitle": "Bla gjennom mapper og be KI-en jobbe med dem",
   "home.app.terminal.name": "Terminal",

@@ -514,8 +514,6 @@ export const dict = {
   "home.app.contacts.stat.running": "กำลังทำงาน",
   "home.app.contacts.stat.throughput": "t/s",
   "home.app.contacts.stat.memory": "หน่วยความจำ",
-  "home.app.recipes.name": "สูตร",
-  "home.app.recipes.subtitle": "พรอมป์ตสำเร็จรูปที่เอเจนต์ของคุณปรุงได้",
   "home.app.files.name": "ไฟล์",
   "home.app.files.subtitle": "เรียกดูโฟลเดอร์และให้ AI ทำงานกับมัน",
   "home.app.terminal.name": "เทอร์มินัล",
