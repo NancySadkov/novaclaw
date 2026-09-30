@@ -144,5 +144,6 @@ export const migrations = (
     import("./migration/20260928140000_owner_inbox"),
     import("./migration/20260930002633_recipe_projects"),
     import("./migration/20260930013142_project_kickoff_delivery"),
+    import("./migration/20260930100000_retire_internal_roles"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

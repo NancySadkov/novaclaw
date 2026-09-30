@@ -40,7 +40,11 @@ const builtinAgents = Effect.gen(function* () {
       Location.Service.of(location({ directory: AbsolutePath.make("/project") })),
     ),
   )
-  return new Map((yield* agent.all()).map((item) => [String(item.id), item.permissions as PermissionV2.Ruleset]))
+  return new Map(
+    (yield* agent.all())
+      .filter((item) => !AgentV2.isHuman(item))
+      .map((item) => [String(item.id), item.permissions as PermissionV2.Ruleset]),
+  )
 })
 
 /**
@@ -172,27 +176,7 @@ describe("the built-in agents the plugin actually builds", () => {
     Effect.gen(function* () {
       const agents = yield* builtinAgents
       // The full set, asserted by name so a NEW built-in agent cannot join without being looked at.
-      expect([...agents.keys()].sort()).toEqual([
-        "compaction",
-        "explore",
-        "general",
-        /**
-         * The SERVICE agents (2026-08-28). The messenger console and the recipe cook used to create
-         * sessions with NO agent at all — rows belonging to nobody, on no roster, reachable from
-         * nowhere. They own that work now, so a chat a subsystem starts can be named and pointed at.
-         *
-         * ⚠️ Held to the SAME floor as every other built-in, which is what the loop below checks:
-         * owning a subsystem's chats grants no ambient authority over what may be run.
-         */
-        "messenger",
-        // The CEO (AGENTS.md — the structural metaphor). The same floor as every other built-in plus
-        // the two interactive grants: Nova talks to the user and routes work, it does not carry
-        // authority its officers lack. The floor was pinned through `build` and `plan` until the
-        // anonymous agents were retired (2026-09-27); it is now read from `AgentPlugin.floor` directly,
-        // and pinned as actually-applied by the test immediately after this one.
-        "nova",
-        "recipe",
-      ])
+      expect([...agents.keys()].sort()).toEqual(["compaction", "nova"])
       for (const [id, rules] of agents) {
         expect({ id, catchAll: PermissionV2.catchAllAllowRules(rules) }).toEqual({ id, catchAll: [] })
       }
@@ -218,7 +202,7 @@ describe("the built-in agents the plugin actually builds", () => {
     Effect.gen(function* () {
       const agents = yield* builtinAgents
       const key = (rule: PermissionV2.Ruleset[number]) => JSON.stringify([rule.action, rule.resource, rule.effect])
-      for (const id of [String(AgentV2.NOVA_ID), "explore"]) {
+      for (const id of [String(AgentV2.NOVA_ID), "compaction"]) {
         const rules = agents.get(id)
         expect(rules, `${id} is not a built-in`).toBeDefined()
         // Non-vacuity: an empty floor would satisfy a subset test trivially, and emptying the floor is
@@ -277,8 +261,8 @@ describe("the built-in agents the plugin actually builds", () => {
       // exception — which is how a rule like this decays.
       expect(nonOfficerBuiltIns(agents).length).toBeGreaterThan(0)
       expect(
-        nonOfficerBuiltIns(agents).filter(
-          (id) => (agents.get(id) ?? []).some((rule) => rule.action === "*" && rule.effect === "deny"),
+        nonOfficerBuiltIns(agents).filter((id) =>
+          (agents.get(id) ?? []).some((rule) => rule.action === "*" && rule.effect === "deny"),
         ).length,
         "no built-in is sandboxed any more",
       ).toBeGreaterThan(0)
@@ -286,7 +270,7 @@ describe("the built-in agents the plugin actually builds", () => {
       // `mayStaff` (`tool/colleague.ts`) refuses `hire`/`retire` to anyone but Nova, independently of
       // any floor. What changed is that ADDRESSING a peer no longer requires being the governor.
       expect(AgentV2.mayStaff(AgentV2.NOVA_ID)).toBe(true)
-      expect(AgentV2.mayStaff("general")).toBe(false)
+      expect(AgentV2.mayStaff("theron")).toBe(false)
     }),
   )
 
@@ -307,34 +291,11 @@ describe("the built-in agents the plugin actually builds", () => {
       expect(effectFor(agents.get("nova")!, "spawn", "build")).toBe("ask")
       expect(effectFor(agents.get("nova")!, "spawn", "*")).toBe("ask")
 
-      // The machinery a person drives is not an officer and does not staff itself.
-      //
-      // 🔴 **CLASSIFIED BY MECHANISM, over the DERIVED roster.** This used to be a hand-kept
-      // `["build", "plan", "general"]` asserting the exact verdict `ask`, plus a separate by-name
-      // assertion that `explore` answers `deny`. Two defects in that shape, both found by running it:
-      // the retirement of two of its three members silently shortened the list, and the exact-`ask`
-      // assertion was one notch too specific — `compaction` carries an explicit `spawn: "deny"` and was
-      // simply absent from it, so a real third category had no assertion at all.
-      //
-      // The invariant is not "every non-officer asks". It is "ONLY an officer may staff", and a
-      // `deny` satisfies that more strongly than an `ask` does. So the split is now derived from each
-      // agent's OWN rules — silent by absence (no `spawn` rule at all) versus denied on purpose (one) —
-      // which is a statement about the mechanism and cannot go stale when an agent is added, retired
-      // or granted something.
-      const silent = nonOfficerBuiltIns(agents).filter(
-        (id) => !(agents.get(id) ?? []).some((rule) => Wildcard.match("spawn", rule.action)),
-      )
-      const denied = nonOfficerBuiltIns(agents).filter((id) => !silent.includes(id))
-      for (const id of silent)
-        expect({ id, effect: effectFor(agents.get(id)!, "spawn", "inherit") }).toEqual({ id, effect: "ask" })
-      for (const id of denied)
-        expect({ id, effect: effectFor(agents.get(id)!, "spawn", "inherit") }).toEqual({ id, effect: "deny" })
-      // The strict reading, which the derived roster is what makes possible: nothing but Nova is allowed.
-      for (const id of nonOfficerBuiltIns(agents))
+      const services = nonOfficerBuiltIns(agents)
+      expect(services.length).toBeGreaterThan(0)
+      for (const id of services)
         expect(effectFor(agents.get(id)!, "spawn", "inherit"), `${id} may staff itself`).not.toBe("allow")
-      // Non-vacuity: both categories are populated, so neither loop above can pass by finding nothing.
-      expect(silent.length, "no non-officer is silent by absence any more").toBeGreaterThan(0)
-      expect(denied.length, "no non-officer is denied on purpose any more").toBeGreaterThan(0)
+      expect(effectFor(theFloor, "spawn", "inherit")).toBe("ask")
     }),
   )
 
@@ -342,7 +303,8 @@ describe("the built-in agents the plugin actually builds", () => {
     Effect.gen(function* () {
       // These five are absent from the floor on purpose: `MODE_RULES.bypass` (the shipped default
       // mode) allows them, so inverting the baseline did not make a fresh install ask about edits.
-      for (const action of ["edit", "write", "create", "trash", "bash"]) expect(effectFor(theFloor, action)).toBe("allow")
+      for (const action of ["edit", "write", "create", "trash", "bash"])
+        expect(effectFor(theFloor, action)).toBe("allow")
       // ...and the posture is now load-bearing rather than decorative: under Analyze the same
       // actions are refused, which was already true, and under Ask they are consent-gated.
       const under = (mode: keyof typeof MODE_RULES, action: string) =>
@@ -424,8 +386,6 @@ describe("the built-in agents the plugin actually builds", () => {
   it.effect("the subagents' own denies still outrank the floor (order was not disturbed)", () =>
     Effect.gen(function* () {
       const agents = yield* builtinAgents
-      // `general` denies todowrite explicitly, AFTER the floor grants it.
-      expect(effectFor(agents.get("general")!, "todowrite")).toBe("deny")
       // Compaction is the remaining internal maintenance agent; title labeling is owned by the
       // officer that produced the work and is no longer a separate agent entity.
       expect({ id: "compaction", read: effectFor(agents.get("compaction")!, "read") }).toEqual({
@@ -520,116 +480,6 @@ describe("the built-in floor's scratch dirs are writable, and nothing else is", 
   )
 })
 
-// ─────────────────────────────────────────────────────────────────────────────
-// THE `explore` SUBAGENT COULD NOT SEARCH — a shadowing bug that predates B4c and survived it.
-//
-// `explore` is the one built-in whose ruleset opens a catch-all DENY and then grants back what it
-// needs. `evaluate` is findLast, so anything `defaults` contributes — including
-// `AMBIENT_SAFE_BASELINE`'s `explore` allow — is shadowed by that deny, and `tool/glob.ts` /
-// `tool/grep.ts` assert `explore`. So the read-only search agent was refused at its only job. The old
-// catch-all ALLOW sat in the same shadowed position, so this was live before B4c as well.
-//
-// The fix is a grant, not a reordering — and since 2026-07-30 it is ONE grant. Both tools are now
-// registered through `Tool.withPermission(…, "explore")`, so `ToolRegistry.materialize`'s horizon
-// filter resolves the same action the execution assert spends. It used to take THREE rules —
-// `explore` for execution plus `grep`/`glob` for the horizon, because that filter resolves the name a
-// tool is REGISTERED under — and the two seams answering to different actions was itself the defect:
-// `explore: "deny"` refused every search while both tools stayed advertised, and `glob: "deny"` hid
-// glob while grep went on working. This block pins both halves of the single grant, execution AND
-// horizon, so the collapse cannot silently come apart.
-// ─────────────────────────────────────────────────────────────────────────────
-describe("the explore subagent can actually glob and grep", () => {
-  /**
-   * `whollyDisabled` from `registry.ts`, replicated exactly (it is a module-private function there).
-   * This is the predicate that decides whether a tool appears in the model's horizon at all, and it
-   * is NOT the same question `evaluate` answers — it asks only whether the LAST rule matching the
-   * action is a catch-all deny. Same replication-with-a-note shape `src/permission-modes.test.ts`
-   * uses for the evaluator's private `denied()`.
-   */
-  const withdrawn = (rules: PermissionV2.Ruleset, action: string) => {
-    const rule = rules.findLast((one) => Wildcard.match(action, one.action))
-    return rule?.resource === "*" && rule.effect === "deny"
-  }
-
-  /**
-   * The evaluator's HARD arm — `denied(input, configuredRules)` in `permission.ts` — which reads the
-   * agent's own rules IN ISOLATION, before any mode overlay, so a configured deny cannot be softened.
-   *
-   * ⚠️ It is the right instrument here and `effectFor` above is not, which is worth stating because
-   * the mistake is easy: `effectFor` composes `MODE_RULES[bypass]` last, and bypass ALLOWS
-   * edit/write/create/trash/bash on `*` — so asking it whether this agent denies `bash` answers
-   * "allow" while the shipped evaluator answers "deny". (Measured, not reasoned: that assertion was
-   * written with `effectFor` first and went red.) The error direction is safe — it under-reports a
-   * deny, so such a test fails rather than passing falsely — but a deny belongs where the evaluator
-   * decides it.
-   */
-  const configuredDenies = (rules: PermissionV2.Ruleset, action: string, resource = "src/x.ts") =>
-    PermissionV2.evaluate(action, resource, rules).effect === "deny"
-
-  it.effect("EXECUTION: the `explore` action the two tools assert resolves to allow", () =>
-    Effect.gen(function* () {
-      const explore = (yield* builtinAgents).get("explore")!
-      expect(effectFor(explore, "explore")).toBe("allow")
-      // ...and its other grants are unharmed by the added rule.
-      for (const action of ["read", "webfetch", "websearch"]) expect(effectFor(explore, action)).toBe("allow")
-      // ...while the catch-all deny still does its job for everything else — asserted on the HARD
-      // arm, which is where a configured deny is actually decided (see `configuredDenies`).
-      for (const action of ["bash", "js", "edit", "write", "spawn", "todowrite"])
-        expect({ action, denied: configuredDenies(explore, action) }).toEqual({ action, denied: true })
-    }),
-  )
-
-  it.effect("NEGATIVE CONTROL: drop the `explore` grant and the subagent loses search at BOTH seams", () =>
-    Effect.gen(function* () {
-      const explore = (yield* builtinAgents).get("explore")!
-      const preFix = explore.filter((rule) => rule.action !== "explore")
-      // Execution is refused — which proves the assertion above measures the added rule and not the
-      // ambient floor, present in both versions and shadowed in both.
-      expect(effectFor(preFix, "explore")).toBe("deny")
-      // And the horizon goes with it. THAT is what the remap bought: until 2026-07-30 the same
-      // deletion left both tools ADVERTISED, because this agent carried separate `grep`/`glob`
-      // grants that the horizon filter resolved instead — so the agent read as capable and failed
-      // every call, which is a mystery rather than a missing capability.
-      expect(withdrawn(preFix, "explore")).toBe(true)
-    }),
-  )
-
-  it.effect("HORIZON: the ONE `explore` grant carries the tool list too, and no name-shaped rules remain", () =>
-    Effect.gen(function* () {
-      const explore = (yield* builtinAgents).get("explore")!
-      // `whollyDisabled` resolves whatever `Tool.permission` answers, and both search tools remap to
-      // `explore` — so this single rule is what keeps them on the model's horizon.
-      expect(withdrawn(explore, "explore")).toBe(false)
-      // The two rules that used to be needed for exactly this are GONE, and their absence is the
-      // property being pinned: a ruleset that still named the registered tool names would mean the
-      // collapse is half-done and the next reader has two mechanisms to reason about, not one.
-      // (What a rule naming `glob`/`grep` does to the REAL registry — nothing, because the filter no
-      // longer resolves those names — is asserted end-to-end in `tool-search-containment.test.ts`.)
-      expect(explore.filter((rule) => rule.action === "glob" || rule.action === "grep")).toEqual([])
-      // The replicated predicate is not vacuous: `read` is granted by name, so it is never withdrawn.
-      expect(withdrawn(explore, "read")).toBe(false)
-    }),
-  )
-
-  it.effect("the read-only explore agent can read host-readable files regardless of filename", () =>
-    Effect.gen(function* () {
-      const explore = (yield* builtinAgents).get("explore")!
-      for (const resource of ["packages/core/.env", ".env.local", ".env.example", "src/x.ts"])
-        expect(effectFor(explore, "read", resource)).toBe("allow")
-    }),
-  )
-})
-
-// ─────────────────────────────────────────────────────────────────────────────
-// …and the OTHER half of that grant, which lives in files this one cannot see.
-//
-// "The explore agent needs one `explore` grant" is only true while `tool/glob.ts` and `tool/grep.ts`
-// BOTH assert `explore` and BOTH remap their horizon onto it. Those are claims about other files that
-// compile green the moment they stop holding — ruling 1's defect class exactly — and either half
-// coming off would silently re-break the subagent while every assertion above stayed green on a grant
-// nobody spends: drop the assert and the execution gate spends a different action, drop the remap and
-// the horizon filter falls back to the registered name and withdraws the tool.
-// ─────────────────────────────────────────────────────────────────────────────
 describe("glob and grep still assert `explore`, and still remap their horizon onto it", () => {
   // CODE ONLY: both files EXPLAIN the shared action at length, and a guard that read prose would be
   // satisfied by the comment describing the very rule it is meant to pin.

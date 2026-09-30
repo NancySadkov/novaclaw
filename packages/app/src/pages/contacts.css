@@ -2,8 +2,114 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, 150px);
   align-content: start;
+  align-items: start;
   gap: 12px;
   padding: 12px;
+}
+
+.officer-group {
+  width: 150px;
+  min-width: 0;
+}
+.officer-team-stack {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: calc(100% - 8px);
+  min-height: 44px;
+  margin: 7px 4px 5px;
+  padding: 7px;
+  border: 1px solid #b9955c44;
+  border-radius: 10px;
+  background: var(--v2-background-bg-layer-02);
+  color: var(--v2-text-text-muted);
+  box-shadow:
+    0 3px 0 -1px var(--v2-background-bg-layer-02),
+    0 4px 0 -1px #b9955c44,
+    0 7px 0 -3px var(--v2-background-bg-layer-02),
+    0 8px 0 -3px #b9955c33;
+  cursor: pointer;
+}
+.officer-team-stack:hover,
+.officer-team-stack:focus-visible,
+.officer-team-stack[data-open="true"] {
+  outline: 2px solid #bd945b80;
+  outline-offset: 2px;
+  color: var(--v2-text-text-base);
+}
+.officer-team-faces {
+  display: flex;
+  flex-shrink: 0;
+  padding-right: 5px;
+}
+.officer-team-faces > * {
+  width: 22px;
+  height: 22px;
+  margin-right: -6px;
+  border: 1px solid #b9955c80;
+  font-size: 8px;
+}
+.officer-team-count {
+  flex: 1;
+  font-size: 11px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.officer-team-stack [data-component="icon"] {
+  flex-shrink: 0;
+}
+.officer-team-stack[data-open="true"] [data-component="icon"] {
+  transform: rotate(180deg);
+}
+.officer-team-attention {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  min-width: 18px;
+  padding-inline: 4px;
+  border-radius: 6px;
+  background: var(--v2-state-bg-info);
+  color: var(--v2-state-fg-info);
+  font-size: 10px;
+}
+.officer-team-panel {
+  grid-column: 1 / -1;
+  min-width: 0;
+  border: 1px solid #b9955c40;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #825bc412, #c2a16c08);
+  box-shadow: inset 0 1px 0 #fff1;
+}
+.officer-team-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  padding-left: 14px;
+  color: var(--v2-text-text-base);
+  font-size: 12px;
+}
+.officer-team-heading > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.officer-team-heading button {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+}
+.officer-team-heading button:hover,
+.officer-team-heading button:focus-visible {
+  background: var(--v2-background-bg-layer-03);
+}
+.officer-team-panel > .officer-roster-grid {
+  padding-top: 0;
 }
 
 .officer-sortable {
@@ -56,6 +162,11 @@
     inset 0 1px 0 #fff2,
     0 8px 24px #09041440,
     0 0 0 2px #c3a16c20;
+}
+
+.officer-card[data-governing="true"],
+.officer-card[data-contact-id="owner"] {
+  cursor: pointer;
 }
 
 .officer-card-art {
@@ -247,9 +358,15 @@
 
 @media (max-width: 639px) {
   .officer-roster-grid {
+    grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
     gap: 8px;
     padding: 8px 4px;
     justify-content: center;
+  }
+  .officer-group,
+  .officer-sortable,
+  .officer-card {
+    width: 100%;
   }
   .officer-roster-toolbar {
     padding: 6px 8px;

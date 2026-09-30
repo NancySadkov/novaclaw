@@ -22,12 +22,11 @@ import { Pty } from "@novaclaw/core/pty"
 import { PtyID } from "@novaclaw/core/pty/schema"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import type { SessionMessage } from "@novaclaw/schema/session-message"
-import { Scratch } from "@novaclaw/core/scratch"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { faultEvidence, sessionErrorDisplay } from "@novaclaw/core/session/session-error"
 import { InvalidRequestError } from "@novaclaw/protocol/errors"
-import { Clock, Effect } from "effect"
+import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { HttpServerResponse } from "effect/unstable/http"
 import { RecipeApi, handlerLayer } from "../handler-api"
@@ -502,168 +501,6 @@ export const RecipeHandler = handlerLayer(
               Effect.catch(() => Effect.void),
             )
             return HttpApiSchema.NoContent.make()
-          }),
-        )
-        .handle(
-          "recipe.run",
-          Effect.fn(function* (ctx) {
-            const recipe = yield* Effect.promise(() => Recipe.read(ctx.params.slug, builtins))
-            if (recipe === undefined)
-              return yield* new InvalidRequestError({ message: `No recipe named "${ctx.params.slug}"` })
-
-            // ── THE DOOR: ruling 14's one machine-read field, checked before anything happens ──────────
-            //
-            // `needs` states host-capability facts ("a C compiler"). This is the only place that reads
-            // them, and it runs BEFORE `Recipe.materialize` and BEFORE `sessions.create` deliberately:
-            // everything below cooks with `permissionMode: "bypass"` in a freshly materialized folder, so
-            // a recipe whose prerequisites are absent used to fail at a compile step — or after doing
-            // partial work — rather than at the door, and left a scratch folder behind either way.
-            // AGENTS.md calls the bundled set *the install's health check*; one that cannot say "you are
-            // missing a C compiler" is failing its stated job.
-            //
-            // ⚠️ It REFUSES; it can never install, grant or run anything. Ruling 14's own reasoning: a
-            // shared recipe is untrusted input the moment it lands, so it *may state what it needs and may
-            // never state what it gets* — a `needs` entry that triggered a package install would be that
-            // escalation wearing a different hat. The probe resolves names on PATH and stats paths, and
-            // that is the whole of its authority.
-            //
-            // ⚠️ Ruling 2 is why this can only block on a fact we actually probed: an unrecognised `needs`
-            // entry is `unknown`, never `absent`, so it NEVER blocks a cook — a false "you are missing gcc"
-            // on a machine that has one is worse than no check. The refusal names what was looked for and
-            // says how to override it, which is editing the recipe's own prose (there is no setting, by
-            // design). It surfaces as the Recipes app's error toast, the same path an unknown slug takes.
-            const unmet = Recipe.unmetMessage(
-              recipe.name,
-              Recipe.checkNeeds(yield* Effect.promise(() => Recipe.needsOf(recipe.slug))),
-            )
-            if (unmet !== undefined) return yield* new InvalidRequestError({ message: unmet })
-
-            // Default work dir: a per-recipe folder under the scratch workspace, suffixed with the run time
-            // so a second cook never collides with the first one's files.
-            const now = yield* Clock.currentTimeMillis
-            const directory =
-              ctx.payload.directory?.trim() ||
-              path.join(yield* Effect.promise(() => Scratch.ensure()), "recipes", `${recipe.slug}-${now}`)
-
-            const materialized = yield* Effect.tryPromise({
-              try: () => Recipe.materialize(recipe.slug, directory),
-              catch: badRequest,
-            })
-            if (materialized.skipped.length > 0 || materialized.failed.length > 0) {
-              const details = [
-                ...(materialized.skipped.length > 0
-                  ? [`Already there and left untouched: ${materialized.skipped.join(", ")}.`]
-                  : []),
-                ...(materialized.failed.length > 0 ? [`Could not copy: ${materialized.failed.join(", ")}.`] : []),
-              ].join(" ")
-              return yield* new InvalidRequestError({
-                message:
-                  `Not cooking “${recipe.name}”: its inputs were not copied completely. ${details} ` +
-                  "I did not start the agent, so it cannot mistake a partial folder for the recipe. " +
-                  "Choose an empty folder or repair the named recipe asset, then try again.",
-              })
-            }
-            const assets = materialized.copied
-
-            const model = modelRef(ctx.payload.model)
-
-            /**
-             * 🔴 **A cook belongs to the RECIPE service, and each run is one of its sub-sessions**
-             * (owner, 2026-08-28: *"no ghosthouse architecture"*). It used to be created with no
-             * agent at all — work nobody owned, which is exactly the shape the roster cannot show and
-             * the user cannot point at.
-             *
-             * ⚠️ A CHILD, not a second root: cooks run many at a time and one live root per agent is
-             * enforced in the database. The parent call is idempotent — `createSessionRecord` hands
-             * back the service's existing chat rather than minting a sibling.
-             */
-            // ⚠️ `OwnerRequiredError` is unreachable on both creates below — each names
-            // `RECIPE_ID` — so it is died on rather than widening this endpoint's error channel with
-            // something no caller can act on. If either agent ever went away, this fails loudly at
-            // the seam instead of returning a 400 that blames the user (NC-SEC-020).
-            const recipeRoot = yield* sessions
-              .create({
-                agent: AgentV2.RECIPE_ID,
-                location: { directory: AbsolutePath.make(directory) },
-                title: "Recipes",
-              })
-              .pipe(Effect.orDie)
-            const session = yield* sessions
-              .create({
-                agent: AgentV2.RECIPE_ID,
-                parentID: recipeRoot.id,
-                location: { directory: AbsolutePath.make(directory) },
-                title: recipe.name,
-                // Cooking is a "go and do it" action, not a conversation: the user picked a recipe and a folder
-                // and expects work to happen. Left interactive+ASK it landed them in a chat full of pending
-                // permission prompts for a task they had already approved by pressing Run — `bypass` is what
-                // fixed that, and it is write access to THIS FOLDER only (writing outside stays guarded
-                // independently of the mode). The work folder is freshly materialized for this cook, so "free
-                // inside it" is the whole intent.
-                //
-                // ⚠️ The TYPE is `interactive` deliberately, and reverting it to `goal-oriented` breaks
-                // cooking on Windows. Attendance is what the Agent Jail keys on: an UNATTENDED chain root
-                // requires sandbox confinement for raw shell execution, and no sandbox backend exists on
-                // Windows/macOS yet — so `bash` is DENIED outright there. Measured 2026-07-26: every one of
-                // the seven shipped recipes lost its shell on Windows; `hello-c` and `pi-100-machin` — the
-                // pair AGENTS.md calls the install health check — wrote correct C they could never compile,
-                // and `install-health-check` duly reported the install as broken. And the attendance claim is
-                // simply TRUE: the user pressed Run and is looking at the chat, so an ask (only reachable for
-                // out-of-folder work) reaches a human who can answer it.
-                type: "interactive",
-                permissionMode: "bypass",
-                ...(ctx.payload.strict ? { strict: ctx.payload.strict } : {}),
-                ...(model ? { model } : {}),
-                ...(ctx.payload.agent ? { agent: AgentV2.ID.make(ctx.payload.agent) } : {}),
-                // Traceable back to what was cooked, and which copy.
-                metadata: { recipeSlug: recipe.slug, recipeName: recipe.name },
-              })
-              .pipe(Effect.orDie)
-            // The session already exists by now, so a prompt failure must not read as "nothing happened":
-            // report it with the session id so the user can open that chat and send the recipe themselves.
-            yield* sessions.prompt({ sessionID: session.id, prompt: { text: recipe.prompt }, delivery: "queue" }).pipe(
-              Effect.catch((error) =>
-                Effect.fail(
-                  new InvalidRequestError({
-                    message:
-                      `Started the session for "${recipe.name}" and copied its files to ${directory}, but could not ` +
-                      `queue the prompt (${error._tag}). Open that chat and send the recipe text to cook it.`,
-                  }),
-                ),
-              ),
-            )
-            // What `recipe.verify` will judge this cook on, handed back with the session so a caller never
-            // has to re-read the recipe to know what to check — and so a recipe that declares NOTHING is
-            // visibly unjudgeable at the moment the cook starts, rather than looking like a pass later.
-            const produces = yield* Effect.promise(() => Recipe.producesOf(recipe.slug))
-            // ── WHICH MODEL WILL COOK, handed back with the session ───────────────────────────────────
-            //
-            // 🔴 Without this the NOT AVAILABLE arm could not fire from the app at all (measured
-            // 2026-08-18). The Recipes app sends no `model`, so the session inherits the instance
-            // default and NOTHING downstream knew what it was — a cook on a model that cannot call tools
-            // read "Did not work · about: this NovaClaw", blaming the install for a model limit. The
-            // arm existed and worked at this HTTP surface; the app simply never had a value to send.
-            //
-            // ⚠️ Resolved through the LOCATION-scoped catalog for the work directory — the same one the
-            // cook's own session resolves through — for the reason spelled out above `locations`: a bare
-            // `yield* Catalog.Service` on this instance-global group typechecks and dies at runtime.
-            //
-            // ⚠️ A failure here answers `undefined` and never fails the run. The caller then sends no
-            // model to `verify`, which checks the files normally — an unresolvable model is `not-measured`
-            // downstream, never `not-applicable`. A cook must never be lost to a catalog read.
-            const cooking =
-              model ??
-              (yield* Catalog.Service.use((catalog) => catalog.model.default()).pipe(
-                Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
-                Effect.catchCause(() => Effect.succeed(undefined)),
-              ))
-            return {
-              sessionID: session.id,
-              directory,
-              assets,
-              produces,
-              ...(cooking ? { model: modelSpec(cooking) } : {}),
-            }
           }),
         )
         .handle(

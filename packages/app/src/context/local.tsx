@@ -124,9 +124,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
      * different answers is the defect the roster already paid for once.
      */
     const list = createMemo(() => {
-      const colleagues = sync().data.agent.filter(
-        (item) => item.mode !== "subagent" && !item.hidden && !AgentV2.POSTURE_IDS.has(item.name),
-      )
+      const colleagues = sync().data.agent.filter((item) => AgentV2.isColleague({ ...item, id: item.name }))
       const governing = colleagues.find((item) => item.name === AgentV2.DEFAULT_COLLEAGUE_ID)
       return governing === undefined ? colleagues : [governing, ...colleagues.filter((item) => item !== governing)]
     })

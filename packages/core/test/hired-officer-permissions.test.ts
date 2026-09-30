@@ -77,20 +77,7 @@ describe("a colleague the user hired", () => {
     Effect.gen(function* () {
       const roster = yield* rosterWith({ name: "Theron", mode: "primary" })
       const hired = roster.get("theron")!
-      // ⚠️ Was `build`, which was RETIRED on 2026-09-27 and no longer exists on the roster — so
-      // `roster.get("build")` returned `undefined` and `effectFor` threw three frames later. This file
-      // was not in the run that caught the retirement, which is the honest lesson: a roster change
-      // invalidates every test that names a member of it, and the sweep has to be by BEHAVIOUR
-      // ("a non-officer built-in") rather than by the id that happened to be there.
-      //
-      // `messenger` is the right subject, and picking it took two attempts worth recording. It is a
-      // built-in standing on `floor({ officer: false })` plus exactly one grant, `plan_enter`, which is
-      // already excluded below. `general` was tried first and is wrong: it carries its own
-      // `todowrite: "deny"`, so comparing against it would have tested `general`'s bespoke rules
-      // rather than the floor. `compaction` and `explore` are worse still — both end in a catch-all
-      // deny. There is exactly one built-in that adds nothing, and a test that reached for the wrong
-      // one would have reported a floor difference that does not exist.
-      const builtin = roster.get("messenger")!
+      const builtin = AgentPlugin.floor({ scratchDirs: AgentPlugin.SCRATCH_DIRS, officer: false })
       // Two deliberate differences are excluded. `plan_enter`: a colleague that switched the user's
       // mode under them would be a surprise, and the person has a mode picker. `question`: denied for
       // officers under principle 13, *the chat IS the channel*, while a built-in keeps a grant for an

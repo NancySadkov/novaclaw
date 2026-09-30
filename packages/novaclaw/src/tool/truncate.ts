@@ -2,9 +2,7 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { Duration, Effect, Layer, Option, Schedule, Context } from "effect"
 import path from "path"
-import type { Agent } from "../agent/agent"
 import { FSUtil } from "@novaclaw/core/fs-util"
-import { evaluate } from "@/permission"
 import { Config } from "@/config/config"
 import { ToolID } from "./schema"
 import { TRUNCATION_DIR } from "./truncation-dir"
@@ -25,11 +23,6 @@ export interface Options {
   direction?: "head" | "tail"
 }
 
-function hasTaskTool(agent?: Agent.Info) {
-  if (!agent?.permission) return false
-  return evaluate("task", "*", agent.permission).action !== "deny"
-}
-
 export interface Interface {
   readonly cleanup: () => Effect.Effect<void>
   readonly write: (text: string) => Effect.Effect<string>
@@ -37,7 +30,7 @@ export interface Interface {
    * Returns output unchanged when it fits within the limits, otherwise writes the full text
    * to the truncation directory and returns a preview plus a hint to inspect the saved file.
    */
-  readonly output: (text: string, options?: Options, agent?: Agent.Info) => Effect.Effect<Result>
+  readonly output: (text: string, options?: Options) => Effect.Effect<Result>
   /**
    * Resolved truncation limits: values from `tool_output` in novaclaw config, or MAX_LINES / MAX_BYTES if unset.
    */
@@ -102,7 +95,7 @@ export const layer = Layer.effect(
       }
     })
 
-    const output = Effect.fn("Truncate.output")(function* (text: string, options: Options = {}, agent?: Agent.Info) {
+    const output = Effect.fn("Truncate.output")(function* (text: string, options: Options = {}) {
       const resolved = yield* limits()
       const maxLines = options.maxLines ?? resolved.maxLines
       const maxBytes = options.maxBytes ?? resolved.maxBytes
@@ -146,9 +139,7 @@ export const layer = Layer.effect(
       const preview = out.join("\n")
       const file = yield* write(text)
 
-      const hint = hasTaskTool(agent)
-        ? `The tool call succeeded but the output was truncated. Full output saved to: ${file}\nUse the Task tool to have explore agent process this file with Grep and Read (with offset/limit). Do NOT read the full file yourself - delegate to save context.`
-        : `The tool call succeeded but the output was truncated. Full output saved to: ${file}\nUse Grep to search the full content or Read with offset/limit to view specific sections.`
+      const hint = `The tool call succeeded but the output was truncated. Full output saved to: ${file}\nUse Grep to search the full content or Read with offset/limit to view specific sections.`
 
       return {
         content:

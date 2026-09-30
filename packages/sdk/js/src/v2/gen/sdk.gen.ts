@@ -4057,37 +4057,6 @@ class ApiV2Recipe extends NovaClawApiClient {
   }
 
   /**
-   * Cook a recipe
-   *
-   * Copies the recipe's assets into a work directory and starts a session there with the recipe as its prompt. The recipe itself is never modified, so it stays re-runnable.
-   */
-  public run<ThrowOnError extends boolean = false>(
-    parameters: {
-      slug: string
-      directory?: string
-      model?: string
-      agent?: string
-      strict?: T.SessionStrictOverride
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const path = { slug: parameters?.["slug"] }
-    const body = {
-      directory: parameters?.["directory"],
-      model: parameters?.["model"],
-      agent: parameters?.["agent"],
-      strict: parameters?.["strict"],
-    }
-    return (options?.client ?? this.client).post<T.V2RecipeRunResponses, T.V2RecipeRunErrors, ThrowOnError>({
-      url: "/api/recipe/{slug}/run",
-      ...options,
-      path,
-      body,
-      headers: { "Content-Type": "application/json", ...options?.headers },
-    })
-  }
-
-  /**
    * Check what a cook actually produced
    *
    * Reads the work directory and reports, per artifact the recipe declares, whether it is there and whether it is the shape its name implies. Deterministic and read-only: the harness looks at the filesystem, so the verdict does not depend on what the model said about its own work. Runs nothing and writes nothing, and may be called as often as you like.

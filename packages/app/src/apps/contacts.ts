@@ -61,12 +61,14 @@ export interface AgentLike {
   /** Whether the harness gives this colleague a final acceptance-check reminder. */
   readonly mode: "primary" | "subagent" | "all"
   readonly hidden: boolean
+  readonly service?: boolean | undefined
   readonly color?: string | undefined
 }
 
 /** What the roster shows for one colleague. */
 export interface ContactView {
   readonly id: string
+  readonly superior?: string | undefined
   /** The name on the row. */
   readonly name: string
   /** The job line under the name — the role, not a summary of its prompt. */
@@ -119,9 +121,7 @@ export const superiorCandidates = (roster: readonly AgentLike[], selfID: string)
     (candidate) =>
       candidate.id !== selfID &&
       candidate.id !== GOVERNING_ID &&
-      !POSTURE_AGENTS.has(candidate.id) &&
-      candidate.mode !== "subagent" &&
-      !candidate.hidden &&
+      isColleague(candidate) &&
       candidate.paused !== true &&
       !reachesSelf(candidate),
   )
@@ -181,6 +181,7 @@ const view = (agent: AgentLike): ContactView => {
   const governing = agent.id === GOVERNING_ID
   return {
     id: agent.id,
+    superior: agent.superior,
     name: agent.name?.trim() || displayName(agent.id),
     title: agent.title?.trim() || undefined,
     // Carried through verbatim: absent stays absent, so a colleague with no line yet renders without
@@ -269,6 +270,40 @@ export const searchRoster = (views: readonly ContactView[], query: string): read
     [item.name, item.title ?? "", item.id].some((field) => field.toLowerCase().includes(needle)),
   )
 }
+
+export interface ContactGroup extends ContactView {
+  readonly children: readonly ContactGroup[]
+}
+
+export const groupRoster = (views: readonly ContactView[], query = ""): readonly ContactGroup[] => {
+  const nodes = new Map(views.map((view) => [view.id, { ...view, children: [] as ContactGroup[] }]))
+  const roots: ContactGroup[] = []
+  for (const view of views) {
+    const node = nodes.get(view.id)!
+    const parent = AgentV2.resolveSuperior(view.id, view.superior, views, { includePaused: true })
+    if (
+      view.id === "owner" ||
+      view.id === GOVERNING_ID ||
+      !parent ||
+      parent.id === GOVERNING_ID
+    )
+      roots.push(node)
+    else nodes.get(parent.id)!.children.push(node)
+  }
+  roots.sort((left, right) => Number(right.id === "owner") - Number(left.id === "owner"))
+  if (!query.trim()) return roots
+  const matching = new Set(searchRoster(views, query).map((view) => view.id))
+  const filter = (nodes: readonly ContactGroup[]): ContactGroup[] =>
+    nodes.flatMap((node) => {
+      if (matching.has(node.id)) return [node]
+      const children = filter(node.children)
+      return children.length ? [{ ...node, children }] : []
+    })
+  return filter(roots)
+}
+
+export const groupMembers = (group: ContactGroup): readonly ContactGroup[] =>
+  group.children.flatMap((child) => [child, ...groupMembers(child)])
 
 /** The two sentences a row shows about memory. BOTH are always rendered: the first is what this
  *  colleague keeps to itself, the second is what every colleague can see. Naming only the first is

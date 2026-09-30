@@ -104,20 +104,6 @@ export interface UpdateRecipeInput {
   readonly produces?: readonly string[]
 }
 
-export interface RunResult {
-  readonly sessionID: string
-  readonly directory: string
-  readonly assets: readonly string[]
-  /** What `verifyRecipe` will judge this cook on. Empty = the recipe declares no postcondition. */
-  readonly produces: readonly string[]
-  /**
-   * The model this cook runs on, as `providerID/modelID` — the instance's own answer, so a caller that
-   * named no model still learns which one it got. Pass it back to {@link verifyRecipe}: without it the
-   * NOT AVAILABLE arm cannot fire from this app at all, and a tools-less model reads as a broken install.
-   */
-  readonly model?: string
-}
-
 /**
  * The deterministic verdict on a cook. A cook's outcome used to be prose, so nothing
  * could read it mechanically; this is the harness's own answer, read off the work directory.
@@ -381,12 +367,6 @@ export const duplicateRecipe = (server: ServerConnection.HttpBase, slug: string)
 
 export const removeRecipe = (server: ServerConnection.HttpBase, slug: string) =>
   call<void>(server, "DELETE", `api/recipe/${encodeURIComponent(slug)}`)
-
-export const runRecipe = (
-  server: ServerConnection.HttpBase,
-  slug: string,
-  input: { directory?: string; strict?: { enabled?: boolean; attempts?: number; wallMinutes?: number } } = {},
-) => call<RunResult>(server, "POST", `api/recipe/${encodeURIComponent(slug)}/run`, input)
 
 /**
  * Ask the instance what a cook actually produced. Read-only, runs nothing, and idempotent — safe to call

@@ -51,6 +51,22 @@ describe("ConfigStoreWrite.mergePatch", () => {
 })
 
 describe("ConfigStoreWrite.apply", () => {
+  it.effect("refuses retired internal roles atomically, including as the default officer", () =>
+    Effect.gen(function* () {
+      const agents = yield* AgentConfigStore.Service
+      for (const id of ["general", "explore", "messenger", "recipe"]) {
+        const created = yield* ConfigStoreWrite.apply(decodeInfo({ agents: { [id]: { mode: "primary" } } }), {
+          writer: "operator",
+        }).pipe(Effect.exit)
+        expect(Exit.isFailure(created)).toBe(true)
+        const selected = yield* ConfigStoreWrite.apply(decodeInfo({ default_agent: id }), { writer: "operator" }).pipe(
+          Effect.exit,
+        )
+        expect(Exit.isFailure(selected)).toBe(true)
+        expect((yield* agents.configured())[id]).toBeUndefined()
+      }
+    }),
+  )
   it.effect("routes log settings and updates the already-running hot-path projection", () =>
     Effect.gen(function* () {
       const settings = yield* SettingsConfigStore.Service
@@ -73,7 +89,9 @@ describe("ConfigStoreWrite.apply", () => {
         subsystems: { mcp: "debug" },
       })
       expect(LogSettings.level()).toBe("error")
-      const stored = yield* ConfigStoreWrite.apply(decodeInfo({ storage: { max_database_mib: 1024, prune_interval_hours: 6 } }))
+      const stored = yield* ConfigStoreWrite.apply(
+        decodeInfo({ storage: { max_database_mib: 1024, prune_interval_hours: 6 } }),
+      )
       expect([...stored]).toEqual(["storage"])
       expect((yield* settings.all()).storage).toEqual({ max_database_mib: 1024, prune_interval_hours: 6 })
       yield* ConfigStoreWrite.apply(decodeInfo({ storage: { prune_interval_hours: 3 } }))
@@ -337,38 +355,47 @@ describe("ConfigStoreWrite export→import round-trip (step 8)", () => {
 })
 
 describe("ConfigStoreWrite.overlay", () => {
-  it.effect("presents home-owned grants as portable paths while retaining absolute runtime grants and project paths", () =>
-    Effect.gen(function* () {
-      const agents = yield* AgentConfigStore.Service
-      const resources = [
-        path.join(Global.Path.data, "tool-output", "*"),
-        path.join(Global.Path.tmp, "*"),
-        path.join(Scratch.forAgent("geryon"), "*"),
-      ]
-      const project = path.resolve("C:/Work/project")
-      yield* agents.setLayers("geryon", [Schema.decodeUnknownSync(ConfigAgent.Info)({
-        directory: project,
-        permissions: resources.flatMap((resource) => [
-          { action: "external_directory_read", resource, effect: "allow" },
-          { action: "external_directory_write", resource, effect: "allow" },
-        ]),
-      })])
-
-      const runtime = (yield* ConfigStoreWrite.overlay({})) as {
-        agents: Record<string, { directory: string; permissions: { resource: string }[] }>
-      }
-      const settings = (yield* ConfigStoreWrite.overlay({}, "settings")) as typeof runtime
-      const portable = (yield* ConfigStoreWrite.overlay({}, "portable")) as typeof runtime
-      expect(runtime.agents.geryon.permissions.map((rule) => rule.resource)).toEqual(resources.flatMap((resource) => [resource, resource]))
-      for (const view of [settings, portable]) {
-        expect(view.agents.geryon.directory).toBe(project)
-        expect(view.agents.geryon.permissions.map((rule) => rule.resource)).toEqual([
-          "novaclaw-home:/data/tool-output/*", "novaclaw-home:/data/tool-output/*",
-          "novaclaw-home:/data/tmp/*", "novaclaw-home:/data/tmp/*",
-          "novaclaw-home:/data/scratch/geryon/*", "novaclaw-home:/data/scratch/geryon/*",
+  it.effect(
+    "presents home-owned grants as portable paths while retaining absolute runtime grants and project paths",
+    () =>
+      Effect.gen(function* () {
+        const agents = yield* AgentConfigStore.Service
+        const resources = [
+          path.join(Global.Path.data, "tool-output", "*"),
+          path.join(Global.Path.tmp, "*"),
+          path.join(Scratch.forAgent("geryon"), "*"),
+        ]
+        const project = path.resolve("C:/Work/project")
+        yield* agents.setLayers("geryon", [
+          Schema.decodeUnknownSync(ConfigAgent.Info)({
+            directory: project,
+            permissions: resources.flatMap((resource) => [
+              { action: "external_directory_read", resource, effect: "allow" },
+              { action: "external_directory_write", resource, effect: "allow" },
+            ]),
+          }),
         ])
-      }
-    }),
+
+        const runtime = (yield* ConfigStoreWrite.overlay({})) as {
+          agents: Record<string, { directory: string; permissions: { resource: string }[] }>
+        }
+        const settings = (yield* ConfigStoreWrite.overlay({}, "settings")) as typeof runtime
+        const portable = (yield* ConfigStoreWrite.overlay({}, "portable")) as typeof runtime
+        expect(runtime.agents.geryon.permissions.map((rule) => rule.resource)).toEqual(
+          resources.flatMap((resource) => [resource, resource]),
+        )
+        for (const view of [settings, portable]) {
+          expect(view.agents.geryon.directory).toBe(project)
+          expect(view.agents.geryon.permissions.map((rule) => rule.resource)).toEqual([
+            "novaclaw-home:/data/tool-output/*",
+            "novaclaw-home:/data/tool-output/*",
+            "novaclaw-home:/data/tmp/*",
+            "novaclaw-home:/data/tmp/*",
+            "novaclaw-home:/data/scratch/geryon/*",
+            "novaclaw-home:/data/scratch/geryon/*",
+          ])
+        }
+      }),
   )
 
   it.effect("shows officer Nudges in settings without adding them to stored export", () =>

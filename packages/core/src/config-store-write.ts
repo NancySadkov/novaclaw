@@ -345,6 +345,13 @@ const LAYERED_ARMS = [
  */
 const applyToStores = (patch: Config.Info, writer: AgentV2.ConfigWriter) =>
   Effect.gen(function* () {
+    const retired = Object.keys(patch.agents ?? {}).filter((id) => AgentV2.RETIRED_ROLE_IDS.has(id))
+    if (patch.default_agent && AgentV2.RETIRED_ROLE_IDS.has(patch.default_agent)) retired.push("default_agent")
+    if (retired.length)
+      return yield* new ConfigWriteRefused({
+        keys: retired,
+        message: `These internal roles have been removed: ${retired.join(", ")}. Hire an officer with a new identity instead.`,
+      })
     // 🔴 PRE-FLIGHT, before a single store is touched: a fragment naming the governing agent is
     // refused rather than written-and-ignored. One place, no per-arm plumbing, and all-or-nothing —
     // the rest of the patch is NOT applied, matching the remove verb's rule that a refused request

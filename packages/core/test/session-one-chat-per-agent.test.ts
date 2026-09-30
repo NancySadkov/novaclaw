@@ -275,26 +275,14 @@ describe("one chat per colleague", () => {
     }),
   )
 
-  it.effect("the SERVICE agents exist, so a subsystem never has to start ownerless work", () =>
+  it.effect("retired internal roles can never be colleagues", () =>
     Effect.gen(function* () {
-      /**
-       * 🔴 Owner, 2026-08-28: *"if something needs special treatment, it needs a service/system
-       * agent, which can be named and pointed at … TLDR: no ghosthouse architecture."* The messenger
-       * console and the recipe cook used to create sessions with NO agent — rows belonging to nobody.
-       * They now name these, and run each per-item chat as a sub-session.
-       *
-       * ⚠️ NOT postures. A posture is exempt from one-chat-per-agent and carries no Contacts row, so
-       * a service built on one would be the same ghost wearing a different hat: the whole point is
-       * that the thing which started a chat can be named and pointed at.
-       *
-       * ⚠️ What this does NOT prove is that the kernel refuses an ownerless root. It does not — see
-       * the note in `createSessionRecord`. The invariant is held at the DOORS today.
-       */
-      for (const id of [AgentV2.MESSENGER_ID, AgentV2.RECIPE_ID]) {
-        expect(AgentV2.POSTURE_IDS.has(id)).toBe(false)
-        expect(AgentV2.isColleague({ id, mode: "primary" })).toBe(true)
+      const d = yield* deps
+      for (const id of AgentV2.RETIRED_ROLE_IDS) {
+        expect(AgentV2.isColleague({ id, mode: "primary", hidden: false })).toBe(false)
+        const result = yield* createSessionRecord(d, { agent: id, location: { directory: here() } } as never).pipe(Effect.exit)
+        expect(Exit.isFailure(result)).toBe(true)
       }
-      yield* Effect.void
     }),
   )
 

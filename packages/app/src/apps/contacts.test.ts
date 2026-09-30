@@ -7,6 +7,7 @@ import {
   roster,
   searchRoster,
   superiorCandidates,
+  groupRoster,
   type AgentLike,
 } from "./contacts"
 
@@ -14,6 +15,40 @@ const agent = (over: Partial<AgentLike> & { id: string }): AgentLike => ({
   mode: "primary",
   hidden: false,
   ...over,
+})
+
+test("the roster groups multiple projects beneath their managers and keeps owner and Nova first", () => {
+  const rows = roster([
+    agent({ id: "nova" }),
+    agent({ id: "owner" }),
+    agent({ id: "manager", paused: true }),
+    agent({ id: "other" }),
+    agent({ id: "builder", superior: "manager" }),
+    agent({ id: "reviewer", superior: "manager" }),
+    agent({ id: "designer", superior: "other" }),
+    agent({ id: "assistant", superior: "builder" }),
+  ])
+  const groups = groupRoster(rows)
+  expect(groups.map((group) => group.id)).toEqual(["owner", "nova", "manager", "other"])
+  expect(groups[2]!.children.map((group) => group.id)).toEqual(["builder", "reviewer"])
+  expect(groups[2]!.children[0]!.children.map((group) => group.id)).toEqual(["assistant"])
+  const found = groupRoster(rows, "assistant")
+  expect(found.map((group) => group.id)).toEqual(["manager"])
+  expect(found[0]!.children.map((group) => group.id)).toEqual(["builder"])
+  expect(found[0]!.children[0]!.children[0]!.id).toBe("assistant")
+  expect(groupRoster(rows, "absent")).toEqual([])
+})
+
+test("orphaned and cyclic officers remain reachable on the roster", () => {
+  const groups = groupRoster(
+    roster([
+      agent({ id: "nova" }),
+      agent({ id: "lost", superior: "gone" }),
+      agent({ id: "a", superior: "b" }),
+      agent({ id: "b", superior: "a" }),
+    ]),
+  )
+  expect(groups.map((group) => group.id)).toEqual(["nova", "a", "b", "lost"])
 })
 
 describe("who appears in the roster", () => {

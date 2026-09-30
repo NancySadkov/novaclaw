@@ -485,18 +485,6 @@ describe("the wire: the receipt is reachable, or it is a library nobody calls", 
     expect(source).toContain("Effect.provide(locations.get(Location.Ref.make(")
   })
 
-  test("`recipe.run` hands back what the cook will be judged on, AND which model will cook", async () => {
-    const source = await fs.readFile(HANDLER, "utf8")
-    for (const needle of ["sessionID: session.id", "directory,", "assets,", "produces,"])
-      expect({ needle, found: source.includes(needle) }).toEqual({ needle, found: true })
-    // 🔴 The model is the half that was missing, and its absence made NOT AVAILABLE unreachable from the
-    // app: `recipes.tsx` names no model on run, so unless the RUN resolves the instance default and hands
-    // it back, nothing downstream can ever know a tools-less model cooked. Measured 2026-08-18 as
-    // "Did not work · about: this NovaClaw" on an instance whose only model could not call tools.
-    expect(source).toContain("catalog.model.default()")
-    expect(source).toContain("{ model: modelSpec(cooking) }")
-  })
-
   test("`recipe.verify` reads the COOK's own outcome, and classifies it through the shared classifier", async () => {
     // The transport defect's structural fix: an empty folder is only evidence about the install if the
     // cook reached the install. The handler must (a) read the session and (b) ask `faultEvidence` — never

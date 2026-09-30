@@ -1,3 +1,4 @@
+import { isColleague } from "@/apps/contacts"
 import { createMemo, Show } from "solid-js"
 import { useLocation, useNavigate } from "@solidjs/router"
 import { Icon } from "@novaclaw/ui/v2/icon"
@@ -25,7 +26,7 @@ export function TeamChatButton(props: { sessionID: string }) {
     const info = session()
     if (!info?.agent || info.parentID) return
     const match = roster().find((agent) => agent.id === info.agent)
-    if (!match || match.mode === "subagent" || match.hidden) return
+    if (!match || !isColleague(match)) return
     const kind = match.config?.["kind"]
     if (kind === "chat" || kind === "human" || match.config?.["shortChat"] === true) return
     return match

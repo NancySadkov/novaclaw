@@ -21703,88 +21703,6 @@
         ]
       }
     },
-    "/api/recipe/{slug}/run": {
-      "post": {
-        "tags": ["recipe"],
-        "operationId": "v2.recipe.run",
-        "parameters": [
-          {
-            "name": "slug",
-            "in": "path",
-            "schema": {
-              "type": "string"
-            },
-            "required": true
-          }
-        ],
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Recipe.RunResult",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RecipeRunResult"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "UnauthorizedError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Copies the recipe's assets into a work directory and starts a session there with the recipe as its prompt. The recipe itself is never modified, so it stays re-runnable.",
-        "summary": "Cook a recipe",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "directory": {
-                    "type": "string"
-                  },
-                  "model": {
-                    "type": "string"
-                  },
-                  "agent": {
-                    "type": "string"
-                  },
-                  "strict": {
-                    "$ref": "#/components/schemas/SessionStrictOverride"
-                  }
-                },
-                "additionalProperties": false
-              }
-            }
-          },
-          "required": true
-        },
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.run({\n  ...\n})"
-          }
-        ]
-      }
-    },
     "/api/recipe/{slug}/verify": {
       "post": {
         "tags": ["recipe"],
@@ -29950,6 +29868,9 @@
             "type": "boolean"
           },
           "hidden": {
+            "type": "boolean"
+          },
+          "service": {
             "type": "boolean"
           },
           "topP": {
@@ -39727,6 +39648,9 @@
             "type": "string",
             "enum": ["agent", "chat", "human"]
           },
+          "service": {
+            "type": "boolean"
+          },
           "operationMode": {
             "type": "string",
             "enum": ["interactive", "unattended"]
@@ -45227,34 +45151,6 @@
           }
         },
         "required": ["name", "prompt"],
-        "additionalProperties": false
-      },
-      "RecipeRunResult": {
-        "type": "object",
-        "properties": {
-          "sessionID": {
-            "type": "string"
-          },
-          "directory": {
-            "type": "string"
-          },
-          "assets": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "produces": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "model": {
-            "type": "string"
-          }
-        },
-        "required": ["sessionID", "directory", "assets", "produces"],
         "additionalProperties": false
       },
       "RecipeVerifyCheck": {

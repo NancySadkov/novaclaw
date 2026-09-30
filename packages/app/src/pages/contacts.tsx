@@ -10,6 +10,8 @@ import {
   createSortable,
   type DragEvent,
 } from "@thisbeyond/solid-dnd"
+import { OfficerGroups } from "@/components/officer-groups"
+import { AgentV2 } from "@novaclaw/core/agent"
 import { OfficerTileSensor } from "@/components/officer-tile-sensor"
 import { useConfirm } from "@/components/dialog-confirm"
 import { useTabs } from "@/context/tabs"
@@ -20,7 +22,14 @@ import { useServer } from "@/context/server"
 import { useLanguage } from "@/context/language"
 import { AppPage } from "@/components/app-page"
 import { agentColor } from "@/utils/agent"
-import { moveOfficerOrder, roster, searchRoster, type ContactView } from "@/apps/contacts"
+import {
+  groupRoster,
+  groupMembers,
+  moveOfficerOrder,
+  roster,
+  type ContactGroup,
+  type ContactView,
+} from "@/apps/contacts"
 import { listSessions, listUsage, rememberOfficerChat, startChat } from "@/apps/agent-list"
 import { planHire } from "@/apps/agent-hire"
 import { cloneAgent, isProtectedAgentCloneRefusal } from "@/apps/agent-clone"
@@ -337,7 +346,31 @@ ${copy.detail}`
   const [viewStore, setViewStore] = createStore({ rows: [] as readonly ContactView[] })
   createEffect(() => setViewStore("rows", reconcile(roster(agents() ?? [], savedOrder()), { key: "id" })))
   const views = () => viewStore.rows
-  const shown = createMemo(() => searchRoster(views(), query()))
+  const [groupStore, setGroupStore] = createStore({ rows: [] as readonly ContactGroup[] })
+  const [expanded, setExpanded] = createSignal<ReadonlySet<string>>(new Set())
+  createEffect(() => setGroupStore("rows", reconcile(groupRoster(views(), query()), { key: "id" })))
+  const shown = () => groupStore.rows
+  createEffect(() => {
+    if (!query().trim()) return
+    const groups = shown().flatMap((group) => [group, ...groupMembers(group)])
+    setExpanded(
+      (current) => new Set([...current, ...groups.filter((group) => group.children.length).map((group) => group.id)]),
+    )
+  })
+  const toggleTeam = (id: string) =>
+    setExpanded((current) => {
+      const next = new Set(current)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  const reportingLine = (id: string) => {
+    const view = views().find((view) => view.id === id)
+    const parent = view && AgentV2.resolveSuperior(id, view.superior, views(), { includePaused: true })
+    return parent?.id ?? "nova"
+  }
+  const teamAttention = (ids: readonly string[]) =>
+    ids.filter((id) => unseenOfficerSessions(liveSessions(), id, unseen()).length > 0).length
 
   /**
    * Open a colleague's config — through the DIALOG STACK, the same door the composer's Tune button
@@ -376,15 +409,15 @@ ${copy.detail}`
 
   const officerIDs = () =>
     views()
-      .filter((view) => view.kind === "officer")
+      .filter((view) => view.kind === "officer" && view.id !== "owner")
       .map((view) => view.id)
   const moveByKeyboard = (id: string, direction: -1 | 1) => {
-    if (savingOrder()) return
-    const ids = officerIDs()
+    if (savingOrder() || query().trim()) return
+    const ids = officerIDs().filter((candidate) => reportingLine(candidate) === reportingLine(id))
     const at = ids.indexOf(id)
     const target = at + direction
     if (at < 0 || target < 0 || target >= ids.length) return
-    const next = moveOfficerOrder(ids, id, ids[target]!)
+    const next = moveOfficerOrder(officerIDs(), id, ids[target]!)
     if (next)
       void persistOrder(next).then(() => {
         requestAnimationFrame(() =>
@@ -394,9 +427,9 @@ ${copy.detail}`
   }
   const onDragEnd = (event: DragEvent) => {
     suppressOpenUntil = Date.now() + 300
-    if (savingOrder() || cancelledDrag) return
+    if (savingOrder() || cancelledDrag || query().trim()) return
     const { draggable, droppable } = event
-    if (!draggable || !droppable) return
+    if (!draggable || !droppable || reportingLine(String(draggable.id)) !== reportingLine(String(droppable.id))) return
     const next = moveOfficerOrder(officerIDs(), String(draggable.id), String(droppable.id))
     if (next) void persistOrder(next)
   }
@@ -482,19 +515,23 @@ ${copy.detail}`
               collisionDetector={closestCenter}
             >
               <OfficerTileSensor
-                disabled={menuOpen() || savingOrder()}
+                disabled={menuOpen() || savingOrder() || !!query().trim()}
                 onCancel={() => {
                   cancelledDrag = true
                 }}
               />
               <SortableProvider
-                ids={shown()
-                  .filter((view) => view.kind === "officer")
+                ids={views()
+                  .filter((view) => view.kind === "officer" && view.id !== "owner")
                   .map((view) => view.id)}
               >
                 <div class="officer-roster-grid">
-                  <For each={shown()}>
-                    {(view) => {
+                  <OfficerGroups
+                    groups={shown()}
+                    expanded={expanded()}
+                    onToggle={toggleTeam}
+                    attention={teamAttention}
+                    renderCard={(view) => {
                       const row = {
                         get view() {
                           return view
@@ -534,7 +571,7 @@ ${copy.detail}`
                         },
                         onOpen: () => openConfig(view.id),
                       } satisfies ContactRowProps
-                      return view.kind === "governing" ? (
+                      return view.kind === "governing" || view.id === "owner" ? (
                         <ContactRow {...row} />
                       ) : (
                         <SortableContactRow
@@ -544,7 +581,7 @@ ${copy.detail}`
                         />
                       )
                     }}
-                  </For>
+                  />
                 </div>
               </SortableProvider>
             </DragDropProvider>
@@ -734,7 +771,7 @@ function ContactRow(props: ContactRowProps) {
         role="link"
         tabIndex={0}
         aria-label={props.view.name}
-        aria-description={language.t("contacts.order.hint")}
+        aria-description={props.onKeyboardMove ? language.t("contacts.order.hint") : undefined}
         onDragStart={(event: Event) => event.preventDefault()}
         onClick={(event: MouseEvent) => {
           if ((event.target as HTMLElement).closest("button")) return

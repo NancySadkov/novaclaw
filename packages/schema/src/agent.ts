@@ -107,6 +107,7 @@ export const Info = Schema.Struct({
   shortChat: Schema.Boolean.pipe(optional),
   /** The three roster entity kinds: a full officer `agent`, a pure `chat`, or the owning `human`. */
   kind: Schema.Literals(["agent", "chat", "human"]).pipe(optional),
+  service: Schema.Boolean.pipe(optional),
   /** Persistent operation defaults for the colleague's canonical root session. */
   operationMode: Schema.Literals(["interactive", "unattended"]).pipe(optional),
   goal: Schema.String.pipe(optional),

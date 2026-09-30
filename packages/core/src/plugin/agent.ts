@@ -15,42 +15,6 @@ import { COMPACTION_SYSTEM } from "../compaction-system-prompt"
 
 const TRUNCATION_GLOB = path.join(Global.Path.data, "tool-output", "*")
 /**
- * The brief a built-in NON-OFFICER runs on — the service agents (Messenger, Recipes) and anything else
- * that stands on the floor without being a colleague.
- *
- * 🔴 **Renamed from `BUILD_SYSTEM` on 2026-09-27, when the anonymous agents were retired.** It was
- * named for `build`, and `build` no longer exists as an agent — a constant carrying a dead agent's
- * name is the same defect as the `defaultID` alias deleted alongside it, one scope smaller: a reader
- * greps `BUILD_SYSTEM`, finds no `build`, and has to reconstruct the history to know who this is for.
- * The name now says what it is rather than which agent it used to belong to.
- *
- * ⚠️ The TEXT is unchanged, deliberately. It is a prompt string, not a product decision about who may
- * be addressed, and the owner's 2026-09-27 instruction was to replace NOVA's brief and remove two
- * agents — not to rewrite the brief of the service agents that remain. Changing it would be a
- * different, unrequested change wearing this one's clothes.
- */
-const SERVICE_SYSTEM =
-  "You are an AI coding agent. Help the user accomplish software engineering tasks by inspecting the workspace, making targeted changes, and using tools according to the configured permissions."
-
-const PROMPT_EXPLORE = `You are a file search specialist. You excel at thoroughly navigating and exploring codebases.
-
-Your strengths:
-- Rapidly finding files using glob patterns
-- Searching code and text with powerful regex patterns
-- Reading and analyzing file contents
-
-Guidelines:
-- Use \`glob\` for broad file pattern matching
-- Use \`grep\` for searching file contents with regex
-- Use \`read\` when you know the specific file path you need to read
-- Adapt your search approach based on the thoroughness level specified by the caller
-- Return file paths as absolute paths in your final response
-- For clear communication, avoid using emojis
-- Do not create any files, or run bash commands that modify the user's system state in any way
-
-Complete the user's search request efficiently and report your findings clearly.`
-
-/**
  * Nova's job instructions. Owner-supplied prose, 2026-09-27, replacing the earlier brief verbatim.
  *
  * ⚠️ **The word "owner" here is the INSTANCE'S OWNER, not Nova's direct report** — the human the
@@ -345,83 +309,10 @@ export const Plugin = define({
         )
       })
 
-      draft.update(AgentV2.ID.make("general"), (item) => {
-        item.description =
-          "General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel."
-        item.mode = "subagent"
-        item.permissions.push(...PermissionV2.merge(defaults, [{ action: "todowrite", resource: "*", effect: "deny" }]))
-      })
-
-      draft.update(AgentV2.ID.make("explore"), (item) => {
-        item.description =
-          'Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. "src/components/**/*.tsx"), search code for keywords (eg. "API endpoints"), or answer questions about the codebase (eg. "how do API endpoints work?"). When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "very thorough" for comprehensive analysis across multiple locations and naming conventions.'
-        item.system = PROMPT_EXPLORE
-        item.mode = "subagent"
-        item.permissions.push(
-          ...PermissionV2.merge(
-            defaults,
-            [
-              { action: "*", resource: "*", effect: "deny" },
-              // ONE grant for the search pair, because `glob` and `grep` are ONE action at BOTH
-              // seams now: each is registered through `Tool.withPermission(…, "explore")`, so
-              // `ToolRegistry.materialize`'s horizon filter resolves the same `explore` the tools'
-              // own `permission.assert` spends. This line used to be THREE rules — `explore` for
-              // execution plus `grep`/`glob` for the horizon, because `Tool.permission` falls back
-              // to the name a tool is REGISTERED under — and dropping either half broke the agent a
-              // different way: without `explore` every search was denied while both tools stayed
-              // advertised, without `grep`/`glob` the tools vanished from the horizon entirely.
-              // ⚠️ It is still load-bearing and must stay AFTER the catch-all deny above. `explore`
-              // is in `AMBIENT_SAFE_BASELINE`, i.e. inside `defaults`, which comes BEFORE that deny
-              // — and `evaluate` is findLast, so the ambient floor is shadowed here and this rule is
-              // the only thing that lets the read-only search agent do its only job. (It was broken
-              // before B4c too: the old catch-all ALLOW sat in the same shadowed position.)
-              // `test/permission-baseline.test.ts` pins both the execution and the horizon half.
-              { action: "explore", resource: "*", effect: "allow" },
-              { action: "webfetch", resource: "*", effect: "allow" },
-              { action: "websearch", resource: "*", effect: "allow" },
-              { action: "read", resource: "*", effect: "allow" },
-            ],
-            // The external-directory half of the floor, re-applied AFTER the explore grants above so
-            // a read-only agent keeps the whitelisted scratch dirs it needs to write its report into.
-            floor({ scratchDirs: SCRATCH_DIRS, officer: false }).filter((rule) =>
-              rule.action.startsWith("external_directory"),
-            ),
-          ),
-        )
-      })
-
-      /**
-       * The SERVICE agents. They own the sessions their subsystem starts, so no row is ever
-       * ownerless (`AgentV2.MESSENGER_ID` carries the doctrine).
-       *
-       * ⚠️ They stand on the SAME floor and carry the SAME prompt as `build`, deliberately: these
-       * sessions used to run unattributed, which the runner resolved to the default agent. Giving
-       * them an owner is a change of BOOKKEEPING, not of what the work may do — a service agent with
-       * a narrower permission set would have quietly broken recipe cooking and messaging.
-       *
-       * ⚠️ `hidden`, so they do not crowd the roster — but named and titled, so a chat they started
-       * can be traced to something a person can point at.
-       */
-      for (const service of [
-        { id: AgentV2.MESSENGER_ID, name: "Messenger", title: "Messaging Service" },
-        { id: AgentV2.RECIPE_ID, name: "Recipes", title: "Recipe Service" },
-      ]) {
-        draft.update(service.id, (item) => {
-          item.name = service.name
-          item.title = service.title
-          item.description = `Owns the chats ${service.name} starts, so none of them belongs to nobody.`
-          item.system ??= SERVICE_SYSTEM
-          item.mode = "primary"
-          item.hidden = true
-          item.permissions.push(
-            ...PermissionV2.merge(defaults, [{ action: "plan_enter", resource: "*", effect: "allow" }]),
-          )
-        })
-      }
-
       draft.update(AgentV2.ID.make("compaction"), (item) => {
         item.mode = "primary"
         item.hidden = true
+        item.service = true
         item.system = COMPACTION_SYSTEM
         item.permissions.push(...PermissionV2.merge(defaults, [{ action: "*", resource: "*", effect: "deny" }]))
       })

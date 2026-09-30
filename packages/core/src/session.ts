@@ -641,6 +641,8 @@ export const createSessionRecord = (
      */
     if (input.parentID === undefined && input.agent === undefined)
       return yield* new OwnerRequiredError({ reason: "A root session must name the agent it runs as." })
+    if (input.agent !== undefined && AgentV2.RETIRED_ROLE_IDS.has(input.agent))
+      return yield* new OwnerRequiredError({ reason: `The internal role ${input.agent} has been removed. Choose an officer.` })
     const colleagueRoot =
       input.parentID === undefined && input.agent !== undefined && !AgentV2.POSTURE_IDS.has(input.agent)
     // A named officer's lifecycle kind must be durable at construction: omission used to leave old

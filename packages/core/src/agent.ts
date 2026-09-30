@@ -48,30 +48,6 @@ export const OWNER_ID = ID.make("owner")
  */
 export const DEFAULT_COLLEAGUE_ID = NOVA_ID
 
-/**
- * 🔴 **NAMED SERVICE AGENTS — the subsystems that start work of their own.**
- *
- * Owner, 2026-08-28: *"if something needs special treatment, it needs a service/system agent, which
- * can be named and pointed at. If we need to process multiple instance of that item at once, we just
- * tell that agent to spawn sub agents. TLDR: no ghosthouse architecture."*
- *
- * The messenger gateway and the recipe cook used to create sessions with NO agent at all — rows that
- * belonged to nobody, appeared on no roster, and could be reached from nowhere. That is the same
- * haunting `DEFAULT_COLLEAGUE_ID` was written to end, arriving through a different door: a machine
- * one instead of the composer.
- *
- * ⚠️ They are HIDDEN, not secret. A hidden agent still has a name, a title and a Contacts row under
- * "Hidden" — so the thing that started a chat can be pointed at, which is the whole difference
- * between a service and a ghost.
- *
- * ⚠️ **Many at once become CHILDREN, never siblings.** One live root per agent is enforced in the
- * database, so a second messaging account cannot be a second messenger root. It is a sub-session of
- * the messenger's own chat — which is what "tell that agent to spawn sub agents" means, and it is
- * how the fleet already works everywhere else.
- */
-export const MESSENGER_ID = ID.make("messenger")
-export const RECIPE_ID = ID.make("recipe")
-
 /** Agent ids the user may not delete through any surface.
  *
  *  🔴 Nova is on this list because the tree root cannot be deleted without deleting the tree. The
@@ -199,12 +175,21 @@ export const hasFullAuthority = (agentID: string | undefined): boolean => agentI
 
 /** Resolve one reporting line against the live roster. Invalid, missing, self-referential and cyclic
  * lines all fall back to Nova, so imported config cannot turn the chain of command into a loop. */
-export const resolveSuperior = (
+export const resolveSuperior = <
+  T extends {
+    readonly id: string
+    readonly superior?: string | undefined
+    readonly mode?: string
+    readonly hidden?: boolean
+    readonly service?: boolean | undefined
+    readonly paused?: boolean | undefined
+  },
+>(
   selfID: string,
   configured: string | undefined,
-  roster: ReadonlyArray<Info>,
+  roster: ReadonlyArray<T>,
   options: { readonly includePaused?: boolean } = {},
-): Info | undefined => {
+): T | undefined => {
   const byID = new Map(roster.map((agent) => [String(agent.id), agent]))
   if (selfID === OWNER_ID || selfID === NOVA_ID) return byID.get(OWNER_ID)
   const fallback = byID.get(NOVA_ID)
@@ -214,7 +199,7 @@ export const resolveSuperior = (
   if (superior === undefined || !isColleague(superior) || (superior.paused === true && !options.includePaused))
     return fallback
   const seen = new Set([selfID])
-  let cursor: Info | undefined = superior
+  let cursor: T | undefined = superior
   while (cursor !== undefined && String(cursor.id) !== NOVA_ID && String(cursor.id) !== OWNER_ID) {
     const id = String(cursor.id)
     if (seen.has(id)) return fallback
@@ -265,7 +250,23 @@ export const isColleague = (agent: {
   readonly id: string
   readonly mode?: string
   readonly hidden?: boolean
-}): boolean => agent.mode !== "subagent" && !agent.hidden && !POSTURE_IDS.has(agent.id)
+  readonly service?: boolean | undefined
+}): boolean =>
+  agent.mode !== "subagent" &&
+  !agent.hidden &&
+  !agent.service &&
+  !POSTURE_IDS.has(agent.id) &&
+  !RETIRED_ROLE_IDS.has(agent.id)
+
+export const RETIRED_ROLE_IDS: ReadonlySet<string> = new Set(["general", "explore", "messenger", "recipe"])
+
+export const directReports = (id: string, roster: readonly Info[]): Info[] =>
+  roster.filter(
+    (candidate) =>
+      candidate.id !== id &&
+      isColleague(candidate) &&
+      resolveSuperior(candidate.id, candidate.superior, roster, { includePaused: true })?.id === id,
+  )
 
 /**
  * THE THREE ROSTER KINDS (owner, 2026-09-17): a full officer `agent`, a pure `chat`, or the instance
@@ -339,10 +340,12 @@ export const layer = Layer.effect(
           draft.default = id
         },
         update: (id, fn) => {
+          if (RETIRED_ROLE_IDS.has(id)) return
           const current = draft.agents.get(id) ?? (Info.empty(id) as Types.DeepMutable<Info>)
           if (!draft.agents.has(id)) draft.agents.set(id, current)
           fn(current)
           current.id = id
+          if (id === "compaction") current.service = true
           if (id === NOVA_ID) current.superior = OWNER_ID
           if (id === OWNER_ID) {
             current.kind = "human"

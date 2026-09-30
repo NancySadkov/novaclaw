@@ -10,11 +10,17 @@ import {
   instanceHeaders,
   instanceUrl,
 } from "@/utils/instance-fetch"
-import { MessengerApiError, messengerAccounts, messengerDeclareChatSource, messengerDrivers, messengerUpdateAccount } from "@/utils/messenger-api"
+import {
+  MessengerApiError,
+  messengerAccounts,
+  messengerDeclareChatSource,
+  messengerDrivers,
+  messengerUpdateAccount,
+} from "@/utils/messenger-api"
 import { createSchedule, listScheduleFires, listSchedules, removeSchedule, updateSchedule } from "@/utils/schedule-api"
 import { adhocDiscard, fsWrite, switchFeature } from "@/utils/fs-api"
 import { discoverInstances } from "@/utils/instance-discovery"
-import { importRecipeArchive, MAX_RECIPE_ARCHIVE_BYTES, recipeArchive, runRecipe } from "@/utils/recipe-api"
+import { importRecipeArchive, MAX_RECIPE_ARCHIVE_BYTES, recipeArchive } from "@/utils/recipe-api"
 import { registryRows } from "@/utils/registry-api"
 import { schedulerSnapshot } from "@/utils/scheduler-api"
 import { cancelPendingPrompt, fetchPendingPrompts } from "@/utils/session-pending-api"
@@ -445,13 +451,6 @@ describe("every collapsed client still puts the same request on the wire", () =>
     const removed = await wire(() => removeSchedule(server, "postal agent", "task 1"))
     expect(removed.url).toBe(updated.url)
     expect(removed.method).toBe("DELETE")
-  })
-
-  test("recipe-api -> POST /api/recipe/{slug}/run, slug encoded, body carried", async () => {
-    const sent = await wire(() => runRecipe(server, "a b", { directory: "/w" }), { status: 200, body: {} })
-    expect(sent.url).toBe("http://instance.test:4096/api/recipe/a%20b/run")
-    expect(sent.method).toBe("POST")
-    expect(sent.body).toBe(JSON.stringify({ directory: "/w" }))
   })
 
   test("recipe-api -> ZIP upload/download keep remote routing, auth, and raw bytes", async () => {

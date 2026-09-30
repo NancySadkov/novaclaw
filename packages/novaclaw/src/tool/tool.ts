@@ -3,7 +3,7 @@ import { Effect, Schema } from "effect"
 import type { JSONSchema7 } from "json-schema"
 import type { SessionID, MessageID } from "../session/schema"
 import * as Truncate from "./truncate"
-import { Agent } from "@/agent/agent"
+import type { Agent } from "@/agent/agent"
 
 interface Metadata {
   [key: string]: any
@@ -103,7 +103,6 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
   id: string,
   init: Init<Parameters, Result>,
   truncate: Truncate.Interface,
-  agents: Agent.Interface,
 ) {
   return () =>
     Effect.gen(function* () {
@@ -134,8 +133,7 @@ function wrap<Parameters extends Schema.Decoder<unknown>, Result extends Metadat
           if (result.metadata.truncated !== undefined) {
             return result
           }
-          const agent = yield* agents.get(ctx.agent)
-          const truncated = yield* truncate.output(result.output, {}, agent)
+          const truncated = yield* truncate.output(result.output)
           return {
             ...result,
             output: truncated.content,
@@ -159,13 +157,12 @@ export function define<
 >(
   id: ID,
   init: Effect.Effect<Init<Parameters, Result>, never, R>,
-): Effect.Effect<Info<Parameters, Result>, never, R | Truncate.Service | Agent.Service> & { id: ID } {
+): Effect.Effect<Info<Parameters, Result>, never, R | Truncate.Service> & { id: ID } {
   return Object.assign(
     Effect.gen(function* () {
       const resolved = yield* init
       const truncate = yield* Truncate.Service
-      const agents = yield* Agent.Service
-      return { id, init: wrap(id, resolved, truncate, agents) }
+      return { id, init: wrap(id, resolved, truncate) }
     }),
     { id },
   )

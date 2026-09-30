@@ -1,7 +1,6 @@
 import { Schema } from "effect"
 import { RecipeOfficers } from "@novaclaw/schema/recipe-officer"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
-import { SessionStrict } from "@novaclaw/schema/session-strict"
 import { UnknownReason } from "@novaclaw/schema/unknown-reason"
 import { InvalidRequestError } from "../errors"
 
@@ -121,33 +120,6 @@ const LaunchResult = Schema.Struct({
 
 export const hasRecipePreviewTicketURL = (url: URL): boolean =>
   /^\/api\/recipe-preview\/[^/]+\/[^/]+\/.+/.test(url.pathname)
-
-const RunResult = Schema.Struct({
-  sessionID: Schema.String,
-  /** Where it is cooking — the scratch folder by default, or whatever the caller chose. */
-  directory: Schema.String,
-  assets: Schema.Array(Schema.String),
-  /**
-   * The artifacts this recipe says a finished cook leaves behind — what `recipe.verify` will check in
-   * `directory` afterwards. Empty means the recipe declares no postcondition, so the only possible verdict
-   * is "I cannot tell": a caller should say that rather than showing a success it did not earn.
-   */
-  produces: Schema.Array(Schema.String),
-  /**
-   * The model this cook will actually run on, as `providerID/modelID` — the caller's own `model` when
-   * they named one, otherwise the instance's default, resolved HERE so the caller does not have to.
-   *
-   * ⚠️ **Without this the NOT AVAILABLE arm was structurally unreachable from the app** (measured
-   * 2026-08-18). The Recipes app sends no `model` on run, kept none, and passed none to `recipe.verify`
-   * — so on an instance whose only model cannot call tools, a cook that could never have written a file
-   * reported *"Did not work · about: this NovaClaw"*. Both arms worked at this HTTP surface; nothing ever
-   * sent one. Handing the resolved model back with the session is what closes that loop.
-   *
-   * Optional because an instance with no usable model at all must say nothing rather than guess: an
-   * unresolvable model is `not-measured` downstream, never `not-applicable`.
-   */
-  model: Schema.optional(Schema.String),
-}).annotate({ identifier: "Recipe.RunResult" })
 
 /**
  * One declared artifact, and what the HARNESS found when it looked — the deterministic success artifact
@@ -413,31 +385,6 @@ export const RecipeGroup = HttpApiGroup.make("server.recipe")
       success: HttpApiSchema.NoContent,
     }).annotateMerge(
       OpenApi.annotations({ identifier: "v2.recipe.remove", summary: "Delete a recipe and its assets" }),
-    ),
-  )
-  .add(
-    HttpApiEndpoint.post("recipe.run", "/api/recipe/:slug/run", {
-      params: { slug: Schema.String },
-      payload: Schema.Struct({
-        /** Where to cook. Omit for a fresh folder under the app-managed scratch workspace. */
-        directory: Schema.optional(Schema.String),
-        model: Schema.optional(Schema.String),
-        agent: Schema.optional(Schema.String),
-        /** Cook under the Strict harness (the composer's Strict switch, per cook). Omit to inherit the
-         *  global Settings → Strict mode. Without this the ONLY way to cook in Strict was to flip the
-         *  instance-global setting first: the cook's prompt is queued by this call, so a per-session
-         *  override applied afterwards would race the drain. */
-        strict: Schema.optional(SessionStrict.Override),
-      }),
-      success: RunResult,
-      error: InvalidRequestError,
-    }).annotateMerge(
-      OpenApi.annotations({
-        identifier: "v2.recipe.run",
-        summary: "Cook a recipe",
-        description:
-          "Copies the recipe's assets into a work directory and starts a session there with the recipe as its prompt. The recipe itself is never modified, so it stays re-runnable.",
-      }),
     ),
   )
   .add(

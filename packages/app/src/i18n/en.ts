@@ -2304,6 +2304,10 @@ export const dict = {
   // can see it, not for where it is stored: "shared" is the fact a user needs before they write
   // something into it.
   "contacts.search": "Search by name or job",
+  "contacts.team.title": "{{name}}'s team",
+  "contacts.team.count": "Team · {{count}}",
+  "contacts.team.close": "Close {{name}}'s team",
+  "contacts.team.unread": "Officers with unread replies: {{count}}",
   "contacts.hire": "Hire",
   "contacts.hiring": "Hiring…",
   "contacts.hireFailed": "Could not hire a colleague",

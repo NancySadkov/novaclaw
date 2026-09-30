@@ -13,9 +13,14 @@ import { chatFor, type SessionLike, type UsageMinute } from "./roster-live"
  *  projection whose entries are keyed by `name` and carry no `title`, `personality`, `avatar` or
  *  `memory`. Two shapes for one concept is a migration this page must not silently depend on — filed
  *  in `notes/named-agents.md`. */
-export const listAgents = async (sdk: {
-  agent: { list: (parameters?: undefined, options?: { signal?: AbortSignal }) => Promise<{ data?: unknown; error?: unknown }> }
-}, signal?: AbortSignal): Promise<AgentLike[]> => {
+export const listAgents = async (
+  sdk: {
+    agent: {
+      list: (parameters?: undefined, options?: { signal?: AbortSignal }) => Promise<{ data?: unknown; error?: unknown }>
+    }
+  },
+  signal?: AbortSignal,
+): Promise<AgentLike[]> => {
   const response = await sdk.agent.list(undefined, { signal })
   /**
    * 🔴 **A FAILED read is not an empty roster** (owner, 2026-08-28: *"contacts app now has no
@@ -91,6 +96,7 @@ export const listAgents = async (sdk: {
           ? { status: row["status"] as { task: string; observed: number } }
           : {}),
         color: text("color"),
+        service: row["service"] === true,
         memory,
         ...(typeof row["archiveChats"] === "boolean" ? { archiveChats: row["archiveChats"] } : {}),
         // ⚠️ Carried EXPLICITLY for the reason `workspace` above documents: this mapper is a hand-kept
@@ -156,9 +162,7 @@ export const listSessions = async (sdk: {
         parentID: text("parentID"),
         agent: text("agent"),
         type:
-          row["type"] === "interactive" ||
-          row["type"] === "sub-agent" ||
-          row["type"] === "goal-oriented"
+          row["type"] === "interactive" || row["type"] === "sub-agent" || row["type"] === "goal-oriented"
             ? row["type"]
             : undefined,
         title: text("title"),
@@ -350,8 +354,7 @@ export const resolveOfficerChat = async (
 ): Promise<string | undefined> => {
   const answer = await officerChat(sdk, input.agentID)
   if (answer.kind === "chat") {
-    if (input.serverKey !== undefined)
-      rememberOfficerChat(input.serverKey, input.agentID, answer.id, answer.directory)
+    if (input.serverKey !== undefined) rememberOfficerChat(input.serverKey, input.agentID, answer.id, answer.directory)
     return answer.id
   }
   // 🔴 No chat, but ALSO no such colleague. Creating here writes a transcript owned by a name that is

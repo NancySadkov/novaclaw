@@ -12,7 +12,6 @@ import { llmClient } from "@novaclaw/core/effect/app-node-platform"
 import { COMPACTION_SYSTEM } from "@novaclaw/core/compaction-system-prompt"
 
 import PROMPT_GENERATE from "./generate.txt"
-import PROMPT_EXPLORE from "./prompt/explore.txt"
 import { Permission } from "@/permission"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
 import { Global } from "@novaclaw/core/global"
@@ -35,6 +34,7 @@ export const Info = Schema.Struct({
   mode: Schema.Literals(["subagent", "primary", "all"]),
   native: Schema.optional(Schema.Boolean),
   hidden: Schema.optional(Schema.Boolean),
+  service: Schema.optional(Schema.Boolean),
   topP: Schema.optional(Schema.Finite),
   temperature: Schema.optional(Schema.Finite),
   color: Schema.optional(Schema.String),
@@ -54,7 +54,7 @@ export type Info = DeepMutable<Schema.Schema.Type<typeof Info>>
 
 // Built-in agent ids — mirrors the `native: true` set the `agents` map defines
 // below. Used to restore the V1 `native` flag when projecting a V2 agent.
-const NATIVE_IDS = new Set(["build", "plan", "general", "explore", "compaction"])
+const NATIVE_IDS = new Set(["nova", "owner", "compaction"])
 
 // Project an authoritative V2 `AgentV2.Info` onto this legacy V1 `Info` wire shape.
 // V2 (`@novaclaw/v2/Agent`) is the store the RUNNER reads and is a SUPERSET —
@@ -71,6 +71,7 @@ export function fromV2(info: AgentV2.Info): Info {
     mode: info.mode,
     native: NATIVE_IDS.has(info.id) || undefined,
     hidden: info.hidden,
+    service: info.service,
     topP: typeof topP === "number" ? topP : undefined,
     temperature: typeof temperature === "number" ? temperature : undefined,
     color: info.color,
@@ -228,49 +229,9 @@ export const layer = Layer.effect(
           // roots, so a projection that re-declared them here would be the last place they still exist.
           // What a chat runs as is `permissionMode` (`Permission.merge` below carries the per-mode
           // rules), and a chat BELONGS to a colleague.
-          general: {
-            name: "general",
-            description: `General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel.`,
-            permission: Permission.merge(
-              defaults,
-              Permission.fromConfig({
-                todowrite: "deny",
-              }),
-              user,
-            ),
-            options: {},
-            mode: "subagent",
-            native: true,
-          },
-          explore: {
-            name: "explore",
-            permission: Permission.merge(
-              defaults,
-              Permission.fromConfig({
-                "*": "deny",
-                // ⚠️ `grep`/`glob`/`list` were granted here and are gone (2026-07-30). Nothing spends
-                // them: `list` never named a tool or an action anywhere in the tree, and glob/grep were
-                // remapped onto the single `explore` action, which the V2 tools assert through
-                // `PermissionV2` — not through this legacy ruleset. No `explore` grant replaces them
-                // for the same reason: the only name this island actually evaluates is `task`
-                // (`tool/truncate.ts`), so a grant here would be one
-                // more rule nobody reads. The V2 explore subagent's grants live in
-                // `core/src/plugin/agent.ts` and are pinned by `core/test/permission-baseline.test.ts`.
-                bash: "allow",
-                webfetch: "allow",
-                websearch: "allow",
-                read: "allow",
-              }),
-              user,
-            ),
-            description: `Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. "src/components/**/*.tsx"), search code for keywords (eg. "API endpoints"), or answer questions about the codebase (eg. "how do API endpoints work?"). When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "very thorough" for comprehensive analysis across multiple locations and naming conventions.`,
-            prompt: PROMPT_EXPLORE,
-            options: {},
-            mode: "subagent",
-            native: true,
-          },
           compaction: {
             name: "compaction",
+            service: true,
             mode: "primary",
             native: true,
             hidden: true,
@@ -287,6 +248,7 @@ export const layer = Layer.effect(
         }
 
         for (const [key, value] of Object.entries(cfg.agents ?? {})) {
+          if (AgentV2.RETIRED_ROLE_IDS.has(key)) continue
           if (value.disabled) {
             delete agents[key]
             continue

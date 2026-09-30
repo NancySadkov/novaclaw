@@ -31,7 +31,7 @@ describe("the composer's default chat belongs to a colleague", () => {
   const list = source.slice(source.indexOf("const list = createMemo"), source.indexOf("const connected = createMemo"))
 
   test("🔴 the posture ids are filtered out of the composer's agent list", () => {
-    expect(list).toContain("AgentV2.POSTURE_IDS.has(item.name)")
+    expect(list).toContain("AgentV2.isColleague({ ...item, id: item.name })")
     // The hand-rolled pair that let it through.
     expect(list).not.toContain('item.mode !== "subagent" && !item.hidden)')
   })
@@ -45,10 +45,7 @@ describe("the composer's default chat belongs to a colleague", () => {
   })
 
   test("…and the launcher it is matched against still says the same thing", () => {
-    const launcher = readFileSync(
-      new URL("../pages/home-screen/new-agent-bar.tsx", import.meta.url),
-      "utf8",
-    )
+    const launcher = readFileSync(new URL("../pages/home-screen/new-agent-bar.tsx", import.meta.url), "utf8")
     expect(launcher).toContain("AgentV2.DEFAULT_COLLEAGUE_ID")
   })
 

@@ -1305,7 +1305,9 @@ export const layer = Layer.effect(
               Effect.orElseSucceed(() => undefined),
             )
           : undefined
-        const configuredSuperior = AgentV2.resolveSuperior(String(agent.id), agent.info?.superior, roster)
+        const configuredSuperior = AgentV2.resolveSuperior(String(agent.id), agent.info?.superior, roster, {
+          includePaused: true,
+        })
         const superiorName =
           parentAgent !== undefined
             ? (parentAgent.info?.name ?? String(parentAgent.id))
@@ -1315,12 +1317,7 @@ export const layer = Layer.effect(
         const role = parentAgent === undefined ? "agent" : "worker"
         const subordinates =
           role === "agent"
-            ? roster
-                .filter(
-                  (candidate) =>
-                    AgentV2.resolveSuperior(String(candidate.id), candidate.superior, roster)?.id === agent.id,
-                )
-                .map((candidate) => candidate.name ?? String(candidate.id))
+            ? AgentV2.directReports(agent.id, roster).map((candidate) => candidate.name ?? String(candidate.id))
             : []
         const jobInstructions =
           prototype?.system ??

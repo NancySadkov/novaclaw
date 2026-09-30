@@ -1483,6 +1483,7 @@ export type Agent = {
   mode: "subagent" | "primary" | "all"
   native?: boolean
   hidden?: boolean
+  service?: boolean
   topP?: number
   temperature?: number
   color?: string
@@ -4637,6 +4638,7 @@ export type AgentV2Info = {
   }
   shortChat?: boolean
   kind?: "agent" | "chat" | "human"
+  service?: boolean
   operationMode?: "interactive" | "unattended"
   goal?: string
   contextBudget?: boolean
@@ -6363,14 +6365,6 @@ export type RecipeSaveInput = {
   name: string
   description?: string
   prompt: string
-}
-
-export type RecipeRunResult = {
-  sessionID: string
-  directory: string
-  assets: Array<string>
-  produces: Array<string>
-  model?: string
 }
 
 export type RecipeVerifyCheck = {
@@ -17869,42 +17863,6 @@ export type V2RecipeDuplicateResponses = {
 }
 
 export type V2RecipeDuplicateResponse = V2RecipeDuplicateResponses[keyof V2RecipeDuplicateResponses]
-
-export type V2RecipeRunData = {
-  body: {
-    directory?: string
-    model?: string
-    agent?: string
-    strict?: SessionStrictOverride
-  }
-  path: {
-    slug: string
-  }
-  query?: never
-  url: "/api/recipe/{slug}/run"
-}
-
-export type V2RecipeRunErrors = {
-  /**
-   * InvalidRequestError
-   */
-  400: InvalidRequestError
-  /**
-   * UnauthorizedError
-   */
-  401: UnauthorizedError
-}
-
-export type V2RecipeRunError = V2RecipeRunErrors[keyof V2RecipeRunErrors]
-
-export type V2RecipeRunResponses = {
-  /**
-   * Recipe.RunResult
-   */
-  200: RecipeRunResult
-}
-
-export type V2RecipeRunResponse = V2RecipeRunResponses[keyof V2RecipeRunResponses]
 
 export type V2RecipeVerifyData = {
   body: {

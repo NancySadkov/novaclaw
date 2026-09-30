@@ -51,6 +51,7 @@ describe("every field the wire schema declares is accounted for", () => {
       id: "wren",
       mode: "primary",
       hidden: false,
+      service: true,
       paused: true,
       name: "Wren",
       title: "Writer",
@@ -100,6 +101,8 @@ describe("every field the wire schema declares is accounted for", () => {
     const [row] = await listAgents({
       agent: { list: async () => ({ data: { data: [full] } }) },
     } as never)
+    expect(row?.service).toBe(true)
+    expect(AgentV2.isColleague(row!)).toBe(false)
     // Carried at the TOP LEVEL, or inside `config` — the authored subset is spread wholesale there,
     // and a field a tile reads out of `config` is not lost.
     const carried = new Set([...Object.keys(row ?? {}), ...Object.keys((row?.config ?? {}) as object)])

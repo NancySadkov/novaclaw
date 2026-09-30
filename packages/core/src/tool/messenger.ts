@@ -532,7 +532,7 @@ export const layer = Layer.effectDiscard(
       Effect.gen(function* () {
         const listed = yield* MessengerStore.attempted(store.listAccounts())
         if (!listed.read) return { miss: { outcome: "unavailable", message: STORE_UNAVAILABLE } satisfies Output }
-        const owned = listed.value.filter((account) => agentID === AgentV2.MESSENGER_ID || account.agentID === agentID)
+        const owned = listed.value.filter((account) => account.agentID === agentID)
         const accounts = allowed === undefined ? owned : owned.filter((account) => allowed.has(account.id))
         if (accounts.length === 0)
           return {
@@ -662,9 +662,7 @@ export const layer = Layer.effectDiscard(
                     const listed = yield* MessengerStore.attempted(store.listAccounts())
                     if (!listed.read) return { outcome: "unavailable", message: STORE_UNAVAILABLE } satisfies Output
                     const allowedAccounts = scopedAccounts(scope)
-                    const owned = listed.value.filter(
-                      (account) => context.agent === AgentV2.MESSENGER_ID || account.agentID === context.agent,
-                    )
+                    const owned = listed.value.filter((account) => account.agentID === context.agent)
                     const accounts =
                       allowedAccounts === undefined ? owned : owned.filter((account) => allowedAccounts.has(account.id))
                     if (accounts.length === 0)

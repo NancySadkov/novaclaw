@@ -7,6 +7,7 @@ import { AgentConfigStore } from "./agent-config-store"
 import { Config } from "./config"
 import { ConfigAgent } from "./config/agent"
 import { OfficerPrompt } from "./officer-prompt"
+import { AgentV2 } from "./agent"
 import RESEARCHER_JOB from "./agent/research-officer.txt"
 import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
@@ -211,7 +212,8 @@ export const seedFromDirectory = (globalConfigDir: string) =>
       const layers: Record<string, ConfigAgent.Info[]> = {}
       for (const info of infos)
         for (const [name, item] of Object.entries(info.agents ?? {})) (layers[name] ??= []).push(item)
-      for (const [name, agentLayers] of Object.entries(layers)) yield* store.setLayers(name, agentLayers)
+      for (const [name, agentLayers] of Object.entries(layers))
+        if (!AgentV2.RETIRED_ROLE_IDS.has(name)) yield* store.setLayers(name, agentLayers)
     }
 
     // The default-agent import must NOT hide behind the agents gate (same reasoning as the
@@ -219,5 +221,6 @@ export const seedFromDirectory = (globalConfigDir: string) =>
     // otherwise freeze default-less forever. setDefaultIfEmpty protects a user-set default.
     let defaultAgent: string | undefined
     for (const info of infos) if (info.default_agent !== undefined) defaultAgent = info.default_agent
-    if (defaultAgent !== undefined) yield* store.setDefaultIfEmpty(defaultAgent)
+    if (defaultAgent !== undefined && !AgentV2.RETIRED_ROLE_IDS.has(defaultAgent))
+      yield* store.setDefaultIfEmpty(defaultAgent)
   })

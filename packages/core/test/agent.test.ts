@@ -123,23 +123,8 @@ describe("AgentV2", () => {
       const agents = yield* agent.all()
       expect(agents.map((item) => String(item.id)).sort()).toEqual([
         "compaction",
-        "explore",
-        "general",
-        /**
-         * The SERVICE agents (2026-08-28). The messenger console and the recipe cook used to create
-         * sessions with NO agent at all — rows belonging to nobody, on no roster, reachable from
-         * nowhere. They own that work now, so a chat a subsystem starts can be named and pointed at.
-         *
-         * ⚠️ Held to the SAME floor as every other built-in, which is what the loop below checks:
-         * owning a subsystem's chats grants no ambient authority over what may be run.
-         */
-        "messenger",
-        // Nova, the CEO (AGENTS.md — the structural metaphor). It joins the built-in roster and is
-        // held to the same floor as every other built-in below: governing WHO exists grants no
-        // ambient authority over what they may run.
         "nova",
         "owner",
-        "recipe",
         // "build" and "plan" left on 2026-09-27 when the anonymous agents were RETIRED (owner: "get
         // completely rid of build and plan both as colleagues and as machinery - we have completely
         // retired the anonymous agents. So they are not just ghosts polluting NovaClaw"). They were
@@ -153,6 +138,8 @@ describe("AgentV2", () => {
         // anyone, retired to internal machinery. Both removals are why the set is pinned by name.
       ])
       expect(agents.find((item) => item.id === AgentV2.NOVA_ID)?.avatar).toBeUndefined()
+      expect(agents.find((item) => item.id === "compaction")?.service).toBe(true)
+      expect(AgentV2.directReports(AgentV2.NOVA_ID, agents)).toEqual([])
       for (const item of agents) {
         expect(item.permissions.some((rule) => rule.action === "bash" && rule.effect !== "deny")).toBe(false)
       }
