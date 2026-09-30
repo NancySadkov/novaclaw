@@ -25,12 +25,15 @@ export const handle = Effect.fn("SessionWorkerExecutionBridge.handle")(function*
   readonly attempts: SessionExecutionAttempt.Interface
   readonly lease: SessionExecutionAttempt.Lease
   readonly message: Request
+  readonly cooperate?: () => Effect.Effect<boolean>
   readonly contextUpdated?: (update: SessionExecutionAttempt.ContextUpdate) => Effect.Effect<void>
 }) {
   if (!SessionWorkerProtocol.owns(input.lease, input.message) || !(yield* input.attempts.owns(input.lease)))
     return reply(input.message, "rejected", { error: "execution ownership changed" })
 
   switch (input.message.type) {
+    case "execution-cooperate":
+      return reply(input.message, input.cooperate && (yield* input.cooperate()) ? "yield" : "applied")
     case "execution-advance":
       yield* input.attempts.advance(input.lease, input.message.phase, input.message.checkpoint)
       return reply(input.message, "applied")

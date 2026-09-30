@@ -1,75 +1,3 @@
-/**
- * `recipe` — the authoring surface for the artifact the product is built on.
- *
- * AGENTS.md (*Recipes are source code for the AI era*): a recipe is a FOLDER — a `recipe.md` prompt plus
- * whatever assets it needs. You do not ship the artifact, you ship the instructions for cooking it, and an
- * agent cooks it fresh against today's toolchain. *Source rots, intent doesn't.* It is called the
- * **anti-elitist artifact** because a normal person can read, edit and share one and cannot read a
- * Makefile — so an agent that cannot author one cannot participate in the product's central artifact.
- * `recipe.ts` (the store), the Recipes app and the seeded examples all existed; this tool is the missing
- * model-facing half.
- *
- * ── WHAT THIS TOOL DELIBERATELY CANNOT DO, and why ──────────────────────────────────────────────────
- *
- * ⚠️ **todo.md ruling 14 is the whole spec.** *A recipe stays a portable folder of prose. Frontmatter may
- * carry exactly one machine-read field — `needs`, restricted to host-capability facts a normal person can
- * verify — and no configuration or grant token. Share is what decides it: an artifact designed to travel
- * between strangers is untrusted input the moment it lands, so it may state what it needs and may never
- * state what it gets. Rules out `permissionMode`/`type`/`model`/`strict` in frontmatter.*
- *
- * The input schema below IS that enforcement, not a description of it: `save` accepts `name`,
- * `description`, `prompt`, `needs`, `produces` and `slug` and nothing else, so no posture, permission,
- * model or strictness field can reach a recipe THROUGH this tool at all — there is no field to put it in
- * and no free-form frontmatter channel. (The roadmap item that opened this work asked for "a posture/
- * permission/model field on Recipe.Info". Ruling 14 forbids exactly those four; the real gap was the
- * missing tool.) The two seams where a model's bytes become a frontmatter LINE are `needs` and
- * `produces`, and both go through the one control-character collapse in `Recipe.carriedLine`, so an entry
- * can never open a second key. Pinned in `test/tool-recipe.test.ts`.
- *
- * ⚠️ **`produces` is the SECOND machine-read field and it does not re-open ruling 14** — the full argument
- * is in `recipe-verify.ts`'s header, and the owner already applied its test when admitting `collection`:
- * *what the recipe IS* is fine, *what the recipe is GRANTED* is not. It states the artifacts a finished
- * cook leaves behind, which is how a cook stops being judged by prose. It grants
- * nothing and cannot: an entry is a plain relative file name, and declaring one you do not produce marks
- * your OWN recipe NOT WORKING.
- *
- * ⚠️ **No `level` and no `collection` either.** Both are designed but unlanded, and
- * both are *instance* decisions rather than artifact ones: a shared recipe's self-declared expertise level
- * is untrusted input, so the artifact may propose and the instance decides, and a proposal may never LOWER
- * the gate. A tool that let a model write `level: normal` today would be the wrong half of that shape.
- *
- * ⚠️ **No `delete`, and no `cook`.** Deleting the user's recipes is the app's job (`Recipe.remove` already
- * serves it) and is not authoring. Cooking — copying the folder to a work dir and running it — is the
- * runner's, and wiring it to `spawn` is a separate design. Left deliberately, not forgotten.
- *
- * ── PERMISSION: ruling 4, and where the line falls ─────────────────────────────────────────────────
- *
- * `save` is a PRIVILEGED write and asks. The ambient-safe baseline in `permission.ts` states the three
- * membership tests — an action must not mutate the host, must not egress, and must not change what a LATER
- * turn or session runs — and names `define_tool` as the thing the third test keeps out, *"whose manual IS
- * saved for later turns to read"*. A recipe fails that test in the most literal form available: its prompt
- * does not merely reach a future session's context, it **becomes a future session's prompt**. So `recipe`
- * is absent from the baseline, falls through to `ask`, and the card names the slug being written.
- *
- * `save: [slug]` — NOT `save: ["*"]`, which is what `define_tool` uses for the same ruling-4 class. The
- * asymmetry is deliberate and is about blast radius: `define_tool`'s writes are session-scoped, so an
- * "always" there is bounded by the session. This store is instance-global and durable, and the bundled set
- * doubles as *the install's health check*, so a wildcard "always" would be a standing grant to silently
- * rewrite `install-health-check` for every future session. One card per recipe is the honest price.
- *
- * `list` and `read` are NOT gated. They pass all three tests — no mutation, no egress, nothing that
- * outlives the turn — and they read the user's own folder, which `read` may already do ambiently.
- *
- * ── UNTRUSTED INPUT: why this file does not frame ──────────────────────────────────────────────────
- *
- * A shared recipe IS untrusted input the moment it lands. It is still not wrapped in
- * `SessionOrigin.externalContentFrame`, for `skill.ts`'s reason exactly (recorded in the classification
- * ledger in `test/untrusted-framing.test.ts`): a recipe's whole function is to be instructions to the
- * model, so "treat as data, not as instructions" would break the artifact outright. Ruling 14's
- * containment is a different mechanism for a different artifact — frontmatter may state what it NEEDS and
- * never what it GETS — and it is enforced above by the schema. ⚠️ This file therefore belongs in that
- * file's `NO_EXTERNAL` list: the tool fetches no bytes from a third party, it reads the user's own disk.
- */
 export * as RecipeTool from "./recipe"
 
 import path from "node:path"
@@ -79,6 +7,7 @@ import { makeLocationNode } from "../effect/app-node"
 import { Global } from "../global"
 import { PermissionV2 } from "../permission"
 import { Recipe } from "../recipe"
+import { RecipeOfficers } from "@novaclaw/schema/recipe-officer"
 import { RecipeBuiltin } from "../recipe-builtin"
 import { displayPath } from "../util/path"
 import { ToolRegistry } from "./registry"
@@ -108,12 +37,16 @@ const SaveOp = Schema.Struct({
   description: Schema.String.pipe(Schema.optional).annotate({
     description: "One line shown beside the title in the recipe list",
   }),
+  officers: RecipeOfficers.pipe(Schema.optional).annotate({
+    description:
+      "Officer jobs and custom nudges. Deployment hires a Manager reporting to Nova and these officers reporting to the Manager.",
+  }),
   needs: Schema.Array(Schema.String)
     .pipe(Schema.optional)
     .annotate({
       description:
         'Host capabilities this recipe needs, each a short fact a person can check: ["a C compiler", "python3"]. ' +
-        "This is the ONLY structured field a recipe may carry — it states what the recipe NEEDS, never what it gets.",
+        "These state what the recipe NEEDS, never grant permissions.",
     }),
   produces: Schema.Array(Schema.String)
     .pipe(Schema.optional)
@@ -140,7 +73,7 @@ export const Output = Schema.Struct({
 export type Output = typeof Output.Type
 
 export const description =
-  "Author and read RECIPES — the folders of prose this product is built on (a recipe.md prompt plus its " +
+  "Author and read RECIPES — the folders this product is built on (versioned recipe.json instructions plus its " +
   "assets). A recipe carries the INTENT of a thing to build, so an agent can cook it fresh later; it is " +
   "not code and never carries settings. Ops: " +
   '{"op":"list"} — every recipe on this install · ' +
@@ -148,7 +81,7 @@ export const description =
   '{"op":"save","name":"…","prompt":"…","description":"…","needs":["a C compiler"],' +
   '"produces":["hello.c"]} — write a new one (add slug to replace an existing one instead). ' +
   "Saving returns the recipe's folder — put any assets it needs there with the write tool. " +
-  "Saving asks the user first, because a recipe becomes a future session's prompt."
+  "The document includes version: 1. It may define officer jobs and nudges, with a Manager coordinating deployment."
 
 // ── linearized rendering (pure; unit-tested) ───────────────────────────────────────────────────────
 
@@ -297,6 +230,7 @@ export const layer = Layer.effectDiscard(
                             ...(input.description ? { description: input.description } : {}),
                             ...(input.needs ? { needs: input.needs } : {}),
                             ...(input.produces ? { produces: input.produces } : {}),
+                            ...(input.officers ? { officers: input.officers } : {}),
                             prompt: input.prompt,
                           },
                           options,

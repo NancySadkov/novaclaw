@@ -20186,6 +20186,130 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "version": {
+                      "type": "number",
+                      "enum": [1]
+                    },
+                    "officers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "title": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 160
+                          },
+                          "description": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 16000
+                          },
+                          "nudges": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 160
+                                },
+                                "text": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 16000
+                                },
+                                "hook": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": ["after-compaction"]
+                                        }
+                                      },
+                                      "required": ["type"],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": ["new-day"]
+                                        }
+                                      },
+                                      "required": ["type"],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": ["interval"]
+                                        },
+                                        "minutes": {
+                                          "type": "integer",
+                                          "minimum": 1,
+                                          "maximum": 1440
+                                        }
+                                      },
+                                      "required": ["type", "minutes"],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": ["tool-call"]
+                                        },
+                                        "tool": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 160
+                                        },
+                                        "phase": {
+                                          "type": "string",
+                                          "enum": ["before", "after"]
+                                        }
+                                      },
+                                      "required": ["type", "tool", "phase"],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "type": {
+                                          "type": "string",
+                                          "enum": ["file-write"]
+                                        },
+                                        "extension": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 160
+                                        }
+                                      },
+                                      "required": ["type", "extension"],
+                                      "additionalProperties": false
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": ["name", "text", "hook"],
+                              "additionalProperties": false
+                            },
+                            "maxItems": 32
+                          }
+                        },
+                        "required": ["title", "description", "nudges"],
+                        "additionalProperties": false
+                      },
+                      "maxItems": 16
+                    },
                     "name": {
                       "type": "string"
                     },
@@ -20202,7 +20326,7 @@
                       }
                     }
                   },
-                  "required": ["name", "prompt", "assets"],
+                  "required": ["version", "officers", "name", "prompt", "assets"],
                   "additionalProperties": false
                 }
               }
@@ -20265,6 +20389,15 @@
                   "items": {
                     "type": "object",
                     "properties": {
+                      "projectID": {
+                        "type": "string"
+                      },
+                      "directory": {
+                        "type": "string"
+                      },
+                      "manager": {
+                        "type": "string"
+                      },
                       "slug": {
                         "type": "string"
                       },
@@ -20296,7 +20429,7 @@
                         "additionalProperties": false
                       }
                     },
-                    "required": ["slug", "name", "state"],
+                    "required": ["projectID", "directory", "manager", "slug", "name", "state"],
                     "additionalProperties": false
                   }
                 }
@@ -20526,6 +20659,15 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "projectID": {
+                      "type": "string"
+                    },
+                    "directory": {
+                      "type": "string"
+                    },
+                    "manager": {
+                      "type": "string"
+                    },
                     "slug": {
                       "type": "string"
                     },
@@ -20557,7 +20699,7 @@
                       "additionalProperties": false
                     }
                   },
-                  "required": ["slug", "name", "state"],
+                  "required": ["projectID", "directory", "manager", "slug", "name", "state"],
                   "additionalProperties": false
                 }
               }
@@ -20590,7 +20732,15 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {}
+                "properties": {
+                  "directory": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
               }
             }
           },
@@ -20658,11 +20808,11 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "markdown": {
+                  "source": {
                     "type": "string"
                   }
                 },
-                "required": ["markdown"],
+                "required": ["source"],
                 "additionalProperties": false
               }
             }
@@ -20722,7 +20872,7 @@
             }
           }
         },
-        "description": "The bytes of recipe.md exactly as they are on disk — the readable part of the folder — plus the host-capability facts it declares checked against THIS machine, the artifacts a finished cook should leave, and the shelf it is on. Read-only: the capability probe resolves names on PATH and stats paths, and never runs a candidate.",
+        "description": "The bytes of recipe.json exactly as they are on disk — the readable part of the folder — plus the host-capability facts it declares checked against THIS machine, the artifacts a finished cook should leave, and the shelf it is on. Read-only: the capability probe resolves names on PATH and stats paths, and never runs a candidate.",
         "summary": "Read a recipe's file, and what it needs and produces",
         "x-codeSamples": [
           {
@@ -21113,7 +21263,7 @@
             }
           }
         },
-        "description": "Writes recipe.md. Omit `slug` to derive it from the name; pass it to update in place.",
+        "description": "Writes recipe.json. Omit `slug` to derive it from the name; pass it to update in place.",
         "summary": "Create or update a recipe",
         "requestBody": {
           "content": {
@@ -21234,7 +21384,7 @@
             }
           }
         },
-        "description": "Edits the requested lines inside the author's own bytes: line endings, a BOM, unknown frontmatter keys, key order and the trailing newline all survive. Use this rather than a save when you are changing one field — a save takes the whole recipe.",
+        "description": "Updates the requested JSON fields while preserving all other values, including extension fields. Use this when changing one field; save accepts the complete editable recipe.",
         "summary": "Change some of a recipe's fields and nothing else",
         "requestBody": {
           "content": {
@@ -21340,7 +21490,7 @@
           }
         },
         "description": "Writes the supplied file byte for byte under a free slug — never overwriting an existing recipe. This paste convenience is explicitly asset-free; use the ZIP import for a complete folder.",
-        "summary": "Store pasted recipe markdown without assets",
+        "summary": "Store pasted recipe JSON without assets",
         "requestBody": {
           "content": {
             "application/json": {
@@ -21407,7 +21557,7 @@
             }
           }
         },
-        "description": "Returns a standard ZIP containing recipe.md and every nested binary or text asset.",
+        "description": "Returns a standard ZIP containing recipe.json and every nested binary or text asset.",
         "summary": "Export a complete recipe folder",
         "x-codeSamples": [
           {
@@ -21464,7 +21614,7 @@
             }
           }
         },
-        "description": "Validates a bounded standard ZIP, reserves a free slug, and commits recipe.md plus its asset tree atomically.",
+        "description": "Validates a bounded standard ZIP, reserves a free slug, and commits recipe.json plus its asset tree atomically.",
         "summary": "Import a complete recipe folder",
         "requestBody": {
           "content": {
@@ -21784,6 +21934,32 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "recipe": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "slug": {
+                                    "type": "string"
+                                  },
+                                  "manager": {
+                                    "type": "string"
+                                  },
+                                  "officers": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": ["slug", "manager", "officers"],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "id": {
                             "type": "string"
                           },
@@ -21955,6 +22131,32 @@
                       "items": {
                         "type": "object",
                         "properties": {
+                          "recipe": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "slug": {
+                                    "type": "string"
+                                  },
+                                  "manager": {
+                                    "type": "string"
+                                  },
+                                  "officers": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  }
+                                },
+                                "required": ["slug", "manager", "officers"],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
                           "id": {
                             "type": "string"
                           },
@@ -37443,6 +37645,11 @@
             "minimum": 1,
             "maximum": 365
           },
+          "work_log_max_mb": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4096
+          },
           "subsystems": {
             "type": "object",
             "properties": {
@@ -44496,6 +44703,130 @@
       "RecipeInfo": {
         "type": "object",
         "properties": {
+          "version": {
+            "type": "number",
+            "enum": [1]
+          },
+          "officers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 16000
+                },
+                "nudges": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16000
+                      },
+                      "hook": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": ["after-compaction"]
+                              }
+                            },
+                            "required": ["type"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": ["new-day"]
+                              }
+                            },
+                            "required": ["type"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": ["interval"]
+                              },
+                              "minutes": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 1440
+                              }
+                            },
+                            "required": ["type", "minutes"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": ["tool-call"]
+                              },
+                              "tool": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 160
+                              },
+                              "phase": {
+                                "type": "string",
+                                "enum": ["before", "after"]
+                              }
+                            },
+                            "required": ["type", "tool", "phase"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": ["file-write"]
+                              },
+                              "extension": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 160
+                              }
+                            },
+                            "required": ["type", "extension"],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["name", "text", "hook"],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 32
+                }
+              },
+              "required": ["title", "description", "nudges"],
+              "additionalProperties": false
+            },
+            "maxItems": 16
+          },
           "slug": {
             "type": "string"
           },
@@ -44521,7 +44852,7 @@
             "type": "number"
           }
         },
-        "required": ["slug", "name", "prompt", "assets", "builtin", "updatedAt"],
+        "required": ["version", "officers", "slug", "name", "prompt", "assets", "builtin", "updatedAt"],
         "additionalProperties": false
       },
       "RecipeNeedCheck": {
@@ -44556,7 +44887,7 @@
           "name": {
             "type": "string"
           },
-          "markdown": {
+          "source": {
             "type": "string"
           },
           "needs": {
@@ -44589,25 +44920,145 @@
             "additionalProperties": false
           }
         },
-        "required": ["slug", "name", "markdown", "needs", "produces", "collection"],
+        "required": ["slug", "name", "source", "needs", "produces", "collection"],
         "additionalProperties": false
       },
       "RecipeImportInput": {
         "type": "object",
         "properties": {
-          "markdown": {
+          "source": {
             "type": "string"
           },
           "slug": {
             "type": "string"
           }
         },
-        "required": ["markdown"],
+        "required": ["source"],
         "additionalProperties": false
       },
       "RecipeUpdateInput": {
         "type": "object",
         "properties": {
+          "officers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 16000
+                },
+                "nudges": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16000
+                      },
+                      "hook": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": ["after-compaction"]
+                              }
+                            },
+                            "required": ["type"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": ["new-day"]
+                              }
+                            },
+                            "required": ["type"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": ["interval"]
+                              },
+                              "minutes": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 1440
+                              }
+                            },
+                            "required": ["type", "minutes"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": ["tool-call"]
+                              },
+                              "tool": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 160
+                              },
+                              "phase": {
+                                "type": "string",
+                                "enum": ["before", "after"]
+                              }
+                            },
+                            "required": ["type", "tool", "phase"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": ["file-write"]
+                              },
+                              "extension": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 160
+                              }
+                            },
+                            "required": ["type", "extension"],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["name", "text", "hook"],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 32
+                }
+              },
+              "required": ["title", "description", "nudges"],
+              "additionalProperties": false
+            },
+            "maxItems": 16
+          },
           "name": {
             "type": "string"
           },
@@ -44642,6 +45093,126 @@
       "RecipeSaveInput": {
         "type": "object",
         "properties": {
+          "officers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                "description": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 16000
+                },
+                "nudges": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 16000
+                      },
+                      "hook": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": ["after-compaction"]
+                              }
+                            },
+                            "required": ["type"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": ["new-day"]
+                              }
+                            },
+                            "required": ["type"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": ["interval"]
+                              },
+                              "minutes": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 1440
+                              }
+                            },
+                            "required": ["type", "minutes"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": ["tool-call"]
+                              },
+                              "tool": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 160
+                              },
+                              "phase": {
+                                "type": "string",
+                                "enum": ["before", "after"]
+                              }
+                            },
+                            "required": ["type", "tool", "phase"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "type": {
+                                "type": "string",
+                                "enum": ["file-write"]
+                              },
+                              "extension": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 160
+                              }
+                            },
+                            "required": ["type", "extension"],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["name", "text", "hook"],
+                    "additionalProperties": false
+                  },
+                  "maxItems": 32
+                }
+              },
+              "required": ["title", "description", "nudges"],
+              "additionalProperties": false
+            },
+            "maxItems": 16
+          },
           "slug": {
             "type": "string"
           },

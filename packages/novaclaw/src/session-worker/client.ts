@@ -26,6 +26,7 @@ export type Request = Extract<
       | "local-model-request"
       | "drive-state-request"
       | "execution-advance"
+      | "execution-cooperate"
       | "execution-tool-dispatched"
       | "execution-tool-settled"
       | "execution-provider-started"
@@ -84,6 +85,7 @@ const replyTypes: Record<Request["type"], ReadonlySet<Reply["type"]>> = {
   "local-model-request": new Set(["local-model-result"]),
   "drive-state-request": new Set(["drive-state-result"]),
   "execution-advance": new Set(["execution-result"]),
+  "execution-cooperate": new Set(["execution-result"]),
   "execution-tool-dispatched": new Set(["execution-result"]),
   "execution-tool-settled": new Set(["execution-result"]),
   "execution-provider-started": new Set(["execution-result"]),

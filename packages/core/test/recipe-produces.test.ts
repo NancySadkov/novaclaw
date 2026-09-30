@@ -7,25 +7,6 @@ import { RecipeVerify } from "@novaclaw/core/recipe-verify"
 import { UnknownReason } from "@novaclaw/schema/unknown-reason"
 import { tmpdir } from "./fixture/tmpdir"
 
-/**
- * `produces` — the **deterministic success artifact** for a cook (``).
- *
- * Until now a cook's only output was prose: the agent said it had worked, a human read the chatter, and
- * *"nothing mechanical can read its outcome."* AGENTS.md calls the bundled set the install's health check
- * and promises a user can tell **in one click** whether their NovaClaw works — a promise prose cannot
- * keep. This suite pins the four things that make the receipt worth trusting, each of which would
- * otherwise be a claim in a comment (ruling 1):
- *
- *  1. **A declaration is READ.** `SaveInput.produces` → `producesLine` → `render` → `parse` →
- *     `parseProduces` → `producesOf` round-trips through a real folder, so no link can rot silently.
- *  2. **The vocabulary is CLOSED and CONTAINED** (ruling 14). A `produces` entry is a plain relative file
- *     name; it cannot name a command, and it cannot reach outside the folder the cook was given.
- *  3. **Four outcomes, and `unknown` is not a failure.** WORKING / NOT WORKING / NOT AVAILABLE / could not
- *     check — with NOT AVAILABLE derived from the MODEL, never from the recipe, so the health check never
- *     blames the install for a model limit.
- *  4. **Ruling 2 in the sentence**: an `unknown` row can never reach a clause that asserts absence.
- */
-
 const at = () => 1_700_000_000_000
 
 const receipt = (input: {
@@ -48,25 +29,20 @@ const write = (dir: string, name: string, body: string | Uint8Array) =>
   fs.writeFile(path.join(dir, name), body as never)
 
 describe("the declaration round-trips through a real recipe folder", () => {
-  test("producesLine and parseProduces are an inverse pair", () => {
-    const line = Recipe.producesLine(["clean.csv", "chart.html"])
-    expect(line).toBe("produces: clean.csv, chart.html")
-    expect(Recipe.parseProduces([line!])).toEqual(["clean.csv", "chart.html"])
+  test("keeps output names as individual array entries", () => {
+    const produces = ["clean.csv", "chart, final.html"]
+    expect(Recipe.parse(Recipe.render({ name: "X", prompt: "Build", produces })).produces).toEqual(produces)
   })
 
-  test("reads the casing, the spacing and the YAML block form a person actually types", () => {
-    expect(Recipe.parseProduces(["  PRODUCES :  a.md , , b.html "])).toEqual(["a.md", "b.html"])
-    expect(Recipe.parseProduces(["produces:", "  - a.md", "  - b.html", "author: Nancy"])).toEqual(["a.md", "b.html"])
-    expect(Recipe.parseProduces(["needs: gcc", "author: Nancy"])).toEqual([])
+  test("rejects unstructured declarations", () => {
+    expect(() => Recipe.parse('{"version":1,"name":"X","prompt":"Build","produces":"out.txt"}')).toThrow(/produces/)
   })
 
-  test("an entry can never open a second frontmatter key — the same injection seam `needs` has", () => {
-    // Frontmatter is line-structured, so one un-stripped newline would turn a declared artifact into a
-    // second key the author never wrote. `carriedLine` collapses control characters for BOTH fields; this
-    // is the negative control for the `produces` half of that one expression.
-    const line = Recipe.producesLine(["a.md\npermissionMode: bypass", "b.md"])!
-    expect(line.split("\n")).toHaveLength(1)
-    expect(line).toBe("produces: a.md permissionMode: bypass, b.md")
+  test("JSON-looking values cannot add fields", () => {
+    const produces = ['a.md\n"permissions":"all"', "b.md"]
+    const parsed = Recipe.parse(Recipe.render({ name: "X", prompt: "Build", produces }))
+    expect(parsed.produces).toEqual(produces)
+    expect(parsed.permissions).toBeUndefined()
   })
 
   test("save writes it, producesOf reads it back, and `needs` is untouched beside it", async () => {
@@ -78,19 +54,21 @@ describe("the declaration round-trips through a real recipe folder", () => {
     )
     expect(await Recipe.producesOf("data-file", options)).toEqual(["clean.csv", "chart.html"])
     expect(await Recipe.needsOf("data-file", options)).toEqual(["python3"])
-    const raw = await fs.readFile(path.join(dir.path, "data-file", "recipe.md"), "utf8")
-    expect(raw).toContain("produces: clean.csv, chart.html")
-    expect(raw).toContain("needs: python3")
-    // …and it really is a carried LINE, not a modelled key: `parse` hands it back verbatim, which is what
-    // keeps the lossless round-trip in `recipe.test.ts` untouched by this field existing.
-    expect(Recipe.parse(raw).frontmatter).toContain("produces: clean.csv, chart.html")
+    const raw = await fs.readFile(path.join(dir.path, "data-file", "recipe.json"), "utf8")
+    expect(Recipe.parse(raw).produces).toEqual(["clean.csv", "chart.html"])
+    expect(Recipe.parse(raw).needs).toEqual(["python3"])
+    expect(Recipe.parse(raw).version).toBe(1)
   })
 
   test("editing a recipe that declares nothing leaves it declaring nothing", async () => {
     await using dir = await tmpdir()
     const options = { root: dir.path }
     await fs.mkdir(path.join(dir.path, "bare"), { recursive: true })
-    await fs.writeFile(path.join(dir.path, "bare", "recipe.md"), "Just a pasted prompt.\n", "utf8")
+    await fs.writeFile(
+      path.join(dir.path, "bare", "recipe.json"),
+      JSON.stringify({ version: 1, name: "Bare", prompt: "Build" }),
+      "utf8",
+    )
     expect(await Recipe.producesOf("bare", options)).toEqual([])
     expect(await Recipe.producesOf("../../etc", options)).toEqual([])
   })

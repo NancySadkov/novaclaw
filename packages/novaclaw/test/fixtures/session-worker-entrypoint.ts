@@ -7,6 +7,12 @@ const mode = process.argv[2] ?? "settle"
 await SessionWorkerEntrypoint.run({
   heartbeatIntervalMs: 50,
   drain: async (context) => {
+    if (mode === "cooperate" || mode === "cooperate-caught") {
+      const handoff = Effect.runPromise(context.capabilities.execution.cooperate!())
+      if (mode === "cooperate-caught") await handoff.catch(() => undefined)
+      else await handoff
+      return
+    }
     if (mode === "publish") {
       await context.capabilities.publishEvent("session.next.synthetic", {
         sessionID: context.lease.sessionID,

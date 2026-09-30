@@ -75,14 +75,15 @@ export const handle = Effect.fn("SessionWorkerInteractionBridge.handle")(functio
   if (!SessionWorkerProtocol.owns(input.lease, input.message)) return reject()
   if (input.message.type === "project-request") {
     if (!input.projects || !input.projectActor) return reject()
-    if ((yield* input.projectActor()) !== AgentV2.NOVA_ID)
+    const actor = yield* input.projectActor()
+    if (!actor)
       return {
         ...identity(input.message),
         type: "project-result" as const,
         outcome: "refused" as const,
-        reason: "Only Nova manages projects. Report your request to your superior.",
+        reason: "This session no longer has a project officer.",
       }
-    return yield* input.projects.execute(input.message.input).pipe(
+    return yield* input.projects.execute(input.message.input, actor).pipe(
       Effect.map((snapshot) => ({
         ...identity(input.message),
         type: "project-result" as const,

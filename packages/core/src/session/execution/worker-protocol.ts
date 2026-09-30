@@ -307,7 +307,7 @@ export const ExecutionResult = Schema.Struct({
   ...Identity,
   type: Schema.Literal("execution-result"),
   requestID: Schema.String,
-  outcome: Schema.Literals(["applied", "rejected"]),
+  outcome: Schema.Literals(["applied", "rejected", "yield"]),
   recovery: ProviderRecoveryWire.pipe(Schema.optional),
   error: Schema.String.pipe(Schema.optional),
 }).annotate({ identifier: "SessionWorker.ExecutionResult" })
@@ -367,6 +367,11 @@ export const Settled = Schema.Struct({
   ...Identity,
   type: Schema.Literal("settled"),
 }).annotate({ identifier: "SessionWorker.Settled" })
+
+export const Yielded = Schema.Struct({
+  ...Identity,
+  type: Schema.Literal("yielded"),
+}).annotate({ identifier: "SessionWorker.Yielded" })
 
 export const Failed = Schema.Struct({
   ...Identity,
@@ -669,6 +674,10 @@ export const PermissionAssert = Schema.Struct({
 }).annotate({ identifier: "SessionWorker.PermissionAssert" })
 
 const ExecutionRequestBase = { ...Identity, requestID: Schema.String }
+export const ExecutionCooperate = Schema.Struct({
+  ...ExecutionRequestBase,
+  type: Schema.Literal("execution-cooperate"),
+}).annotate({ identifier: "SessionWorker.ExecutionCooperate" })
 export const ExecutionAdvance = Schema.Struct({
   ...ExecutionRequestBase,
   type: Schema.Literal("execution-advance"),
@@ -725,6 +734,7 @@ export const ExecutionContextUpdated = Schema.Struct({
   snapshot: SystemContext.Snapshot,
 }).annotate({ identifier: "SessionWorker.ExecutionContextUpdated" })
 export type ExecutionRequest =
+  | typeof ExecutionCooperate.Type
   | typeof ExecutionAdvance.Type
   | typeof ExecutionToolDispatched.Type
   | typeof ExecutionToolSettled.Type
@@ -739,6 +749,7 @@ export const WorkerMessage = Schema.Union([
   Ready,
   Heartbeat,
   Settled,
+  Yielded,
   Failed,
   PublishEvent,
   DeviceAdmit,
@@ -759,6 +770,7 @@ export const WorkerMessage = Schema.Union([
   ProjectRequest,
   AwaitChild,
   ExecutionAdvance,
+  ExecutionCooperate,
   ExecutionToolDispatched,
   ExecutionToolSettled,
   ExecutionProviderStarted,

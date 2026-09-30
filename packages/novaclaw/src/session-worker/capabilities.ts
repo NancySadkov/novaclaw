@@ -82,7 +82,11 @@ export interface Capabilities {
 
 /** Worker-facing authority facade. Callers cannot choose another session identity; every request is
  * stamped from the host-issued lease before it reaches the correlated transport. */
-export function make(input: { readonly lease: SessionExecutionAttempt.Lease; readonly client: Client }): Capabilities {
+export function make(input: {
+  readonly lease: SessionExecutionAttempt.Lease
+  readonly client: Client
+  readonly onYield?: () => void
+}): Capabilities {
   let sequence = 0
   const identity = {
     version: SessionWorkerProtocol.VERSION,
@@ -313,6 +317,15 @@ export function make(input: { readonly lease: SessionExecutionAttempt.Lease; rea
     },
     execution: {
       fence: { attemptID: input.lease.attemptID, generation: input.lease.generation },
+      cooperate: () =>
+        Effect.promise(() => execution({ ...identity, type: "execution-cooperate", requestID: requestID() })).pipe(
+          Effect.flatMap((reply) => {
+            if (reply.outcome !== "yield") return Effect.void
+            if (!input.onYield) return Effect.die(new Error("Worker yield handler is unavailable"))
+            input.onYield()
+            return Effect.interrupt
+          }),
+        ),
       advance: (phase, checkpoint) =>
         Effect.promise(() =>
           execution({ ...identity, type: "execution-advance", requestID: requestID(), phase, checkpoint }),

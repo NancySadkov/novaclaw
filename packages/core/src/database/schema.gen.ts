@@ -746,7 +746,8 @@ export default {
         CREATE TABLE \`project_notice\` (
           \`agent\` text PRIMARY KEY,
           \`id\` text NOT NULL,
-          \`text\` text NOT NULL
+          \`text\` text NOT NULL,
+          \`delivery\` text DEFAULT 'steer' NOT NULL
         );
       `)
       yield* tx.run(`
@@ -762,6 +763,7 @@ export default {
           \`name\` text NOT NULL,
           \`objective\` text NOT NULL,
           \`directory\` text,
+          \`recipe\` text,
           \`phases\` text NOT NULL,
           \`paused\` integer DEFAULT false NOT NULL,
           \`revision\` integer DEFAULT 1 NOT NULL

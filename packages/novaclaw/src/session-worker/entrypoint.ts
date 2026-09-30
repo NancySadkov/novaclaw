@@ -33,7 +33,7 @@ const identityOf = (start: typeof SessionWorkerProtocol.Start.Type) => ({
 
 /** Standard child-process main loop. It accepts exactly one start envelope, owns interruption and
  * heartbeat emission, and tears down every pending host RPC before returning to the executable. */
-export async function run(input: Input): Promise<"settled" | "interrupted" | "failed"> {
+export async function run(input: Input): Promise<"settled" | "yielded" | "interrupted" | "failed"> {
   // stdout is the framed worker protocol. Effect's default logger (and ordinary console calls in
   // adapters) otherwise inject prose into that channel and make a healthy worker look malformed.
   // Keep diagnostics visible on stderr, which the supervisor deliberately inherits.
@@ -67,7 +67,12 @@ export async function run(input: Input): Promise<"settled" | "interrupted" | "fa
       rejectWrite,
     )
   const client = SessionWorkerClient.make({ lease, send: emit })
-  const capabilities = SessionWorkerCapabilities.make({ lease, client })
+  let yielded = false
+  const capabilities = SessionWorkerCapabilities.make({
+    lease,
+    client,
+    onYield: () => { yielded = true },
+  })
   let commandStop: ((commandID: string, reason: string) => Promise<void>) | undefined
 
   const pump = async () => {
@@ -124,10 +129,18 @@ export async function run(input: Input): Promise<"settled" | "interrupted" | "fa
       protocolFailure,
     ])
     if (abort.signal.aborted) return "interrupted"
+    if (yielded) {
+      emit({ ...identityOf(start), type: "yielded" })
+      return "yielded"
+    }
     emit({ ...identityOf(start), type: "settled" })
     return "settled"
   } catch (error) {
     if (abort.signal.aborted) return "interrupted"
+    if (yielded) {
+      emit({ ...identityOf(start), type: "yielded" })
+      return "yielded"
+    }
     const failure = input.classifyError?.(error) ?? {
       classification: "worker-failure",
       detail: error instanceof Error ? error.message : "unknown worker failure",

@@ -1,6 +1,6 @@
 export * as SessionExecutionAttempt from "./execution-attempt"
 
-import { and, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm"
+import { and, eq, inArray, isNotNull, isNull, lt, notExists, or, sql } from "drizzle-orm"
 import { Context, DateTime, Effect, Layer, Option } from "effect"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
@@ -17,8 +17,34 @@ import { SessionRecoveryDecision } from "./recovery-decision"
 import { SessionProviderRecovery } from "@novaclaw/schema/session-provider-recovery"
 import { SystemContext } from "../system-context/index"
 import { SessionMessage } from "./message"
+import { BashJobTable } from "../tool/bash-jobs.sql"
 
 export type State = "starting" | "busy" | "recovering" | "paused" | "failed" | "interrupted" | "settled"
+
+export const requeue = (db: Database.Interface["db"], lease: Lease) =>
+  db
+    .update(SessionExecutionTable)
+    .set({ state: "starting", phase: "drain", time_updated: Date.now() })
+    .where(
+      and(
+        eq(SessionExecutionTable.session_id, lease.sessionID),
+        eq(SessionExecutionTable.attempt_id, lease.attemptID),
+        eq(SessionExecutionTable.generation, lease.generation),
+        eq(SessionExecutionTable.owner_id, lease.ownerID),
+        eq(SessionExecutionTable.state, "busy"),
+        isNotNull(SessionExecutionTable.checkpoint_at),
+        isNull(SessionExecutionTable.provider_recovery),
+        or(isNull(SessionExecutionTable.tool_state), eq(SessionExecutionTable.tool_state, "settled")),
+        notExists(
+          db.select({ id: BashJobTable.id }).from(BashJobTable).where(
+            and(eq(BashJobTable.owner, lease.sessionID), eq(BashJobTable.status, "running")),
+          ),
+        ),
+      ),
+    )
+    .returning({ id: SessionExecutionTable.session_id })
+    .get()
+    .pipe(Effect.map(Boolean), Effect.orDie)
 
 export const pause = (db: Database.Interface["db"], lease: Lease) =>
   db
@@ -159,6 +185,7 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
  * runner remains usable in narrow unit tests and migrations; the authoritative local executor
  * always provides it. */
 export interface CurrentInterface {
+  readonly cooperate?: () => Effect.Effect<void>
   /** Immutable identity of the drain this capability belongs to; component writes use it as a fence. */
   readonly fence: Pick<Lease, "attemptID" | "generation">
   readonly advance: (phase: Phase, checkpoint: "clear" | "mark" | "keep") => Effect.Effect<void>
@@ -223,6 +250,8 @@ export const advanceCurrent = (phase: Phase, checkpoint: "clear" | "mark" | "kee
       }),
     ),
   )
+
+export const cooperateCurrent = () => useCurrent((current) => current.cooperate?.() ?? Effect.void, undefined)
 
 export const toolDispatchedCurrent = (receipt: { callID: string; name: string; sideEffect: ToolSideEffect }) =>
   useCurrent((current) => current.toolDispatched(receipt), undefined)

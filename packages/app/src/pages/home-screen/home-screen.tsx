@@ -91,7 +91,12 @@ const SortableTile: Component<{
         "opacity-30": sortable.isActiveDraggable,
       }}
     >
-      <AppTile app={props.app} shouldSuppressOpen={props.shouldSuppressOpen} onDelete={props.onDelete} onContextAction={props.onContextAction} />
+      <AppTile
+        app={props.app}
+        shouldSuppressOpen={props.shouldSuppressOpen}
+        onDelete={props.onDelete}
+        onContextAction={props.onContextAction}
+      />
     </div>
   )
 }
@@ -129,13 +134,13 @@ export const HomeScreen: Component = () => {
     if (!conn) return
     try {
       const launch = await launchRecipe(conn.http, recipe.slug)
-      if (launch.kind === "chat" && launch.sessionID) navigate(sessionHref(ServerConnection.key(conn), launch.sessionID))
+      if (launch.kind === "chat" && launch.sessionID)
+        navigate(sessionHref(ServerConnection.key(conn), launch.sessionID))
       else if (launch.kind === "html" && launch.url) {
         const url = new URL(launch.url, conn.http.url).href
         if (platform.openRecipeBrowser) await platform.openRecipeBrowser(url, recipe.name)
         else setHtmlLaunch({ title: recipe.name, url })
-      }
-      else if (launch.kind === "console" && launch.ptyID)
+      } else if (launch.kind === "console" && launch.ptyID)
         navigate(`/terminal?launch=${encodeURIComponent(launch.ptyID)}`)
       void refreshDeployed()
     } catch (error) {
@@ -150,7 +155,7 @@ export const HomeScreen: Component = () => {
       tile: "/assets/skin/tiles/recipes.png",
       accent: "#b396dc",
       source: "builtin",
-      subtitle: recipe.state === "deploying" ? "Deploying · open agent chat" : recipe.description || "Launch recipe",
+      subtitle: recipe.state === "deploying" ? "Deploying · open Manager chat" : recipe.description || "Launch recipe",
       open: () => void openDeployment(recipe),
     })),
   )
@@ -160,7 +165,9 @@ export const HomeScreen: Component = () => {
     // Expertise gate (uix.md §6.4): a tile whose minLevel exceeds the current level is hidden (e.g.
     // Terminal in Normal/Advanced). Filter before ordering so a hidden tile can't hold a saved slot.
     applyOrder(
-      [...builtins(), ...manifestApps(), ...registeredApps(), ...deployedApps()].filter((app) => atLeast(app.minLevel ?? "normal")),
+      [...builtins(), ...manifestApps(), ...registeredApps(), ...deployedApps()].filter((app) =>
+        atLeast(app.minLevel ?? "normal"),
+      ),
       order(),
     ),
   )
@@ -182,7 +189,8 @@ export const HomeScreen: Component = () => {
     if (!conn) return
     const proceed = await confirm({
       title: `Undeploy ${recipe.name}?`,
-      description: "This removes the deployed copy and its Home icon. Your editable recipe stays in Recipes Studio.",
+      description:
+        "Retire the project's team and remove its folder, generated files and Home icon. Your editable recipe stays in Recipes Studio.",
       confirmLabel: "Undeploy",
       destructive: true,
     })
@@ -347,7 +355,9 @@ export const HomeScreen: Component = () => {
       <Show when={deployed.failed}>
         <div role="status" class="flex items-center justify-center gap-3 px-3 py-2 text-xs text-v2-state-fg-warning">
           <span>Deployed recipes unavailable.</span>
-          <button type="button" class="underline" onClick={() => void refreshDeployed()}>Try again</button>
+          <button type="button" class="underline" onClick={() => void refreshDeployed()}>
+            Try again
+          </button>
         </div>
       </Show>
       {/* No logo, no greeting (owner 2026-07-26). They cost ~7rem above the fold to say nothing the user
@@ -396,13 +406,28 @@ export const HomeScreen: Component = () => {
       <Show when={contextTarget()}>
         {(target) => (
           <>
-            <div class="fixed inset-0 z-50" onClick={() => setContextTarget(undefined)} onContextMenu={(event) => { event.preventDefault(); setContextTarget(undefined) }} />
+            <div
+              class="fixed inset-0 z-50"
+              onClick={() => setContextTarget(undefined)}
+              onContextMenu={(event) => {
+                event.preventDefault()
+                setContextTarget(undefined)
+              }}
+            />
             <div
               role="menu"
               class="fixed z-50 rounded-xl border border-v2-border-border-strong bg-v2-background-bg-layer-03 p-1 shadow-2xl"
-              style={{ left: `${Math.min(target().x, window.innerWidth - 190)}px`, top: `${Math.min(target().y, window.innerHeight - 55)}px` }}
+              style={{
+                left: `${Math.min(target().x, window.innerWidth - 190)}px`,
+                top: `${Math.min(target().y, window.innerHeight - 55)}px`,
+              }}
             >
-              <button role="menuitem" type="button" class="rounded-lg px-4 py-2 text-sm text-v2-text-text-base hover:bg-v2-background-bg-layer-04" onClick={() => void undeploy(target().recipe)}>
+              <button
+                role="menuitem"
+                type="button"
+                class="rounded-lg px-4 py-2 text-sm text-v2-text-text-base hover:bg-v2-background-bg-layer-04"
+                onClick={() => void undeploy(target().recipe)}
+              >
                 Undeploy {target().recipe.name}
               </button>
             </div>
@@ -411,12 +436,27 @@ export const HomeScreen: Component = () => {
       </Show>
       <Show when={htmlLaunch()}>
         {(launch) => (
-          <div class="fixed inset-0 z-50 flex flex-col bg-v2-background-bg-deep" role="dialog" aria-label={launch().title}>
+          <div
+            class="fixed inset-0 z-50 flex flex-col bg-v2-background-bg-deep"
+            role="dialog"
+            aria-label={launch().title}
+          >
             <div class="flex items-center justify-between border-b border-v2-border-border-base px-4 py-3">
               <strong class="text-v2-text-text-base">{launch().title}</strong>
-              <button type="button" class="text-v2-text-text-muted hover:text-v2-text-text-base" onClick={() => setHtmlLaunch(undefined)}>Close</button>
+              <button
+                type="button"
+                class="text-v2-text-text-muted hover:text-v2-text-text-base"
+                onClick={() => setHtmlLaunch(undefined)}
+              >
+                Close
+              </button>
             </div>
-            <iframe title={launch().title} src={launch().url} sandbox="allow-scripts" class="min-h-0 flex-1 border-0 bg-white" />
+            <iframe
+              title={launch().title}
+              src={launch().url}
+              sandbox="allow-scripts"
+              class="min-h-0 flex-1 border-0 bg-white"
+            />
           </div>
         )}
       </Show>

@@ -4,7 +4,7 @@
 // all of them.
 //
 // ─── WHAT A RECIPE IS, AND WHY THIS APP EXISTS ────────────────────────────────────────────────────
-// AGENTS.md → *Recipes are source code for the AI era*: a recipe is a FOLDER (`recipe.md` + assets)
+// AGENTS.md → *Recipes are source code for the AI era*: a recipe is a FOLDER (`recipe.json` + assets)
 // carrying the INTENT rather than the artifact, and an agent cooks it fresh on demand. *Source rots,
 // intent doesn't.* It is also called **the anti-elitist artifact** — *"A normal person can read, edit and
 // share a recipe. They cannot read a Makefile."* — so the job of this surface is to be legible to
@@ -27,6 +27,7 @@
 // verdict. What a reader gets is what the harness OBSERVED — which files the recipe names, whether this
 // machine has what it says it needs, and what actually landed on disk after a cook.
 
+import { parseRecipeDocument, RECIPE_DOCUMENT_CAP } from "@novaclaw/schema/recipe-document"
 import { authorBody, authorText, containsInvisible } from "./author-text"
 
 export { authorBody, authorText, containsInvisible }
@@ -35,7 +36,6 @@ export { authorBody, authorText, containsInvisible }
 // The wire shapes this app reads (`packages/protocol/src/groups/recipe.ts`)
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** `GET /api/recipe` — the record. `prompt` is the BODY of recipe.md; the frontmatter is not on it. */
 export interface RecipeInfo {
   readonly slug: string
   readonly name: string
@@ -64,7 +64,7 @@ export interface NeedCheckInfo {
 export interface SourceInfo {
   readonly slug: string
   readonly name: string
-  readonly markdown: string
+  readonly source: string
   readonly needs: readonly NeedCheckInfo[]
   readonly produces: readonly string[]
   readonly collection: { readonly id: CollectionId; readonly title: string; readonly note: string }
@@ -630,15 +630,6 @@ export const forgetCook = (slug?: string): void => {
 // Import / export — the shareable unit is the FOLDER
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-/**
- * A preview of a pasted or dropped `recipe.md`, so the user sees what they are about to store BEFORE it
- * lands. Parsed here rather than trusted: the file was written by somebody else.
- *
- * ⚠️ A deliberately forgiving, deliberately SMALL parser — it reads the same block `core/src/recipe.ts`
- * reads, and it is a preview, not the authority: the server parses the file again when it stores it, and
- * the file it stores is the bytes, not this. A disagreement between the two can only ever mislabel a
- * preview, never write the wrong thing.
- */
 export interface ImportPreview {
   readonly ok: boolean
   /** Why it cannot be imported, in a sentence. Empty when `ok`. */
@@ -649,138 +640,43 @@ export interface ImportPreview {
   readonly produces: readonly string[]
   readonly body: string
   readonly bytes: number
-  /** Frontmatter lines this build does not model — kept, and SAID, rather than silently dropped. */
+
   readonly unmodelled: readonly string[]
 }
 
-const FRONTMATTER = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/
-const BOM = String.fromCharCode(0xfeff)
+export const IMPORT_CAP = RECIPE_DOCUMENT_CAP
 
-/** Longest a pasted file may be, mirroring `Recipe.IMPORT_CAP`. Refused here so the refusal is instant. */
-export const IMPORT_CAP = 1024 * 1024
-
-/**
- * One frontmatter line, classified ONCE.
- *
- * 🔴 **The reason this exists is that the preview used to read the block twice and disagree with
- * itself.** `needs:` may be written inline (`needs: gcc, python3`) or as a YAML block, and a block's
- * `  - gcc` lines only mean anything relative to the `needs:` above them. One pass tracked that
- * state; the pass that decided which lines the build does not model did not, so a block item matched
- * no field pattern and was reported as an unused line — *while the value it carried was shown as a
- * need on the same screen*. The user was told, about untrusted content they were deciding whether to
- * run, both that a fact was read and that it was ignored.
- *
- * The class is *two derivations of "which lines were consumed" that can disagree*, and the fix is
- * that there is now only one: every reader below asks this function, so a line cannot be consumed by
- * one and orphaned by another.
- */
-type FrontmatterLine =
-  /** `key: value` (value may be empty, which is what opens a block). */
-  | { readonly kind: "field"; readonly key: string; readonly value: string; readonly raw: string }
-  /** `  - item`, belonging to the `key:` that opened above it. */
-  | { readonly kind: "item"; readonly key: string; readonly value: string; readonly raw: string }
-  /** Blank, or something that is neither — indentation-only YAML, a comment, a stray sentence. */
-  | { readonly kind: "other"; readonly raw: string }
-
-const FIELD = /^([A-Za-z_][\w-]*)\s*:\s*(.*)$/
-const BLOCK_ITEM = /^\s+-\s*(.*)$/
-
-/** Fields whose value this build reads. Everything else is carried in the file and SAID on screen. */
-const MODELLED = new Set(["name", "description", "needs", "produces"])
-/** …of those, the ones a YAML block may belong to. `name:` followed by `- x` is not a list. */
-const LIST_FIELDS = new Set(["needs", "produces"])
-
-const readFrontmatter = (lines: readonly string[]): FrontmatterLine[] => {
-  const out: FrontmatterLine[] = []
-  let block: string | undefined
-  for (const raw of lines) {
-    const field = FIELD.exec(raw.trim())
-    if (field) {
-      const key = field[1]!.toLowerCase()
-      const value = field[2]!.trim()
-      out.push({ kind: "field", key, value, raw })
-      // An empty value is what opens a block; a value on the same line closes any previous one.
-      block = value === "" ? key : undefined
-      continue
-    }
-    const item = block === undefined ? null : BLOCK_ITEM.exec(raw)
-    if (item) {
-      out.push({ kind: "item", key: block!, value: (item[1] ?? "").trim(), raw })
-      continue
-    }
-    out.push({ kind: "other", raw })
-    block = undefined
-  }
-  return out
-}
-
-/** Unquote a scalar the author wrote as `"…"` or `'…'`. */
-const unquoted = (value: string): string => value.replace(/^["'](.*)["']$/, "$1")
-
-/** Everything a list field carries, from either spelling, in author order. */
-const carried = (parsed: readonly FrontmatterLine[], key: string): string[] =>
-  parsed
-    .flatMap((line) =>
-      line.kind === "field" && line.key === key
-        ? line.value.split(",")
-        : line.kind === "item" && line.key === key
-          ? [line.value]
-          : [],
-    )
-    .map((entry) => entry.trim())
-    .filter((entry) => entry !== "")
-
-export function previewImport(markdown: string): ImportPreview {
+export function previewImport(source: string): ImportPreview {
   const empty = {
     name: "",
     description: "",
     needs: [] as string[],
     produces: [] as string[],
     body: "",
-    bytes: markdown.length,
+    bytes: new TextEncoder().encode(source).length,
     unmodelled: [] as string[],
   }
-  if (markdown.length > IMPORT_CAP)
-    return { ...empty, ok: false, problem: "That file is too big to be a recipe — a recipe is prose somebody wrote." }
-  const text = markdown.startsWith(BOM) ? markdown.slice(BOM.length) : markdown
-  const match = FRONTMATTER.exec(text)
-  const lines = match ? match[1].split(/\r?\n/) : []
-  const body = (match ? text.slice(match[0].length) : text).trim()
-  const parsed = readFrontmatter(lines)
-  let name = ""
-  let description = ""
-  const unmodelled: string[] = []
-  for (const line of parsed) {
-    if (line.kind === "field" && line.key === "name") name = unquoted(line.value)
-    else if (line.kind === "field" && line.key === "description") description = unquoted(line.value)
-    // A line is "not used" only when nothing above CONSUMED it. A block item under `needs:` is read;
-    // an item under a field this build does not model is not, and is still reported as carried.
-    else if (line.kind === "field" && MODELLED.has(line.key)) continue
-    else if (line.kind === "item" && LIST_FIELDS.has(line.key)) continue
-    else if (line.raw.trim() !== "") unmodelled.push(authorText(line.raw, 120))
-  }
-  const preview = {
-    name: authorText(name, 80),
-    description: authorText(description, 400),
-    needs: carried(parsed, "needs").map((entry) => authorText(entry, 120)),
-    produces: carried(parsed, "produces").map((entry) => authorText(entry, 120)),
-    body: authorBody(body, 20_000),
-    bytes: markdown.length,
-    unmodelled,
-  }
-  if (body === "")
+  try {
+    const document = parseRecipeDocument(source)
+    const known = new Set(["version", "name", "description", "prompt", "needs", "produces", "officers"])
     return {
-      ...preview,
-      ok: false,
-      problem: "That file has no prompt. The prompt IS the recipe, so there would be nothing to cook.",
+      ok: true,
+      problem: "",
+      bytes: empty.bytes,
+      name: authorText(document.name, 160),
+      description: authorText(document.description, 800),
+      needs: (document.needs ?? []).map((value) => authorText(value, 160)),
+      produces: (document.produces ?? []).map((value) => authorText(value, 160)),
+      body: authorBody(document.prompt),
+      unmodelled: Object.keys(document)
+        .filter((key) => !known.has(key))
+        .map((key) => authorText(key, 160)),
     }
-  return { ...preview, ok: true, problem: "" }
+  } catch (cause) {
+    return { ...empty, ok: false, problem: cause instanceof Error ? cause.message : String(cause) }
+  }
 }
 
-/**
- * The filename an export is offered under. Derived from the SLUG, never from the recipe's own name: the
- * name is a stranger's string and this one becomes a path on the user's disk.
- */
 export function exportFilename(slug: string): string {
   const safe = slug
     .toLowerCase()
@@ -790,16 +686,10 @@ export function exportFilename(slug: string): string {
   return `${safe || "recipe"}.nova`
 }
 
-/**
- * What a person is told they are getting when they export.
- *
- * The ZIP is the complete portable unit. Paste remains useful for prose-only recipes, but that path is
- * labelled asset-free at the control rather than weakening the normal export.
- */
 export function describeExport(view: RecipeView): string {
   const carried =
     view.assets.length === 0
-      ? "its recipe.md"
-      : `its recipe.md and ${view.assets.length} asset${view.assets.length === 1 ? "" : "s"}`
+      ? "its recipe.json"
+      : `its recipe.json and ${view.assets.length} asset${view.assets.length === 1 ? "" : "s"}`
   return `This ZIP carries the complete recipe folder — ${carried}, with every byte preserved. Anybody can import it into their own NovaClaw.`
 }

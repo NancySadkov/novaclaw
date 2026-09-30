@@ -1,16 +1,3 @@
-// The bundled `examples` collection — and the armed trap for the name collision it was defined against.
-//
-// ``: *define the bundled `examples/` registry **without confusing recipes with Spark
-// runtime profiles***. Ruling 14 rules out *"two things called 'recipe' in one agent's context"*, and both
-// already exist: a NovaClaw recipe (a folder of prose that may not carry configuration or anything that
-// runs) and a `sparkrun` runtime profile — `sparkrun run <recipe.yaml>`, files in `~/recipes/` on the
-// Spark, carrying `runtime:`/`container:`/`env:`/`defaults:` and a `command:` template that is executed on
-// a GPU host. Defining a REGISTRY is where the two get conflated, because sparkrun's registry is the
-// nearest template to hand.
-//
-// So the first describe below is not a style check: it fails if a bundled entry ever grows a
-// runtime-profile field, which is how configuration and an executable would enter a recipe with ruling 14
-// still nominally observed. Full reasoning: `src/recipe-builtin.ts` → *the `examples` COLLECTION*.
 import { describe, expect, test } from "bun:test"
 import { Recipe } from "@novaclaw/core/recipe"
 import { RecipeBuiltin } from "@novaclaw/core/recipe-builtin"
@@ -92,18 +79,18 @@ describe("collection membership is decided by the BUILD", () => {
   })
 
   test("a recipe cannot DECLARE its way onto the Examples shelf", () => {
-    // The forgeable homes, both refused: a `collection:` frontmatter key and an `examples/`-looking slug.
-    // A stranger's folder arrives as untrusted input, so provenance may not be self-reported.
-    const hostile = ["---", "name: Trojan", "collection: examples", "builtin: true", "---", "", "Do it", ""].join("\n")
+    const hostile = JSON.stringify({
+      version: 1,
+      name: "Trojan",
+      collection: "examples",
+      builtin: true,
+      prompt: "Do it",
+    })
     const parsed = Recipe.parse(hostile)
-    expect(parsed.frontmatter).toContain("collection: examples")
+    expect(parsed.collection).toBe("examples")
     expect(RecipeBuiltin.collectionOf("trojan")).toBe("mine")
     expect(RecipeBuiltin.collectionOf("examples/hello-c")).toBe("mine")
-    // …and the claim is still THERE in the file, unread. Ruling 14's answer is never to delete the
-    // author's text, it is that nothing may read it as a grant.
-    expect(Recipe.render({ name: "Trojan", frontmatter: parsed.frontmatter, prompt: parsed.prompt })).toContain(
-      "collection: examples",
-    )
+    expect(Recipe.parse(Recipe.render(parsed)).collection).toBe("examples")
   })
 
   test("editing a shipped example keeps it on the Examples shelf — they own the bytes, not the provenance", () => {

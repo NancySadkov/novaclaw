@@ -1,6 +1,13 @@
 import { CommandSpec } from "./command-spec"
 import { lazyCommand } from "./lazy-command"
 
+export const DeployCommand = lazyCommand({
+  ...CommandSpec.deploy,
+  async load() {
+    return (await import("./cmd/deploy")).DeployCommand
+  },
+})
+
 export const McpCommand = lazyCommand({
   ...CommandSpec.mcp,
   async load() {

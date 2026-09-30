@@ -1,3 +1,4 @@
+import type { RecipeOfficer } from "@novaclaw/schema/recipe-officer"
 import type { ServerConnection } from "@/context/server"
 import { instanceFetch, instanceFetchResponse } from "@/utils/instance-fetch"
 
@@ -9,6 +10,7 @@ import { instanceFetch, instanceFetchResponse } from "@/utils/instance-fetch"
 // recipe"); that preference is now the SEAM's behaviour and every sibling client inherits it.
 
 export interface Recipe {
+  readonly officers?: readonly RecipeOfficer[]
   readonly slug: string
   readonly name: string
   readonly description?: string
@@ -19,6 +21,7 @@ export interface Recipe {
 }
 
 export interface SaveRecipeInput {
+  readonly officers?: readonly RecipeOfficer[]
   readonly slug?: string
   readonly name: string
   readonly description?: string
@@ -36,14 +39,14 @@ export interface RecipeNeedCheck {
 /**
  * A recipe as its author wrote it (`GET /api/recipe/:slug/source`).
  *
- * ⚠️ `markdown` is the FILE'S OWN BYTES. The `Recipe` record above carries the prompt BODY only, so this
+ * ⚠️ `source` is the FILE'S OWN BYTES. The `Recipe` record above carries the prompt BODY only, so this
  * is the text-editing source rather than a two-field reconstruction. Folder export uses the ZIP endpoint
  * below so assets travel too.
  */
 export interface RecipeSource {
   readonly slug: string
   readonly name: string
-  readonly markdown: string
+  readonly source: string
   readonly needs: readonly RecipeNeedCheck[]
   readonly produces: readonly string[]
   readonly collection: { readonly id: "examples" | "mine"; readonly title: string; readonly note: string }
@@ -61,6 +64,9 @@ export interface RecipeAssetContent {
 }
 
 export interface RecipeDeployment {
+  readonly projectID: string
+  readonly directory: string
+  readonly manager: string
   readonly slug: string
   readonly name: string
   readonly description?: string
@@ -77,6 +83,7 @@ export interface RecipeLaunch {
 }
 
 export interface RecipeArchivePreview {
+  readonly officers: readonly RecipeOfficer[]
   readonly name: string
   readonly description?: string
   readonly prompt: string
@@ -89,6 +96,7 @@ export interface RecipeArchivePreview {
  * recipe, so it makes a caller resend prose it did not author.
  */
 export interface UpdateRecipeInput {
+  readonly officers?: readonly RecipeOfficer[]
   readonly name?: string
   readonly description?: string | null
   readonly prompt?: string
@@ -256,20 +264,28 @@ export const saveRecipe = (server: ServerConnection.HttpBase, input: SaveRecipeI
 export const recipeSource = (server: ServerConnection.HttpBase, slug: string) =>
   call<RecipeSource>(server, "GET", `api/recipe/${encodeURIComponent(slug)}/source`)
 
-export const replaceRecipeSource = (server: ServerConnection.HttpBase, slug: string, markdown: string) =>
-  call<Recipe>(server, "PUT", `api/recipe/${encodeURIComponent(slug)}/source`, { markdown })
+export const replaceRecipeSource = (server: ServerConnection.HttpBase, slug: string, source: string) =>
+  call<Recipe>(server, "PUT", `api/recipe/${encodeURIComponent(slug)}/source`, { source })
 
 export const listRecipeAssets = (server: ServerConnection.HttpBase, slug: string) =>
   call<RecipeAsset[]>(server, "GET", `api/recipe/${encodeURIComponent(slug)}/assets`)
 
 export const readRecipeAsset = (server: ServerConnection.HttpBase, slug: string, path: string) =>
-  instanceFetch<RecipeAssetContent>(server, { method: "GET", route: `api/recipe/${encodeURIComponent(slug)}/asset`, query: { path } })
+  instanceFetch<RecipeAssetContent>(server, {
+    method: "GET",
+    route: `api/recipe/${encodeURIComponent(slug)}/asset`,
+    query: { path },
+  })
 
 export const writeRecipeAsset = (server: ServerConnection.HttpBase, slug: string, asset: RecipeAssetContent) =>
   call<RecipeAssetContent>(server, "PUT", `api/recipe/${encodeURIComponent(slug)}/asset`, asset)
 
 export const deleteRecipeAsset = (server: ServerConnection.HttpBase, slug: string, path: string) =>
-  instanceFetch<void>(server, { method: "DELETE", route: `api/recipe/${encodeURIComponent(slug)}/asset`, query: { path } })
+  instanceFetch<void>(server, {
+    method: "DELETE",
+    route: `api/recipe/${encodeURIComponent(slug)}/asset`,
+    query: { path },
+  })
 
 export const listDeployedRecipes = (server: ServerConnection.HttpBase) =>
   call<unknown>(server, "GET", "api/recipe/deployed").then((value) => {
@@ -277,8 +293,11 @@ export const listDeployedRecipes = (server: ServerConnection.HttpBase) =>
     return value as RecipeDeployment[]
   })
 
-export const deployRecipe = (server: ServerConnection.HttpBase, slug: string) =>
-  call<RecipeDeployment>(server, "POST", `api/recipe/${encodeURIComponent(slug)}/deploy`, {})
+export const deployRecipe = (
+  server: ServerConnection.HttpBase,
+  slug: string,
+  options: { directory?: string; model?: string } = {},
+) => call<RecipeDeployment>(server, "POST", `api/recipe/${encodeURIComponent(slug)}/deploy`, options)
 
 export const undeployRecipe = (server: ServerConnection.HttpBase, slug: string) =>
   call<void>(server, "DELETE", `api/recipe/deployed/${encodeURIComponent(slug)}`)
@@ -289,12 +308,12 @@ export const launchRecipe = (server: ServerConnection.HttpBase, slug: string) =>
 export const updateRecipe = (server: ServerConnection.HttpBase, slug: string, patch: UpdateRecipeInput) =>
   call<Recipe>(server, "PATCH", `api/recipe/${encodeURIComponent(slug)}`, patch)
 
-/** Store a `recipe.md` somebody else wrote, byte for byte, under a free slug. Never overwrites. */
-export const importRecipe = (server: ServerConnection.HttpBase, input: { markdown: string; slug?: string }) =>
+/** Store a `recipe.json` somebody else wrote, byte for byte, under a free slug. Never overwrites. */
+export const importRecipe = (server: ServerConnection.HttpBase, input: { source: string; slug?: string }) =>
   call<Recipe>(server, "POST", "api/recipe/import", input)
 
 /**
- * Download the complete folder transport: recipe.md plus every nested binary/text asset.
+ * Download the complete folder transport: recipe.json plus every nested binary/text asset.
  *
  * ⚠️ **Resolves with an archive or not at all.** A non-2xx is the seam's `InstanceFetchError`; a 2xx
  * that carried nothing usable is a {@link RecipeArchiveError}. Nothing here ever answers with bytes a

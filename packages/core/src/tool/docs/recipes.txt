@@ -1,8 +1,8 @@
 # Recipes
 Instructions for making something, which an assistant cooks fresh whenever you need it.
 
-A **recipe** is a folder holding a `recipe.md` — a plain-language description of what to
-build — plus whatever files it needs. You do not ship the finished thing; you keep the
+A **recipe** is a folder holding a versioned `recipe.json` document with plain-language
+instructions in its `prompt` field, plus any assets. You keep the
 instructions, and an assistant builds it on demand.
 
 ## Why keep instructions instead of the result
@@ -34,3 +34,40 @@ doubles as a health check.
 Ask an assistant. Describe the outcome you want, insist on the parts that matter (no
 hardcoded answers, use this file format, keep it offline) and leave the rest open. The
 tighter the intent and the looser the implementation, the longer the recipe stays good.
+
+The document requires `version`, `name` and `prompt`. Version 1 also supports `description`,
+`needs` and `produces` arrays, and officer prototypes. Unknown extension fields are retained
+when editing. Unsupported versions and invalid field types are rejected before import or deployment.
+
+```json
+{
+  "version": 1,
+  "name": "Observatory",
+  "description": "A small offline dashboard",
+  "prompt": "Create index.html, verify it works offline, and report the result.",
+  "needs": [],
+  "produces": ["index.html"],
+  "officers": [
+    {
+      "title": "Builder",
+      "description": "Build the dashboard and report to your Manager.",
+      "nudges": [
+        {
+          "name": "Review the objective",
+          "text": "Recheck the acceptance criteria before continuing.",
+          "hook": { "type": "after-compaction" }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Export the complete folder as a `.nova` ZIP archive with `recipe.json` at its root.
+Deploy creates a project under the instance home's `projects/` directory, or an explicit
+absolute destination. Each deployment hires a Manager reporting to Nova; recipe officers
+report to that Manager. Officers are entities and the project folder is their shared terrain.
+The Manager coordinates the team, verifies the result and sends Nova a consolidated report.
+
+Headless deployment: `nova-cli deploy example.nova --attach http://localhost:4096 --directory /absolute/project`.
+Omit `--directory` for the managed default. A destination that already exists is refused.

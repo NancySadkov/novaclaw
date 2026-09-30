@@ -6,6 +6,7 @@ export const WorkProjectTable = sqliteTable("work_project", {
   name: text().notNull(),
   objective: text().notNull(),
   directory: text(),
+  recipe: text({ mode: "json" }).$type<WorkProject.Recipe>(),
   phases: text({ mode: "json" }).$type<readonly WorkProject.Phase[]>().notNull(),
   paused: integer({ mode: "boolean" }).notNull().default(false),
   revision: integer().notNull().default(1),
@@ -26,4 +27,5 @@ export const ProjectNoticeTable = sqliteTable("project_notice", {
   agent: text().primaryKey(),
   id: text().notNull(),
   text: text().notNull(),
+  delivery: text().$type<"queue" | "steer">().notNull().default("steer"),
 })

@@ -2,11 +2,11 @@ export * as FinishAudit from "./finish-audit"
 
 import { SessionMessage } from "../message"
 import { SessionToolContent } from "../tool-content"
-import { isRealUserTurn } from "../steer-provenance"
+import { isTaskRequest } from "../steer-provenance"
 import { Introspection } from "./introspection"
 
 export const SYSTEM =
-  "You are a completion auditor. Decide whether the original user's requested work is actually " +
+  "You are a completion auditor. Decide whether this agent's assigned work from the user or a colleague is actually " +
   "complete based only on the evidence shown. Answer with exactly YES or NO. YES means every material " +
   "part is done; NO means work remains, evidence is missing, or completion is uncertain."
 
@@ -55,9 +55,12 @@ export const exitRequest = (context: readonly SessionMessage.Message[]): ExitReq
  */
 export const excerpt = (context: readonly SessionMessage.Message[], request: ExitRequest): string | undefined => {
   const user = context
-    .filter(isRealUserTurn)
+    .filter(isTaskRequest)
     .slice(-3)
-    .map((message) => clip((message.text ?? "").trim(), 500))
+    .map(
+      (message) =>
+        `${message.type === "colleague" ? `From colleague ${message.sender}: ` : ""}${clip((message.text ?? "").trim(), 1000)}`,
+    )
     .filter(Boolean)
   const activity: string[] = []
   for (const message of context) {
@@ -73,14 +76,14 @@ export const excerpt = (context: readonly SessionMessage.Message[], request: Exi
   }
   if (user.length === 0 && activity.length === 0) return undefined
   return [
-    ...(user.length === 0 ? [] : ["Recent user requests:", ...user]),
+    ...(user.length === 0 ? [] : ["Recent work requests:", ...user]),
     ...(activity.length === 0 ? [] : ["Recent work evidence:", ...activity.slice(-8)]),
     `The agent explicitly requested exit with this result: ${clip(request.result, 500) || "(empty result)"}`,
   ].join("\n")
 }
 
 export const prompt = (evidence: string): string =>
-  `Is the user's requested work actually complete? Answer only YES or NO.\n\n<work-evidence>\n${evidence}\n</work-evidence>`
+  `Is this agent's assigned work actually complete? Answer only YES or NO.\n\n<work-evidence>\n${evidence}\n</work-evidence>`
 
 export type Verdict = "yes" | "no" | "unknown"
 

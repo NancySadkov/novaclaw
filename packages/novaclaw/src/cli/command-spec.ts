@@ -1,4 +1,5 @@
 export const CommandSpec = {
+  deploy: { command: "deploy <archive>", describe: "deploy a .nova recipe as a project on a running instance" },
   mcp: {
     command: "mcp",
     describe: "manage MCP (Model Context Protocol) servers",
@@ -51,4 +52,3 @@ export const CommandSpec = {
 } as const
 
 export type CommandSpec = (typeof CommandSpec)[keyof typeof CommandSpec]
-

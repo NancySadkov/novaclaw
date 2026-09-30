@@ -3,6 +3,7 @@ export * as ColleagueHandoff from "./colleague-handoff"
 import { and, desc, eq, or } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Schema } from "effect"
 import { AgentConfigStore } from "../agent-config-store"
+import { ConfigStoreWrite } from "../config-store-write"
 import { AgentRetire } from "../agent/retire"
 import { ColleagueBound } from "./colleague-bound"
 import { ConfigAgent } from "../config/agent"
@@ -873,7 +874,7 @@ export const layer = Layer.effect(
         // layer already holds rather than re-resolved per delivery.
         chat: (colleague) =>
           ensureLiveChat({ db, events, projects, store: sessions, agentConfigs: store }, AgentV2.ID.make(colleague)),
-        refresh: agents.reload(),
+        refresh: ConfigStoreWrite.refreshDomain("agents"),
         roster: agents.all(),
         forget: (colleague) => AgentRetire.everything({ db, events, memory, agent: colleague, at: Date.now() }),
         // Resolved from the registry, which folds config `disabled` into `Info.paused` — one rule,

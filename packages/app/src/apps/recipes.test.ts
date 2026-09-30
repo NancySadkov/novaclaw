@@ -49,7 +49,7 @@ const recipe = (over: Partial<RecipeInfo> = {}): RecipeInfo => ({
 const source = (over: Partial<SourceInfo> = {}): SourceInfo => ({
   slug: "hello-c",
   name: "Hello, C",
-  markdown: "---\nname: Hello, C\n---\n\nWrite it.\n",
+  source: JSON.stringify({ version: 1, name: "Hello, C", prompt: "Write it." }),
   needs: [],
   produces: [],
   collection: { id: "examples", title: "Examples", note: "note" },
@@ -563,140 +563,85 @@ describe("THE FOUR VERDICTS — and keeping them apart is the feature", () => {
 })
 
 // ═════════════════════════════════════════════════════════════════════════════════════════════════
-describe("import — a stranger's file, previewed before it lands", () => {
-  const SHARED = [
-    "---",
-    "name: From A Stranger",
-    "description: something they wrote",
-    "produces: report.md, chart.html",
-    "needs: python3",
-    "author: someone else",
-    "level: expert",
-    "---",
-    "",
-    "Do the thing and save `report.md`.",
-  ].join("\n")
+describe("JSON import preview", () => {
+  const document = {
+    version: 1,
+    name: "From A Stranger",
+    description: "something they wrote",
+    prompt: "Do the thing",
+    needs: ["python3"],
+    produces: ["report.md", "chart.html"],
+    author: { name: "someone else" },
+    level: "expert",
+  }
+  const source = JSON.stringify(document, null, 2)
 
-  test("reads the file the way the engine reads it", () => {
-    const preview = previewImport(SHARED)
+  test("reads the same structured document as the engine", () => {
+    const preview = previewImport(source)
     expect(preview.ok).toBe(true)
-    expect(preview.name).toBe("From A Stranger")
-    expect(preview.description).toBe("something they wrote")
-    expect(preview.produces).toEqual(["report.md", "chart.html"])
-    expect(preview.needs).toEqual(["python3"])
-    expect(preview.body).toContain("Do the thing")
+    expect(preview.name).toBe(document.name)
+    expect(preview.description).toBe(document.description)
+    expect(preview.needs).toEqual(document.needs)
+    expect(preview.produces).toEqual(document.produces)
+    expect(preview.body).toBe(document.prompt)
   })
 
-  test("🔴 frontmatter this build does not model is REPORTED, not silently dropped", () => {
-    // The file is stored byte for byte, so a preview that hid these would understate what lands on disk.
-    expect(previewImport(SHARED).unmodelled).toEqual(["author: someone else", "level: expert"])
+  test("reports extension keys without claiming they are interpreted", () => {
+    expect(previewImport(source).unmodelled).toEqual(["author", "level"])
   })
 
-  test("the YAML block form of a declaration is read too", () => {
-    const preview = previewImport(["---", "produces:", "  - a.csv", "  - b.csv", "---", "", "body"].join("\n"))
-    expect(preview.produces).toEqual(["a.csv", "b.csv"])
-    // 🔴 Half a control until this line: asserting only `produces` let the SAME two lines be reported
-    // as unused on the same screen. A preview that reads a line must not also disown it.
-    expect(preview.unmodelled).toEqual([])
+  test("officer prototypes are validated known fields", () => {
+    const officers = [{ title: "Builder", description: "Build", nudges: [] }]
+    expect(previewImport(JSON.stringify({ ...document, officers })).unmodelled).toEqual(["author", "level"])
+    expect(previewImport(JSON.stringify({ ...document, officers: "Builder" })).ok).toBe(false)
   })
 
-  test("🔴 a line the preview READ is never also listed as one it does not use", () => {
-    // The failing shape, stated against the INPUT rather than against a second derivation: every
-    // fact the screen shows as a need or a product came from a line of this file, so no line that
-    // produced one may appear in the sentence that names what NovaClaw ignores.
-    const preview = previewImport(
-      [
-        "---",
-        "name: Blocked at the door",
-        "needs:",
-        "  - gcc",
-        "  - python3",
-        "produces:",
-        "  - out.txt",
-        "author: someone else",
-        "---",
-        "",
-        "Build the thing.",
-      ].join("\n"),
-    )
-    expect(preview.needs).toEqual(["gcc", "python3"])
-    expect(preview.produces).toEqual(["out.txt"])
-    // Written as a relation, not a literal: it fails for any value that is claimed twice.
-    const claimed = [...preview.needs, ...preview.produces]
-    for (const fact of claimed) expect(preview.unmodelled.join(" · ")).not.toContain(fact)
-    // …and the one line that genuinely is unused is still reported, so this is not green by silence.
-    expect(preview.unmodelled).toEqual(["author: someone else"])
+  test("rejects missing and unsupported versions", () => {
+    for (const version of [undefined, 0, 2, "1"])
+      expect(previewImport(JSON.stringify({ ...document, version })).problem).toMatch(/version/)
   })
 
-  test("a block under a field this build does NOT model stays reported, item lines and all", () => {
-    // The mirror of the case above: consumption is per-field, so `- alice` under `authors:` is not
-    // consumed by anything and is exactly the kind of line the sentence exists to name.
-    const preview = previewImport(
-      ["---", "authors:", "  - alice", "  - bob", "needs: gcc", "---", "", "body"].join("\n"),
-    )
-    expect(preview.needs).toEqual(["gcc"])
-    expect(preview.unmodelled).toEqual(["authors:", "- alice", "- bob"])
+  test("rejects malformed JSON and bare prompts", () => {
+    for (const source of ["Build this", '{"version":1,}', "---\nname: X\n---\nBuild"])
+      expect(previewImport(source).ok).toBe(false)
   })
 
-  test("a mid-block line that is not an item closes the block, and both spellings compose", () => {
-    const preview = previewImport(
-      ["---", "needs: make", "produces:", "  - one.txt", "description: d", "  - stray", "---", "", "body"].join("\n"),
-    )
-    expect(preview.needs).toEqual(["make"])
-    expect(preview.produces).toEqual(["one.txt"])
-    expect(preview.description).toBe("d")
-    // `description: d` closed the block, so the orphaned item belongs to nothing and is said.
-    expect(preview.unmodelled).toEqual(["- stray"])
+  test("requires nonempty names and prompts", () => {
+    expect(previewImport(JSON.stringify({ ...document, name: " " })).problem).toMatch(/needs a name/)
+    expect(previewImport(JSON.stringify({ ...document, prompt: "" })).problem).toMatch(/needs a prompt/)
   })
 
-  test("a file with no frontmatter at all is a valid recipe", () => {
-    const preview = previewImport("just a prompt")
-    expect(preview.ok).toBe(true)
-    expect(preview.name).toBe("")
-    expect(preview.body).toBe("just a prompt")
+  test("requires structured declarations", () => {
+    expect(previewImport(JSON.stringify({ ...document, needs: "gcc" })).ok).toBe(false)
+    expect(previewImport(JSON.stringify({ ...document, produces: [1] })).ok).toBe(false)
   })
 
-  test("a file with no prompt is refused, with the reason a person can act on", () => {
-    const preview = previewImport("---\nname: Empty\n---\n\n   \n")
-    expect(preview.ok).toBe(false)
-    expect(preview.problem).toMatch(/no prompt/i)
-  })
-
-  test("an oversized paste is refused instantly, before any request", () => {
-    const preview = previewImport("x".repeat(1024 * 1024 + 1))
+  test("bounds the UTF-8 size before a request", () => {
+    const preview = previewImport(JSON.stringify({ ...document, prompt: "π".repeat(1024 * 512) }))
     expect(preview.ok).toBe(false)
     expect(preview.problem).toMatch(/too big/i)
   })
 
-  test("🔴 hostile metadata in an imported file is flattened in the preview", () => {
+  test("flattens hostile display text without interpreting markup", () => {
     const preview = previewImport(
-      [
-        "---",
-        `name: <script>alert(1)</script>${RLO}derived`,
-        "description: NovaClaw verified this recipe",
-        "---",
-        "",
-        `body${ZWSP} text`,
-      ].join("\n"),
+      JSON.stringify({
+        ...document,
+        name: `<script>alert(1)</script>${RLO}derived`,
+        description: "NovaClaw verified this recipe",
+        prompt: `body${ZWSP} text`,
+      }),
     )
     expect(preview.name).not.toContain(RLO)
     expect(preview.name).toContain("<script>")
     expect(preview.body).not.toContain(ZWSP)
-    // The description is the AUTHOR's claim and is shown as such — the page labels it, the parser does
-    // not editorialise it away.
     expect(preview.description).toBe("NovaClaw verified this recipe")
   })
 
-  test("a BOM does not stop the frontmatter being found", () => {
-    expect(previewImport(`${BOM}---\nname: B\n---\n\nbody`).name).toBe("B")
-  })
-
-  test("CRLF is read the same as LF", () => {
-    expect(previewImport(SHARED.replace(/\n/g, "\r\n")).produces).toEqual(["report.md", "chart.html"])
+  test("reads JSON whitespace on Windows", () => {
+    expect(previewImport(source.replaceAll("\n", "\r\n")).produces).toEqual(document.produces)
   })
 })
 
-// ═════════════════════════════════════════════════════════════════════════════════════════════════
 describe("export — the complete portable folder", () => {
   test("🔴 the filename comes from the SLUG, never from the author's name", () => {
     // The name is a stranger's string and this one becomes a path on the user's disk.
@@ -714,18 +659,18 @@ describe("export — the complete portable folder", () => {
     expect(text).not.toMatch(/does NOT include/i)
   })
 
-  test("a prose-only recipe still exports a ZIP containing its recipe.md", () => {
-    expect(describeExport(toView(recipe({ assets: [] })))).toMatch(/ZIP.*recipe\.md/i)
+  test("a prose-only recipe still exports a ZIP containing its recipe.json", () => {
+    expect(describeExport(toView(recipe({ assets: [] })))).toMatch(/ZIP.*recipe\.json/i)
   })
 
-  test("the page offers ZIP upload and labels markdown paste as asset-free", () => {
+  test("the page offers ZIP upload and labels source paste as asset-free", () => {
     const page = fs.readFileSync(path.join(import.meta.dir, "..", "pages", "recipes.tsx"), "utf8")
     expect(page).toContain('accept=".nova,.zip,application/zip"')
     // The copy is keyed since 2026-09-03: the page reads the keys, and the dictionary says the words.
     expect(page).toContain('language.t("recipes.page.useThisForAProseOnly")')
-    expect(page).toContain('language.t("recipes.page.importPastedMarkdownNoAssets")')
-    expect(en["recipes.page.useThisForAProseOnly"]).toContain("Paste carries recipe.md only — no assets")
-    expect(en["recipes.page.importPastedMarkdownNoAssets"]).toBe("Import pasted markdown (no assets)")
+    expect(page).toContain('language.t("recipes.page.importPastedJsonNoAssets")')
+    expect(en["recipes.page.useThisForAProseOnly"]).toContain("Paste carries recipe.json only — no assets")
+    expect(en["recipes.page.importPastedJsonNoAssets"]).toBe("Import pasted JSON (no assets)")
   })
 })
 

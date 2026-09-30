@@ -72,7 +72,6 @@ import { publicAssetUrl } from "@/utils/public-asset"
 
 import { Session } from "@/pages/session-loader"
 const FilesPage = lazy(() => import("@/pages/files").then(({ FilesPage }) => ({ default: FilesPage })))
-const RecipesPage = lazy(() => import("@/pages/recipes").then(({ RecipesPage }) => ({ default: RecipesPage })))
 const ProjectsPage = lazy(() => import("@/pages/projects").then(({ ProjectsPage }) => ({ default: ProjectsPage })))
 const DebugPage = lazy(() => import("@/pages/debug").then(({ DebugPage }) => ({ default: DebugPage })))
 const RegistryPage = lazy(() => import("@/pages/registry").then(({ RegistryPage }) => ({ default: RegistryPage })))
@@ -1034,7 +1033,7 @@ function Routes() {
           catch-all below would otherwise try to base64-decode "chats" as a directory. */}
       <Route path="/chats" component={() => <Navigate href="/tasks" />} />
       <Route path="/files" component={FilesPage} />
-      <Route path="/recipes" component={RecipesPage} />
+      <Route path="/recipes" component={ProjectsPage} />
       <Route path="/projects" component={ProjectsPage} />
       <Route path="/debug/registry" component={RegistryPage} />
       <Route path="/debug" component={DebugPage} />

@@ -11,6 +11,7 @@ import { SessionExecutionTable, SessionTable } from "@novaclaw/core/session/sql"
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { ModelV2 } from "@novaclaw/core/model"
 import { ProviderV2 } from "@novaclaw/core/provider"
+import { BashJobTable } from "@novaclaw/core/tool/bash-jobs.sql"
 import { testEffect } from "./lib/effect"
 
 const it = testEffect(AppNodeBuilder.build(LayerNode.group([Database.node, SessionExecutionAttempt.node])))
@@ -26,6 +27,44 @@ const makeSession = (id: SessionSchema.ID) =>
   })
 
 describe("SessionExecutionAttempt", () => {
+  it.effect("requeues only a fenced checkpoint without live tools, providers or background commands", () =>
+    Effect.gen(function* () {
+      const sessionID = SessionSchema.ID.make("ses_execution_yield")
+      yield* makeSession(sessionID)
+      const attempts = yield* SessionExecutionAttempt.Service
+      const { db } = yield* Database.Service
+      const lease = yield* attempts.start(sessionID, "host")
+      expect(yield* SessionExecutionAttempt.requeue(db, lease)).toBe(false)
+      yield* attempts.advance(lease, "provider", "mark")
+      expect(yield* SessionExecutionAttempt.requeue(db, { ...lease, ownerID: "stale" })).toBe(false)
+      yield* attempts.toolDispatched(lease, { callID: "write", name: "write", sideEffect: "idempotent-write" })
+      expect(yield* SessionExecutionAttempt.requeue(db, lease)).toBe(false)
+      yield* attempts.toolSettled(lease, "write")
+      yield* attempts.advance(lease, "provider", "mark")
+      const recovery = {
+        attemptID: EventV2.ID.create(),
+        assistantMessageID: SessionMessage.ID.create(),
+        model: { id: ModelV2.ID.make("model"), providerID: ProviderV2.ID.make("provider") },
+        startedAt: DateTime.makeUnsafe(1234),
+        toolProtocol: false,
+      }
+      yield* attempts.providerStarted(lease, recovery)
+      expect(yield* SessionExecutionAttempt.requeue(db, lease)).toBe(false)
+      yield* attempts.providerSettled(lease, recovery.attemptID)
+      expect(yield* SessionExecutionAttempt.requeue(db, lease)).toBe(false)
+      yield* attempts.advance(lease, "drain", "mark")
+      yield* db.insert(BashJobTable).values({ id: "job_yield", owner: sessionID, command: "build", status: "running", time_started: 1 }).run().pipe(Effect.orDie)
+      expect(yield* SessionExecutionAttempt.requeue(db, lease)).toBe(false)
+      yield* db.update(BashJobTable).set({ status: "done" }).where(eq(BashJobTable.id, "job_yield")).run().pipe(Effect.orDie)
+      expect(yield* SessionExecutionAttempt.requeue(db, lease)).toBe(true)
+      expect(yield* attempts.get(sessionID)).toMatchObject({ state: "starting", phase: "drain", failureCount: 0 })
+      expect(yield* SessionExecutionAttempt.requeue(db, lease)).toBe(false)
+      const resumed = yield* attempts.start(sessionID, "next-host")
+      expect(resumed.generation).toBe(lease.generation + 1)
+      expect(yield* SessionExecutionAttempt.requeue(db, lease)).toBe(false)
+    }),
+  )
+
   it.effect("exposes the authoritative attempt fence only inside a draining capability", () =>
     Effect.gen(function* () {
       expect(yield* SessionExecutionAttempt.currentFence()).toBeUndefined()

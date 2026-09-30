@@ -1,5 +1,6 @@
 import { afterEach, expect, test } from "bun:test"
 import { render } from "solid-js/web"
+import { MemoryRouter, Route } from "@solidjs/router"
 import type { WorkProject } from "@novaclaw/schema/work-project"
 import { ProjectsPanel } from "@/pages/projects"
 import { dict } from "@/i18n/en"
@@ -49,7 +50,7 @@ const snapshot: WorkProject.Snapshot = {
   ],
 }
 const mount = async (
-  api: ProjectsApi,
+  api: Omit<ProjectsApi, "undeploy"> & Partial<Pick<ProjectsApi, "undeploy">>,
   confirm = async () => true,
   pickDirectory?: (select: (directory: string) => void) => void,
 ) => {
@@ -60,7 +61,18 @@ const mount = async (
   }
   host = document.createElement("div")
   document.body.append(host)
-  dispose = render(() => <ProjectsPanel api={api} t={t} confirm={confirm} pickDirectory={pickDirectory} />, host)
+  const client = { undeploy: async () => {}, ...api }
+  dispose = render(
+    () => (
+      <MemoryRouter>
+        <Route
+          path="/"
+          component={() => <ProjectsPanel api={client} t={t} confirm={confirm} pickDirectory={pickDirectory} />}
+        />
+      </MemoryRouter>
+    ),
+    host,
+  )
   await settle()
 }
 const button = (text: string) =>
@@ -73,6 +85,39 @@ const selectProject = async () => {
   host.querySelector<HTMLButtonElement>(".project-card")!.click()
   await settle()
 }
+
+test("deployed projects keep their team and folder bound and undeploy through the recipe lifecycle", async () => {
+  let state: WorkProject.Snapshot = {
+    ...structuredClone(snapshot),
+    projects: [{ ...project, recipe: { slug: "observatory", manager: "iris", officers: ["iris", "lyra"] } }],
+  }
+  const removed: string[] = []
+  await mount({
+    list: async () => state,
+    execute: async () => {
+      throw new Error("Generic deletion must not be used")
+    },
+    undeploy: async (id) => {
+      removed.push(id)
+      state = { projects: [], officers: [] }
+    },
+  })
+  await selectProject()
+  expect(host.textContent).toContain("Manager")
+  expect(host.querySelector(".project-officers button")).toBeNull()
+  button("Edit project").click()
+  await settle()
+  const folder = [...host.querySelectorAll<HTMLLabelElement>("label")]
+    .find((label) => label.textContent?.includes("Folder on server"))!
+    .querySelector("input")!
+  expect(folder.disabled).toBe(true)
+  button("Cancel").click()
+  await settle()
+  button("Undeploy").click()
+  await settle()
+  expect(removed).toEqual([project.id])
+  expect(host.querySelector(".project-card")).toBeNull()
+})
 
 test("edits the server folder through the picker, restores it on reopen and clears it explicitly", async () => {
   let state = structuredClone(snapshot)

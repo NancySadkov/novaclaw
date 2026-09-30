@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { FinishAudit } from "./finish-audit"
+import { Introspection } from "./introspection"
 import { SessionMessage } from "../message"
 import { applySteerProvenance } from "../steer-provenance"
 import { DateTime } from "effect"
@@ -49,11 +50,21 @@ describe("exit completion audit", () => {
   })
 
   test("uses recent real requests and excludes harness steers", () => {
+    const delegated: SessionMessage.Colleague = {
+      id: SessionMessage.ID.create(),
+      type: "colleague",
+      sender: "project-manager",
+      turn: "ask",
+      text: "Build the page and report to me; another officer owns review.",
+      time: { created: DateTime.makeUnsafe(Date.now()) },
+    }
     const evidence = FinishAudit.excerpt(
       [
         user("old task"),
         user(applySteerProvenance("automated redirect")),
         user("current task"),
+        delegated,
+        { ...delegated, turn: "announce", text: "An unrelated announcement" },
         assistant([{ type: "text", id: "text", text: "I verified it" }]),
         assistant([exitPart({ result: "all requested work landed" })]),
       ],
@@ -64,6 +75,10 @@ describe("exit completion audit", () => {
     expect(evidence).not.toContain("automated redirect")
     expect(evidence).toContain("explicitly requested exit")
     expect(evidence).toContain("all requested work landed")
+    expect(evidence).toContain("From colleague project-manager:")
+    expect(evidence).toContain(delegated.text)
+    expect(evidence).not.toContain("An unrelated announcement")
+    expect(Introspection.judgeExcerpt([delegated])).toContain(delegated.text)
   })
 
   test("reads durable structured tool content as completion evidence", () => {

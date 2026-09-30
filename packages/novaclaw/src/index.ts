@@ -8,6 +8,7 @@ import { errorMessage } from "./util/error"
 import { Heap } from "./cli/heap"
 import { BootProfile } from "@novaclaw/core/observability/boot-profile"
 import {
+  DeployCommand,
   AgentCommand,
   DbCommand,
   DebugCommand,
@@ -97,6 +98,7 @@ const cli = yargs(args)
   .usage("")
   .completion("completion", "generate shell completion script")
   .command(McpCommand)
+  .command(DeployCommand)
   .command(RunCommand)
   .command(GenerateCommand)
   .command(DebugCommand)

@@ -5,157 +5,6 @@ import path from "node:path"
 import { UnknownReason } from "@novaclaw/schema/unknown-reason"
 import { displayPath } from "./util/path"
 
-/**
- * **The deterministic success artifact for a cook** — the health-check recipes' verdict.
- *
- * AGENTS.md calls the bundled set *the install's health check* — *"a user can tell in one click whether
- * THEIR NovaClaw is actually working, a diagnostic that reads as a feature, not a test suite"*. Until now
- * the only output of a cook was **prose**: the agent said it had worked, a human read the chatter and
- * formed an impression, and nothing mechanical could read the outcome. An impression is not a health
- * check; it is a vibe. This module turns a cook into a **receipt**: one row per artifact the recipe says
- * it produces, each with an outcome the HARNESS determined by looking at the filesystem, plus one verdict.
- *
- * ── THE DESIGN DECISION, and why it went this way ──────────────────────────────────────────────────
- *
- * A recipe is a PROMPT and a cook is an agent doing open-ended work, so "did it succeed?" cannot be
- * answered by string-matching a transcript, and it must not be answered by asking a second model for an
- * opinion dressed as a fact (that is the model grading its own homework — the thing `jh`'s completion gate
- * exists to refuse, `jh/completion-gate.test.ts`). It can only be answered by a **postcondition the
- * harness checks itself**. So a recipe may declare, in one carried frontmatter line, the artifacts a
- * successful cook leaves behind:
- *
- *     produces: clean.csv, chart.html
- *
- * ── DOES A SECOND FRONTMATTER FIELD RE-OPEN RULING 14? No, and here is the argument ────────────────
- *
- * Ruling 14's headline reads *"exactly one machine-read field — `needs`"*, so this deserves an answer
- * rather than a shrug. Three things decide it, and none of them is a preference:
- *
- *  1. **The ruling's own operative law is a direction, not a count**: *"it may state what it NEEDS and may
- *     never state what it GETS."* What it rules out is named — `permissionMode`, `type`, `model`,
- *     `strict`, `minPosture` — and every member is a **grant**. `produces` is neither: it is the author
- *     describing their own artifact, with no path to `SessionConfig`, no composition with a privilege
- *     value, and nothing a hostile author gains by lying (declaring a file you did not produce marks your
- *     own recipe NOT WORKING).
- *  2. **The owner already drew this line for a second field.** Ruling 14's referred-questions block adds
- *     `collection` and says outright: *"This does not touch ruling 14: a collection is where a recipe
- *     lives, not what it is granted."* Same test, same answer. (`needs`' promotion to a modelled key
- *     is likewise sequenced *with* `collection` and `level` — the frontmatter was always
- *     expected to grow; what may never grow is the grant surface.)
- *  3. **Ruling 14 itself demands this feature.** Its justification quotes AGENTS.md's promise that a user
- *     can tell in one click whether their NovaClaw works, and rules: *"prose cannot keep it — prose is
- *     only legible after the model has already tried and failed."* It applied that to the pre-flight
- *     (`needs`); the identical argument applies to the post-condition, and the gap was filed in the
- *     same words — *"a cook's verdict is prose today, so nothing mechanical can read its
- *     outcome."* Leaving it prose is the ruling unenforced, not the ruling respected.
- *
- * So the count moves from one to two and the LAW is untouched. If a third field is ever proposed, the
- * test to apply is the owner's: *is this what the recipe is, or what the recipe is granted?*
- *
- * ⚠️ **The checkable vocabulary is CLOSED, and that is ruling 14, not taste.** A recipe is untrusted
- * input the moment it lands — *"it may state what it needs and may never state what it gets"*. The
- * obvious design (let the recipe supply a command whose exit code is the verdict) is an escalation
- * wearing a different hat: it is `permissionMode` in frontmatter with extra steps, and `novaclaw.json`
- * states the same rule for policies (*"may never contain or auto-run shell commands"*). So a `produces`
- * entry is **a plain relative file name and nothing else** — no command, no regex, no threshold, no
- * option. Everything else about a check comes from tables compiled into this file and keyed on the file's
- * own extension. The tightest possible grammar was chosen deliberately: a hostile recipe cannot express a
- * check at all, only name a file.
- *
- * What a stranger's `produces` line can therefore buy its author, in full: this module **stats one path
- * inside the folder that cook was already given, reads at most {@link READ_CAP} bytes of it, and reports
- * whether it exists, how big it is, and whether it matches its extension's shape.** That is strictly less
- * authority than `needs` already has (which stats absolute paths *outside* the work dir), and vastly less
- * than the cook itself had (`recipe.run` cooks with `permissionMode: "bypass"`).
- *
- * ⚠️ **Nothing here executes anything, and nothing here writes anything.** That is a stronger guarantee
- * than `needs`' "never executes a candidate", and it is the line this module will not cross. Compiling
- * `hello.c` would be a better check of a toolchain — and it would also be the harness running
- * model-produced, recipe-named code in order to grade it. `needs` already refuses a cook with no
- * compiler at the door; that is where toolchain authority belongs.
- *
- * ⭐ **Why not `jh/verifier.ts`, which already does exactly this shape.** jh is the same thesis — a
- * deterministic controller wrapped around a stochastic proposer, and its gate *"is ALWAYS the objective
- * check, never the model"* (jh.md §5 law 4). Two of its five check arms (`file_exists`,
- * `artifact_present`) are what a recipe postcondition needs, and the other three (`compile`, `run`,
- * `output_equals`) each take a **command** — precisely the field ruling 14 forbids a recipe to carry.
- * Reusing `verify` would mean threading a `JhProcessRunner.Runner` into a module whose entire safety
- * argument is that it cannot run anything, and then arguing about which arms a recipe may reach. The two
- * arms that don't execute are a stat and a byte read. So the THESIS is reused and the code is not, on
- * purpose; if the closed vocabulary ever grows an executing arm, that is the moment to invert this and
- * take jh's runner whole rather than grow a second one here.
- *
- * ⭐ **Why not `session/quality-check.ts`, which is the durable receipt store.** Its unit is *"one RUN of
- * one quality check"* and every row carries the `command` that ran plus an exit code whose NULL means "no
- * process existed". A check that inspects a file without running anything has no command and no exit
- * code, so storing one there would mean inventing a command string that never ran — fabricated evidence
- * on an evidence document, which is the exact failure that table's own header warns about. That store
- * belongs to the session receipt; this one is computed on demand and is a pure function of
- * the folder, so it needs no store at all: re-running it is cheaper than trusting a stale row.
- *
- * ── THE OUTCOMES: three, plus a fourth that is not a failure ───────────────────────────────────────
- *
- * The receipt must keep NOT WORKING (the instance is broken) apart from NOT
- * AVAILABLE (the model cannot do that), *"or the check blames the install for a model capability"*, and
- * ruling 2 requires that *"I could not check this"* never be collapsed into either. So:
- *
- * | outcome | verdict word | what it means |
- * |---|---|---|
- * | `met` | WORKING | the artifact is there and matches its shape |
- * | `unmet` | NOT WORKING | we looked, and it is missing / empty / not what its extension says |
- * | `unknown` + `not-applicable` | NOT AVAILABLE | the model that cooked cannot do this at all |
- * | `unknown` + `not-measured` / `measurement-failed` / `incomplete` | (no verdict) | we could not check |
- *
- * The four `unknown` reasons are `@novaclaw/schema/unknown-reason`'s shared vocabulary, not a fifth
- * private spelling of "we do not know" (`notes/reports/receipt-unknowns-vocabulary-2026-08-12.md`).
- *
- * ⚠️ **NOT AVAILABLE is derived from the INSTANCE's view of the model, never from the recipe.** A
- * declaration cannot request it, hint at it, or qualify itself with it — there is no syntax for that,
- * which is the point. The one member today is tool-calling: a model with `capabilities.tools === false`
- * cannot write a file at all, so reporting its cook as NOT WORKING would blame the install for a model
- * limit. `not-applicable` *stops the reader* (`UnknownReason.STOPS_THE_READER`) so it has to be EARNED,
- * and this is the one case where it is: there is genuinely nothing to measure.
- *
- * ⚠️ **A model we were told nothing about is `not-measured`, never `not-applicable`.** Caller passes no
- * `model` → we check the files normally. Caller passes a model whose capabilities we could not resolve →
- * that is an unmeasured fact, and filing it under the reason that tells a reader to stop asking would
- * silently close an open question. Same trap as the Windows enclosure probe in the report above.
- *
- * ── 🔴 `unmet` IS A CLAIM ABOUT THE SUBJECT, AND IT NEEDS THE INSTRUMENT TO HAVE WORKED ────────────
- *
- * **Measured 2026-08-18, and this is the defect the {@link CookOutcome} arm exists for.** Six cooks
- * "settled" in 47–57 s having written nothing, because the model endpoint had died mid-run
- * (`"finish":"error","error":{"message":"HTTP transport failed","_tag":"Transport"}`). Every declared
- * file was absent, so every row was `unmet`, so the verdict was `not-working` and the receipt read **NOT
- * WORKING — about: this NovaClaw**. It blamed the user's install for a dead endpoint.
- *
- * Nothing above was wrong about the *filesystem*: the files really were absent. The error is one step
- * earlier, in what absence MEANS. `unmet` says *"we looked, and the install did not do its job"* — and
- * that inference is only valid if the cook actually ran on this install. A cook that never reached the
- * model produced no evidence about this machine at all, so its empty folder is an unmeasured fact, not a
- * failed one. Ruling 2 in its exact words: *a check that cannot verify a claim must say "I could not
- * check this", never "missing"*.
- *
- * The rule this file now enforces, and the reason it is stated as a direction rather than as a special
- * case: **a cook's outcome may SOFTEN an `unmet` and may never overturn a `met`.** A file that is there
- * is positive evidence and no story about the instrument can take it away (a cook whose fourth turn died
- * on transport, having written everything on its second, really did work). A file that is *not* there is
- * only evidence when the instrument worked. So the folder is read first, exactly as before, and the cook
- * outcome is applied afterwards in one direction only — which is why this cannot regress into "a
- * transport error hides a real failure".
- *
- * Which reason each non-`ran` state maps to is `@novaclaw/schema/unknown-reason`'s table, not taste:
- * `blocked` is `measurement-failed` (*it ran and produced nothing usable → investigate the instrument*
- * — the model server is the instrument), and `stopped` is `incomplete` (*it started and did not finish;
- * any value is a FLOOR* — which is exactly what a half-finished folder is). Neither is `not-applicable`:
- * the question *"does this install work?"* is still wide open, and `not-applicable` would close it.
- *
- * ⚠️ **Deciding WHICH faults are instrument faults is deliberately NOT this file's job.**
- * `@novaclaw/core/session/session-error`'s `faultEvidence` owns that, because it already owns the closed
- * fault vocabulary and because every other surface with this shape must answer it the same way. This
- * module takes the answer as an input, so a new `ErrorTag` is classified once for the whole product.
- */
-
 // =============================================================================
 // The receipt
 // =============================================================================
@@ -451,7 +300,13 @@ const soften = (checks: readonly Check[], cook: CookOutcome | undefined): readon
   const why = period(cook.why?.trim() || HOUSE_REASON[cook.state])
   return checks.map((check) =>
     check.outcome === "unmet"
-      ? { declared: check.declared, outcome: "unknown" as const, reason, ...(check.looked ? { looked: check.looked } : {}), checked: why }
+      ? {
+          declared: check.declared,
+          outcome: "unknown" as const,
+          reason,
+          ...(check.looked ? { looked: check.looked } : {}),
+          checked: why,
+        }
       : check,
   )
 }
@@ -598,12 +453,13 @@ export const summary = (receipt: Receipt): string => {
       : `${name} — I could not check this cook: ${findings(unsure)}.`
 
   const verified = met.map((check) => `${check.looked} (${check.checked})`)
-  const couldNot =
-    unsure.length > 0 ? ` I could not check: ${list(unsure.map((check) => clip(check.declared)))}.` : ""
+  const couldNot = unsure.length > 0 ? ` I could not check: ${list(unsure.map((check) => clip(check.declared)))}.` : ""
 
   if (receipt.verdict === "working")
-    return `${name} — WORKING. I checked ${met.length === 1 ? "the artifact" : `all ${met.length} artifacts`} ` +
+    return (
+      `${name} — WORKING. I checked ${met.length === 1 ? "the artifact" : `all ${met.length} artifacts`} ` +
       `it says it produces: ${list(verified)}.${couldNot}`
+    )
 
   return (
     `${name} — NOT WORKING. It says it produces ${list(unmet.map((check) => clip(check.declared)))}, and in ` +

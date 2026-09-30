@@ -1,6 +1,9 @@
 export * as RecipeBuiltin from "./recipe-builtin"
 
 import { Recipe } from "./recipe"
+import fs from "node:fs/promises"
+import path from "node:path"
+import { Global } from "./global"
 
 /**
  * The recipes NovaClaw ships with (AGENTS.md → *Recipes are source code for the AI era*).
@@ -307,83 +310,6 @@ conclusion — say so if that is the situation.`,
 
 export const BUILTIN_SLUGS: ReadonlySet<string> = new Set(BUILTINS.map((recipe) => recipe.slug))
 
-// =============================================================================
-// The `examples` COLLECTION — where a recipe lives, decided by the build
-// =============================================================================
-//
-// Owner decision (`notes/reports/decisions-v0.2.0.md` → *Referred to the owner*, answered 2026-07-27):
-// *"The bundled set keeps its seven, and moves under an `examples/` collection — recipes gain a collection
-// so a user's own recipes, shipped examples, and a possible later curated tier are visibly distinct. The
-// `builtin` boolean cannot express that and cannot group. This does not touch ruling 14: a collection is
-// WHERE A RECIPE LIVES, not what it is granted."*
-//
-// The array above IS that collection's membership, and `BUILTIN_SLUGS` is its index. What follows is the
-// vocabulary — because the boolean answers *"did we ship it?"* and a collection has to answer *"which
-// shelf is it on?"*, which is a different question the moment there are three shelves.
-//
-// ── ⚠️ THE NAME COLLISION THIS ITEM WAS OPENED AGAINST, stated plainly ────────────────────────────────
-//
-// The brief: *define the bundled `examples/` registry **without confusing recipes with Spark
-// runtime profiles***. That is not a stylistic worry — ruling 14's rules_out list ends with *"two things
-// called 'recipe' in one agent's context"*, and both things exist here already:
-//
-//   · **A NovaClaw recipe** is a FOLDER of prose. It states INTENT, may declare `needs` and `produces`,
-//     and may never carry configuration or anything that runs (ruling 14). Nothing in it is executed.
-//   · **A Spark runtime profile** is a `sparkrun` YAML — and sparkrun is literally *"a community
-//     recipe-runner"* invoked as `sparkrun run <recipe.yaml>`, whose files live in `~/recipes/` on the
-//     Spark (`doc/spark.md`, `notes/ops/test-models-maintenance.md`, `notes/ops/sparkrun-*.yaml`). It
-//     carries `runtime:`, `container:`, `model:`, `env:`, `solo_only:`, `recipe_version:` and a
-//     `command:` template that is EXECUTED verbatim on a GPU host, plus a `defaults:` table of ports,
-//     `max_model_len` and `gpu_memory_utilization`.
-//
-// So the two concepts share a noun AND a verb — `sparkrun run <recipe>` next to `recipe.run` — while one
-// of them is a shell command with a resource budget and the other may not contain either.
-//
-// ⭐ **Why defining a REGISTRY is the exact moment the collision bites.** A registry of bundled entries is
-// precisely what `~/recipes/` is, and sparkrun's is the ready-made template an agent with both in context
-// will reach for: a directory of versioned entries, each a `name` plus a `defaults:` table plus a
-// `command:`. Adopting one field of that shape — a `defaults:` block, an `env:`, a `port`, a
-// `recipe_version` — puts configuration and an executable into a recipe, which is ruling 14's
-// `permissionMode`-in-frontmatter with a different label on it. The distinction is therefore load-bearing
-// and not tidiness, and it is armed by a test rather than by this paragraph:
-// `test/recipe-collection.test.ts` fails if any bundled entry ever grows a runtime-profile field name.
-//
-// The two are kept plainly distinct by three properties, all mechanical:
-//   1. a bundled entry is a `Recipe.SaveInput` and nothing else — prose, `needs`, `produces`, no other
-//      field exists to put a knob in;
-//   2. a collection has an id and a title and NO settings — it is a shelf, not a profile;
-//   3. nothing in this module or `recipe.ts` executes, spawns, or reads an env var.
-//
-// ── WHY MEMBERSHIP IS DERIVED, and not declared or inferred from a folder ─────────────────────────────
-//
-// A collection is a **provenance** fact: *NovaClaw shipped this one.* Two tempting homes are both wrong:
-//
-//   · **A `collection:` frontmatter key.** A recipe is untrusted input the moment it lands (ruling 14), so
-//     a self-declared collection lets a stranger's zip announce itself as a NovaClaw example. `tool/
-//     recipe.ts` already draws this line for the sibling field: *"a shared recipe's self-declared expertise
-//     level is untrusted input, so the artifact may propose and the instance decides."* Provenance is the
-//     case where there is nothing to propose.
-//   · **A `recipes/examples/` DIRECTORY on disk.** It reads like the literal answer to "where a recipe
-//     lives", and it is exactly as forgeable — unzipping a shared folder into it grants the same false
-//     provenance, with no untrusted *file* required. It would also mean migrating folders that are already
-//     on users' disks, and those folders are theirs (see the seeding note in this module's header).
-//
-// What is left is the only teller that cannot be forged from outside: the BUILD. `BUILTIN_SLUGS` is a
-// module constant compiled into the bundle, so membership is a fact about this NovaClaw, decided before
-// any user or peer could touch it. A user may still edit or delete an example — they own the bytes once it
-// is on their disk — and it stays on the Examples shelf, which is correct: it is still the recipe we
-// shipped, now with their changes.
-//
-// ── IS THIS THE `needs`/`collection`/`level` SCHEMA BATCH? NO, and that is the finding ────────────────
-//
-// The sequencing is *"one schema change, not two (three, counting the level)"* — `needs`,
-// `collection` and `level` promoted together, with a `packages/protocol` field to make them wire-visible.
-// The reasoning above removes `collection` from that batch entirely: it is not a frontmatter field at all,
-// so it has nothing to promote and cannot ride along. The batch is `needs` and `level`, both still
-// unlanded, both still artifact-declared. Nothing here adds a carried field, changes `parse`/`render`, or
-// touches `Recipe`'s key set — which `test/tool-recipe.test.ts` pins EXACTLY, and which pins `collection`
-// itself in its FORBIDDEN list precisely because an artifact-declared one is the thing to keep out.
-
 /** The shelves a recipe can be on. Closed, and every member is decided by the instance, never by the file. */
 export type Collection = "examples" | "mine"
 
@@ -432,7 +358,13 @@ export async function seed(options?: Recipe.Options): Promise<{ created: string[
   const created: string[] = []
   const skipped: string[] = []
   for (const builtin of BUILTINS) {
-    const existing = await Recipe.read(builtin.slug, options).catch(() => undefined)
+    const existing = await fs.lstat(path.join(options?.root ?? Recipe.rootIn(Global.Path.data), builtin.slug)).then(
+      () => true,
+      (cause: NodeJS.ErrnoException) => {
+        if (cause.code === "ENOENT") return false
+        throw cause
+      },
+    )
     if (existing) {
       skipped.push(builtin.slug)
       continue

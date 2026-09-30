@@ -81,6 +81,11 @@ import type { SessionMessage } from "./message"
 export const isRealUserTurn = (message: SessionMessage.Message): message is SessionMessage.User =>
   message.type === "user" && !isSteerText(message.text)
 
+export const isTaskRequest = (
+  message: SessionMessage.Message,
+): message is SessionMessage.User | SessionMessage.Colleague =>
+  isRealUserTurn(message) || (message.type === "colleague" && message.turn === "ask")
+
 /**
  * Is this a COLLEAGUE's message riding the user role?
  *

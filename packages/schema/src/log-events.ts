@@ -2314,6 +2314,13 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  "session.worker.yielded": {
+    level: "info",
+    message: "session worker yielded to queued work",
+    attributes: { "session.id": "correlate" },
+    content: "correlated",
+    file: "packages/novaclaw/src/session-worker/execution.ts",
+  },
   /** A session drain ended in failure rather than interruption. The session settles back to idle. */
   "session.drain.failed": {
     level: "error",

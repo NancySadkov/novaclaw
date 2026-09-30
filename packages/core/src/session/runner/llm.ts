@@ -2357,6 +2357,11 @@ export const layer = Layer.effect(
           : Math.floor(model.route.defaults.limits.context * 0.2)
       const nativeBudget = Math.min(currentNativeBudget, residentToolBudget.get(promptPrefixKey) ?? Infinity)
       if (!residentToolBudget.has(promptPrefixKey)) residentToolBudget.set(promptPrefixKey, nativeBudget)
+      const project = config.agent ? yield* WorkProjects.forOfficer(db, config.agent) : undefined
+      const managesProject =
+        session.parentID === undefined &&
+        (config.agent === AgentV2.NOVA_ID ||
+          (project?.recipe?.manager !== undefined && project.recipe.manager === config.agent))
       const liveToolMaterialization = yield* tools.materialize(
         // The horizon sees what the verdict will refuse everywhere — the mode overlay, the Tuning
         // switches and the unattended stance, not the agent's own rules alone — so a tool the
@@ -2372,7 +2377,7 @@ export const layer = Layer.effect(
         }),
         (name) =>
           ShortChat.offered(config.shortChat, name) &&
-          (name !== "projects" || (config.agent === AgentV2.NOVA_ID && session.parentID === undefined)) &&
+          (name !== "projects" || managesProject) &&
           // The officer's own horizon, applied AFTER routing and therefore narrowing only:
           // `false` denies for this officer's sessions, `true` restores a routing-withdrawn
           // tool — never a permission-withdrawn one, because this predicate only ever sees
@@ -4663,6 +4668,7 @@ export const layer = Layer.effect(
       // closing the current work unit, and any newly admitted prompt wakes that sleep immediately.
       let acceptedGoalExit = false
       let providerHalted = false
+      let completedTurn = false
       while (shouldRun) {
         let needsContinuation = true
         let step = 1
@@ -4670,6 +4676,11 @@ export const layer = Layer.effect(
         while (needsContinuation) {
           if ((yield* SessionInput.settlePassiveInputs(db, events, input.sessionID)) === "human") return
           if (yield* WorkProjects.held(db, input.sessionID)) return
+          if (completedTurn) {
+            yield* flushDriveState(input.sessionID)
+            yield* SessionExecutionAttempt.advanceCurrent("drain", "mark")
+            yield* SessionExecutionAttempt.cooperateCurrent()
+          }
           // ⚠️ THE per-turn read (B7 tier-1 / ruling 3). One `config.entries()` per turn, threaded
           // through everything this turn does — the system prompt, the compactor, the sampling
           // overlay, the introspection judge, the quality gate. Deriving per USE instead would let a
@@ -4681,6 +4692,7 @@ export const layer = Layer.effect(
           const introspectionOn =
             !ShortChat.enabled(handoff.shortChat) && (handoff.introspection ?? harness.introspection.enabled)
           const result = yield* runTurn(input.sessionID, harness, promotion, step)
+          completedTurn = true
           if (yield* WorkProjects.held(db, input.sessionID)) return
           needsContinuation = result.needsContinuation
           if (result.policyHalted) {

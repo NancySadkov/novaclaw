@@ -1,3 +1,5 @@
+import { A, useLocation, useSearchParams } from "@solidjs/router"
+import { RecipesPage } from "./recipes"
 import { createEffect, createMemo, createSignal, For, Index, onCleanup, Show } from "solid-js"
 import type { WorkProject } from "@novaclaw/schema/work-project"
 import { Icon } from "@novaclaw/ui/v2/icon"
@@ -22,6 +24,8 @@ type Draft = {
 }
 
 export function ProjectsPage() {
+  const location = useLocation()
+  const [params] = useSearchParams()
   const sdk = useServerSDK()
   const language = useLanguage()
   const confirm = useConfirm()
@@ -34,27 +38,42 @@ export function ProjectsPage() {
     return projectsApi(base, controller.signal)
   })
   return (
-    <ProjectsPanel
-      api={api()}
-      t={language.t}
-      confirm={confirm}
-      pickDirectory={(onSelect) => {
-        const server = sdk()?.server
-        if (!server) return
-        pickDirectory({
-          server,
-          title: language.t("projects.directory"),
-          multiple: false,
-          onSelect: (value) => {
-            if (typeof value === "string") onSelect(value)
-          },
-        })
-      }}
-    />
+    <div class="projects-hub">
+      <nav class="projects-hub-nav" aria-label="Projects and recipes">
+        <A href="/projects" classList={{ active: location.pathname !== "/recipes" }}>
+          Projects
+        </A>
+        <A href="/recipes" classList={{ active: location.pathname === "/recipes" }}>
+          Recipes
+        </A>
+        <span>Recipes define the work. Projects give it a home.</span>
+      </nav>
+      <Show when={location.pathname !== "/recipes"} fallback={<RecipesPage />}>
+        <ProjectsPanel
+          selectedID={typeof params.project === "string" ? params.project : undefined}
+          api={api()}
+          t={language.t}
+          confirm={confirm}
+          pickDirectory={(onSelect) => {
+            const server = sdk()?.server
+            if (!server) return
+            pickDirectory({
+              server,
+              title: language.t("projects.directory"),
+              multiple: false,
+              onSelect: (value) => {
+                if (typeof value === "string") onSelect(value)
+              },
+            })
+          }}
+        />
+      </Show>
+    </div>
   )
 }
 
 export function ProjectsPanel(props: {
+  selectedID?: string
   api: ProjectsApi | undefined
   t: Translate
   confirm: (options: ConfirmOptions) => Promise<boolean>
@@ -65,7 +84,7 @@ export function ProjectsPanel(props: {
     () => props.api,
     (api) => api.list(),
   )
-  const [selected, setSelected] = createSignal<string>()
+  const [selected, setSelected] = createSignal<string | undefined>(props.selectedID)
   const [query, setQuery] = createSignal("")
   const [filter, setFilter] = createSignal<"all" | "active" | "paused">("all")
   const [draft, setDraft] = createSignal<Draft>()
@@ -96,7 +115,7 @@ export function ProjectsPanel(props: {
 
   createEffect(() => {
     const api = props.api
-    setSelected(undefined)
+    setSelected(props.selectedID)
     setDraft(undefined)
     setDirty(false)
     setError(undefined)
@@ -199,14 +218,34 @@ export function ProjectsPanel(props: {
   const remove = async (project: WorkProject.Info) => {
     if (
       !(await props.confirm({
-        title: t("projects.deleteTitle", { name: project.name }),
-        description: t("projects.deleteBody"),
-        confirmLabel: t("projects.delete"),
+        title: project.recipe ? `Undeploy “${project.name}”?` : t("projects.deleteTitle", { name: project.name }),
+        description: project.recipe
+          ? `Retire this project's team and remove its folder and generated files: ${project.directory}`
+          : t("projects.deleteBody"),
+        confirmLabel: project.recipe ? "Undeploy" : t("projects.delete"),
         destructive: true,
       }))
     )
       return
-    if (await execute({ op: "delete", id: project.id, revision: project.revision })) setSelected(undefined)
+    if (!project.recipe) {
+      if (await execute({ op: "delete", id: project.id, revision: project.revision })) setSelected(undefined)
+      return
+    }
+    const api = props.api
+    if (!api || busy()) return
+    setBusy(true)
+    setError(undefined)
+    try {
+      await api.undeploy(project.id)
+      if (props.api !== api) return
+      setSelected(undefined)
+      await refetch()
+      window.dispatchEvent(new Event("novaclaw:recipe-deployed"))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t("projects.saveFailed"))
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -296,9 +335,7 @@ export function ProjectsPanel(props: {
                     aria-pressed={selected() === id}
                   >
                     <div class="project-card-top">
-                      <span class="project-sigil">
-                        <Icon name="checklist" size="large" />
-                      </span>
+                      <h2>{project().name}</h2>
                       <span class="project-state" data-paused={project().paused}>
                         {project().paused
                           ? t("projects.paused")
@@ -307,7 +344,6 @@ export function ProjectsPanel(props: {
                             : t("projects.active")}
                       </span>
                     </div>
-                    <h2>{project().name}</h2>
                     <p class="project-objective-preview">{project().objective}</p>
                     <div class="project-progress-label">
                       <span>
@@ -381,12 +417,13 @@ export function ProjectsPanel(props: {
                   <input
                     class="project-field"
                     maxLength={4096}
+                    disabled={!!current()?.recipe}
                     value={value().directory}
                     onInput={(event) => change({ directory: event.currentTarget.value })}
                   />
                 </label>
                 <div class="project-controls">
-                  <Show when={props.pickDirectory}>
+                  <Show when={props.pickDirectory && !current()?.recipe}>
                     <button
                       class="project-button"
                       type="button"
@@ -405,7 +442,7 @@ export function ProjectsPanel(props: {
                   <button
                     class="project-button"
                     type="button"
-                    disabled={busy() || !value().directory}
+                    disabled={busy() || !value().directory || !!current()?.recipe}
                     onClick={() => change({ directory: "" })}
                   >
                     {t("projects.clearDirectory")}
@@ -509,6 +546,26 @@ export function ProjectsPanel(props: {
                 </button>
               </div>
               <h2 class="project-detail-title">{project().name}</h2>
+              <Show when={project().recipe}>
+                {(recipe) => (
+                  <div class="project-recipe-line">
+                    <span>
+                      From recipe <strong>{recipe().slug}</strong>
+                    </span>
+                    <span>
+                      Nova →{" "}
+                      <strong>
+                        {officers().find((officer) => officer.id === recipe().manager)?.name ?? recipe().manager} ·
+                        Manager
+                      </strong>{" "}
+                      → project officers
+                    </span>
+                    <A class="project-button" href="/recipes">
+                      Recipes
+                    </A>
+                  </div>
+                )}
+              </Show>
               <p class="project-objective">{project().objective}</p>
               <Show when={project().directory}>
                 <p class="project-directory">
@@ -529,7 +586,7 @@ export function ProjectsPanel(props: {
                   {t("projects.edit")}
                 </button>
                 <button class="project-button danger" disabled={busy()} onClick={() => void remove(project())}>
-                  {t("projects.delete")}
+                  {project().recipe ? "Undeploy" : t("projects.delete")}
                 </button>
               </div>
               <Show when={project().paused}>
@@ -595,14 +652,16 @@ export function ProjectsPanel(props: {
                               : t("projects.ready")}
                         </small>
                       </div>
-                      <button
-                        class="project-button"
-                        disabled={busy()}
-                        aria-label={t("projects.releaseOfficer", { name: officer.name })}
-                        onClick={() => void execute({ op: "assign", officer: officer.id, projectID: null })}
-                      >
-                        ×
-                      </button>
+                      <Show when={!project().recipe?.officers.includes(officer.id)}>
+                        <button
+                          class="project-button"
+                          disabled={busy()}
+                          aria-label={t("projects.releaseOfficer", { name: officer.name })}
+                          onClick={() => void execute({ op: "assign", officer: officer.id, projectID: null })}
+                        >
+                          ×
+                        </button>
+                      </Show>
                     </li>
                   )}
                 </For>
@@ -612,7 +671,11 @@ export function ProjectsPanel(props: {
                 aria-label={t("projects.assign")}
                 placeholder={t("projects.assign")}
                 disabled={busy()}
-                options={officers().filter((officer) => officer.projectID !== project().id)}
+                options={officers().filter(
+                  (officer) =>
+                    officer.projectID !== project().id &&
+                    !projects().some((item) => item.recipe?.officers.includes(officer.id)),
+                )}
                 current={undefined}
                 value={(officer) => officer.id}
                 label={(officer) =>

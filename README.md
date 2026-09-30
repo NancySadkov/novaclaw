@@ -41,6 +41,34 @@ source as described below.
 
 ## Highlights
 
+### Recipes and projects
+
+Open **Projects → Recipes** to edit a recipe's instructions, assets, and officer jobs. Each officer
+prototype has a job title, job description, and custom nudges. **Deploy** creates a project with its
+own folder and a Manager who reports to Nova. The recipe's officers report to that Manager.
+
+The default destination is `projects/<recipe>-<id>` inside the instance home. A custom destination
+must be a new absolute folder on the server; existing folders are never overwritten. Projects show
+the plan, progress, and assigned team. **Undeploy** retires the deployed team and removes the project
+folder, including generated files. The editable recipe stays in the library.
+
+The recipe document requires `"version": 1`, `name`, and `prompt`. Optional fields are `description`,
+`needs` and `produces` arrays, and an `officers` array of job titles, descriptions and custom nudges.
+The editor preserves unknown JSON fields for extensions. Unsupported versions and invalid fields are
+rejected before import or deployment.
+
+Recipes travel as `.nova` ZIP archives containing `recipe.json` and assets. Export and import preserve
+officer prototypes and their nudges. To deploy a package onto a running headless instance:
+
+```sh
+nova-cli deploy observatory.nova --attach http://127.0.0.1:4096 --directory /absolute/new/project
+```
+
+Omit `--directory` to use the default folder. `--model provider/model` selects the team's model;
+otherwise it uses the instance default. The command prints the project ID, folder, and Manager.
+
+### The workgroup
+
 - **Private / local-LLM first.** The data plane (chats, code, knowledge) never egresses; fully
   airgappable. Any OpenAI-compatible `/v1` endpoint works — vLLM, SGLang, or NovaClaw's bundled
   llama.cpp server.

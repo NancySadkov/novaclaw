@@ -14,6 +14,7 @@ import { DEFAULT_STALL_TIMEOUT_MS } from "@novaclaw/core/config/provider-connect
 
 export type Outcome =
   | { readonly type: "settled" }
+  | { readonly type: "yielded" }
   | { readonly type: "failed"; readonly classification: string; readonly detail?: string }
   | { readonly type: "start-timeout" }
   | { readonly type: "heartbeat-timeout"; readonly silenceMs: number; readonly limitMs: number }
@@ -242,6 +243,7 @@ type RPCMessage = Extract<SessionWorkerProtocol.WorkerMessage, { readonly reques
 const ORDERED_RPC = {
   "publish-event": true,
   "execution-advance": true,
+  "execution-cooperate": true,
   "execution-tool-dispatched": true,
   "execution-tool-settled": true,
   "execution-provider-started": true,
@@ -430,6 +432,9 @@ export function spawn(input: Input): Handle {
         return
       case "settled":
         finish({ type: "settled" })
+        return
+      case "yielded":
+        finish({ type: "yielded" })
         return
       case "failed":
         finish({
@@ -651,6 +656,7 @@ export function spawn(input: Input): Handle {
         return
       }
       case "execution-advance":
+      case "execution-cooperate":
       case "execution-tool-dispatched":
       case "execution-tool-settled":
       case "execution-provider-started":

@@ -12,7 +12,8 @@ export const dict = {
   // the same reason: the fault happened, nothing a person can see is different afterwards, and the
   // only honest options are a calm line or silence. Silence WAS the bug — the recovery sweep
   // discarded its rejections, so a stale instance read reported nothing at all. Measured 2026-09-29.
-  "app.instance.refreshFailed": "Some instance data could not be refreshed — reconnecting. Your conversations are safe.",
+  "app.instance.refreshFailed":
+    "Some instance data could not be refreshed — reconnecting. Your conversations are safe.",
   "projects.connecting": "Connecting to your instance…",
   "projects.loading": "Loading projects…",
   "projects.list": "Project list",
@@ -2555,9 +2556,9 @@ export const dict = {
   "recipes.page.importARecipe": "Import a recipe",
   "recipes.page.completeRecipeFolder": "Complete recipe folder",
   "recipes.page.importFolder": "Import folder",
-  "recipes.page.pasteRecipeMdOnly": "Paste recipe.md only",
+  "recipes.page.pasteRecipeJsonOnly": "Paste recipe.json only",
   "recipes.page.whatThisFileSays": "What this file says",
-  "recipes.page.importPastedMarkdownNoAssets": "Import pasted markdown (no assets)",
+  "recipes.page.importPastedJsonNoAssets": "Import pasted JSON (no assets)",
   "recipes.page.import": "Import…",
   "recipes.page.couldNotReadYourRecipesYour":
     "Could not read your recipes. Your shelf is intact — this page could not reach it.",
@@ -2578,9 +2579,9 @@ export const dict = {
   "recipes.page.copiedIntoTheWorkFolderAlongside":
     "Copied into the work folder alongside the prompt when you run it. Export includes this complete nested asset tree in the recipe ZIP.",
   "recipes.page.aRecipeIsAFolderChoose":
-    "A recipe is a folder. Choose its ZIP to bring across recipe.md and every nested file, including binary assets, exactly as they were sent.",
+    "A recipe is a folder. Choose its ZIP to bring across recipe.json and every nested file, including binary assets, exactly as they were sent.",
   "recipes.page.useThisForAProseOnly":
-    "Use this for a prose-only recipe copied from a message. Paste carries recipe.md only — no assets can travel with it.",
+    "Paste a versioned JSON recipe copied from a message. Paste carries recipe.json only — no assets can travel with it.",
   "recipes.page.somebodyElseWroteThisNothingIn":
     "Somebody else wrote this. Nothing in the file can grant it any permission — the prompt below is all it is. Read it before you run it.",
   "recipes.page.cancel": "Cancel",

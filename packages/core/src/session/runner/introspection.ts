@@ -7,7 +7,7 @@
 // and the judge prompts.
 
 import type { ConfigIntrospection } from "../../config/introspection"
-import { isRealUserTurn } from "../steer-provenance"
+import { isTaskRequest } from "../steer-provenance"
 import type { SessionMessage } from "../message"
 import { SessionToolContent } from "../tool-content"
 import { Model } from "@novaclaw/schema/model"
@@ -69,13 +69,16 @@ export function judgeExcerpt(context: ReadonlyArray<SessionMessage.Message>): st
    * had to infer the goal from them — which is the one thing a stuck agent's output is least able to
    * convey, because a looping agent's recent turns all look purposeful in isolation.
    *
-   * ⚠️ `isRealUserTurn`, never `type === "user"` — a harness-injected steer rides the user role, and
+   * ⚠️ `isTaskRequest`, never `type === "user"` — a harness-injected steer rides the user role, and
    * `session/steer-provenance.ts` owns that distinction (a guard test fails any unfiltered read).
    * The FIRST turn, not the last: a steer or a follow-up is not the objective, and the
    * drive injects user-role messages of its own. Clipped hard — the judge needs the goal, not the
    * briefing (NC-PROMPT-LANG-003).
    */
-  const task = context.filter(isRealUserTurn).map((message) => message.text ?? "").find((text) => text.trim())
+  const task = context
+    .filter(isTaskRequest)
+    .map((message) => message.text ?? "")
+    .find((text) => text.trim())
   if (task) lines.push("The task the agent was given:", clip(task.trim(), 400))
   const assistants = context.filter((message) => message.type === "assistant")
   const tools: string[] = []

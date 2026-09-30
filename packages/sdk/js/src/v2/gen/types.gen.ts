@@ -3924,6 +3924,7 @@ export type ConfigV2Attachments = {
 export type ConfigV2Log = {
   level?: "debug" | "info" | "warn" | "error"
   retention_days?: number
+  work_log_max_mb?: number
   subsystems?: {
     agent?: "debug" | "info" | "warn" | "error"
     client?: "debug" | "info" | "warn" | "error"
@@ -6230,6 +6231,35 @@ export type ScheduleConfirmInput = {
 }
 
 export type RecipeInfo = {
+  version: 1
+  officers: Array<{
+    title: string
+    description: string
+    nudges: Array<{
+      name: string
+      text: string
+      hook:
+        | {
+            type: "after-compaction"
+          }
+        | {
+            type: "new-day"
+          }
+        | {
+            type: "interval"
+            minutes: number
+          }
+        | {
+            type: "tool-call"
+            tool: string
+            phase: "before" | "after"
+          }
+        | {
+            type: "file-write"
+            extension: string
+          }
+    }>
+  }>
   slug: string
   name: string
   description?: string
@@ -6249,7 +6279,7 @@ export type RecipeNeedCheck = {
 export type RecipeSource = {
   slug: string
   name: string
-  markdown: string
+  source: string
   needs: Array<RecipeNeedCheck>
   produces: Array<string>
   collection: {
@@ -6260,11 +6290,39 @@ export type RecipeSource = {
 }
 
 export type RecipeImportInput = {
-  markdown: string
+  source: string
   slug?: string
 }
 
 export type RecipeUpdateInput = {
+  officers?: Array<{
+    title: string
+    description: string
+    nudges: Array<{
+      name: string
+      text: string
+      hook:
+        | {
+            type: "after-compaction"
+          }
+        | {
+            type: "new-day"
+          }
+        | {
+            type: "interval"
+            minutes: number
+          }
+        | {
+            type: "tool-call"
+            tool: string
+            phase: "before" | "after"
+          }
+        | {
+            type: "file-write"
+            extension: string
+          }
+    }>
+  }>
   name?: string
   description?: string | null
   prompt?: string
@@ -6273,6 +6331,34 @@ export type RecipeUpdateInput = {
 }
 
 export type RecipeSaveInput = {
+  officers?: Array<{
+    title: string
+    description: string
+    nudges: Array<{
+      name: string
+      text: string
+      hook:
+        | {
+            type: "after-compaction"
+          }
+        | {
+            type: "new-day"
+          }
+        | {
+            type: "interval"
+            minutes: number
+          }
+        | {
+            type: "tool-call"
+            tool: string
+            phase: "before" | "after"
+          }
+        | {
+            type: "file-write"
+            extension: string
+          }
+    }>
+  }>
   slug?: string
   name: string
   description?: string
@@ -17079,6 +17165,35 @@ export type V2RecipeArchivePreviewResponses = {
    * Success
    */
   200: {
+    version: 1
+    officers: Array<{
+      title: string
+      description: string
+      nudges: Array<{
+        name: string
+        text: string
+        hook:
+          | {
+              type: "after-compaction"
+            }
+          | {
+              type: "new-day"
+            }
+          | {
+              type: "interval"
+              minutes: number
+            }
+          | {
+              type: "tool-call"
+              tool: string
+              phase: "before" | "after"
+            }
+          | {
+              type: "file-write"
+              extension: string
+            }
+      }>
+    }>
     name: string
     description?: string
     prompt: string
@@ -17113,6 +17228,9 @@ export type V2RecipeDeployedListResponses = {
    * Success
    */
   200: Array<{
+    projectID: string
+    directory: string
+    manager: string
     slug: string
     name: string
     description?: string
@@ -17225,7 +17343,8 @@ export type V2RecipeDeployedFileResponse = V2RecipeDeployedFileResponses[keyof V
 
 export type V2RecipeDeployData = {
   body: {
-    [key: string]: unknown
+    directory?: string
+    model?: string
   }
   path: {
     slug: string
@@ -17252,6 +17371,9 @@ export type V2RecipeDeployResponses = {
    * Success
    */
   200: {
+    projectID: string
+    directory: string
+    manager: string
     slug: string
     name: string
     description?: string
@@ -17268,7 +17390,7 @@ export type V2RecipeDeployResponse = V2RecipeDeployResponses[keyof V2RecipeDeplo
 
 export type V2RecipeReplaceSourceData = {
   body: {
-    markdown: string
+    source: string
   }
   path: {
     slug: string
@@ -17876,6 +17998,11 @@ export type V2WorkProjectListResponses = {
    */
   200: {
     projects: Array<{
+      recipe?: {
+        slug: string
+        manager: string
+        officers: Array<string>
+      } | null
       id: string
       name: string
       objective: string
@@ -17931,6 +18058,11 @@ export type V2WorkProjectExecuteResponses = {
    */
   200: {
     projects: Array<{
+      recipe?: {
+        slug: string
+        manager: string
+        officers: Array<string>
+      } | null
       id: string
       name: string
       objective: string

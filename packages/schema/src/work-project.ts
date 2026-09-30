@@ -21,7 +21,14 @@ export const Officer = Schema.Struct({
   projectID: Schema.NullOr(Schema.String),
 })
 export type Officer = typeof Officer.Type
+export const Recipe = Schema.Struct({
+  slug: Schema.String,
+  manager: Schema.String,
+  officers: Schema.Array(Schema.String),
+})
+export type Recipe = typeof Recipe.Type
 export const Info = Schema.Struct({
+  recipe: Schema.optional(Schema.NullOr(Recipe)),
   id: Schema.String,
   name: Name,
   objective: Objective,

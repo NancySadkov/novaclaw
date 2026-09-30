@@ -175,29 +175,31 @@ describe("applyDirectoryEvent", () => {
   })
 
   test("cleans session caches when archived", () => {
-    const [store, setStore] = createStore(
-      baseState({
-        session: [rootSession({ id: "ses_1" }), rootSession({ id: "ses_2" })],
-        sessionTotal: 2,
-        session_diff: { ses_1: [] },
-        todo: { ses_1: [] },
-        session_status: { ses_1: { type: "busy" } },
-      }),
-    )
+    for (const sessions of [["ses_1", "ses_2"], ["ses_0"], []]) {
+      const [store, setStore] = createStore(
+        baseState({
+          session: sessions.map((id) => rootSession({ id })),
+          sessionTotal: 2,
+          session_diff: { ses_1: [] },
+          todo: { ses_1: [] },
+          session_status: { ses_1: { type: "busy" } },
+        }),
+      )
 
-    applyDirectoryEvent({
-      event: { type: "session.updated", properties: { info: rootSession({ id: "ses_1", archived: 10 }) } },
-      store,
-      setStore,
-      push() {},
-      directory: "/tmp",
-    })
+      applyDirectoryEvent({
+        event: { type: "session.updated", properties: { info: rootSession({ id: "ses_1", archived: 10 }) } },
+        store,
+        setStore,
+        push() {},
+        directory: "/tmp",
+      })
 
-    expect(store.session.map((x) => x.id)).toEqual(["ses_2"])
-    expect(store.sessionTotal).toBe(1)
-    expect(store.session_diff.ses_1).toBeUndefined()
-    expect(store.todo.ses_1).toBeUndefined()
-    expect(store.session_status.ses_1).toBeUndefined()
+      expect(store.session.map((x) => x.id)).toEqual(sessions.filter((id) => id !== "ses_1"))
+      expect(store.sessionTotal).toBe(1)
+      expect(store.session_diff.ses_1).toBeUndefined()
+      expect(store.todo.ses_1).toBeUndefined()
+      expect(store.session_status.ses_1).toBeUndefined()
+    }
   })
 
   test("cleans session caches when deleted and decrements only root totals", () => {

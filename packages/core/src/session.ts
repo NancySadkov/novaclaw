@@ -25,6 +25,7 @@ import { SessionMessageTable, SessionTable } from "./session/sql"
 import { SessionSchema } from "./session/schema"
 import { AbsolutePath, PositiveInt, RelativePath } from "./schema"
 import { AgentV2 } from "./agent"
+import { ProjectOfficerTable, WorkProjectTable } from "./work-project/sql"
 import { AgentRetirement } from "./agent/retirement"
 import { AgentStatus } from "./agent-status"
 import { AgentStatusEvent } from "@novaclaw/schema/agent-status-event"
@@ -71,6 +72,7 @@ import { ChildProcess } from "effect/unstable/process"
 import { Identifier } from "./id/id"
 import { AgentConfigStore } from "./agent-config-store"
 import { AgentWorkspace } from "./agent/workspace"
+import { Scratch } from "./scratch"
 
 // The V2 `shell` op caps captured output at the same 1 MB in-memory limit the bash tool uses.
 const SHELL_MAX_OUTPUT_BYTES = 1024 * 1024
@@ -886,14 +888,19 @@ export const ensureLiveChat = (deps: LiveChatDeps, agent: AgentV2.ID): Effect.Ef
     const layers = (yield* deps.agentConfigs.agents())[agent]
     if (layers === undefined && !AgentV2.isProtected(agent)) return undefined
     const configured = AgentConfigStore.fold(layers ?? [])
-    // Where the colleague works, read from its OWN config rather than from the chat that is being
-    // replaced: the whole reason a successor is opened is that the folder moved, so inheriting the
-    // old chat's directory would put the new conversation back in the folder the user just left.
+    const assignment = yield* deps.db
+      .select({ directory: WorkProjectTable.directory })
+      .from(ProjectOfficerTable)
+      .innerJoin(WorkProjectTable, eq(ProjectOfficerTable.project_id, WorkProjectTable.id))
+      .where(eq(ProjectOfficerTable.agent, agent))
+      .get()
+      .pipe(Effect.orDie)
     const directory = AgentWorkspace.folderFor({
       agentID: agent,
-      directory: configured?.directory,
+      directory: assignment?.directory ?? configured?.directory,
       shortChat: configured?.shortChat,
     })
+    if (directory === Scratch.forAgent(agent)) yield* Effect.promise(() => Scratch.ensureForAgent(agent))
     const created = yield* createSessionRecord(
       { db: deps.db, events: deps.events, projects: deps.projects, store: deps.store },
       { agent, location: { directory: AbsolutePath.make(directory) } },

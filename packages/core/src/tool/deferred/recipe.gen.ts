@@ -11,7 +11,7 @@ name: "tool/recipe",
 layer: LazyBuiltin.layer({
 definition: new ToolDefinition({
   "name": "recipe",
-  "description": "Author and read RECIPES — the folders of prose this product is built on (a recipe.md prompt plus its assets). A recipe carries the INTENT of a thing to build, so an agent can cook it fresh later; it is not code and never carries settings. Ops: {\"op\":\"list\"} — every recipe on this install · {\"op\":\"read\",\"slug\":\"hello-c\"} — one recipe's full text · {\"op\":\"save\",\"name\":\"…\",\"prompt\":\"…\",\"description\":\"…\",\"needs\":[\"a C compiler\"],\"produces\":[\"hello.c\"]} — write a new one (add slug to replace an existing one instead). Saving returns the recipe's folder — put any assets it needs there with the write tool. Saving asks the user first, because a recipe becomes a future session's prompt.",
+  "description": "Author and read RECIPES — the folders this product is built on (versioned recipe.json instructions plus its assets). A recipe carries the INTENT of a thing to build, so an agent can cook it fresh later; it is not code and never carries settings. Ops: {\"op\":\"list\"} — every recipe on this install · {\"op\":\"read\",\"slug\":\"hello-c\"} — one recipe's full text · {\"op\":\"save\",\"name\":\"…\",\"prompt\":\"…\",\"description\":\"…\",\"needs\":[\"a C compiler\"],\"produces\":[\"hello.c\"]} — write a new one (add slug to replace an existing one instead). Saving returns the recipe's folder — put any assets it needs there with the write tool. The document includes version: 1. It may define officer jobs and nudges, with a Manager coordinating deployment.",
   "inputSchema": {
     "anyOf": [
       {
@@ -77,6 +77,217 @@ definition: new ToolDefinition({
             ],
             "description": "One line shown beside the title in the recipe list"
           },
+          "officers": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "title": {
+                      "type": "string",
+                      "allOf": [
+                        {
+                          "minLength": 1
+                        },
+                        {
+                          "maxLength": 160
+                        }
+                      ]
+                    },
+                    "description": {
+                      "type": "string",
+                      "allOf": [
+                        {
+                          "minLength": 1
+                        },
+                        {
+                          "maxLength": 16000
+                        }
+                      ]
+                    },
+                    "nudges": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "allOf": [
+                              {
+                                "minLength": 1
+                              },
+                              {
+                                "maxLength": 160
+                              }
+                            ]
+                          },
+                          "text": {
+                            "type": "string",
+                            "allOf": [
+                              {
+                                "minLength": 1
+                              },
+                              {
+                                "maxLength": 16000
+                              }
+                            ]
+                          },
+                          "hook": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "after-compaction"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "new-day"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "interval"
+                                    ]
+                                  },
+                                  "minutes": {
+                                    "type": "integer",
+                                    "allOf": [
+                                      {
+                                        "minimum": 1,
+                                        "maximum": 1440
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "minutes"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "tool-call"
+                                    ]
+                                  },
+                                  "tool": {
+                                    "type": "string",
+                                    "allOf": [
+                                      {
+                                        "minLength": 1
+                                      },
+                                      {
+                                        "maxLength": 160
+                                      }
+                                    ]
+                                  },
+                                  "phase": {
+                                    "type": "string",
+                                    "enum": [
+                                      "before",
+                                      "after"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "tool",
+                                  "phase"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "enum": [
+                                      "file-write"
+                                    ]
+                                  },
+                                  "extension": {
+                                    "type": "string",
+                                    "allOf": [
+                                      {
+                                        "minLength": 1
+                                      },
+                                      {
+                                        "maxLength": 160
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "extension"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "text",
+                          "hook"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "allOf": [
+                        {
+                          "maxItems": 32
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "title",
+                    "description",
+                    "nudges"
+                  ],
+                  "additionalProperties": false
+                },
+                "allOf": [
+                  {
+                    "maxItems": 16
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Officer jobs and custom nudges. Deployment hires a Manager reporting to Nova and these officers reporting to the Manager."
+          },
           "needs": {
             "anyOf": [
               {
@@ -89,7 +300,7 @@ definition: new ToolDefinition({
                 "type": "null"
               }
             ],
-            "description": "Host capabilities this recipe needs, each a short fact a person can check: [\"a C compiler\", \"python3\"]. This is the ONLY structured field a recipe may carry — it states what the recipe NEEDS, never what it gets."
+            "description": "Host capabilities this recipe needs, each a short fact a person can check: [\"a C compiler\", \"python3\"]. These state what the recipe NEEDS, never grant permissions."
           },
           "produces": {
             "anyOf": [

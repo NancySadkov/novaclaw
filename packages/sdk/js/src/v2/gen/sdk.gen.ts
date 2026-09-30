@@ -3725,14 +3725,13 @@ class ApiV2Recipe extends NovaClawApiClient {
   public deploy<ThrowOnError extends boolean = false>(
     parameters: {
       slug: string
-      body: {
-        [key: string]: unknown
-      }
+      directory?: string
+      model?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
     const path = { slug: parameters?.["slug"] }
-    const body = parameters?.["body"]
+    const body = { directory: parameters?.["directory"], model: parameters?.["model"] }
     return (options?.client ?? this.client).post<T.V2RecipeDeployResponses, T.V2RecipeDeployErrors, ThrowOnError>({
       url: "/api/recipe/{slug}/deploy",
       ...options,
@@ -3748,12 +3747,12 @@ class ApiV2Recipe extends NovaClawApiClient {
   public replaceSource<ThrowOnError extends boolean = false>(
     parameters: {
       slug: string
-      markdown: string
+      source: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
     const path = { slug: parameters?.["slug"] }
-    const body = { markdown: parameters?.["markdown"] }
+    const body = { source: parameters?.["source"] }
     return (options?.client ?? this.client).put<
       T.V2RecipeReplaceSourceResponses,
       T.V2RecipeReplaceSourceErrors,
@@ -3770,7 +3769,7 @@ class ApiV2Recipe extends NovaClawApiClient {
   /**
    * Read a recipe's file, and what it needs and produces
    *
-   * The bytes of recipe.md exactly as they are on disk — the readable part of the folder — plus the host-capability facts it declares checked against THIS machine, the artifacts a finished cook should leave, and the shelf it is on. Read-only: the capability probe resolves names on PATH and stats paths, and never runs a candidate.
+   * The bytes of recipe.json exactly as they are on disk — the readable part of the folder — plus the host-capability facts it declares checked against THIS machine, the artifacts a finished cook should leave, and the shelf it is on. Read-only: the capability probe resolves names on PATH and stats paths, and never runs a candidate.
    */
   public source<ThrowOnError extends boolean = false>(
     parameters: {
@@ -3889,7 +3888,7 @@ class ApiV2Recipe extends NovaClawApiClient {
   /**
    * Create or update a recipe
    *
-   * Writes recipe.md. Omit `slug` to derive it from the name; pass it to update in place.
+   * Writes recipe.json. Omit `slug` to derive it from the name; pass it to update in place.
    */
   public save<ThrowOnError extends boolean = false>(
     parameters: {
@@ -3926,7 +3925,7 @@ class ApiV2Recipe extends NovaClawApiClient {
   /**
    * Change some of a recipe's fields and nothing else
    *
-   * Edits the requested lines inside the author's own bytes: line endings, a BOM, unknown frontmatter keys, key order and the trailing newline all survive. Use this rather than a save when you are changing one field — a save takes the whole recipe.
+   * Updates the requested JSON fields while preserving all other values, including extension fields. Use this when changing one field; save accepts the complete editable recipe.
    */
   public update<ThrowOnError extends boolean = false>(
     parameters: {
@@ -3964,7 +3963,7 @@ class ApiV2Recipe extends NovaClawApiClient {
   }
 
   /**
-   * Store pasted recipe markdown without assets
+   * Store pasted recipe JSON without assets
    *
    * Writes the supplied file byte for byte under a free slug — never overwriting an existing recipe. This paste convenience is explicitly asset-free; use the ZIP import for a complete folder.
    */
@@ -3986,7 +3985,7 @@ class ApiV2Recipe extends NovaClawApiClient {
   /**
    * Export a complete recipe folder
    *
-   * Returns a standard ZIP containing recipe.md and every nested binary or text asset.
+   * Returns a standard ZIP containing recipe.json and every nested binary or text asset.
    */
   public archive<ThrowOnError extends boolean = false>(
     parameters: {
@@ -4005,7 +4004,7 @@ class ApiV2Recipe extends NovaClawApiClient {
   /**
    * Import a complete recipe folder
    *
-   * Validates a bounded standard ZIP, reserves a free slug, and commits recipe.md plus its asset tree atomically.
+   * Validates a bounded standard ZIP, reserves a free slug, and commits recipe.json plus its asset tree atomically.
    */
   public archiveImport<ThrowOnError extends boolean = false>(
     parameters: {

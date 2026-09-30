@@ -44,7 +44,7 @@ const serverDirectory = (value: string | null | undefined) =>
 
 export class Error extends Schema.TaggedErrorClass<Error>()("WorkProject.Error", { message: Schema.String }) {}
 export interface Interface {
-  readonly execute: (command: WorkProject.Command) => Effect.Effect<WorkProject.Snapshot, Error>
+  readonly execute: (command: WorkProject.Command, actor?: string) => Effect.Effect<WorkProject.Snapshot, Error>
 }
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/WorkProjects") {}
 
@@ -87,7 +87,7 @@ export const held = (db: Db, sessionID: SessionSchema.ID) =>
 
 export const brief = (project: Row | undefined) =>
   project
-    ? `Project assignment: ${JSON.stringify(project.name)} (${project.id}). ${project.paused ? "This project is paused. Work will resume when the project is resumed." : "Work on this project toward its objective."}\nObjective: ${project.objective}\n${project.directory ? `Project folder on the server: ${JSON.stringify(project.directory)}. Use this folder for project work; pass it as the working directory for shell commands and use absolute paths for files.\n` : "No project folder is assigned.\n"}Plan:\n${project.phases.map((phase, i) => `${i + 1}. [${phase.status}] ${phase.name}`).join("\n") || "No phases yet."}\nNova coordinates project assignments and plan updates.`
+    ? `Project assignment: ${JSON.stringify(project.name)} (${project.id}). ${project.paused ? "This project is paused. Work will resume when the project is resumed." : "Work on this project toward its objective."}\nObjective: ${project.objective}\n${project.directory ? `Project folder on the server: ${JSON.stringify(project.directory)}. Use this folder for project work; pass it as the working directory for shell commands and use absolute paths for files.\n` : "No project folder is assigned.\n"}Plan:\n${project.phases.map((phase, i) => `${i + 1}. [${phase.status}] ${phase.name}`).join("\n") || "No phases yet."}\nYour project manager coordinates work and plan updates; report to your superior. Nova oversees staffing.`
     : "Your project assignment has ended. Stop pursuing that project's objective; await your next assignment or user request."
 
 export const primeContext = (db: Db, events: EventV2.Interface, sessionID: SessionSchema.ID) =>
@@ -117,14 +117,14 @@ export const primeContext = (db: Db, events: EventV2.Interface, sessionID: Sessi
 export const fromParts = (input: {
   readonly db: Db
   readonly agents: Pick<AgentConfigStore.Interface, "agents">
-  readonly notify: (agent: string, text: string, id: string) => Effect.Effect<void>
+  readonly notify: (agent: string, text: string, id: string, delivery: "queue" | "steer") => Effect.Effect<void>
 }): Interface & { readonly flush: Effect.Effect<void> } => {
   const { db } = input
   const lock = Semaphore.makeUnsafe(1)
   const flush = Effect.gen(function* () {
     const pending = yield* db.select().from(ProjectNoticeTable).all().pipe(Effect.orDie)
     for (const notice of pending) {
-      yield* input.notify(notice.agent, notice.text, notice.id)
+      yield* input.notify(notice.agent, notice.text, notice.id, notice.delivery)
       yield* db
         .delete(ProjectNoticeTable)
         .where(and(eq(ProjectNoticeTable.agent, notice.agent), eq(ProjectNoticeTable.id, notice.id)))
@@ -188,9 +188,36 @@ export const fromParts = (input: {
   })
   return {
     flush: lock.withPermit(flush),
-    execute: (command) =>
+    execute: (command, actor) =>
       lock.withPermit(
         Effect.gen(function* () {
+          const managed =
+            actor && actor !== AgentV2.NOVA_ID
+              ? (yield* snapshot).projects.filter((project) => project.recipe?.manager === actor)
+              : undefined
+          if (managed) {
+            if (managed.length === 0)
+              return yield* new Error({
+                message: "Only Nova and project managers manage projects. Report progress to your superior.",
+              })
+            if (command.op === "list") {
+              const current = yield* snapshot
+              return {
+                projects: managed,
+                officers: current.officers.filter((officer) =>
+                  managed.some((project) => officer.projectID === project.id),
+                ),
+              }
+            }
+            if (
+              (command.op !== "phase" && command.op !== "edit") ||
+              !managed.some((project) => project.id === command.id)
+            )
+              return yield* new Error({
+                message:
+                  "Managers may update only their own project's plan and phases. Ask Nova for staffing or other changes.",
+              })
+          }
           if (command.op === "list") return yield* snapshot
           const directory =
             (command.op === "create" || command.op === "edit") && command.directory !== undefined
@@ -244,6 +271,12 @@ export const fromParts = (input: {
                       .from(ProjectOfficerTable)
                       .where(eq(ProjectOfficerTable.agent, command.officer))
                       .get()
+                    const deployed = yield* tx.select().from(WorkProjectTable).all()
+                    const home = deployed.find((project) => project.recipe?.officers.includes(command.officer))
+                    if (home && command.projectID !== home.id)
+                      return yield* invalid(
+                        "This officer belongs to a deployed recipe's team. Undeploy that project to release the team.",
+                      )
                     if ((previous?.project_id ?? null) === command.projectID) return
                     if (command.projectID === null)
                       yield* tx.delete(ProjectOfficerTable).where(eq(ProjectOfficerTable.agent, command.officer)).run()
@@ -276,11 +309,19 @@ export const fromParts = (input: {
                     .all()
                   for (const officer of assigned) affected.add(officer.agent)
                   if (command.op === "delete") {
+                    if (project.recipe?.officers.some((id) => officers.some((officer) => officer.id === id)))
+                      return yield* invalid(
+                        "Undeploy this recipe from Recipes to stop its team and remove its project files.",
+                      )
                     yield* tx.delete(WorkProjectTable).where(eq(WorkProjectTable.id, project.id)).run()
                     return
                   }
                   let update: Partial<Row>
                   if (command.op === "edit") {
+                    if (project.recipe && directory !== undefined && directory !== project.directory)
+                      return yield* invalid(
+                        "A deployed recipe's folder is fixed. Deploy a new project to use another folder.",
+                      )
                     const problem = validate(command.name, command.objective, command.phases)
                     if (problem) return yield* invalid(problem)
                     update = {
@@ -314,7 +355,20 @@ export const fromParts = (input: {
                           .innerJoin(WorkProjectTable, eq(ProjectOfficerTable.project_id, WorkProjectTable.id))
                           .where(eq(ProjectOfficerTable.agent, agent))
                           .get()
-                        const notice = { agent, id: crypto.randomUUID(), text: brief(assigned?.project) }
+                        const previous = yield* tx
+                          .select()
+                          .from(ProjectNoticeTable)
+                          .where(eq(ProjectNoticeTable.agent, agent))
+                          .get()
+                        const notice = {
+                          agent,
+                          id: crypto.randomUUID(),
+                          text: brief(assigned?.project),
+                          delivery:
+                            assigned && (command.op === "assign" || previous?.delivery === "queue")
+                              ? ("queue" as const)
+                              : ("steer" as const),
+                        }
                         yield* tx
                           .insert(ProjectNoticeTable)
                           .values(notice)
@@ -332,7 +386,15 @@ export const fromParts = (input: {
               Log.event("session.project.delivery.retry", { "project.fault": Log.fault(cause) }),
             ),
           )
-          return yield* snapshot
+          const result = yield* snapshot
+          return managed
+            ? {
+                projects: result.projects.filter((project) => project.recipe?.manager === actor),
+                officers: result.officers.filter((officer) =>
+                  managed.some((project) => officer.projectID === project.id),
+                ),
+              }
+            : result
         }),
       ),
   }
@@ -350,22 +412,22 @@ export const layer = Layer.effect(
     const service = fromParts({
       db,
       agents,
-      notify: (agent, text, id) =>
+      notify: (agent, text, id, delivery) =>
         Effect.gen(function* () {
           const sessionID = yield* ensureLiveChat(
             { db, events, projects, store, agentConfigs: agents },
             AgentV2.ID.make(agent),
           )
           if (!sessionID) return
-          const admit = (target: SessionSchema.ID) =>
+          const admit = (target: SessionSchema.ID, delivery: "queue" | "steer") =>
             SessionInput.automated(db, events, {
               id: SessionMessage.ID.make(`msg_project_${id}_${target}`),
               sessionID: target,
               prompt: Prompt.make({ text: applySteerProvenance(text) }),
-              delivery: "steer",
+              delivery,
             })
-          yield* admit(sessionID)
-          yield* wake.wake(sessionID)
+          yield* admit(sessionID, delivery)
+          if (!(yield* wake.wake(sessionID))) return yield* Effect.die("The project executor is not ready yet.")
           const children = yield* store.children(sessionID)
           const pending = [...children]
           const seen = new Set<SessionSchema.ID>()
@@ -375,7 +437,7 @@ export const layer = Layer.effect(
             seen.add(child)
             const info = yield* store.get(child)
             if (!info || info.time.archived !== undefined || info.result !== undefined) continue
-            yield* admit(child)
+            yield* admit(child, "steer")
             yield* wake.wake(child)
             pending.push(...(yield* store.children(child)))
           }

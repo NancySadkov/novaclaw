@@ -142,5 +142,7 @@ export const migrations = (
     import("./migration/20260928002558_work_project_directory"),
     import("./migration/20260928093000_colleague_is_always_reachable"),
     import("./migration/20260928140000_owner_inbox"),
+    import("./migration/20260930002633_recipe_projects"),
+    import("./migration/20260930013142_project_kickoff_delivery"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

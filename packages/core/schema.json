@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "cecdb6e7-963f-4219-8b37-c63fe9c5014a",
+  "id": "bd804d08-a923-4f07-99d8-13822c74e337",
   "prevIds": [
-    "f07a92d8-86c0-43a0-810c-287f87e56037"
+    "7aad8ee1-2e7b-4e8b-87db-a6387f4b7d54"
   ],
   "ddl": [
     {
@@ -4866,6 +4866,16 @@
     },
     {
       "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'steer'",
+      "generated": null,
+      "name": "delivery",
+      "entityType": "columns",
+      "table": "project_notice"
+    },
+    {
+      "type": "text",
       "notNull": false,
       "autoincrement": false,
       "default": null,
@@ -4921,6 +4931,16 @@
       "default": null,
       "generated": null,
       "name": "directory",
+      "entityType": "columns",
+      "table": "work_project"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "recipe",
       "entityType": "columns",
       "table": "work_project"
     },

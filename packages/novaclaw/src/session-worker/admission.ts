@@ -75,15 +75,16 @@ export const make = (options?: {
     const waiting: Waiter[] = []
     let sequence = 0
 
-    const count = (priority: Input["priority"]) =>
-      [...active.values()].filter((lease) => lease.priority === priority).length
+    const count = (priority: Input["priority"], releasing?: Lease) =>
+      [...active.values()].filter((lease) => lease !== releasing && lease.priority === priority).length
 
-    const canAdmit = (input: Input) => {
-      if (active.size >= limit) return false
+    const canAdmit = (input: Input, releasing?: Lease) => {
+      const occupied = active.size - Number(releasing !== undefined)
+      if (occupied >= limit) return false
       if (input.priority === "governing") return true
-      if (active.size - count("governing") >= nonGoverningLimit) return false
+      if (occupied - count("governing", releasing) >= nonGoverningLimit) return false
       if (input.priority === "interactive") return true
-      return count("batch") < batchLimit
+      return count("batch", releasing) < batchLimit
     }
 
     const nextIndex = () => {
@@ -147,6 +148,10 @@ export const make = (options?: {
     return {
       capacity: limit,
       reprioritize,
+      shouldYield: (sessionID: string) => {
+        const lease = [...active.values()].find((lease) => lease.sessionID === sessionID)
+        return lease !== undefined && waiting.some((waiter) => canAdmit(waiter.input, lease))
+      },
       run: <A, E, R>(input: Input, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
         Effect.uninterruptibleMask((restore) =>
           restore(acquire(input)).pipe(

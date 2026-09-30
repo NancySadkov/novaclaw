@@ -1,16 +1,3 @@
-// IMPORT / SOURCE — the two halves of "a normal person can read, edit and share a recipe"
-// (AGENTS.md → *Recipes are source code for the AI era*, the anti-elitist artifact).
-//
-// The unit a person shares is the FILE, so both directions are asserted on BYTES:
-//   · `sourceOf` hands back exactly what is on disk, so an export is the author's recipe rather than a
-//     two-field reconstruction of it (the wire record carries the prompt BODY only — the frontmatter,
-//     the key order, the line endings and the trailing newline all live nowhere else);
-//   · `importMarkdown` stores exactly what it was given, so a recipe that arrives carrying a
-//     `produces:` line, an unmodelled key or CRLF still carries them after a round trip.
-//
-// ⚠️ The imported file is a STRANGER'S. The tests below therefore also pin the three things it must not
-// be able to do: name its own folder (the slug is derived and re-validated, never taken from the file),
-// overwrite an existing recipe, or arrive unbounded.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -28,7 +15,7 @@ afterEach(async () => {
 })
 const opts = () => ({ root })
 
-const fileOf = (slug: string) => path.join(root, slug, "recipe.md")
+const fileOf = (slug: string) => path.join(root, slug, "recipe.json")
 
 const zipCentralOffsets = (archive: Uint8Array): number[] => {
   const bytes = Buffer.from(archive)
@@ -102,25 +89,26 @@ const snapshot = async (dir: string, prefix = ""): Promise<Record<string, string
 
 /** A shared recipe carrying everything a re-render would quietly drop. */
 const SHARED = (eol: string, trailing = eol) =>
-  [
-    "---",
-    "Name : From A Stranger",
-    "description: something they wrote",
-    "produces: report.md, chart.html",
-    "needs: python3",
-    "author: someone else",
-    "# a comment they left",
-    "---",
-    "",
-    "Do the thing and save `report.md`.",
-  ].join(eol) + trailing
+  JSON.stringify(
+    {
+      version: 1,
+      name: "From A Stranger",
+      description: "something they wrote",
+      produces: ["report.md", "chart.html"],
+      needs: ["python3"],
+      author: { name: "someone else" },
+      prompt: "Do the thing and save `report.md`.",
+    },
+    null,
+    2,
+  ).replaceAll("\n", eol) + trailing
 
-describe("importMarkdown — the bytes a stranger sent, stored as they were sent", () => {
-  test("stores the file byte for byte, on LF and on CRLF, with and without a BOM", async () => {
+describe("importSource — the bytes a stranger sent, stored as they were sent", () => {
+  test("stores the file byte for byte, on LF and on CRLF, without reformatting", async () => {
     for (const [index, eol] of ["\n", "\r\n"].entries())
-      for (const [prefix, bom] of [["", "plain"] as const, [BOM, "bom"] as const]) {
+      for (const [prefix, bom] of [["", "plain"] as const]) {
         const raw = prefix + SHARED(eol)
-        const imported = await Recipe.importMarkdown(raw, { ...opts(), slug: `case-${index}-${bom}` })
+        const imported = await Recipe.importSource(raw, { ...opts(), slug: `case-${index}-${bom}` })
         expect(await fs.readFile(fileOf(imported.slug), "utf8")).toBe(raw)
       }
   })
@@ -129,19 +117,19 @@ describe("importMarkdown — the bytes a stranger sent, stored as they were sent
     // Without this, "stored byte for byte" could pass on a fixture nothing could damage.
     const raw = SHARED("\r\n")
     const rerendered = Recipe.render({ name: "From A Stranger", prompt: Recipe.parse(raw).prompt })
-    for (const lost of ["produces: report.md", "needs: python3", "author: someone else", "# a comment they left"])
-      expect(rerendered).not.toContain(lost)
+    expect(Recipe.parse(raw).author).toEqual({ name: "someone else" })
+    expect(Recipe.parse(rerendered).author).toBeUndefined()
     expect(rerendered).not.toContain("\r\n")
   })
 
   test("the carried machine-read lines SURVIVE the round trip and are read back", async () => {
-    const imported = await Recipe.importMarkdown(SHARED("\n"), opts())
+    const imported = await Recipe.importSource(SHARED("\n"), opts())
     expect(await Recipe.producesOf(imported.slug, opts())).toEqual(["report.md", "chart.html"])
     expect(await Recipe.needsOf(imported.slug, opts())).toEqual(["python3"])
   })
 
   test("the slug is DERIVED from the file's name and re-validated — never taken from it", async () => {
-    const imported = await Recipe.importMarkdown(SHARED("\n"), opts())
+    const imported = await Recipe.importSource(SHARED("\n"), opts())
     expect(imported.slug).toBe("from-a-stranger")
     expect(Recipe.isValidSlug(imported.slug)).toBe(true)
     expect(imported.name).toBe("From A Stranger")
@@ -150,7 +138,7 @@ describe("importMarkdown — the bytes a stranger sent, stored as they were sent
 
   test("🔴 a name that is a path traversal cannot become one", async () => {
     for (const hostile of ["../../../../etc/passwd", "..\\..\\windows\\system32", "C:/Windows/Temp", "/etc/shadow"]) {
-      const imported = await Recipe.importMarkdown(`---\nname: ${hostile}\n---\n\nprompt\n`, opts())
+      const imported = await Recipe.importSource(JSON.stringify({ version: 1, name: hostile, prompt: "Build" }), opts())
       expect(Recipe.isValidSlug(imported.slug)).toBe(true)
       expect(imported.slug).not.toContain("..")
       expect(imported.slug).not.toContain("/")
@@ -161,28 +149,36 @@ describe("importMarkdown — the bytes a stranger sent, stored as they were sent
   })
 
   test("a caller-supplied slug that is not a slug is REFUSED, not sanitised into one", async () => {
-    await expect(Recipe.importMarkdown("prompt", { ...opts(), slug: "../escape" })).rejects.toThrow(/Invalid recipe id/)
+    await expect(Recipe.importSource(SHARED("\n"), { ...opts(), slug: "../escape" })).rejects.toThrow(
+      /Invalid recipe id/,
+    )
   })
 
-  test("a file with no readable name still lands, under a stated fallback", async () => {
-    const imported = await Recipe.importMarkdown("just a prompt, no frontmatter at all\n", opts())
-    expect(imported.slug).toBe("imported-recipe")
-    // A bare prompt is a valid recipe, and importing one must NOT invent a frontmatter block for it.
-    expect(await fs.readFile(fileOf(imported.slug), "utf8")).toBe("just a prompt, no frontmatter at all\n")
+  test("missing names, missing versions and unsupported versions fail before writing", async () => {
+    for (const input of [
+      { version: 1, prompt: "Build" },
+      { name: "X", prompt: "Build" },
+      { version: 2, name: "X", prompt: "Build" },
+    ])
+      await expect(Recipe.importSource(JSON.stringify(input), opts())).rejects.toThrow(/Invalid recipe.json/)
+    expect(await fs.readdir(root)).toEqual([])
   })
 
   test("🔴 importing twice never overwrites the first copy", async () => {
-    const first = await Recipe.importMarkdown(SHARED("\n"), opts())
-    const second = await Recipe.importMarkdown("---\nname: From A Stranger\n---\n\nsomething else\n", opts())
+    const first = await Recipe.importSource(SHARED("\n"), opts())
+    const second = await Recipe.importSource(
+      JSON.stringify({ version: 1, name: "From A Stranger", prompt: "something else" }),
+      opts(),
+    )
     expect(second.slug).not.toBe(first.slug)
     expect(await fs.readFile(fileOf(first.slug), "utf8")).toBe(SHARED("\n"))
     expect(second.prompt).toBe("something else")
   })
 
   test("a numbered slug continues its sequence across imports and duplicates", async () => {
-    const markdown = "---\nname: Numbered\n---\n\nnumbered prompt\n"
-    const first = await Recipe.importMarkdown(markdown, { ...opts(), slug: "numbered-10" })
-    const second = await Recipe.importMarkdown(markdown, { ...opts(), slug: "numbered-10" })
+    const source = JSON.stringify({ version: 1, name: "Numbered", prompt: "numbered prompt" })
+    const first = await Recipe.importSource(source, { ...opts(), slug: "numbered-10" })
+    const second = await Recipe.importSource(source, { ...opts(), slug: "numbered-10" })
     const copy = await Recipe.duplicate("numbered-10", opts())
     expect([first.slug, second.slug, copy.slug]).toEqual(["numbered-10", "numbered-11", "numbered-12"])
     expect((await Recipe.read("numbered-10", opts()))?.prompt).toBe("numbered prompt")
@@ -192,19 +188,24 @@ describe("importMarkdown — the bytes a stranger sent, stored as they were sent
 
   test("🔴 an import cannot clobber a recipe the user already had, even by naming it exactly", async () => {
     await Recipe.save({ name: "Mine", prompt: "my own prompt", slug: "mine" }, opts())
-    const imported = await Recipe.importMarkdown("---\nname: Mine\n---\n\nhostile replacement\n", opts())
+    const imported = await Recipe.importSource(
+      JSON.stringify({ version: 1, name: "Mine", prompt: "hostile replacement" }),
+      opts(),
+    )
     expect(imported.slug).toBe("mine-2")
     expect((await Recipe.read("mine", opts()))!.prompt).toBe("my own prompt")
   })
 
   test("a file with no prompt is refused — the prompt IS the recipe", async () => {
-    await expect(Recipe.importMarkdown("---\nname: Empty\n---\n\n   \n", opts())).rejects.toThrow(/no prompt/)
+    await expect(
+      Recipe.importSource(JSON.stringify({ version: 1, name: "Empty", prompt: "" }), opts()),
+    ).rejects.toThrow(/needs a prompt/)
     expect(await fs.readdir(root)).toEqual([])
   })
 
   test("an oversized file is refused before anything is written", async () => {
     const huge = "x".repeat(Recipe.IMPORT_CAP + 1)
-    await expect(Recipe.importMarkdown(huge, opts())).rejects.toThrow(/too big/)
+    await expect(Recipe.importSource(huge, opts())).rejects.toThrow(/too big/)
     expect(await fs.readdir(root)).toEqual([])
   })
 })
@@ -212,7 +213,7 @@ describe("importMarkdown — the bytes a stranger sent, stored as they were sent
 describe("sourceOf — the file, or an honest nothing", () => {
   test("returns the exact bytes on disk", async () => {
     const raw = SHARED("\r\n", "")
-    await Recipe.importMarkdown(raw, { ...opts(), slug: "exact" })
+    await Recipe.importSource(raw, { ...opts(), slug: "exact" })
     expect(await Recipe.sourceOf("exact", opts())).toBe(raw)
   })
 
@@ -230,11 +231,14 @@ describe("sourceOf — the file, or an honest nothing", () => {
 })
 
 describe("folder ZIP transport", () => {
-  test("round-trips recipe.md, nested binary assets and empty folders byte-for-byte after the source is gone", async () => {
-    await Recipe.importMarkdown("---\nname: Folder Transport\n---\n\nUse every supplied asset.\n", {
-      ...opts(),
-      slug: "folder-transport",
-    })
+  test("round-trips recipe.json, nested binary assets and empty folders byte-for-byte after the source is gone", async () => {
+    await Recipe.importSource(
+      JSON.stringify({ version: 1, name: "Folder Transport", prompt: "Use every supplied asset." }),
+      {
+        ...opts(),
+        slug: "folder-transport",
+      },
+    )
     const source = path.join(root, "folder-transport")
     await fs.mkdir(path.join(source, "nested", "empty"), { recursive: true })
     await fs.writeFile(path.join(source, "nested", "binary.bin"), Uint8Array.of(0, 255, 19, 0, 128, 42))
@@ -265,10 +269,13 @@ describe("folder ZIP transport", () => {
   })
 
   test("accepts standard deflate flags, CP437 names and signature-bearing comments, and exports portable modes", async () => {
-    await Recipe.importMarkdown("---\nname: Interoperable ZIP\n---\n\nUse the supplied files.\n", {
-      ...opts(),
-      slug: "interoperable-zip",
-    })
+    await Recipe.importSource(
+      JSON.stringify({ version: 1, name: "Interoperable ZIP", prompt: "Use the supplied files." }),
+      {
+        ...opts(),
+        slug: "interoperable-zip",
+      },
+    )
     const source = path.join(root, "interoperable-zip")
     await fs.mkdir(path.join(source, "nested"))
     await fs.writeFile(path.join(source, "nested", "inside.txt"), "inside")
@@ -307,8 +314,8 @@ describe("folder ZIP transport", () => {
     expect(await fs.readFile(path.join(root, commented.slug, "nested", "inside.txt"), "utf8")).toBe("inside")
   })
 
-  test("one slug claim serializes archive, markdown and duplicate writers without replacement or a hybrid", async () => {
-    await Recipe.importMarkdown("---\nname: Claim Source\n---\n\narchive contender\n", {
+  test("one slug claim serializes archive, source and duplicate writers without replacement or a hybrid", async () => {
+    await Recipe.importSource(JSON.stringify({ version: 1, name: "Claim Source", prompt: "archive contender" }), {
       ...opts(),
       slug: "claim-source",
     })
@@ -318,7 +325,7 @@ describe("folder ZIP transport", () => {
 
     const [folder, prose] = await Promise.all([
       Recipe.importArchive(archive, { ...opts(), slug: "shared-claim" }),
-      Recipe.importMarkdown("---\nname: Prose contender\n---\n\nmarkdown contender\n", {
+      Recipe.importSource(JSON.stringify({ version: 1, name: "Prose contender", prompt: "source contender" }), {
         ...opts(),
         slug: "shared-claim",
       }),
@@ -326,7 +333,7 @@ describe("folder ZIP transport", () => {
     expect(new Set([folder.slug, prose.slug])).toEqual(new Set(["shared-claim", "shared-claim-2"]))
     expect((await Recipe.read(folder.slug, opts()))?.prompt).toBe("archive contender")
     expect(await fs.readFile(path.join(root, folder.slug, "archive.bin"))).toEqual(Buffer.from([0, 255, 7]))
-    expect((await Recipe.read(prose.slug, opts()))?.prompt).toBe("markdown contender")
+    expect((await Recipe.read(prose.slug, opts()))?.prompt).toBe("source contender")
     expect(await fs.lstat(path.join(root, prose.slug, "archive.bin")).catch(() => undefined)).toBeUndefined()
 
     await Recipe.save({ slug: "copy-source", name: "Copy source", prompt: "duplicate contender" }, opts())
@@ -350,7 +357,10 @@ describe("folder ZIP transport", () => {
   })
 
   test("rejects hostile paths, collisions, links, special/encrypted/ZIP64/unsupported forms, and leaves no half recipe", async () => {
-    await Recipe.importMarkdown("---\nname: Guarded ZIP\n---\n\nbody\n", { ...opts(), slug: "zip-fixture" })
+    await Recipe.importSource(JSON.stringify({ version: 1, name: "Guarded ZIP", prompt: "body" }), {
+      ...opts(),
+      slug: "zip-fixture",
+    })
     const dir = path.join(root, "zip-fixture")
     await fs.writeFile(path.join(dir, "asset.txt"), "asset")
     await fs.writeFile(path.join(dir, "A.txt"), "upper")
@@ -424,7 +434,10 @@ describe("folder ZIP transport", () => {
       /compressed limit/,
     )
 
-    await Recipe.importMarkdown("---\nname: Budget ZIP\n---\n\nbody\n", { ...opts(), slug: "budget-zip" })
+    await Recipe.importSource(JSON.stringify({ version: 1, name: "Budget ZIP", prompt: "body" }), {
+      ...opts(),
+      slug: "budget-zip",
+    })
     for (let index = 0; index < 5; index++) await fs.writeFile(path.join(root, "budget-zip", `f${index}.txt`), "x")
     const original = await Recipe.exportArchive("budget-zip", opts())
     const perFile = mutateNamedEntry(original, "f0.txt", (bytes, offset, central) => {

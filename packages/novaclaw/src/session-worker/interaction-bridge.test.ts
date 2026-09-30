@@ -43,12 +43,12 @@ const colleagueStub = {
   killWorker: () => Effect.die("unused"),
 } as ColleagueHandoff.Interface
 
-test("project commands require the host's Nova identity and a current worker fence", async () => {
-  let calls = 0
+test("project commands carry the host identity and reject stale worker fences", async () => {
+  const calls: (string | undefined)[] = []
   const projects = {
-    execute: () =>
+    execute: (_command: unknown, actor?: string) =>
       Effect.sync(() => {
-        calls++
+        calls.push(actor)
         return { projects: [], officers: [] }
       }),
   }
@@ -66,12 +66,13 @@ test("project commands require the host's Nova identity and a current worker fen
         message: { ...request, generation },
       }),
     )
-  expect(await run("iris")).toMatchObject({ outcome: "refused", reason: expect.stringContaining("Only Nova") })
+  expect(await run("manager")).toMatchObject({ outcome: "ok" })
+  expect(calls).toEqual(["manager"])
   expect(await run(undefined)).toMatchObject({ outcome: "refused" })
   expect(await run("nova", 4)).toMatchObject({ outcome: "rejected" })
-  expect(calls).toBe(0)
+  expect(calls).toEqual(["manager"])
   expect(await run("nova")).toMatchObject({ outcome: "ok", snapshot: { projects: [], officers: [] } })
-  expect(calls).toBe(1)
+  expect(calls).toEqual(["manager", "nova"])
 })
 
 test("worker controls derive the parent from the fenced lease", async () => {

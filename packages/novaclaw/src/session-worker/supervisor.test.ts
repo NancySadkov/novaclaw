@@ -506,6 +506,34 @@ test("the standard worker entrypoint publishes through the host and settles", as
   expect(published).toEqual(["session.next.synthetic"])
 })
 
+test("cooperative handoff is distinct from completion and failure even when interruption is caught", async () => {
+  for (const mode of ["cooperate", "cooperate-caught"] as const) {
+    for (const outcome of ["applied", "yield"] as const) {
+      const worker = spawn({
+        command: [process.execPath, entrypointFixture, mode],
+        lease,
+        directory: process.cwd(),
+        force: false,
+        startupTimeoutMs: 8_000,
+        heartbeatTimeoutMs: 500,
+        onExecutionRequest: async (message) => {
+          expect(message.type).toBe("execution-cooperate")
+          return {
+            version: 1,
+            type: "execution-result",
+            sessionID: message.sessionID,
+            attemptID: message.attemptID,
+            generation: message.generation,
+            requestID: message.requestID,
+            outcome,
+          }
+        },
+      })
+      expect(await worker.result).toEqual({ type: outcome === "yield" ? "yielded" : "settled" })
+    }
+  }
+}, 20_000)
+
 test("worker diagnostics stay on stderr and cannot corrupt the stdout protocol", async () => {
   const worker = spawn({
     command: [process.execPath, entrypointFixture, "log"],

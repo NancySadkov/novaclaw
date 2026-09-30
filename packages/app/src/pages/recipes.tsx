@@ -1,3 +1,5 @@
+import type { RecipeOfficer } from "@novaclaw/schema/recipe-officer"
+import { RecipeOfficersEditor } from "@/components/recipe-officers"
 import { useNavigate } from "@solidjs/router"
 import { useLanguage } from "@/context/language"
 import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js"
@@ -147,6 +149,8 @@ export function RecipesPage() {
   const [draftName, setDraftName] = createSignal("")
   const [draftDescription, setDraftDescription] = createSignal("")
   const [draftPrompt, setDraftPrompt] = createSignal("")
+  const [draftOfficers, setDraftOfficers] = createSignal<readonly RecipeOfficer[]>([])
+  const [deployDirectory, setDeployDirectory] = createSignal("")
   const [dirty, setDirty] = createSignal(false)
   const [busy, setBusy] = createSignal(false)
   /** Per-cook Strict opt-in (off = inherit Settings → Strict mode). */
@@ -159,7 +163,7 @@ export function RecipesPage() {
   const [checking, setChecking] = createSignal(false)
   const [producesDraft, setProducesDraft] = createSignal("")
   const [producesDirty, setProducesDirty] = createSignal(false)
-  const [studioTab, setStudioTab] = createSignal<"overview" | "source" | "assets">("overview")
+  const [studioTab, setStudioTab] = createSignal<"overview" | "team" | "source" | "assets">("overview")
   const [sourceDraft, setSourceDraft] = createSignal("")
   const [sourceDirty, setSourceDirty] = createSignal(false)
   const [assets, setAssets] = createSignal<RecipeAsset[]>([])
@@ -187,7 +191,7 @@ export function RecipesPage() {
 
   /**
    * The author's own file, plus what it needs and produces. A SEPARATE read from the list on purpose: the
-   * list record carries the prompt BODY only, so `needs:` / `produces:` and the editable markdown live
+   * list record carries the prompt BODY only, so `needs:` / `produces:` and the editable source live
    * nowhere else. A failure here stays `undefined`, which every describe* function below reports as
    * *"I could not read this recipe's file"* rather than as *"it declares nothing"*.
    */
@@ -208,7 +212,7 @@ export function RecipesPage() {
 
   createEffect(() => {
     const loaded = source()
-    if (loaded && !sourceDirty()) setSourceDraft(loaded.markdown)
+    if (loaded && !sourceDirty()) setSourceDraft(loaded.source)
   })
 
   createEffect(() => {
@@ -218,7 +222,9 @@ export function RecipesPage() {
       setAssets([])
       return
     }
-    void listRecipeAssets(base, slug).then(setAssets).catch(() => setAssets([]))
+    void listRecipeAssets(base, slug)
+      .then(setAssets)
+      .catch(() => setAssets([]))
   })
 
   const needs = createMemo(() => describeNeeds(source()))
@@ -265,6 +271,7 @@ export function RecipesPage() {
     setDraftDescription(recipe.description)
     // ⚠️ The RAW prompt, never the flattened one — see the header.
     setDraftPrompt(recipe.rawPrompt)
+    setDraftOfficers(recipes().find((entry) => entry.slug === recipe.key)?.officers ?? [])
     setDirty(false)
     setProducesDirty(false)
     setReceipt(undefined)
@@ -280,6 +287,7 @@ export function RecipesPage() {
     setDraftName("")
     setDraftDescription("")
     setDraftPrompt("")
+    setDraftOfficers([])
     setDirty(true)
   }
 
@@ -296,7 +304,8 @@ export function RecipesPage() {
       description: error instanceof Error ? error.message : String(error),
     })
 
-  const canLeaveDraft = () => (!dirty() && !sourceDirty() && !assetDirty()) || window.confirm("Discard unsaved recipe changes?")
+  const canLeaveDraft = () =>
+    (!dirty() && !sourceDirty() && !assetDirty()) || window.confirm("Discard unsaved recipe changes?")
 
   async function save() {
     const base = httpBase()
@@ -308,11 +317,13 @@ export function RecipesPage() {
             name: draftName().trim(),
             ...(draftDescription().trim() ? { description: draftDescription().trim() } : {}),
             prompt: draftPrompt(),
+            officers: draftOfficers(),
           })
         : await updateRecipe(base, selected()!, {
             name: draftName().trim(),
             description: draftDescription().trim() || null,
             prompt: draftPrompt(),
+            officers: draftOfficers(),
           })
       await refetch()
       open(toView(saved))
@@ -325,14 +336,6 @@ export function RecipesPage() {
     }
   }
 
-  /**
-   * Change ONLY the `produces:` line — `Recipe.update`, the partial verb.
-   *
-   * ⚠️ Not `save`. A save takes the whole recipe, so adding one line would mean resending the prompt from
-   * a textarea, and a caller that retypes prose it did not author is the lossy rewrite `Recipe.edit`
-   * exists to prevent. This route edits that one line inside the author's own bytes and leaves every other
-   * byte — their key order, their line endings, a BOM, unknown keys — exactly as it found them.
-   */
   async function saveProduces() {
     const base = httpBase()
     const slug = current()?.key
@@ -394,7 +397,7 @@ export function RecipesPage() {
     }
   }
 
-  /** Download the complete folder, not a reconstruction and not only its markdown. */
+  /** Download the complete folder, not a reconstruction and not only its source. */
   async function exportRecipe(recipe: RecipeView) {
     const base = httpBase()
     if (!base) return
@@ -415,20 +418,20 @@ export function RecipesPage() {
     }
   }
 
-  async function doMarkdownImport() {
+  async function doSourceImport() {
     const base = httpBase()
     const preview = previewImport(importText())
     if (!base || !preview.ok) return
     setBusy(true)
     try {
-      const made = await importRecipe(base, { markdown: importText() })
+      const made = await importRecipe(base, { source: importText() })
       await refetch()
       setImportText("")
       setImporting(false)
       open(toView(made))
       showToast({
         title: `Imported “${made.name}”`,
-        description: "Stored exactly as it was written. Pasted markdown carries no assets; read it before you run it.",
+        description: "Stored exactly as it was written. Pasted JSON carries no assets; read it before you run it.",
       })
     } catch (error) {
       fail(error)
@@ -469,11 +472,17 @@ export function RecipesPage() {
     const base = httpBase()
     const bytes = packageBytes()
     if (!base || !bytes) return
-    if (deploy && !(await confirm({
-      title: `Deploy “${packagePreview()?.name ?? packageName()}”?`,
-      description: packagePreview()?.description || "Nova will hire an agent to build this recipe into a program.",
-      confirmLabel: "Deploy recipe",
-    }))) return
+    if (
+      deploy &&
+      !(await confirm({
+        title: `Deploy “${packagePreview()?.name ?? packageName()}”?`,
+        description:
+          packagePreview()?.description ||
+          "Create a project with a Manager reporting to Nova and officers reporting to the Manager.",
+        confirmLabel: "Deploy recipe",
+      }))
+    )
+      return
     setBusy(true)
     let imported: Recipe | undefined
     try {
@@ -481,7 +490,9 @@ export function RecipesPage() {
         signal: archiveTransfers.signal,
       })
       imported = made
-      if (deploy) await deployRecipe(base, made.slug)
+      const project = deploy
+        ? await deployRecipe(base, made.slug, { directory: deployDirectory().trim() || undefined })
+        : undefined
       if (deploy) window.dispatchEvent(new Event("novaclaw:recipe-deployed"))
       await refetch()
       await refetchDeployed()
@@ -493,8 +504,11 @@ export function RecipesPage() {
       open(toView(made))
       showToast({
         title: deploy ? `Deploying “${made.name}”` : `Imported “${made.name}”`,
-        description: deploy ? "Nova will prepare it. Its Home icon opens the deployment chat until it is ready." : "The complete folder is ready to edit in Recipes Studio.",
+        description: deploy
+          ? "The project Manager will prepare it. Follow the team in Projects."
+          : "The complete folder is ready to edit in Recipes Studio.",
       })
+      if (project) navigate(`/projects?project=${encodeURIComponent(project.projectID)}`)
     } catch (error) {
       if (imported) {
         void refetch()
@@ -523,7 +537,9 @@ export function RecipesPage() {
   const onDesktopPackage = (event: Event) => {
     const detail = (event as CustomEvent<{ name?: string; bytes: Uint8Array<ArrayBuffer> }>).detail
     if (detail?.bytes) {
-      const holder = window as Window & { __NOVACLAW__?: { recipePackages?: { name?: string; bytes: Uint8Array<ArrayBuffer> }[] } }
+      const holder = window as Window & {
+        __NOVACLAW__?: { recipePackages?: { name?: string; bytes: Uint8Array<ArrayBuffer> }[] }
+      }
       const queued = holder.__NOVACLAW__?.recipePackages
       const index = queued?.findIndex((entry) => entry.bytes === detail.bytes) ?? -1
       if (httpBase()) {
@@ -547,8 +563,12 @@ export function RecipesPage() {
       open(toView(saved))
       await refetchSource()
       setStudioTab("source")
-      showToast({ title: "recipe.md saved" })
-    } catch (error) { fail(error) } finally { setBusy(false) }
+      showToast({ title: "recipe.json saved" })
+    } catch (error) {
+      fail(error)
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function openAsset(path: string) {
@@ -561,7 +581,9 @@ export function RecipesPage() {
       setAssetContent(asset.content)
       setAssetEncoding(asset.encoding)
       setAssetDirty(false)
-    } catch (error) { fail(error) }
+    } catch (error) {
+      fail(error)
+    }
   }
 
   async function saveAsset() {
@@ -576,7 +598,11 @@ export function RecipesPage() {
       setAssetDirty(false)
       await refetch()
       showToast({ title: `Saved ${path}` })
-    } catch (error) { fail(error) } finally { setBusy(false) }
+    } catch (error) {
+      fail(error)
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function uploadAssets(files: FileList | null) {
@@ -593,7 +619,11 @@ export function RecipesPage() {
       setAssets(await listRecipeAssets(base, slug))
       await refetch()
       showToast({ title: files.length === 1 ? "Asset added" : `${files.length} assets added` })
-    } catch (error) { fail(error) } finally { setBusy(false) }
+    } catch (error) {
+      fail(error)
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function removeAsset(path: string) {
@@ -607,33 +637,57 @@ export function RecipesPage() {
       if (assetPath() === path) setAssetPath(undefined)
       await refetch()
       showToast({ title: `Removed ${path}` })
-    } catch (error) { fail(error) } finally { setBusy(false) }
+    } catch (error) {
+      fail(error)
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function deployCurrent(recipe: RecipeView) {
     const base = httpBase()
-    if (!base || !(await confirm({
-      title: `Deploy “${recipe.name}”?`,
-      description: recipe.description || "Nova will hire an agent to build this recipe into a program.",
-      confirmLabel: "Deploy recipe",
-    }))) return
+    if (
+      !base ||
+      !(await confirm({
+        title: `Deploy “${recipe.name}”?`,
+        description:
+          recipe.description ||
+          "Create a project with a Manager reporting to Nova and officers reporting to the Manager.",
+        confirmLabel: "Deploy recipe",
+      }))
+    )
+      return
     setBusy(true)
     try {
-      await deployRecipe(base, recipe.key)
+      const deployment = await deployRecipe(base, recipe.key, { directory: deployDirectory().trim() || undefined })
       window.dispatchEvent(new Event("novaclaw:recipe-deployed"))
       await refetchDeployed()
-      showToast({ title: `Deploying “${recipe.name}”`, description: "Nova is preparing it. Its Home icon opens the deployment chat until ready." })
-    } catch (error) { void refetchDeployed(); fail(error) } finally { setBusy(false) }
+      showToast({
+        title: `Deploying “${recipe.name}”`,
+        description: "The project Manager is coordinating the team. Open Projects to follow its progress.",
+      })
+      navigate(`/projects?project=${encodeURIComponent(deployment.projectID)}`)
+    } catch (error) {
+      void refetchDeployed()
+      fail(error)
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function undeployCurrent(slug: string) {
     const base = httpBase()
-    if (!base || !(await confirm({
-      title: "Undeploy this program?",
-      description: "This removes its deployed files and Home icon. The editable recipe stays in your library.",
-      confirmLabel: "Undeploy",
-      destructive: true,
-    }))) return
+    if (
+      !base ||
+      !(await confirm({
+        title: "Undeploy this project?",
+        description:
+          "This retires its team and removes the project folder, generated files, and Home icon. The editable recipe stays in your library.",
+        confirmLabel: "Undeploy",
+        destructive: true,
+      }))
+    )
+      return
     setBusy(true)
     try {
       await undeployRecipe(base, slug)
@@ -641,7 +695,11 @@ export function RecipesPage() {
       await refetchDeployed()
       setSelectedDeployment(undefined)
       showToast({ title: "Recipe undeployed" })
-    } catch (error) { fail(error) } finally { setBusy(false) }
+    } catch (error) {
+      fail(error)
+    } finally {
+      setBusy(false)
+    }
   }
 
   /** Cook it. `directory` unset = a fresh folder in the scratch workspace. */
@@ -756,7 +814,7 @@ export function RecipesPage() {
       <AppPageHeader
         glyph="recipes"
         title="Recipes Studio"
-        hint="Shape the intent. Nova builds the program."
+        hint="Shape the intent. A project team brings the recipe to life."
       >
         <button class={BTN} data-action="recipe-import-open" onClick={startImport}>
           {language.t("recipes.page.import")}
@@ -768,7 +826,7 @@ export function RecipesPage() {
 
       <div class="recipe-studio-layout flex min-h-0 flex-1 overflow-hidden">
         {/* ── The list, on its shelves ─────────────────────────────────────────────────────────── */}
-        <div class="recipe-studio-sidebar flex w-72 shrink-0 flex-col border-r border-v2-border-border-base">
+        <div class="recipe-studio-sidebar flex shrink-0 flex-col border-r border-v2-border-border-base">
           <div class="p-2">
             <TextInputV2
               type="text"
@@ -779,7 +837,15 @@ export function RecipesPage() {
             />
           </div>
           <div class="min-h-0 flex-1 overflow-auto px-2 pb-2">
-            <div class="recipe-studio-section-label">Deployed programs <span><button type="button" onClick={() => void refetchDeployed()}>Refresh</button> · {deployments().length}</span></div>
+            <div class="recipe-studio-section-label">
+              Deployed projects{" "}
+              <span>
+                <button type="button" onClick={() => void refetchDeployed()}>
+                  Refresh
+                </button>{" "}
+                · {deployments().length}
+              </span>
+            </div>
             <Show when={deploymentListing().kind === "failed"}>
               <p class="recipe-studio-muted">Could not read deployed programs.</p>
             </Show>
@@ -789,16 +855,29 @@ export function RecipesPage() {
                   <button
                     class="recipe-studio-deployment"
                     classList={{ "is-selected": selectedDeployment() === deployment.slug }}
-                    onClick={() => { if (!canLeaveDraft()) return; setDirty(false); setSourceDirty(false); setAssetDirty(false); setSelected(undefined); setSelectedDeployment(deployment.slug); setImporting(false) }}
+                    onClick={() => {
+                      if (!canLeaveDraft()) return
+                      setDirty(false)
+                      setSourceDirty(false)
+                      setAssetDirty(false)
+                      setSelected(undefined)
+                      setSelectedDeployment(deployment.slug)
+                      setImporting(false)
+                    }}
                   >
                     <span class="recipe-studio-deployment-glyph">✦</span>
-                    <span class="min-w-0 flex-1"><strong>{deployment.name}</strong><small>{deployment.state === "ready" ? "Ready to open" : "Nova is preparing it"}</small></span>
+                    <span class="min-w-0 flex-1">
+                      <strong>{deployment.name}</strong>
+                      <small>{deployment.state === "ready" ? "Ready to open" : "Manager is coordinating"}</small>
+                    </span>
                     <span class="recipe-studio-status" data-state={deployment.state} />
                   </button>
                 )}
               </For>
             </div>
-            <div class="recipe-studio-section-label">Recipe library <span>{recipes().length}</span></div>
+            <div class="recipe-studio-section-label">
+              Recipe library <span>{recipes().length}</span>
+            </div>
             <Switch>
               <Match when={recipeListing().kind === "failed"}>
                 <div class="p-2 text-sm text-v2-state-fg-danger" data-slot="recipes-failed">
@@ -834,7 +913,9 @@ export function RecipesPage() {
                               "border-transparent hover:bg-v2-background-bg-layer-01": selected() !== recipe.key,
                             }}
                             data-slot="recipe-row"
-                            onClick={() => { if (canLeaveDraft()) open(recipe) }}
+                            onClick={() => {
+                              if (canLeaveDraft()) open(recipe)
+                            }}
                           >
                             <div class="flex items-center gap-1.5">
                               <span class="min-w-0 flex-1 truncate text-sm font-medium">{recipe.name}</span>
@@ -862,6 +943,19 @@ export function RecipesPage() {
 
         {/* ── The detail ───────────────────────────────────────────────────────────────────────── */}
         <div class="recipe-studio-main min-w-0 flex-1 overflow-auto p-4">
+          <Show when={(current() && studioTab() === "overview") || packagePreview()}>
+            <label class="recipe-deploy-folder">
+              Project folder
+              <input
+                class="project-field"
+                aria-label="Project deployment folder"
+                placeholder="Default: NovaClaw home / projects / new project"
+                value={deployDirectory()}
+                onInput={(event) => setDeployDirectory(event.currentTarget.value)}
+              />
+              <small>Leave blank for a fresh project folder, or enter a new absolute folder path on the server.</small>
+            </label>
+          </Show>
           <Show when={packagePreview()}>
             {(packageInfo) => (
               <section class="recipe-studio-package" data-slot="recipe-package-preview">
@@ -869,30 +963,93 @@ export function RecipesPage() {
                 <div class="min-w-0 flex-1">
                   <div class="recipe-studio-eyebrow">PACKAGE REVIEW · {packageName()}</div>
                   <h2>{packageInfo().name}</h2>
-                  <p>{packageInfo().description || "This recipe asks Nova to build a program from its instructions."}</p>
-                  <small>Contains recipe.md and {packageInfo().assets.length} asset{packageInfo().assets.length === 1 ? "" : "s"}. Read the instructions before deploying a package from someone else.</small>
-                  <details class="recipe-studio-package-source"><summary>Read recipe instructions</summary><pre>{packageInfo().prompt}</pre></details>
+                  <p>
+                    {packageInfo().description || "This recipe asks Nova to build a program from its instructions."}
+                  </p>
+                  <p class="recipe-studio-muted">
+                    Manager →{" "}
+                    {packageInfo()
+                      .officers.map((officer) => officer.title)
+                      .join(" · ") || "executes the recipe"}
+                  </p>
+                  <details class="recipe-studio-package-source">
+                    <summary>Review officer jobs and nudges</summary>
+                    <For each={packageInfo().officers}>
+                      {(officer) => (
+                        <div>
+                          <strong>{officer.title}</strong>
+                          <p>{officer.description}</p>
+                          <For each={officer.nudges}>
+                            {(nudge) => (
+                              <p>
+                                {nudge.name}: {nudge.text} ({nudge.hook.type})
+                              </p>
+                            )}
+                          </For>
+                        </div>
+                      )}
+                    </For>
+                  </details>
+                  <small>
+                    Contains recipe.json and {packageInfo().assets.length} asset
+                    {packageInfo().assets.length === 1 ? "" : "s"}. Read the instructions before deploying a package
+                    from someone else.
+                  </small>
+                  <details class="recipe-studio-package-source">
+                    <summary>Read recipe instructions</summary>
+                    <pre>{packageInfo().prompt}</pre>
+                  </details>
                 </div>
                 <div class="recipe-studio-package-actions">
-                  <button class={PRIMARY} disabled={busy()} onClick={() => void acceptPackage(true)}>Deploy</button>
-                  <button class={BTN} disabled={busy()} onClick={() => void acceptPackage(false)}>Import for editing</button>
-                  <button class={BTN} disabled={busy()} onClick={() => { setPackagePreview(undefined); setPackageBytes(undefined) }}>Cancel</button>
+                  <button class={PRIMARY} disabled={busy()} onClick={() => void acceptPackage(true)}>
+                    Deploy
+                  </button>
+                  <button class={BTN} disabled={busy()} onClick={() => void acceptPackage(false)}>
+                    Import for editing
+                  </button>
+                  <button
+                    class={BTN}
+                    disabled={busy()}
+                    onClick={() => {
+                      setPackagePreview(undefined)
+                      setPackageBytes(undefined)
+                    }}
+                  >
+                    Cancel
+                  </button>
                 </div>
               </section>
             )}
           </Show>
-          <Show when={packageLoading()}><p class="recipe-studio-muted">Checking package…</p></Show>
+          <Show when={packageLoading()}>
+            <p class="recipe-studio-muted">Checking package…</p>
+          </Show>
           <Show when={selectedDeployment()}>
             {(slug) => {
               const deployment = createMemo(() => deployments().find((entry) => entry.slug === slug()))
-              return <section class="recipe-studio-deployment-detail">
-                <div class="recipe-studio-hero-symbol">✦</div>
-                <span class="recipe-studio-eyebrow">DEPLOYED PROGRAM · {deployment()?.state}</span>
-                <h1>{deployment()?.name}</h1>
-                <p>{deployment()?.description || "Built from a recipe by Nova."}</p>
-                <p class="recipe-studio-muted">{deployment()?.state === "ready" ? "Open it from its icon on Home." : "Nova is preparing this program. Its Home icon opens the deployment chat."}</p>
-                <button class={BTN} disabled={busy()} onClick={() => void undeployCurrent(slug())}>Undeploy</button>
-              </section>
+              return (
+                <section class="recipe-studio-deployment-detail">
+                  <div class="recipe-studio-hero-symbol">✦</div>
+                  <span class="recipe-studio-eyebrow">DEPLOYED PROJECT · {deployment()?.state}</span>
+                  <h1>{deployment()?.name}</h1>
+                  <p>{deployment()?.description || "A project created from a recipe."}</p>
+                  <p class="recipe-studio-muted">
+                    {deployment()?.state === "ready"
+                      ? "Open it from its icon on Home."
+                      : "The Manager coordinates this project. Its Home icon opens the manager’s chat."}
+                  </p>
+                  <p class="recipe-studio-muted">{deployment()?.directory}</p>
+                  <button
+                    class={PRIMARY}
+                    onClick={() => navigate(`/projects?project=${encodeURIComponent(deployment()?.projectID ?? "")}`)}
+                  >
+                    Open project
+                  </button>
+                  <button class={BTN} disabled={busy()} onClick={() => void undeployCurrent(slug())}>
+                    Undeploy
+                  </button>
+                </section>
+              )
             }}
           </Show>
           <Show when={importing()}>
@@ -910,7 +1067,7 @@ export function RecipesPage() {
                   setImporting(false)
                 }}
                 onArchiveImport={() => void doArchiveImport()}
-                onMarkdownImport={() => void doMarkdownImport()}
+                onSourceImport={() => void doSourceImport()}
               />
             </div>
           </Show>
@@ -928,343 +1085,452 @@ export function RecipesPage() {
               }
             >
               <>
-              <Show when={current()}>
-                <div class="recipe-studio-tabs" role="tablist" aria-label="Recipe editor">
-                  <button role="tab" aria-selected={studioTab() === "overview"} onClick={() => setStudioTab("overview")}>Overview</button>
-                  <button role="tab" aria-selected={studioTab() === "source"} onClick={() => setStudioTab("source")}>recipe.md</button>
-                  <button role="tab" aria-selected={studioTab() === "assets"} onClick={() => setStudioTab("assets")}>Assets <span>{assets().length}</span></button>
+                <Show when={current()}>
+                  <div class="recipe-studio-tabs" role="tablist" aria-label="Recipe editor">
+                    <button
+                      role="tab"
+                      aria-selected={studioTab() === "overview"}
+                      onClick={() => setStudioTab("overview")}
+                    >
+                      Overview
+                    </button>
+                    <button role="tab" aria-selected={studioTab() === "team"} onClick={() => setStudioTab("team")}>
+                      Officers <span>{draftOfficers().length}</span>
+                    </button>
+                    <button role="tab" aria-selected={studioTab() === "source"} onClick={() => setStudioTab("source")}>
+                      recipe.json
+                    </button>
+                    <button role="tab" aria-selected={studioTab() === "assets"} onClick={() => setStudioTab("assets")}>
+                      Assets <span>{assets().length}</span>
+                    </button>
+                  </div>
+                </Show>
+                <div
+                  class="recipe-studio-editor flex max-w-3xl flex-col gap-3"
+                  classList={{ hidden: studioTab() !== "overview" && !creating() }}
+                >
+                  <div class="flex flex-wrap items-center gap-2">
+                    <TextInputV2
+                      type="text"
+                      appearance="large"
+                      class="!min-w-[240px] flex-1"
+                      placeholder={language.t("recipes.page.recipeName")}
+                      value={draftName()}
+                      onInput={(event) => {
+                        setDraftName(event.currentTarget.value)
+                        setDirty(true)
+                      }}
+                    />
+                    <Show when={current()}>
+                      {(recipe) => (
+                        <>
+                          <button class={BTN} disabled={busy()} onClick={() => void copy(recipe())}>
+                            {language.t("recipes.page.copy")}
+                          </button>
+                          <button
+                            class={PRIMARY}
+                            disabled={busy() || dirty() || sourceDirty()}
+                            onClick={() => void deployCurrent(recipe())}
+                          >
+                            Deploy
+                          </button>
+                          <button
+                            class={BTN}
+                            data-action="recipe-export"
+                            disabled={busy() || !httpBase()}
+                            title={describeExport(recipe())}
+                            onClick={() => void exportRecipe(recipe())}
+                          >
+                            Export .nova
+                          </button>
+                          <button
+                            class={BTN}
+                            disabled={busy()}
+                            onClick={() => void remove(recipe())}
+                            title={language.t("recipes.page.deleteRecipe")}
+                          >
+                            <Icon name="trash" size="normal" />
+                          </button>
+                        </>
+                      )}
+                    </Show>
+                  </div>
+
+                  <details class="recipe-test-details">
+                    <summary>Testing and verification</summary>
+                    <Show when={current()}>
+                      {(recipe) => (
+                        <div class="flex flex-wrap items-center gap-2 my-3">
+                          {" "}
+                          <button
+                            class={PRIMARY}
+                            data-action="recipe-run"
+                            disabled={busy()}
+                            onClick={() => void cook(recipe())}
+                          >
+                            {language.t("recipes.page.run")}
+                          </button>
+                          <button class={BTN} disabled={busy() || !conn()} onClick={() => cookElsewhere(recipe())}>
+                            {language.t("recipes.page.runIn")}
+                          </button>
+                          <button
+                            class={BTN}
+                            aria-pressed={strictCook()}
+                            data-action="recipe-strict-toggle"
+                            title={language.t("recipes.page.cookUnderTheStrictHarnessThe")}
+                            onClick={() => setStrictCook((on) => !on)}
+                          >
+                            {strictCook() ? "🛡️ Strict on" : "Strict off"}
+                          </button>
+                        </div>
+                      )}
+                    </Show>
+                    <section
+                      class="rounded-lg border border-v2-border-border-focus bg-v2-background-bg-layer-02 p-3"
+                      data-slot="recipe-reproducibility"
+                    >
+                      <h2 class="text-xs font-semibold tracking-wide text-v2-text-text-accent uppercase">
+                        {language.t("recipes.page.whatRunningThisActuallyDoes")}
+                      </h2>
+                      <p class="mt-1.5 text-sm text-v2-text-text-base">{REPRODUCIBILITY.headline}</p>
+                      <p class="mt-1.5 text-sm text-v2-text-text-base">{REPRODUCIBILITY.gain}</p>
+                      <p class="mt-1.5 text-sm text-v2-text-text-muted" data-slot="recipe-reproducibility-price">
+                        {REPRODUCIBILITY.price}
+                      </p>
+                      <p class="mt-1.5 text-xs text-v2-text-text-faint">{REPRODUCIBILITY.reassurance}</p>
+                    </section>
+
+                    {/* ── 2. Before you run: what this machine has. OUR observation. ───────────────── */}
+                    <Show when={current()}>
+                      <section class={CARD} data-slot="recipe-needs">
+                        <h2 class={LABEL}>{language.t("recipes.page.beforeYouRun")}</h2>
+                        <p
+                          class="mt-1.5 text-sm"
+                          classList={{
+                            "text-v2-state-fg-danger": needs().blocksRun,
+                            "text-v2-text-text-base": !needs().blocksRun,
+                          }}
+                          data-slot="recipe-needs-sentence"
+                        >
+                          {needs().sentence}
+                        </p>
+                        <Show when={needs().looked.length}>
+                          <p class="mt-1 text-[11px] break-all text-v2-text-text-faint">
+                            {`I looked for: ${needs().looked.join(", ")}. If it is installed somewhere I did not look, delete this recipe's “needs:” line and run it anyway — the recipe is yours.`}
+                          </p>
+                        </Show>
+                      </section>
+                    </Show>
+
+                    {/* ── 3. What a finished run should leave behind, and how to say so. ───────────── */}
+                    <Show when={current()}>
+                      {(_recipe) => (
+                        <section class={CARD} data-slot="recipe-produces">
+                          <h2 class={LABEL}>{language.t("recipes.page.whatAFinishedRunShouldLeave")}</h2>
+                          <p class="mt-1.5 text-sm text-v2-text-text-base" data-slot="recipe-produces-sentence">
+                            {declared().sentence}
+                          </p>
+                          <Show when={declared().advice}>
+                            <p class="mt-1 text-xs text-v2-text-text-muted">{declared().advice}</p>
+                          </Show>
+                          <Show when={declared().state !== "unreadable"}>
+                            <div class="mt-2 flex flex-wrap items-center gap-2">
+                              <input
+                                class={`${FIELD} min-w-[260px] flex-1 font-mono text-[12px]`}
+                                placeholder={language.t("recipes.page.reportMdChartHtml")}
+                                data-slot="recipe-produces-input"
+                                value={producesDirty() ? producesDraft() : declared().files.join(", ")}
+                                onInput={(event) => {
+                                  setProducesDraft(event.currentTarget.value)
+                                  setProducesDirty(true)
+                                }}
+                              />
+                              <button
+                                class={BTN}
+                                data-action="recipe-produces-save"
+                                disabled={busy() || !producesDirty()}
+                                onClick={() => void saveProduces()}
+                              >
+                                {language.t("recipes.page.saveFileNames")}
+                              </button>
+                            </div>
+                            <p class="mt-1 text-[11px] text-v2-text-text-faint">
+                              {language.t("recipes.page.justFileNamesSeparatedByCommas")}
+                            </p>
+                          </Show>
+                        </section>
+                      )}
+                    </Show>
+
+                    {/* ── 4. The receipt. Four verdicts, kept apart. ───────────────────────────────── */}
+                    <Show when={current()}>
+                      {(recipe) => (
+                        <section class={CARD} data-slot="recipe-receipt">
+                          <div class="flex flex-wrap items-center gap-2">
+                            <h2 class={`${LABEL} flex-1`}>{language.t("recipes.page.didItWork")}</h2>
+                            <Show when={cooked()}>
+                              {(last) => (
+                                <button
+                                  class={BTN}
+                                  data-action="recipe-check"
+                                  disabled={checking()}
+                                  onClick={() => void check(recipe(), last().directory)}
+                                >
+                                  {checking() ? "Checking…" : "Check the last run again"}
+                                </button>
+                              )}
+                            </Show>
+                            <button
+                              class={BTN}
+                              data-action="recipe-check-elsewhere"
+                              disabled={checking() || !conn()}
+                              onClick={() => checkElsewhere(recipe())}
+                            >
+                              {language.t("recipes.page.checkAFolder")}
+                            </button>
+                          </div>
+
+                          <Show
+                            when={verdict()}
+                            fallback={
+                              <p class="mt-1.5 text-sm text-v2-text-text-muted" data-slot="recipe-receipt-none">
+                                {cooked()
+                                  ? "This ran in this session — checking the work folder now."
+                                  : "Run it, then come back here. NovaClaw looks in the work folder itself and tells you what it found — it does not take the model's word for it."}
+                              </p>
+                            }
+                          >
+                            {(view) => (
+                              <div class="mt-2">
+                                <div class="flex flex-wrap items-center gap-2">
+                                  <span
+                                    class={`rounded border px-2 py-0.5 text-xs font-semibold ${TONE[view().tone]}`}
+                                    data-slot="recipe-verdict-label"
+                                  >
+                                    {view().label}
+                                  </span>
+                                  <span class="text-xs text-v2-text-text-faint" data-slot="recipe-verdict-subject">
+                                    {`about: ${view().subject}`}
+                                  </span>
+                                </div>
+                                <p class="mt-1.5 text-sm text-v2-text-text-base" data-slot="recipe-verdict-meaning">
+                                  {view().meaning}
+                                </p>
+                                <p class="mt-1 text-sm text-v2-text-text-muted" data-slot="recipe-verdict-advice">
+                                  {view().advice}
+                                </p>
+                                <Show when={view().rows.length}>
+                                  <ul class="mt-2 flex flex-col gap-1" data-slot="recipe-verdict-rows">
+                                    <For each={view().rows}>
+                                      {(row) => (
+                                        <li class="text-xs text-v2-text-text-muted">
+                                          {/* The separator is real TEXT, not margin: read aloud or copied, a
+                                          bare margin makes this "pi.txtnot found". */}
+                                          <span class="font-mono text-v2-text-text-base">
+                                            {row.path || row.declared}
+                                          </span>
+                                          <span>{" — "}</span>
+                                          <span>{OUTCOME_WORD[row.outcome] ?? row.outcome}</span>
+                                          <span>{": "}</span>
+                                          <span>{row.checked}</span>
+                                          <Show when={row.size}>
+                                            <span>{` (${row.size})`}</span>
+                                          </Show>
+                                        </li>
+                                      )}
+                                    </For>
+                                  </ul>
+                                </Show>
+                                <p class="mt-2 text-[11px] break-all text-v2-text-text-faint">
+                                  {`Checked ${view().directory}`}
+                                </p>
+                                <p class="mt-1 text-[11px] text-v2-text-text-faint" data-slot="recipe-verdict-summary">
+                                  {view().summary}
+                                </p>
+                              </div>
+                            )}
+                          </Show>
+                        </section>
+                      )}
+                    </Show>
+                  </details>
+                  <div class="flex flex-col gap-2">
+                    <h2 class={LABEL}>{language.t("recipes.page.theRecipe")}</h2>
+                    <Show when={current()?.shipped}>
+                      <p class="text-xs text-v2-text-text-faint">
+                        {language.t("recipes.page.thisOneShippedWithNovaclawEdit")}
+                      </p>
+                    </Show>
+                    <Show when={current() && !current()!.shipped}>
+                      <p class="text-xs text-v2-text-text-faint" data-slot="recipe-authorship">
+                        {language.t("recipes.page.theTextBelowIsWhoeverWrote")}
+                      </p>
+                    </Show>
+                    {/* ⚠️ The boxes below hold the RAW text, because whatever is in them is what Save writes
+                      back — flattening here would delete characters from the file on every round trip. So
+                      the surface says out loud that the text is not what it looks like. */}
+                    <Show when={current()?.hiddenCharacters}>
+                      <p class="text-xs text-v2-state-fg-warning" data-slot="recipe-hidden-characters">
+                        {language.t("recipes.page.carefulThisRecipeSOwnText")}
+                      </p>
+                    </Show>
+                    <input
+                      class={`${FIELD} w-full`}
+                      placeholder={language.t("recipes.page.oneLineDescriptionOptional")}
+                      value={draftDescription()}
+                      onInput={(event) => {
+                        setDraftDescription(event.currentTarget.value)
+                        setDirty(true)
+                      }}
+                    />
+                    <textarea
+                      class={`${FIELD} min-h-[320px] w-full font-mono text-[13px] leading-relaxed`}
+                      placeholder={language.t("recipes.page.thePromptThisIsTheRecipe")}
+                      data-slot="recipe-prompt"
+                      value={draftPrompt()}
+                      onInput={(event) => {
+                        setDraftPrompt(event.currentTarget.value)
+                        setDirty(true)
+                      }}
+                    />
+                    <Show when={!creating()}>
+                      <div class="flex flex-wrap items-center gap-3">
+                        <button class={BTN} disabled={!canSave() || busy()} onClick={() => void save()}>
+                          Save changes
+                        </button>
+                        <Show when={dirty() && !creating()}>
+                          <span class="text-xs text-v2-text-text-accent">
+                            {language.t("recipes.page.unsavedChanges")}
+                          </span>
+                        </Show>
+                      </div>
+                    </Show>
+                  </div>
+
+                  <Show when={current()?.assets.length}>
+                    <div class={CARD}>
+                      <div class={LABEL}>{language.t("recipes.page.filesThatTravelWithIt")}</div>
+                      <div class="mt-1 text-sm break-all text-v2-text-text-muted">{current()!.assets.join(", ")}</div>
+                      <div class="mt-1 text-[11px] text-v2-text-text-faint">
+                        {language.t("recipes.page.copiedIntoTheWorkFolderAlongside")}
+                      </div>
+                    </div>
+                  </Show>
                 </div>
-              </Show>
-              <div class="recipe-studio-editor flex max-w-3xl flex-col gap-3" classList={{ hidden: studioTab() !== "overview" && !creating() }}>
-                <div class="flex flex-wrap items-center gap-2">
-                  <TextInputV2
-                    type="text"
-                    appearance="large"
-                    class="!min-w-[240px] flex-1"
-                    placeholder={language.t("recipes.page.recipeName")}
-                    value={draftName()}
-                    onInput={(event) => {
-                      setDraftName(event.currentTarget.value)
+                <Show when={creating() || (current() && studioTab() === "team")}>
+                  <RecipeOfficersEditor
+                    officers={draftOfficers()}
+                    onChange={(officers) => {
+                      setDraftOfficers(officers)
                       setDirty(true)
                     }}
                   />
-                  <Show when={current()}>
-                    {(recipe) => (
-                      <>
-                        <button
-                          class={PRIMARY}
-                          data-action="recipe-run"
-                          disabled={busy()}
-                          onClick={() => void cook(recipe())}
-                        >
-                          {language.t("recipes.page.run")}
-                        </button>
-                        <button class={BTN} disabled={busy() || !conn()} onClick={() => cookElsewhere(recipe())}>
-                          {language.t("recipes.page.runIn")}
-                        </button>
-                        {/* Anti-obscurantist: a VISIBLE switch next to the button it changes, not a
-                            hidden menu — the same Strict lever the composer gives a chat. */}
-                        <button
-                          class={BTN}
-                          aria-pressed={strictCook()}
-                          data-action="recipe-strict-toggle"
-                          title={language.t("recipes.page.cookUnderTheStrictHarnessThe")}
-                          onClick={() => setStrictCook((on) => !on)}
-                        >
-                          {strictCook() ? "🛡️ Strict on" : "Strict off"}
-                        </button>
-                        <button class={BTN} disabled={busy()} onClick={() => void copy(recipe())}>
-                          {language.t("recipes.page.copy")}
-                        </button>
-                        <button class={PRIMARY} disabled={busy() || dirty() || sourceDirty()} onClick={() => void deployCurrent(recipe())}>
-                          Deploy
-                        </button>
-                        <button
-                          class={BTN}
-                          data-action="recipe-export"
-                          disabled={busy() || !httpBase()}
-                          title={describeExport(recipe())}
-                          onClick={() => void exportRecipe(recipe())}
-                        >
-                          Export .nova
-                        </button>
-                        <button
-                          class={BTN}
-                          disabled={busy()}
-                          onClick={() => void remove(recipe())}
-                          title={language.t("recipes.page.deleteRecipe")}
-                        >
-                          <Icon name="trash" size="normal" />
-                        </button>
-                      </>
-                    )}
-                  </Show>
-                </div>
-
-                {/* ── 1. The trade, beside the button it is about. ─────────────────────────────── */}
-                <section
-                  class="rounded-lg border border-v2-border-border-focus bg-v2-background-bg-layer-02 p-3"
-                  data-slot="recipe-reproducibility"
-                >
-                  <h2 class="text-xs font-semibold tracking-wide text-v2-text-text-accent uppercase">
-                    {language.t("recipes.page.whatRunningThisActuallyDoes")}
-                  </h2>
-                  <p class="mt-1.5 text-sm text-v2-text-text-base">{REPRODUCIBILITY.headline}</p>
-                  <p class="mt-1.5 text-sm text-v2-text-text-base">{REPRODUCIBILITY.gain}</p>
-                  <p class="mt-1.5 text-sm text-v2-text-text-muted" data-slot="recipe-reproducibility-price">
-                    {REPRODUCIBILITY.price}
-                  </p>
-                  <p class="mt-1.5 text-xs text-v2-text-text-faint">{REPRODUCIBILITY.reassurance}</p>
-                </section>
-
-                {/* ── 2. Before you run: what this machine has. OUR observation. ───────────────── */}
-                <Show when={current()}>
-                  <section class={CARD} data-slot="recipe-needs">
-                    <h2 class={LABEL}>{language.t("recipes.page.beforeYouRun")}</h2>
-                    <p
-                      class="mt-1.5 text-sm"
-                      classList={{
-                        "text-v2-state-fg-danger": needs().blocksRun,
-                        "text-v2-text-text-base": !needs().blocksRun,
-                      }}
-                      data-slot="recipe-needs-sentence"
-                    >
-                      {needs().sentence}
+                  <button class={PRIMARY} disabled={busy() || !canSave()} onClick={() => void save()}>
+                    {creating() ? "Create recipe" : "Save changes"}
+                  </button>
+                </Show>
+                <Show when={current() && studioTab() === "source"}>
+                  <section class="recipe-studio-source" data-slot="recipe-source-editor">
+                    <div class="recipe-studio-editor-heading">
+                      <div>
+                        <span class="recipe-studio-eyebrow">SOURCE</span>
+                        <h2>recipe.json</h2>
+                      </div>
+                      <button class={PRIMARY} disabled={busy() || !sourceDirty()} onClick={() => void saveSource()}>
+                        Save recipe.json
+                      </button>
+                    </div>
+                    <p>
+                      The entire recipe is editable here. It holds the title, description, build instructions and any
+                      fields you add. Assets travel beside it.
                     </p>
-                    <Show when={needs().looked.length}>
-                      <p class="mt-1 text-[11px] break-all text-v2-text-text-faint">
-                        {`I looked for: ${needs().looked.join(", ")}. If it is installed somewhere I did not look, delete this recipe's “needs:” line and run it anyway — the recipe is yours.`}
-                      </p>
+                    <textarea
+                      class={FIELD}
+                      value={sourceDraft()}
+                      onInput={(event) => {
+                        setSourceDraft(event.currentTarget.value)
+                        setSourceDirty(true)
+                      }}
+                      spellcheck={false}
+                      aria-label="recipe.json source"
+                    />
+                    <Show when={sourceDirty()}>
+                      <small>Unsaved changes</small>
                     </Show>
                   </section>
                 </Show>
-
-                {/* ── 3. What a finished run should leave behind, and how to say so. ───────────── */}
-                <Show when={current()}>
-                  {(_recipe) => (
-                    <section class={CARD} data-slot="recipe-produces">
-                      <h2 class={LABEL}>{language.t("recipes.page.whatAFinishedRunShouldLeave")}</h2>
-                      <p class="mt-1.5 text-sm text-v2-text-text-base" data-slot="recipe-produces-sentence">
-                        {declared().sentence}
-                      </p>
-                      <Show when={declared().advice}>
-                        <p class="mt-1 text-xs text-v2-text-text-muted">{declared().advice}</p>
-                      </Show>
-                      <Show when={declared().state !== "unreadable"}>
-                        <div class="mt-2 flex flex-wrap items-center gap-2">
-                          <input
-                            class={`${FIELD} min-w-[260px] flex-1 font-mono text-[12px]`}
-                            placeholder={language.t("recipes.page.reportMdChartHtml")}
-                            data-slot="recipe-produces-input"
-                            value={producesDirty() ? producesDraft() : declared().files.join(", ")}
-                            onInput={(event) => {
-                              setProducesDraft(event.currentTarget.value)
-                              setProducesDirty(true)
-                            }}
-                          />
-                          <button
-                            class={BTN}
-                            data-action="recipe-produces-save"
-                            disabled={busy() || !producesDirty()}
-                            onClick={() => void saveProduces()}
-                          >
-                            {language.t("recipes.page.saveFileNames")}
-                          </button>
-                        </div>
-                        <p class="mt-1 text-[11px] text-v2-text-text-faint">
-                          {language.t("recipes.page.justFileNamesSeparatedByCommas")}
-                        </p>
-                      </Show>
-                    </section>
-                  )}
-                </Show>
-
-                {/* ── 4. The receipt. Four verdicts, kept apart. ───────────────────────────────── */}
-                <Show when={current()}>
-                  {(recipe) => (
-                    <section class={CARD} data-slot="recipe-receipt">
-                      <div class="flex flex-wrap items-center gap-2">
-                        <h2 class={`${LABEL} flex-1`}>{language.t("recipes.page.didItWork")}</h2>
-                        <Show when={cooked()}>
-                          {(last) => (
+                <Show when={current() && studioTab() === "assets"}>
+                  <section class="recipe-studio-assets" data-slot="recipe-assets-editor">
+                    <div class="recipe-studio-editor-heading">
+                      <div>
+                        <span class="recipe-studio-eyebrow">FILES</span>
+                        <h2>Assets</h2>
+                      </div>
+                      <label class="recipe-studio-upload">
+                        Add files
+                        <input
+                          type="file"
+                          multiple
+                          onChange={(event) => void uploadAssets(event.currentTarget.files)}
+                        />
+                      </label>
+                    </div>
+                    <p>Images, reference files and other materials stay with this recipe in its .nova package.</p>
+                    <div class="recipe-studio-assets-layout">
+                      <div class="recipe-studio-assets-list">
+                        <For each={assets()} fallback={<span class="recipe-studio-muted">No assets yet.</span>}>
+                          {(asset) => (
                             <button
-                              class={BTN}
-                              data-action="recipe-check"
-                              disabled={checking()}
-                              onClick={() => void check(recipe(), last().directory)}
+                              classList={{ "is-selected": assetPath() === asset.path }}
+                              onClick={() => void openAsset(asset.path)}
                             >
-                              {checking() ? "Checking…" : "Check the last run again"}
+                              <span>{asset.path}</span>
+                              <small>{asset.bytes.toLocaleString()} B</small>
                             </button>
                           )}
-                        </Show>
-                        <button
-                          class={BTN}
-                          data-action="recipe-check-elsewhere"
-                          disabled={checking() || !conn()}
-                          onClick={() => checkElsewhere(recipe())}
-                        >
-                          {language.t("recipes.page.checkAFolder")}
-                        </button>
+                        </For>
                       </div>
-
                       <Show
-                        when={verdict()}
-                        fallback={
-                          <p class="mt-1.5 text-sm text-v2-text-text-muted" data-slot="recipe-receipt-none">
-                            {cooked()
-                              ? "This ran in this session — checking the work folder now."
-                              : "Run it, then come back here. NovaClaw looks in the work folder itself and tells you what it found — it does not take the model's word for it."}
-                          </p>
-                        }
+                        when={assetPath()}
+                        fallback={<div class="recipe-studio-muted">Select a file to inspect it.</div>}
                       >
-                        {(view) => (
-                          <div class="mt-2">
-                            <div class="flex flex-wrap items-center gap-2">
-                              <span
-                                class={`rounded border px-2 py-0.5 text-xs font-semibold ${TONE[view().tone]}`}
-                                data-slot="recipe-verdict-label"
-                              >
-                                {view().label}
-                              </span>
-                              <span class="text-xs text-v2-text-text-faint" data-slot="recipe-verdict-subject">
-                                {`about: ${view().subject}`}
-                              </span>
+                        {(path) => (
+                          <div class="recipe-studio-asset-edit">
+                            <div class="recipe-studio-editor-heading">
+                              <strong>{path()}</strong>
+                              <button class={BTN} disabled={busy()} onClick={() => void removeAsset(path())}>
+                                Remove
+                              </button>
                             </div>
-                            <p class="mt-1.5 text-sm text-v2-text-text-base" data-slot="recipe-verdict-meaning">
-                              {view().meaning}
-                            </p>
-                            <p class="mt-1 text-sm text-v2-text-text-muted" data-slot="recipe-verdict-advice">
-                              {view().advice}
-                            </p>
-                            <Show when={view().rows.length}>
-                              <ul class="mt-2 flex flex-col gap-1" data-slot="recipe-verdict-rows">
-                                <For each={view().rows}>
-                                  {(row) => (
-                                    <li class="text-xs text-v2-text-text-muted">
-                                      {/* The separator is real TEXT, not margin: read aloud or copied, a
-                                          bare margin makes this "pi.txtnot found". */}
-                                      <span class="font-mono text-v2-text-text-base">{row.path || row.declared}</span>
-                                      <span>{" — "}</span>
-                                      <span>{OUTCOME_WORD[row.outcome] ?? row.outcome}</span>
-                                      <span>{": "}</span>
-                                      <span>{row.checked}</span>
-                                      <Show when={row.size}>
-                                        <span>{` (${row.size})`}</span>
-                                      </Show>
-                                    </li>
-                                  )}
-                                </For>
-                              </ul>
+                            <Show
+                              when={assetEncoding() === "utf8"}
+                              fallback={
+                                <p class="recipe-studio-muted">Binary asset. Upload a replacement file to change it.</p>
+                              }
+                            >
+                              <textarea
+                                class={FIELD}
+                                value={assetContent()}
+                                onInput={(event) => {
+                                  setAssetContent(event.currentTarget.value)
+                                  setAssetDirty(true)
+                                }}
+                                aria-label="Asset content"
+                              />
+                              <button
+                                class={PRIMARY}
+                                disabled={busy() || !assetDirty()}
+                                onClick={() => void saveAsset()}
+                              >
+                                Save asset text
+                              </button>
                             </Show>
-                            <p class="mt-2 text-[11px] break-all text-v2-text-text-faint">
-                              {`Checked ${view().directory}`}
-                            </p>
-                            <p class="mt-1 text-[11px] text-v2-text-text-faint" data-slot="recipe-verdict-summary">
-                              {view().summary}
-                            </p>
                           </div>
                         )}
                       </Show>
-                    </section>
-                  )}
-                </Show>
-
-                {/* ── 5. The recipe itself — the author's words, and the editor. ───────────────── */}
-                <div class="flex flex-col gap-2">
-                  <h2 class={LABEL}>{language.t("recipes.page.theRecipe")}</h2>
-                  <Show when={current()?.shipped}>
-                    <p class="text-xs text-v2-text-text-faint">
-                      {language.t("recipes.page.thisOneShippedWithNovaclawEdit")}
-                    </p>
-                  </Show>
-                  <Show when={current() && !current()!.shipped}>
-                    <p class="text-xs text-v2-text-text-faint" data-slot="recipe-authorship">
-                      {language.t("recipes.page.theTextBelowIsWhoeverWrote")}
-                    </p>
-                  </Show>
-                  {/* ⚠️ The boxes below hold the RAW text, because whatever is in them is what Save writes
-                      back — flattening here would delete characters from the file on every round trip. So
-                      the surface says out loud that the text is not what it looks like. */}
-                  <Show when={current()?.hiddenCharacters}>
-                    <p class="text-xs text-v2-state-fg-warning" data-slot="recipe-hidden-characters">
-                      {language.t("recipes.page.carefulThisRecipeSOwnText")}
-                    </p>
-                  </Show>
-                  <input
-                    class={`${FIELD} w-full`}
-                    placeholder={language.t("recipes.page.oneLineDescriptionOptional")}
-                    value={draftDescription()}
-                    onInput={(event) => {
-                      setDraftDescription(event.currentTarget.value)
-                      setDirty(true)
-                    }}
-                  />
-                  <textarea
-                    class={`${FIELD} min-h-[320px] w-full font-mono text-[13px] leading-relaxed`}
-                    placeholder={language.t("recipes.page.thePromptThisIsTheRecipe")}
-                    data-slot="recipe-prompt"
-                    value={draftPrompt()}
-                    onInput={(event) => {
-                      setDraftPrompt(event.currentTarget.value)
-                      setDirty(true)
-                    }}
-                  />
-                  <div class="flex flex-wrap items-center gap-3">
-                    <button class={BTN} disabled={!canSave() || busy()} onClick={() => void save()}>
-                      {creating() ? "Create recipe" : "Save changes"}
-                    </button>
-                    <Show when={dirty() && !creating()}>
-                      <span class="text-xs text-v2-text-text-accent">{language.t("recipes.page.unsavedChanges")}</span>
-                    </Show>
-                  </div>
-                </div>
-
-                <Show when={current()?.assets.length}>
-                  <div class={CARD}>
-                    <div class={LABEL}>{language.t("recipes.page.filesThatTravelWithIt")}</div>
-                    <div class="mt-1 text-sm break-all text-v2-text-text-muted">{current()!.assets.join(", ")}</div>
-                    <div class="mt-1 text-[11px] text-v2-text-text-faint">
-                      {language.t("recipes.page.copiedIntoTheWorkFolderAlongside")}
                     </div>
-                  </div>
+                  </section>
                 </Show>
-              </div>
-              <Show when={current() && studioTab() === "source"}>
-                <section class="recipe-studio-source" data-slot="recipe-source-editor">
-                  <div class="recipe-studio-editor-heading">
-                    <div><span class="recipe-studio-eyebrow">SOURCE</span><h2>recipe.md</h2></div>
-                    <button class={PRIMARY} disabled={busy() || !sourceDirty()} onClick={() => void saveSource()}>Save recipe.md</button>
-                  </div>
-                  <p>The entire recipe is editable here. It holds the title, description, build instructions and any fields you add. Assets travel beside it.</p>
-                  <textarea class={FIELD} value={sourceDraft()} onInput={(event) => { setSourceDraft(event.currentTarget.value); setSourceDirty(true) }} spellcheck={false} aria-label="recipe.md source" />
-                  <Show when={sourceDirty()}><small>Unsaved changes</small></Show>
-                </section>
-              </Show>
-              <Show when={current() && studioTab() === "assets"}>
-                <section class="recipe-studio-assets" data-slot="recipe-assets-editor">
-                  <div class="recipe-studio-editor-heading">
-                    <div><span class="recipe-studio-eyebrow">FILES</span><h2>Assets</h2></div>
-                    <label class="recipe-studio-upload">Add files<input type="file" multiple onChange={(event) => void uploadAssets(event.currentTarget.files)} /></label>
-                  </div>
-                  <p>Images, reference files and other materials stay with this recipe in its .nova package.</p>
-                  <div class="recipe-studio-assets-layout">
-                    <div class="recipe-studio-assets-list">
-                      <For each={assets()} fallback={<span class="recipe-studio-muted">No assets yet.</span>}>
-                        {(asset) => <button classList={{ "is-selected": assetPath() === asset.path }} onClick={() => void openAsset(asset.path)}><span>{asset.path}</span><small>{asset.bytes.toLocaleString()} B</small></button>}
-                      </For>
-                    </div>
-                    <Show when={assetPath()} fallback={<div class="recipe-studio-muted">Select a file to inspect it.</div>}>
-                      {(path) => <div class="recipe-studio-asset-edit">
-                        <div class="recipe-studio-editor-heading"><strong>{path()}</strong><button class={BTN} disabled={busy()} onClick={() => void removeAsset(path())}>Remove</button></div>
-                        <Show when={assetEncoding() === "utf8"} fallback={<p class="recipe-studio-muted">Binary asset. Upload a replacement file to change it.</p>}>
-                          <textarea class={FIELD} value={assetContent()} onInput={(event) => { setAssetContent(event.currentTarget.value); setAssetDirty(true) }} aria-label="Asset content" />
-                          <button class={PRIMARY} disabled={busy() || !assetDirty()} onClick={() => void saveAsset()}>Save asset text</button>
-                        </Show>
-                      </div>}
-                    </Show>
-                  </div>
-                </section>
-              </Show>
               </>
             </Show>
           </Show>
@@ -1277,7 +1543,7 @@ export function RecipesPage() {
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * Import a complete folder ZIP, or paste an explicitly asset-free `recipe.md` convenience.
+ * Import a complete folder ZIP, or paste an explicitly asset-free `recipe.json` convenience.
  *
  * ⚠️ Everything shown here is a stranger's text, labelled as such. The parse is a PREVIEW, not the
  * authority: the server reads the file again and stores the BYTES, so a disagreement between the two can
@@ -1292,7 +1558,7 @@ function ImportPanel(props: {
   busy: boolean
   onCancel: () => void
   onArchiveImport: () => void
-  onMarkdownImport: () => void
+  onSourceImport: () => void
 }) {
   const language = useLanguage()
   return (
@@ -1338,15 +1604,19 @@ function ImportPanel(props: {
       </section>
 
       <div>
-        <h2 class={LABEL}>{language.t("recipes.page.pasteRecipeMdOnly")}</h2>
-        <p class="mt-1 text-sm text-v2-text-text-muted" data-slot="recipe-import-markdown-limit">
+        <h2 class={LABEL}>{language.t("recipes.page.pasteRecipeJsonOnly")}</h2>
+        <p class="mt-1 text-sm text-v2-text-text-muted" data-slot="recipe-import-source-limit">
           {language.t("recipes.page.useThisForAProseOnly")}
         </p>
       </div>
 
       <textarea
         class={`${FIELD} min-h-[220px] w-full font-mono text-[12px] leading-relaxed`}
-        placeholder={"---\nname: Their recipe\nproduces: report.md\n---\n\nWhat they want cooked…"}
+        placeholder={JSON.stringify(
+          { version: 1, name: "Their recipe", prompt: "What they want cooked…", produces: ["report.md"] },
+          null,
+          2,
+        )}
         data-slot="recipe-import-text"
         value={props.text}
         onInput={(event) => props.onText(event.currentTarget.value)}
@@ -1385,7 +1655,7 @@ function ImportPanel(props: {
             </Show>
             <Show when={props.preview.unmodelled.length}>
               <p class="mt-1 text-xs text-v2-text-text-faint" data-slot="recipe-import-unmodelled">
-                {`It also carries lines NovaClaw does not use: ${props.preview.unmodelled.join(" · ")}. They are kept in the file exactly as written.`}
+                {`Additional fields: ${props.preview.unmodelled.join(" · ")}. Their values are preserved when you edit this recipe.`}
               </p>
             </Show>
             <p class="mt-2 text-[11px] text-v2-text-text-faint">
@@ -1401,11 +1671,11 @@ function ImportPanel(props: {
       <div class="flex flex-wrap items-center gap-3">
         <button
           class={PRIMARY}
-          data-action="recipe-import-markdown-confirm"
+          data-action="recipe-import-source-confirm"
           disabled={props.busy || !props.preview.ok || props.text.trim() === ""}
-          onClick={() => props.onMarkdownImport()}
+          onClick={() => props.onSourceImport()}
         >
-          {language.t("recipes.page.importPastedMarkdownNoAssets")}
+          {language.t("recipes.page.importPastedJsonNoAssets")}
         </button>
         <button class={BTN} onClick={() => props.onCancel()}>
           {language.t("recipes.page.cancel")}

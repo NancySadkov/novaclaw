@@ -4,6 +4,7 @@ import { Cause, DateTime, Duration, Effect, Exit, Layer } from "effect"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { Database } from "@novaclaw/core/database/database"
 import { makeGlobalNode } from "@novaclaw/core/effect/app-node"
 import { EventV2 } from "@novaclaw/core/event"
@@ -115,6 +116,8 @@ export const failureDetail = (outcome: SessionWorkerSupervisor.Outcome): string 
       return "session worker was interrupted"
     case "settled":
       return "session worker finished its drain"
+    case "yielded":
+      return "session worker yielded at a completed turn boundary"
     default:
       return `session worker ${outcome satisfies never}`
   }
@@ -242,7 +245,7 @@ export const layer = Layer.effect(
     })
     yield* Effect.addFinalizer(() => unsubscribePresence)
 
-    const coordinator = yield* SessionRunCoordinator.make<SessionSchema.ID, SessionRunner.RunError>({
+    const coordinator: SessionRunCoordinator.Coordinator<SessionSchema.ID, SessionRunner.RunError> = yield* SessionRunCoordinator.make<SessionSchema.ID, SessionRunner.RunError>({
       drain: Effect.fnUntraced(function* (sessionID: SessionSchema.ID, force) {
         const stored = yield* store.get(sessionID)
         if (!stored) return yield* Effect.die(`Session not found: ${sessionID}`)
@@ -343,7 +346,8 @@ export const layer = Layer.effect(
               yield* publishStatus({ type: latest?.result === undefined ? "idle" : "exited" })
             })
 
-            let resumeForced = force || (yield* attempts.get(sessionID))?.state === "paused"
+            const previous = yield* attempts.get(sessionID)
+            let resumeForced = force || previous?.state === "paused" || previous?.state === "starting"
             for (;;) {
               if (yield* held(sessionID)) return
               const lease = yield* attempts.start(sessionID, ownerID)
@@ -445,7 +449,7 @@ export const layer = Layer.effect(
                               },
                               AgentV2.ID.make(colleague),
                             ),
-                          refresh: roster.reload(),
+                          refresh: ConfigStoreWrite.refreshDomain("agents"),
                           roster: roster.all(),
                           paused: (colleague) =>
                             roster
@@ -521,6 +525,10 @@ export const layer = Layer.effect(
                       attempts,
                       lease,
                       message,
+                      cooperate: () =>
+                        workerAdmission.shouldYield(String(sessionID))
+                          ? SessionExecutionAttempt.requeue(database.db, lease)
+                          : Effect.succeed(false),
                       contextUpdated: (update) =>
                         ContextManager.publishUpdate(
                           database.db,
@@ -606,6 +614,12 @@ export const layer = Layer.effect(
                 )
               }
 
+              if (outcome.type === "yielded") {
+                if (yield* held(sessionID)) return
+                yield* Log.event("session.worker.yielded", { "session.id": sessionID })
+                yield* coordinator.wake(sessionID)
+                return
+              }
               if (outcome.type === "settled") {
                 if (yield* held(sessionID)) return
                 const completionMode = ShortChat.enabled((yield* effectiveConfig.resolve(sessionID)).shortChat)

@@ -1,4 +1,4 @@
-// Recipes: the pure recipe.md parsing plus the filesystem ops against a temp root. The slug becomes a
+// Recipes: the pure recipe.json parsing plus the filesystem ops against a temp root. The slug becomes a
 // FOLDER NAME and both users and models feed it, so the traversal cases are the ones that matter most.
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
@@ -17,101 +17,61 @@ afterEach(async () => {
 const opts = () => ({ root })
 
 describe("parse", () => {
-  test("reads name + description from frontmatter and keeps the body as the prompt", () => {
-    const parsed = Recipe.parse(`---\nname: Hello C\ndescription: Compile and run a C program\n---\n\nWrite hello.c\n`)
-    expect(parsed.name).toBe("Hello C")
-    expect(parsed.description).toBe("Compile and run a C program")
-    expect(parsed.prompt).toBe("Write hello.c")
-  })
-
-  test("a file with NO frontmatter is valid — the whole file is the prompt", () => {
-    // This is the paste-a-prompt-into-a-file case; it must simply work.
-    const parsed = Recipe.parse("Build a browser OS in one HTML file.\n\nAt least 5 apps.")
-    expect(parsed.name).toBeUndefined()
-    expect(parsed.prompt).toBe("Build a browser OS in one HTML file.\n\nAt least 5 apps.")
-  })
-
-  test("unknown frontmatter keys are PRESERVED verbatim, not dropped", () => {
-    // This test used to assert the opposite ("ignored, not rejected") and it PINNED a real bug: the
-    // author's own keys were matched and thrown away, so every path that rewrote recipe.md — save,
-    // duplicate, the cooked copy — silently reduced their file to two fields. Ruling 14 makes a recipe a
-    // portable folder of prose, so a key this module does not understand is theirs, not ours.
-    const parsed = Recipe.parse(`---\nname: X\nauthor: someone\ntags: [a, b]\n---\nDo the thing`)
-    expect(parsed.name).toBe("X")
-    expect(parsed.prompt).toBe("Do the thing")
-    expect(parsed.frontmatter).toEqual(["author: someone", "tags: [a, b]"])
-    // The two keys `render` owns must never leak into the carried lines, or render would emit them twice.
-    expect(parsed.frontmatter.some((line) => /^\s*(name|description)\s*:/i.test(line))).toBe(false)
-  })
-
-  test("strips surrounding quotes and tolerates a BOM", () => {
-    const parsed = Recipe.parse(`﻿---\nname: "Quoted Name"\n---\nbody`)
-    expect(parsed.name).toBe("Quoted Name")
-    expect(parsed.prompt).toBe("body")
-  })
-
-  test("a lone --- is not frontmatter (a markdown horizontal rule must survive)", () => {
-    const parsed = Recipe.parse("Intro\n\n---\n\nMore prose")
-    expect(parsed.prompt).toContain("Intro")
-    expect(parsed.prompt).toContain("More prose")
-  })
-
-  // ── THE INVARIANT: parse and render are inverses over the frontmatter ─────────────────────────────
-  // Anything one side forgets, the other silently deletes from the user's file on the next write — which
-  // is what shipped until 2026-07-29. This is the ratchet that makes ruling 14's single machine-read
-  // field (`needs`) addable at all: without it, a new key is stripped from every cooked copy.
-  //
-  // The fixture carries the shapes that break naive handling on purpose: a colon INSIDE a value, an empty
-  // value, a duplicated key, a comment, a blank line, and an indented list continuation. A key→value map
-  // would survive none of the last four.
-  const AWKWARD = [
-    "author: Nancy",
-    "needs: gcc",
-    "note: value: with a colon",
-    "empty:",
-    "tags: [a, b]",
-    "tags: duplicated on purpose",
-    "# a comment the author wrote",
-    "",
-    "list:",
-    "  - one",
-    "  - two",
-  ]
-
-  test("render → parse round-trips, INCLUDING frontmatter this module does not understand", () => {
-    const rendered = Recipe.render({
-      name: "Pi 100",
-      description: "Machin formula",
-      frontmatter: AWKWARD,
-      prompt: "Compute π",
+  test("reads a versioned JSON document", () => {
+    expect(Recipe.parse('{"version":1,"name":"Hello C","description":"Compile C","prompt":"Write hello.c"}')).toEqual({
+      version: 1 as const,
+      name: "Hello C",
+      description: "Compile C",
+      prompt: "Write hello.c",
     })
-    // Negative control on the fixture itself: an emptied-out AWKWARD would make the round-trip below pass
-    // while proving nothing, so assert the hard cases are actually in the bytes being tested.
-    expect(AWKWARD.length).toBeGreaterThan(5)
-    expect(rendered).toContain("note: value: with a colon")
-    expect(rendered).toContain("# a comment the author wrote")
-
-    const parsed = Recipe.parse(rendered)
-    expect(parsed).toEqual({
-      name: "Pi 100",
-      description: "Machin formula",
-      frontmatter: AWKWARD,
-      prompt: "Compute π",
-    })
-    // …and it is a FIXED POINT: re-rendering what we parsed reproduces the same bytes, so N writes cost
-    // no more than one (the drift a lossy pair produces is cumulative).
-    expect(
-      Recipe.render({
-        name: "Pi 100",
-        description: parsed.description,
-        frontmatter: parsed.frontmatter,
-        prompt: parsed.prompt,
-      }),
-    ).toBe(rendered)
   })
 
-  test("a file with no frontmatter parses to no carried lines", () => {
-    expect(Recipe.parse("just a prompt").frontmatter).toEqual([])
+  test("requires a supported version, name and prompt", () => {
+    for (const input of [
+      null,
+      [],
+      {},
+      { version: 2 },
+      { version: "1" },
+      { version: 1 as const, name: "X" },
+      { version: 1 as const, name: " ", prompt: "Build" },
+      { version: 1 as const, name: "X", prompt: " " },
+    ])
+      expect(() => Recipe.parse(JSON.stringify(input))).toThrow(Recipe.RecipeFormatError)
+  })
+
+  test("preserves structured extensions", () => {
+    const extensions = { authors: ["Nancy"], options: { theme: "gold", enabled: true }, count: 3, nullable: null }
+    const document = { version: 1 as const, name: "X", prompt: "Build", ...extensions }
+    expect(Recipe.parse(JSON.stringify(document))).toEqual(document)
+  })
+
+  test("checks known field types", () => {
+    for (const fields of [{ description: [] }, { needs: "gcc" }, { produces: [3] }, { needs: [""] }, { officers: {} }])
+      expect(() =>
+        Recipe.parse(JSON.stringify({ version: 1 as const, name: "X", prompt: "Build", ...fields })),
+      ).toThrow()
+  })
+
+  test("rejects Markdown and malformed JSON", () => {
+    for (const source of ["Build this", "---\nname: X\n---\nBuild", '{"version":1,}', "\uFEFF{}"])
+      expect(() => Recipe.parse(source)).toThrow(/Invalid recipe.json/)
+  })
+
+  test("render and parse preserve Unicode, multiline instructions and nested extensions", () => {
+    const input = {
+      name: "Pi π",
+      prompt: 'Compute π.\nUse "quotes" and C:\\tools.\n',
+      settings: { values: [1, null, "x"] },
+    }
+    const source = Recipe.render(input)
+    expect(Recipe.parse(source)).toEqual({ version: 1, ...input })
+    expect(Recipe.render(Recipe.parse(source))).toBe(source)
+    expect(Recipe.render({ ...input, version: undefined })).toBe(source)
+  })
+
+  test("bounds all document entry points by UTF-8 bytes", () => {
+    expect(() => Recipe.render({ name: "Large", prompt: "π".repeat(Recipe.IMPORT_CAP / 2) })).toThrow(/too big/)
   })
 })
 
@@ -153,7 +113,7 @@ describe("save / list / read", () => {
     await expect(Recipe.save({ name: "Empty", prompt: "   " }, opts())).rejects.toThrow(/needs a prompt/)
   })
 
-  test("lists name-sorted and reports assets alongside recipe.md", async () => {
+  test("lists name-sorted and reports assets alongside recipe.json", async () => {
     await Recipe.save({ name: "Zebra", prompt: "z" }, opts())
     await Recipe.save({ name: "Alpha", prompt: "a" }, opts())
     await fs.writeFile(path.join(root, "alpha", "data.csv"), "x,y\n", "utf8")
@@ -162,10 +122,14 @@ describe("save / list / read", () => {
     expect(all[0]!.assets).toEqual(["data.csv"])
   })
 
-  test("a folder with no recipe.md, or an empty one, is skipped rather than listed dead", async () => {
+  test("a folder with no recipe.json, or an empty one, is skipped rather than listed dead", async () => {
     await fs.mkdir(path.join(root, "notarecipe"), { recursive: true })
     await fs.mkdir(path.join(root, "hollow"), { recursive: true })
-    await fs.writeFile(path.join(root, "hollow", "recipe.md"), "---\nname: Hollow\n---\n\n", "utf8")
+    await fs.writeFile(
+      path.join(root, "hollow", "recipe.json"),
+      JSON.stringify({ version: 1, name: "Hollow", prompt: "" }),
+      "utf8",
+    )
     await Recipe.save({ name: "Real", prompt: "do it" }, opts())
     expect((await Recipe.list(opts())).map((r) => r.slug)).toEqual(["real"])
   })
@@ -208,7 +172,7 @@ describe("duplicate / remove / materialize", () => {
     await fs.writeFile(path.join(root, "with-assets", "data.csv"), "a,b\n", "utf8")
     const into = path.join(root, "..", path.basename(root) + "-work")
     const result = await Recipe.materialize("with-assets", into, opts())
-    expect(result).toEqual({ copied: ["data.csv", "recipe.md"], skipped: [], failed: [] })
+    expect(result).toEqual({ copied: ["data.csv", "recipe.json"], skipped: [], failed: [] })
     expect(await fs.readFile(path.join(into, "data.csv"), "utf8")).toBe("a,b\n")
     // original still there
     expect((await Recipe.read("with-assets", opts()))!.assets).toEqual(["data.csv"])
@@ -219,7 +183,7 @@ describe("duplicate / remove / materialize", () => {
     await Recipe.save({ name: "Portable", description: "goes anywhere", prompt: "do the thing" }, opts())
     const into = path.join(root, "..", path.basename(root) + "-portable")
     await Recipe.materialize("portable", into, opts())
-    const manifest = await fs.readFile(path.join(into, "recipe.md"), "utf8")
+    const manifest = await fs.readFile(path.join(into, "recipe.json"), "utf8")
     expect(manifest).toContain("Portable")
     expect(manifest).toContain("do the thing")
     // The copy is a real recipe: pointing the store at the work dir's parent reads it back.
@@ -231,7 +195,7 @@ describe("duplicate / remove / materialize", () => {
    * 🔴 NC-REL-031 — the no-clobber rule below covered exactly ONE file. The Recipes UI offers
    * "Run in…" against an existing directory on purpose (its own note calls it cooking "straight into
    * a permanent folder"), so a recipe carrying `README.md`, `main.py` or `src/` silently replaced the
-   * user's file of that name, with no prompt and no record. Their `recipe.md` was safe; their work
+   * user's file of that name, with no prompt and no record. Their `recipe.json` was safe; their work
    * was not.
    *
    * A/B: drop the `clash` check and the user's data.csv becomes the recipe's.
@@ -246,18 +210,18 @@ describe("duplicate / remove / materialize", () => {
     const result = await Recipe.materialize("clobber", into, opts())
 
     expect(await fs.readFile(path.join(into, "data.csv"), "utf8")).toBe("the user's own numbers\n")
-    expect(result).toEqual({ copied: ["recipe.md"], skipped: ["data.csv"], failed: [] })
+    expect(result).toEqual({ copied: ["recipe.json"], skipped: ["data.csv"], failed: [] })
     await fs.rm(into, { recursive: true, force: true })
   })
 
-  test("materialize never clobbers a recipe.md already in the work dir", async () => {
+  test("materialize never clobbers a recipe.json already in the work dir", async () => {
     await Recipe.save({ name: "Cook", prompt: "fresh" }, opts())
     const into = path.join(root, "..", path.basename(root) + "-occupied")
     await fs.mkdir(into, { recursive: true })
-    await fs.writeFile(path.join(into, "recipe.md"), "the user's own file", "utf8")
+    await fs.writeFile(path.join(into, "recipe.json"), "the user's own file", "utf8")
     const result = await Recipe.materialize("cook", into, opts())
-    expect(result).toEqual({ copied: [], skipped: ["recipe.md"], failed: [] })
-    expect(await fs.readFile(path.join(into, "recipe.md"), "utf8")).toBe("the user's own file")
+    expect(result).toEqual({ copied: [], skipped: ["recipe.json"], failed: [] })
+    expect(await fs.readFile(path.join(into, "recipe.json"), "utf8")).toBe("the user's own file")
     await fs.rm(into, { recursive: true, force: true })
   })
 
@@ -271,7 +235,7 @@ describe("duplicate / remove / materialize", () => {
 
     expect((await Recipe.read("tree", opts()))!.assets).toEqual(["src"])
     expect(await Recipe.materialize("tree", into, opts())).toEqual({
-      copied: ["src", "recipe.md"],
+      copied: ["src", "recipe.json"],
       skipped: [],
       failed: [],
     })
@@ -290,7 +254,7 @@ describe("duplicate / remove / materialize", () => {
 
     const result = await Recipe.materialize("tree-clash", into, opts())
 
-    expect(result).toEqual({ copied: ["recipe.md"], skipped: ["src"], failed: [] })
+    expect(result).toEqual({ copied: ["recipe.json"], skipped: ["src"], failed: [] })
     expect(await fs.readFile(path.join(into, "src", "mine", "user.txt"), "utf8")).toBe("keep every byte")
     expect(
       await fs.stat(path.join(into, "src", "nested", "recipe.txt")).then(
@@ -308,7 +272,7 @@ describe("duplicate / remove / materialize", () => {
     await fs.mkdir(path.join(fileInto, "payload"), { recursive: true })
     await fs.writeFile(path.join(fileInto, "payload", "user.txt"), "user directory", "utf8")
     expect(await Recipe.materialize("file-source", fileInto, opts())).toEqual({
-      copied: ["recipe.md"],
+      copied: ["recipe.json"],
       skipped: ["payload"],
       failed: [],
     })
@@ -321,7 +285,7 @@ describe("duplicate / remove / materialize", () => {
     await fs.mkdir(directoryInto, { recursive: true })
     await fs.writeFile(path.join(directoryInto, "payload"), "user file", "utf8")
     expect(await Recipe.materialize("directory-source", directoryInto, opts())).toEqual({
-      copied: ["recipe.md"],
+      copied: ["recipe.json"],
       skipped: ["payload"],
       failed: [],
     })
@@ -345,7 +309,7 @@ describe("duplicate / remove / materialize", () => {
     const into = path.join(root, "..", path.basename(root) + "-linked")
 
     expect(await Recipe.materialize("linked-tree", into, opts())).toEqual({
-      copied: ["recipe.md"],
+      copied: ["recipe.json"],
       skipped: [],
       failed: ["assets"],
     })
@@ -380,92 +344,62 @@ describe("duplicate / remove / materialize", () => {
   })
 })
 
-// ═══ Lossless writes ══════════════════════════════════════════════════════════════════════════════
-// Three code paths rewrite a recipe.md — save, duplicate, materialize — and until 2026-07-29 all three
-// regenerated it from `name` + `description` alone. Measured on the pre-fix tree with the fixture below:
-// save, duplicate and the cooked copy each emitted only `---\nname: …\ndescription: …\n---\n\n<prompt>\n`,
-// dropping author/needs/note/empty/the comment; and cooking a recipe with NO frontmatter INVENTED a
-// `---\nname: <slug>\n---` block. A recipe is a portable folder of prose (ruling 14) — a write path that
-// rewrites the author's file down to the fields we happen to model is the loss that ruling forbids.
-describe("lossless writes — the author's frontmatter survives every rewrite", () => {
-  const HAND_WRITTEN = [
-    "---",
-    "name: Hand Written",
-    "description: by a person",
-    "author: Nancy",
-    "needs: gcc",
-    "note: value: with a colon",
-    "empty:",
-    "# why this recipe exists",
-    "---",
-    "",
-    "Do the thing",
-    "",
-  ].join("\n")
-  // Everything in HAND_WRITTEN that `render` could not possibly reconstruct from a Recipe. If this list
-  // ever shrinks to nothing the assertions below go vacuous, so it is asserted non-trivial in each test.
-  const UNMODELLED = ["author: Nancy", "needs: gcc", "note: value: with a colon", "empty:", "# why this recipe exists"]
-
-  const write = async (slug: string, markdown = HAND_WRITTEN) => {
+describe("extension-preserving writes", () => {
+  const document = {
+    version: 1 as const,
+    name: "Hand Written",
+    description: "by a person",
+    prompt: "Do the thing\n",
+    needs: ["gcc"],
+    author: { name: "Nancy", links: ["local"] },
+    optional: null,
+  }
+  const source = JSON.stringify(document, null, 2) + "\n"
+  const write = async (slug: string, content = source) => {
     await fs.mkdir(path.join(root, slug), { recursive: true })
-    await fs.writeFile(path.join(root, slug, "recipe.md"), markdown, "utf8")
+    await fs.writeFile(path.join(root, slug, "recipe.json"), content, "utf8")
   }
 
-  test("save carries them through an update-in-place", async () => {
+  test("save changes only the requested fields", async () => {
     await write("hand")
-    expect(UNMODELLED.length).toBeGreaterThan(3) // negative control on the fixture
-    await Recipe.save({ slug: "hand", name: "Renamed", description: "by a person", prompt: "Do the thing" }, opts())
-    const after = await fs.readFile(path.join(root, "hand", "recipe.md"), "utf8")
-    expect(after).toContain("name: Renamed") // the field save owns did change
-    for (const line of UNMODELLED) expect(after).toContain(line)
+    await Recipe.save(
+      { slug: "hand", name: "Renamed", description: document.description, prompt: document.prompt },
+      opts(),
+    )
+    expect(Recipe.parse((await Recipe.sourceOf("hand", opts()))!)).toEqual({ ...document, name: "Renamed" })
   })
 
-  test("duplicate changes the title and NOTHING else", async () => {
+  test("duplicate retains every extension", async () => {
     await write("hand")
     const copy = await Recipe.duplicate("hand", opts())
-    const after = await fs.readFile(path.join(root, copy.slug, "recipe.md"), "utf8")
-    expect(after).toContain("name: Hand Written (copy)")
-    expect(after).toContain("description: by a person")
-    for (const line of UNMODELLED) expect(after).toContain(line)
-    // The retitle is the ONLY difference: same file with the name line swapped back is the original.
-    expect(after.replace("name: Hand Written (copy)", "name: Hand Written")).toBe(HAND_WRITTEN)
+    expect(Recipe.parse((await Recipe.sourceOf(copy.slug, opts()))!)).toEqual({
+      ...document,
+      name: "Hand Written (copy)",
+    })
   })
 
-  test("a COOKED copy is byte-identical to the source recipe.md", async () => {
-    // materialize is the one that mattered most: `readOne` excludes recipe.md from `assets`, so this is
-    // the ONLY thing that puts a manifest in the work dir — every cooked folder on every install carried
-    // a two-field reconstruction. It copies the bytes now, so losslessness is structural rather than a
-    // property of two functions staying in sync.
+  test("materialize preserves source bytes", async () => {
     await write("cook")
-    const into = path.join(root, "..", path.basename(root) + "-cooked")
+    const into = path.join(root, "cooked")
     const result = await Recipe.materialize("cook", into, opts())
-    expect(result.copied).toContain("recipe.md")
-    const cooked = await fs.readFile(path.join(into, "recipe.md"), "utf8")
-    expect(cooked).toBe(HAND_WRITTEN)
-    for (const line of UNMODELLED) expect(cooked).toContain(line) // negative control: not vacuously equal
-    await fs.rm(into, { recursive: true, force: true })
+    expect(result.copied).toContain("recipe.json")
+    expect(await fs.readFile(path.join(into, "recipe.json"), "utf8")).toBe(source)
   })
 
-  test("cooking a recipe with NO frontmatter does not invent one", async () => {
-    // Measured pre-fix: the cooked copy grew `---\nname: bare\n---`, a block the author never wrote,
-    // because the manifest was regenerated from the fields `readOne` had derived (name falls back to the
-    // slug). Inventing metadata is the same defect as dropping it.
-    await write("bare", "Just a pasted prompt.\n")
-    const into = path.join(root, "..", path.basename(root) + "-bare")
-    await Recipe.materialize("bare", into, opts())
-    expect(await fs.readFile(path.join(into, "recipe.md"), "utf8")).toBe("Just a pasted prompt.\n")
-    await fs.rm(into, { recursive: true, force: true })
+  test("materialize does not invent optional fields", async () => {
+    const minimal = '{"version":1,"name":"Minimal","prompt":"Build"}'
+    await write("minimal", minimal)
+    const into = path.join(root, "cooked")
+    await Recipe.materialize("minimal", into, opts())
+    expect(await fs.readFile(path.join(into, "recipe.json"), "utf8")).toBe(minimal)
   })
 
-  test("cooking preserves even CRLF line endings", async () => {
-    // The sharpest proof that materialize COPIES rather than re-renders: `render` joins with \n, so any
-    // re-rendering path fails this outright.
-    const crlf = "---\r\nname: Windows\r\nauthor: Nancy\r\n---\r\n\r\nDo the thing\r\n"
+  test("materialize preserves CRLF JSON whitespace", async () => {
+    const crlf = source.replaceAll("\n", "\r\n")
     await write("crlf", crlf)
-    const into = path.join(root, "..", path.basename(root) + "-crlf")
+    const into = path.join(root, "cooked")
     await Recipe.materialize("crlf", into, opts())
-    expect(await fs.readFile(path.join(into, "recipe.md"), "utf8")).toBe(crlf)
-    await fs.rm(into, { recursive: true, force: true })
+    expect(await fs.readFile(path.join(into, "recipe.json"), "utf8")).toBe(crlf)
   })
 })
 
@@ -496,6 +430,12 @@ describe("builtins — the shipped set and its seeding", () => {
     const listed = await Recipe.list({ ...opts(), builtinSlugs: RecipeBuiltin.BUILTIN_SLUGS })
     expect(listed.length).toBe(RecipeBuiltin.BUILTINS.length)
     expect(listed.every((r) => r.builtin)).toBe(true)
+    await fs.writeFile(path.join(root, "hello-c", "recipe.json"), "{broken")
+    const occupied = await RecipeBuiltin.seed(opts())
+    expect(occupied.created).toEqual([])
+    expect(occupied.skipped).toContain("hello-c")
+    expect(await fs.readFile(path.join(root, "hello-c", "recipe.json"), "utf8")).toBe("{broken")
+    expect(await fs.stat(path.join(root, "hello-c-2")).catch(() => undefined)).toBeUndefined()
   })
 
   test("seeding NEVER clobbers a user's edit to a shipped recipe", async () => {

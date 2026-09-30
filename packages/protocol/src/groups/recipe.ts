@@ -1,15 +1,18 @@
 import { Schema } from "effect"
+import { RecipeOfficers } from "@novaclaw/schema/recipe-officer"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { SessionStrict } from "@novaclaw/schema/session-strict"
 import { UnknownReason } from "@novaclaw/schema/unknown-reason"
 import { InvalidRequestError } from "../errors"
 
-// Recipes — "source code for the AI era" (AGENTS.md). A recipe is a FOLDER on disk (recipe.md + assets);
+// Recipes — "source code for the AI era" (AGENTS.md). A recipe is a FOLDER on disk (recipe.json + assets);
 // this is the surface the Recipes app drives. INSTANCE-GLOBAL: recipes belong to the install, not to a
 // location. `run` is the interesting one — it copies the folder to a work dir and starts a session there,
 // so cooking never mutates the recipe and the same recipe stays re-runnable forever.
 
 const Recipe = Schema.Struct({
+  version: Schema.Literal(1),
+  officers: RecipeOfficers,
   slug: Schema.String,
   name: Schema.String,
   description: Schema.optional(Schema.String),
@@ -20,6 +23,7 @@ const Recipe = Schema.Struct({
 }).annotate({ identifier: "Recipe.Info" })
 
 const SaveInput = Schema.Struct({
+  officers: Schema.optional(RecipeOfficers),
   slug: Schema.optional(Schema.String),
   name: Schema.String,
   description: Schema.optional(Schema.String),
@@ -53,13 +57,13 @@ const NeedCheck = Schema.Struct({
  * A recipe as its author wrote it, plus the two things a reader needs before pressing Run: whether this
  * machine has what the recipe says it needs, and what a finished cook will be judged on.
  *
- * ⚠️ `markdown` is the FILE'S OWN BYTES, not a re-rendering. It powers reading and lossless text edits;
+ * ⚠️ `source` is the FILE'S OWN BYTES, not a re-rendering. It powers reading and lossless text edits;
  * the archive endpoints are the complete share path because a recipe may also carry assets.
  */
 const Source = Schema.Struct({
   slug: Schema.String,
   name: Schema.String,
-  markdown: Schema.String,
+  source: Schema.String,
   needs: Schema.Array(NeedCheck),
   /** The `produces:` entries, in the order the author wrote them. Empty = nothing to check afterwards. */
   produces: Schema.Array(Schema.String),
@@ -71,15 +75,8 @@ const Source = Schema.Struct({
   }),
 }).annotate({ identifier: "Recipe.Source" })
 
-/**
- * A PARTIAL edit. Omit a field to leave it exactly as the author wrote it; `description: null` removes
- * that line; `needs: []` / `produces: []` clear theirs.
- *
- * ⚠️ Distinct from `SaveInput` on purpose. `save` takes a WHOLE recipe, so a caller that wants to add one
- * `produces:` line has to resend the prompt — and a caller retyping prose it did not author is exactly
- * the lossy rewrite `Recipe.edit` exists to prevent, arriving through the front door.
- */
 const UpdateInput = Schema.Struct({
+  officers: Schema.optional(RecipeOfficers),
   name: Schema.optional(Schema.String),
   description: Schema.optional(Schema.NullOr(Schema.String)),
   prompt: Schema.optional(Schema.String),
@@ -87,9 +84,9 @@ const UpdateInput = Schema.Struct({
   produces: Schema.optional(Schema.Array(Schema.String)),
 }).annotate({ identifier: "Recipe.UpdateInput" })
 
-/** A `recipe.md` from somewhere else, stored byte for byte. */
+/** A `recipe.json` from somewhere else, stored byte for byte. */
 const ImportInput = Schema.Struct({
-  markdown: Schema.String,
+  source: Schema.String,
   /** Preferred folder name. Omitted, it is derived from the file's own `name:`; taken, the next free one. */
   slug: Schema.optional(Schema.String),
 }).annotate({ identifier: "Recipe.ImportInput" })
@@ -105,6 +102,9 @@ const AssetContent = Schema.Struct({
 })
 const Launch = Schema.Struct({ kind: Schema.Literals(["html", "executable"]), path: Schema.String })
 const Deployment = Schema.Struct({
+  projectID: Schema.String,
+  directory: Schema.String,
+  manager: Schema.String,
   slug: Schema.String,
   name: Schema.String,
   description: Schema.optional(Schema.String),
@@ -198,40 +198,95 @@ export const RecipeGroup = HttpApiGroup.make("server.recipe")
   .add(
     HttpApiEndpoint.post("recipe.archivePreview", "/api/recipe/archive/preview", {
       payload: Archive,
-      success: Schema.Struct({ name: Schema.String, description: Schema.optional(Schema.String), prompt: Schema.String, assets: Schema.Array(Schema.String) }),
+      success: Schema.Struct({
+        version: Schema.Literal(1),
+        officers: RecipeOfficers,
+        name: Schema.String,
+        description: Schema.optional(Schema.String),
+        prompt: Schema.String,
+        assets: Schema.Array(Schema.String),
+      }),
       error: InvalidRequestError,
-    }).annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.archivePreview", summary: "Preview a recipe archive" })),
+    }).annotateMerge(
+      OpenApi.annotations({ identifier: "v2.recipe.archivePreview", summary: "Preview a recipe archive" }),
+    ),
   )
-  .add(HttpApiEndpoint.get("recipe.deployedList", "/api/recipe/deployed", { success: Schema.Array(Deployment) })
-    .annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.deployedList", summary: "List deployed recipes" })))
-  .add(HttpApiEndpoint.delete("recipe.undeploy", "/api/recipe/deployed/:slug", {
-    params: { slug: Schema.String }, success: HttpApiSchema.NoContent, error: InvalidRequestError,
-  }).annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.undeploy", summary: "Undeploy a recipe" })))
-  .add(HttpApiEndpoint.post("recipe.deployedLaunch", "/api/recipe/deployed/:slug/launch", {
-    params: { slug: Schema.String }, success: LaunchResult, error: InvalidRequestError,
-  }).annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.deployedLaunch", summary: "Launch a deployed recipe" })))
-  .add(HttpApiEndpoint.get("recipe.deployedFile", "/api/recipe-preview/*", {
-    success: Schema.Uint8Array.pipe(HttpApiSchema.asUint8Array()),
-    error: InvalidRequestError,
-  }).annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.deployedFile", summary: "Read a deployed recipe file" })))
-  .add(HttpApiEndpoint.post("recipe.deploy", "/api/recipe/:slug/deploy", {
-    params: { slug: Schema.String }, payload: Schema.Struct({}), success: Deployment, error: InvalidRequestError,
-  }).annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.deploy", summary: "Deploy a recipe" })))
-  .add(HttpApiEndpoint.put("recipe.replaceSource", "/api/recipe/:slug/source", {
-    params: { slug: Schema.String }, payload: Schema.Struct({ markdown: Schema.String }), success: Recipe, error: InvalidRequestError,
-  }).annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.replaceSource", summary: "Replace recipe source" })))
-  .add(HttpApiEndpoint.get("recipe.assets", "/api/recipe/:slug/assets", {
-    params: { slug: Schema.String }, success: Schema.Array(AssetFile), error: InvalidRequestError,
-  }).annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.assets", summary: "List recipe assets" })))
-  .add(HttpApiEndpoint.get("recipe.assetRead", "/api/recipe/:slug/asset", {
-    params: { slug: Schema.String }, query: { path: Schema.String }, success: AssetContent, error: InvalidRequestError,
-  }).annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.assetRead", summary: "Read a recipe asset" })))
-  .add(HttpApiEndpoint.put("recipe.assetWrite", "/api/recipe/:slug/asset", {
-    params: { slug: Schema.String }, payload: AssetContent, success: AssetContent, error: InvalidRequestError,
-  }).annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.assetWrite", summary: "Write a recipe asset" })))
-  .add(HttpApiEndpoint.delete("recipe.assetRemove", "/api/recipe/:slug/asset", {
-    params: { slug: Schema.String }, query: { path: Schema.String }, success: HttpApiSchema.NoContent, error: InvalidRequestError,
-  }).annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.assetRemove", summary: "Remove a recipe asset" })))
+  .add(
+    HttpApiEndpoint.get("recipe.deployedList", "/api/recipe/deployed", {
+      success: Schema.Array(Deployment),
+    }).annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.deployedList", summary: "List deployed recipes" })),
+  )
+  .add(
+    HttpApiEndpoint.delete("recipe.undeploy", "/api/recipe/deployed/:slug", {
+      params: { slug: Schema.String },
+      success: HttpApiSchema.NoContent,
+      error: InvalidRequestError,
+    }).annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.undeploy", summary: "Undeploy a recipe" })),
+  )
+  .add(
+    HttpApiEndpoint.post("recipe.deployedLaunch", "/api/recipe/deployed/:slug/launch", {
+      params: { slug: Schema.String },
+      success: LaunchResult,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({ identifier: "v2.recipe.deployedLaunch", summary: "Launch a deployed recipe" }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("recipe.deployedFile", "/api/recipe-preview/*", {
+      success: Schema.Uint8Array.pipe(HttpApiSchema.asUint8Array()),
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({ identifier: "v2.recipe.deployedFile", summary: "Read a deployed recipe file" }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("recipe.deploy", "/api/recipe/:slug/deploy", {
+      params: { slug: Schema.String },
+      payload: Schema.Struct({ directory: Schema.optional(Schema.String), model: Schema.optional(Schema.String) }),
+      success: Deployment,
+      error: InvalidRequestError,
+    }).annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.deploy", summary: "Deploy a recipe" })),
+  )
+  .add(
+    HttpApiEndpoint.put("recipe.replaceSource", "/api/recipe/:slug/source", {
+      params: { slug: Schema.String },
+      payload: Schema.Struct({ source: Schema.String }),
+      success: Recipe,
+      error: InvalidRequestError,
+    }).annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.replaceSource", summary: "Replace recipe source" })),
+  )
+  .add(
+    HttpApiEndpoint.get("recipe.assets", "/api/recipe/:slug/assets", {
+      params: { slug: Schema.String },
+      success: Schema.Array(AssetFile),
+      error: InvalidRequestError,
+    }).annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.assets", summary: "List recipe assets" })),
+  )
+  .add(
+    HttpApiEndpoint.get("recipe.assetRead", "/api/recipe/:slug/asset", {
+      params: { slug: Schema.String },
+      query: { path: Schema.String },
+      success: AssetContent,
+      error: InvalidRequestError,
+    }).annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.assetRead", summary: "Read a recipe asset" })),
+  )
+  .add(
+    HttpApiEndpoint.put("recipe.assetWrite", "/api/recipe/:slug/asset", {
+      params: { slug: Schema.String },
+      payload: AssetContent,
+      success: AssetContent,
+      error: InvalidRequestError,
+    }).annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.assetWrite", summary: "Write a recipe asset" })),
+  )
+  .add(
+    HttpApiEndpoint.delete("recipe.assetRemove", "/api/recipe/:slug/asset", {
+      params: { slug: Schema.String },
+      query: { path: Schema.String },
+      success: HttpApiSchema.NoContent,
+      error: InvalidRequestError,
+    }).annotateMerge(OpenApi.annotations({ identifier: "v2.recipe.assetRemove", summary: "Remove a recipe asset" })),
+  )
   .add(
     HttpApiEndpoint.get("recipe.list", "/api/recipe", { success: Schema.Array(Recipe) }).annotateMerge(
       OpenApi.annotations({
@@ -258,7 +313,7 @@ export const RecipeGroup = HttpApiGroup.make("server.recipe")
         identifier: "v2.recipe.source",
         summary: "Read a recipe's file, and what it needs and produces",
         description:
-          "The bytes of recipe.md exactly as they are on disk — the readable part of the folder — plus the " +
+          "The bytes of recipe.json exactly as they are on disk — the readable part of the folder — plus the " +
           "host-capability facts it declares checked against THIS machine, the artifacts a finished cook " +
           "should leave, and the shelf it is on. Read-only: the capability probe resolves names on PATH " +
           "and stats paths, and never runs a candidate.",
@@ -273,7 +328,7 @@ export const RecipeGroup = HttpApiGroup.make("server.recipe")
     }).annotateMerge(
       OpenApi.annotations({
         identifier: "v2.recipe.import",
-        summary: "Store pasted recipe markdown without assets",
+        summary: "Store pasted recipe JSON without assets",
         description:
           "Writes the supplied file byte for byte under a free slug — never overwriting an existing " +
           "recipe. This paste convenience is explicitly asset-free; use the ZIP import for a complete folder.",
@@ -289,7 +344,7 @@ export const RecipeGroup = HttpApiGroup.make("server.recipe")
       OpenApi.annotations({
         identifier: "v2.recipe.archive",
         summary: "Export a complete recipe folder",
-        description: "Returns a standard ZIP containing recipe.md and every nested binary or text asset.",
+        description: "Returns a standard ZIP containing recipe.json and every nested binary or text asset.",
       }),
     ),
   )
@@ -304,7 +359,7 @@ export const RecipeGroup = HttpApiGroup.make("server.recipe")
         identifier: "v2.recipe.archiveImport",
         summary: "Import a complete recipe folder",
         description:
-          "Validates a bounded standard ZIP, reserves a free slug, and commits recipe.md plus its asset tree atomically.",
+          "Validates a bounded standard ZIP, reserves a free slug, and commits recipe.json plus its asset tree atomically.",
       }),
     ),
   )
@@ -319,9 +374,8 @@ export const RecipeGroup = HttpApiGroup.make("server.recipe")
         identifier: "v2.recipe.update",
         summary: "Change some of a recipe's fields and nothing else",
         description:
-          "Edits the requested lines inside the author's own bytes: line endings, a BOM, unknown " +
-          "frontmatter keys, key order and the trailing newline all survive. Use this rather than a save " +
-          "when you are changing one field — a save takes the whole recipe.",
+          "Updates the requested JSON fields while preserving all other values, including extension fields. " +
+          "Use this when changing one field; save accepts the complete editable recipe.",
       }),
     ),
   )
@@ -334,7 +388,7 @@ export const RecipeGroup = HttpApiGroup.make("server.recipe")
       OpenApi.annotations({
         identifier: "v2.recipe.save",
         summary: "Create or update a recipe",
-        description: "Writes recipe.md. Omit `slug` to derive it from the name; pass it to update in place.",
+        description: "Writes recipe.json. Omit `slug` to derive it from the name; pass it to update in place.",
       }),
     ),
   )

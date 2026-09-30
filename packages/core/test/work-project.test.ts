@@ -8,6 +8,7 @@ import { WorkProject } from "@novaclaw/schema/work-project"
 import { ConfigAgent } from "@novaclaw/core/config/agent"
 import type { Database } from "@novaclaw/core/database/database"
 import { DatabaseMigration } from "@novaclaw/core/database/migration"
+import recipeMigration from "@novaclaw/core/database/migration/20260930002633_recipe_projects"
 import directoryMigration from "@novaclaw/core/database/migration/20260928002558_work_project_directory"
 import { SessionExecutionAttempt } from "@novaclaw/core/session/execution-attempt"
 import { SessionSchema } from "@novaclaw/core/session/schema"
@@ -101,7 +102,8 @@ describe("work projects", () => {
           "INSERT INTO work_project (id, name, objective, phases) VALUES ('existing', 'Old project', 'Keep the data', '[]')",
         )
         yield* db.run("DELETE FROM migration WHERE id = '20260928002558_work_project_directory'")
-        yield* DatabaseMigration.applyOnly(db, [directoryMigration])
+        yield* db.run("DELETE FROM migration WHERE id = '20260930002633_recipe_projects'")
+        yield* DatabaseMigration.applyOnly(db, [directoryMigration, recipeMigration])
         expect(yield* columns()).toEqual(fresh)
         expect(yield* db.all("SELECT id, objective, directory FROM work_project")).toEqual([
           { id: "existing", objective: "Keep the data", directory: null },
@@ -156,18 +158,22 @@ describe("work projects", () => {
         const pending = (yield* db.select().from(ProjectNoticeTable).all())[0]!
         expect(pending.agent).toBe("iris")
         expect(pending.text).toContain("Build an observatory")
-        const delivered: string[] = []
+        expect(pending.delivery).toBe("queue")
+        yield* unavailable.execute({ op: "phase", id: project.id, phaseID: "research", status: "complete" })
+        const latest = (yield* db.select().from(ProjectNoticeTable).all())[0]!
+        expect(latest.delivery).toBe("queue")
+        const delivered: Array<{ id: string; delivery: string }> = []
         const recovered = WorkProjects.fromParts({
           db,
           agents,
-          notify: (_agent, _text, id) =>
+          notify: (_agent, _text, id, delivery) =>
             Effect.sync(() => {
-              delivered.push(id)
+              delivered.push({ id, delivery })
             }),
         })
         yield* recovered.flush
         yield* recovered.flush
-        expect(delivered).toEqual([pending.id])
+        expect(delivered).toEqual([{ id: latest.id, delivery: "queue" }])
         expect(yield* db.select().from(ProjectNoticeTable).all()).toEqual([])
       }),
     ))
