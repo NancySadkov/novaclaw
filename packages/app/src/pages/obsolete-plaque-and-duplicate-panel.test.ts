@@ -24,7 +24,10 @@ import path from "node:path"
 const SESSION = readFileSync(path.resolve(import.meta.dir, "session.tsx"), "utf8")
 const PANEL = readFileSync(path.resolve(import.meta.dir, "session", "session-side-panel.tsx"), "utf8")
 const SECTION = readFileSync(path.resolve(import.meta.dir, "session", "session-files-section.tsx"), "utf8")
-const CONTEXT = readFileSync(path.resolve(import.meta.dir, "..", "components", "session", "session-context-tab.tsx"), "utf8")
+const CONTEXT = readFileSync(
+  path.resolve(import.meta.dir, "..", "components", "session", "session-context-tab.tsx"),
+  "utf8",
+)
 
 /** Prose quotes the defect it describes, so structural assertions read code, not comments. */
 const code = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "")
@@ -47,11 +50,12 @@ describe("the obsolete plaque is gone, with its roots", () => {
 })
 
 describe("the panel keeps ONE official road, and the file lists live in the inspector", () => {
-  test("🔴 the duplicated Review tab and the Changes/All files pill are gone from the panel", () => {
+  test("the inspector has separate Context, Changes and All files tabs", () => {
     const panel = code(PANEL)
     expect(panel, "the Review tab is back").not.toContain('value="review"')
-    expect(panel, "the Changes/All files pill is back").not.toContain('value="changes"')
-    expect(panel, "the All files pill trigger is back").not.toContain('value="all"')
+    for (const value of ["context", "changes", "all"]) {
+      expect(panel).toContain(`value="${value}"`)
+    }
   })
 
   test("🔴 the context inspector is still rendered, and still closes", () => {
@@ -72,7 +76,8 @@ describe("the panel keeps ONE official road, and the file lists live in the insp
     expect(section, "a listed file no longer opens as a tab").toContain("props.openFile(node.path)")
     // And the section is mounted inside the inspector, not merely defined.
     expect(code(PANEL)).toContain("<SessionFilesSection")
-    expect(code(CONTEXT)).toContain("props.files")
+    expect(code(CONTEXT)).not.toContain("props.files")
+    expect(code(PANEL)).toContain('mode={inspectorTab() === "changes" ? "changes" : "all"}')
   })
 
   test("🔴 nothing can OPEN the file tree any more, because there is no longer one to open", () => {
@@ -82,10 +87,7 @@ describe("the panel keeps ONE official road, and the file lists live in the insp
     // for it. So the pill's removal left a command (`mod+\`) that opened a panel rendering nothing,
     // with a permanent empty gap beside the chat. A user pressing it gets no file list and no way
     // to tell that anything happened.
-    const commands = readFileSync(
-      path.resolve(import.meta.dir, "session", "use-session-commands.tsx"),
-      "utf8",
-    )
+    const commands = readFileSync(path.resolve(import.meta.dir, "session", "use-session-commands.tsx"), "utf8")
     expect(code(commands), "a command can still toggle the removed file tree").not.toContain("fileTree.toggle")
     expect(code(SESSION), "the conversation still reserves a rail for the removed tree").not.toContain(
       "layout.fileTree.width()",

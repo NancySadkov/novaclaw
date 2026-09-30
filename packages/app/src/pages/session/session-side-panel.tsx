@@ -1,4 +1,4 @@
-import { For, Match, Show, Switch, createComputed, createEffect, createMemo, on, onCleanup, type JSX } from "solid-js"
+import { For, Show, createComputed, createEffect, createMemo, createSignal, on, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic, Portal } from "solid-js/web"
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
@@ -19,7 +19,7 @@ import type { SessionChangeDiff, VcsFileDiff } from "@novaclaw/sdk/v2"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 
-import FileTree from "@/components/file-tree"
+import { ScrollView } from "@novaclaw/ui/scroll-view"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { SessionContextTab, SortableTab, FileVisual } from "@/components/session"
 import { SessionFilesSection } from "./session-files-section"
@@ -103,6 +103,16 @@ export function SessionSidePanel(props: {
   const openedTabs = tabState.openedTabs
   const activeTab = tabState.activeTab
   const activeFileTab = tabState.activeFileTab
+  const [inspectorTab, setInspectorTab] = createSignal<"context" | "changes" | "all">("context")
+  const selectedTab = createMemo(() => (activeTab() === "context" ? inspectorTab() : activeTab()))
+  const selectTab = (tab: string) => {
+    if (tab === "context" || tab === "changes" || tab === "all") {
+      setInspectorTab(tab)
+      openTab("context")
+      return
+    }
+    openTab(tab)
+  }
 
   const [store, setStore] = createStore({
     activeDraggable: undefined as string | undefined,
@@ -154,7 +164,10 @@ export function SessionSidePanel(props: {
   // mounting the content; onOpenAutoFocus runs too late and can already see document.body.
   createComputed(
     on(reviewOpen, (opened) => {
-      if (opened) returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
+      if (opened) {
+        setInspectorTab("context")
+        returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
+      }
     }),
   )
   const onCloseAutoFocus = (event: Event) => {
@@ -250,7 +263,7 @@ export function SessionSidePanel(props: {
                     >
                       <DragDropSensors />
                       <ConstrainDragYAxis />
-                      <TabsV2 value={activeTab()} onChange={openTab}>
+                      <TabsV2 value={selectedTab()} onChange={selectTab}>
                         <div class="sticky top-0 shrink-0 flex" classList={{ "pr-10": asModal() }}>
                           <TabsV2.List
                             ref={(el: HTMLDivElement) => {
@@ -284,6 +297,10 @@ export function SessionSidePanel(props: {
                                   <div>{language.t("session.tab.context")}</div>
                                 </div>
                               </TabsV2.Trigger>
+                              <TabsV2.Trigger value="changes">
+                                {props.reviewCount()} {language.plural("session.review.change", props.reviewCount())}
+                              </TabsV2.Trigger>
+                              <TabsV2.Trigger value="all">{language.t("session.files.all")}</TabsV2.Trigger>
                             </Show>
                             <SortableProvider ids={openedTabs()}>
                               <For each={openedTabs()}>
@@ -331,23 +348,29 @@ export function SessionSidePanel(props: {
                         </TabsV2.Content>
 
                         <Show when={contextOpen()}>
-                          <TabsV2.Content value="context" class="flex flex-col h-full overflow-hidden contain-strict">
+                          <TabsV2.Content
+                            value={inspectorTab()}
+                            class="flex flex-col h-full overflow-hidden contain-strict"
+                          >
                             <Show when={activeTab() === "context"}>
                               <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
-                                <SessionContextTab
-                                  files={
+                                <Show when={inspectorTab() === "context"}>
+                                  <SessionContextTab />
+                                </Show>
+                                <Show when={inspectorTab() !== "context"}>
+                                  <ScrollView class="h-full min-w-0">
                                     <SessionFilesSection
+                                      mode={inspectorTab() === "changes" ? "changes" : "all"}
                                       diffs={diffs()}
                                       diffsReady={props.diffsReady}
                                       canReview={props.canReview}
                                       hasReview={props.hasReview}
-                                      reviewCount={props.reviewCount}
                                       activeDiff={props.activeDiff}
                                       focusDiff={props.focusReviewDiff}
                                       openFile={(path) => openTab(file.tab(path))}
                                     />
-                                  }
-                                />
+                                  </ScrollView>
+                                </Show>
                               </div>
                             </Show>
                           </TabsV2.Content>
@@ -372,7 +395,6 @@ export function SessionSidePanel(props: {
                     </DragDropProvider>
                   </div>
                 </div>
-
               </div>
             </Show>
           </Dynamic>
