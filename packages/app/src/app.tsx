@@ -69,6 +69,7 @@ import { showToast } from "@/utils/toast"
 import { HomeScreen } from "@/pages/home-screen/home-screen"
 import { clientLogPayload, installClientLogSender, installErrorLog } from "@/utils/error-log"
 import { publicAssetUrl } from "@/utils/public-asset"
+import { StartupScreen, useStartupScreen } from "@/components/startup-screen"
 
 import { Session } from "@/pages/session-loader"
 const FilesPage = lazy(() => import("@/pages/files").then(({ FilesPage }) => ({ default: FilesPage })))
@@ -716,6 +717,7 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
 
 function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
   const server = useServer()
+  const startup = useStartupScreen()
   const checkServerHealth = useCheckServerHealth()
   const { starting: supervisorStarting } = useSupervisorPhase()
 
@@ -776,21 +778,13 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
   const checking = createMemo(
     () => checkMode() === "blocking" && ["unresolved", "pending"].includes(startupHealthCheck.state),
   )
+  createRenderEffect(() => {
+    if (checking()) startup.begin(supervisorStarting() ? "server" : "connection")
+    else startup.complete()
+  })
 
   return (
-    <Show
-      when={!checking()}
-      fallback={
-        <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
-          <img
-            src={publicAssetUrl("/logo.png")}
-            alt="NovaClaw"
-            draggable={false}
-            class="w-20 h-20 opacity-60 animate-pulse select-none"
-          />
-        </div>
-      }
-    >
+    <Show when={!checking()}>
       <Show
         when={startupHealthCheck.latest === "ok"}
         fallback={
@@ -979,38 +973,40 @@ export function AppInterface(props: {
   )
 
   return (
-    <ServerProvider
-      defaultServer={props.defaultServer}
-      canonicalLocalServer={props.canonicalLocalServer}
-      servers={props.servers}
-    >
-      <GlobalProvider>
-        <SettingsProvider>
-          <ClientErrorLogDrain />
-          <ConnectionGate disableHealthCheck={props.disableHealthCheck}>
-            <ExpertiseMirror />
-            {/* File links a colleague writes must address the instance it RUNS ON, not the page's
+    <StartupScreen>
+      <ServerProvider
+        defaultServer={props.defaultServer}
+        canonicalLocalServer={props.canonicalLocalServer}
+        servers={props.servers}
+      >
+        <GlobalProvider>
+          <SettingsProvider>
+            <ClientErrorLogDrain />
+            <ConnectionGate disableHealthCheck={props.disableHealthCheck}>
+              <ExpertiseMirror />
+              {/* File links a colleague writes must address the instance it RUNS ON, not the page's
                 origin — the two differ whenever the user drives a remote instance, which is exactly
                 when its files are otherwise unreachable. */}
-            <InstanceOriginMirror />
-            <Dynamic
-              component={props.router ?? Router}
-              root={(routerProps) => (
-                <TabsProvider>
-                  <NotificationProvider>
-                    <ServerShell>
-                      <NewAppLayout>{routerProps.children}</NewAppLayout>
-                    </ServerShell>
-                  </NotificationProvider>
-                </TabsProvider>
-              )}
-            >
-              <Routes />
-            </Dynamic>
-          </ConnectionGate>
-        </SettingsProvider>
-      </GlobalProvider>
-    </ServerProvider>
+              <InstanceOriginMirror />
+              <Dynamic
+                component={props.router ?? Router}
+                root={(routerProps) => (
+                  <TabsProvider>
+                    <NotificationProvider>
+                      <ServerShell>
+                        <NewAppLayout>{routerProps.children}</NewAppLayout>
+                      </ServerShell>
+                    </NotificationProvider>
+                  </TabsProvider>
+                )}
+              >
+                <Routes />
+              </Dynamic>
+            </ConnectionGate>
+          </SettingsProvider>
+        </GlobalProvider>
+      </ServerProvider>
+    </StartupScreen>
   )
 }
 

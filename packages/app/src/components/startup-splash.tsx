@@ -1,7 +1,6 @@
 import { For, createSignal, createUniqueId, onCleanup, onMount } from "solid-js"
 import silhouette from "./assets/nova-silhouette.png"
-import { SPLASH_SLOW_MS, SPLASH_STALLED_MS, splashPhase, type SplashPhase } from "./splash"
-import "./startup-splash.css"
+import { SPLASH_SLOW_MS, SPLASH_STALLED_MS, splashPhase, type SplashPhase } from "../utils/startup-splash"
 
 const stars = Array.from({ length: 180 }, (_, index) => ({
   x: (index * 613 + 41) % 1600,

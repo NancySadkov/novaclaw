@@ -1,4 +1,10 @@
 export const dict = {
+  "startup.stage.desktop": "Preparing the desktop.",
+  "startup.stage.preferences": "Restoring your preferences.",
+  "startup.stage.server": "Starting the local server.",
+  "startup.stage.connection": "Checking the connection to your instance.",
+  "startup.slowNotice": "This is taking longer than usual. NovaClaw is still working.",
+  "startup.stalledNotice": "Still waiting. NovaClaw will show connection help if startup cannot complete.",
   "home.app.projects.name": "Projects",
   "home.app.projects.subtitle": "Objectives, plans and the officers bringing them to life",
   "projects.hint": "Give the work a direction. Let your officers carry it forward.",

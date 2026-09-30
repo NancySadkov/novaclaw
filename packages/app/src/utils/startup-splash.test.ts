@@ -1,11 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { SPLASH_SLOW_MS, SPLASH_STALLED_MS, splashMessageKey, splashPhase } from "./splash"
-import { dict } from "./i18n/en"
+import { SPLASH_SLOW_MS, SPLASH_STALLED_MS, splashPhase } from "./startup-splash"
+import { dict } from "../i18n/en"
 
 describe("startup splash", () => {
   test("says what is happening from the first frame", () => {
     expect(splashPhase(0)).toBe("starting")
-    expect(splashMessageKey(splashPhase(0))).toBe("desktop.startup.starting")
   })
 
   test("escalates once the start is slower than usual", () => {
@@ -27,11 +26,16 @@ describe("startup splash", () => {
   })
 
   test("every phase resolves to a real English string — a missing key renders the key itself", () => {
-    for (const phase of ["starting", "slow", "stalled"] as const) {
-      const key = splashMessageKey(phase)
-      const value = (dict as Record<string, string>)[key]
-      expect(value).toBeString()
-      expect(value.length).toBeGreaterThan(20)
+    for (const key of [
+      "startup.stage.desktop",
+      "startup.stage.preferences",
+      "startup.stage.server",
+      "startup.stage.connection",
+      "startup.slowNotice",
+      "startup.stalledNotice",
+    ] as const) {
+      expect(dict[key]).toBeString()
+      expect(dict[key].length).toBeGreaterThan(20)
     }
   })
 })

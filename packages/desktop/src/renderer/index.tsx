@@ -5,6 +5,8 @@ import {
   ACCEPTED_FILE_EXTENSIONS,
   AppBaseProviders,
   AppInterface,
+  StartupScreen,
+  useStartupScreen,
   handleNotificationClick,
   loadLocaleDict,
   normalizeLocale,
@@ -25,8 +27,6 @@ import pkg from "../../package.json"
 import { reportBootPhase, setBootPhaseReporter } from "@novaclaw/app/utils/boot-phase"
 import { initI18n, t } from "./i18n"
 import { initializationData, initializationReady } from "./initialization"
-import { splashMessageKey } from "./splash"
-import { StartupSplash } from "./startup-splash"
 import { setPinchZoomEnabled, webviewZoom } from "./webview-zoom"
 import "./styles.css"
 import { useTheme } from "@novaclaw/ui/theme/context"
@@ -306,9 +306,14 @@ render(() => {
   }
 
   function App() {
+    const startup = useStartupScreen()
     const ready = createMemo(
       () => !defaultServer.loading && !sidecar.loading && !windowCount.loading && !locale.loading,
     )
+    createEffect(() => {
+      if (ready()) return
+      startup.report(locale.loading ? "preferences" : sidecar.loading ? "server" : "desktop")
+    })
     const servers = createMemo(() => {
       const data = initializationData(sidecar)
       const list: ServerConnection.Any[] = []
@@ -329,7 +334,7 @@ render(() => {
     const effectiveDefaultServer = createMemo(() => ServerConnection.Key.make(startupServerKey(defaultServer.latest)))
 
     return (
-      <Show when={ready()} fallback={<StartupSplash message={(phase) => t(splashMessageKey(phase))} />}>
+      <Show when={ready()}>
         <Show when={effectiveDefaultServer()} keyed>
           {(key) => (
             <AppInterface defaultServer={key} servers={servers()} router={MemoryRouter}>
@@ -355,7 +360,9 @@ render(() => {
   return (
     <PlatformProvider value={platform}>
       <AppBaseProviders locale={locale.latest}>
-        <Show when={true}>{(_) => <App />}</Show>
+        <StartupScreen initialStage="desktop">
+          <Show when={true}>{(_) => <App />}</Show>
+        </StartupScreen>
       </AppBaseProviders>
     </PlatformProvider>
   )

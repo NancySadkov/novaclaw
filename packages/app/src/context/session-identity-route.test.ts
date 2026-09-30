@@ -40,7 +40,7 @@ const ALLOWED = new Set([
  * reading the failure message; never add an entry to silence it.
  */
 const KNOWN = new Set([
-  "app.tsx:114",
+  "app.tsx:115",
   join("components", "dialog-fork.tsx") + ":43",
   // ⚠️ `:107` → `:108` when the agent list below it gained the posture filter and the governing
   // officer (owner, 2026-09-27, the `build` ghost). This ledger is a CEILING, not a permission slip —
