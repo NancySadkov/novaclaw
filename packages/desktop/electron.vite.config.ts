@@ -96,8 +96,6 @@ export default defineConfig({
     publicDir: "../../../app/public",
     root: "src/renderer",
     build: {
-      // Avoid building and packaging a large map on the low-memory Windows machines NovaClaw targets.
-      sourcemap: channel !== "prod",
       rollupOptions: {
         input: {
           main: "src/renderer/index.html",

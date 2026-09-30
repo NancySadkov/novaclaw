@@ -37,6 +37,9 @@ export default [
     name: "novaclaw-desktop:config",
     config() {
       return {
+        build: {
+          sourcemap: channel !== "prod",
+        },
         resolve: {
           alias: {
             "@": fileURLToPath(new URL("./src", import.meta.url)),
