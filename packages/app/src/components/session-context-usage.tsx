@@ -1,11 +1,9 @@
-import { Match, Show, Switch, batch, createMemo } from "solid-js"
+import { Match, Show, Switch, createMemo } from "solid-js"
 import { TooltipV2, type TooltipV2Props } from "@novaclaw/ui/v2/tooltip-v2"
 import { ProgressCircleV2 } from "@novaclaw/ui/v2/progress-circle-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 
-import { useFile } from "@/context/file"
-import { useLayout } from "@/context/layout"
 import { useSync } from "@/context/sync"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
@@ -13,8 +11,6 @@ import { useProviders } from "@/hooks/use-providers"
 import { useSDK } from "@/context/sdk"
 import { getSessionContext, getSessionTokenTotal } from "@/components/session/session-context-metrics"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import { createSessionTabs } from "@/pages/session/helpers"
-import { sessionContextAction } from "@/components/session/session-context-toggle"
 
 interface SessionContextUsageProps {
   variant?: "button" | "indicator"
@@ -22,38 +18,16 @@ interface SessionContextUsageProps {
   placement?: TooltipV2Props["placement"]
 }
 
-function openSessionContext(args: {
-  view: ReturnType<ReturnType<typeof useLayout>["view"]>
-  layout: ReturnType<typeof useLayout>
-  tabs: ReturnType<ReturnType<typeof useLayout>["tabs"]>
-}) {
-  // Mount the panel with its intended selection. Exposing the old selection while its tab
-  // collection mounts lets Kobalte write its first tab (Review) back over the requested Context.
-  batch(() => {
-    void args.tabs.open("context")
-    args.tabs.setActive("context")
-
-    if (!args.view.reviewPanel.opened()) args.view.reviewPanel.open()
-  })
-}
-
 export function SessionContextUsage(props: SessionContextUsageProps) {
   const sync = useSync()
   const serverSync = useServerSync()
-  const file = useFile()
-  const layout = useLayout()
   const language = useLanguage()
   const sdk = useSDK()
   const providers = useProviders(() => sdk().directory)
-  const { params, tabs, view } = useSessionLayout()
+  const { params, view } = useSessionLayout()
 
   const variant = createMemo(() => props.variant ?? "button")
   const buttonAppearance = createMemo(() => props.buttonAppearance ?? "default")
-  const tabState = createSessionTabs({
-    tabs,
-    pathFromTab: file.pathFromTab,
-    normalizeTab: (tab) => (tab.startsWith("file://") ? file.tab(tab) : tab),
-  })
   const messages = createMemo(() => (params.id ? (serverSync().nativeMessages.messages(params.id) ?? []) : []))
   const info = createMemo(() => (params.id ? sync().session.get(params.id) : undefined))
 
@@ -81,21 +55,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
 
   const openContext = () => {
     if (!params.id) return
-
-    if (
-      sessionContextAction({
-        panelOpened: view().reviewPanel.opened(),
-        activeTab: tabState.activeTab(),
-      }) === "close-tab"
-    ) {
-      tabs().close("context")
-      return
-    }
-    openSessionContext({
-      view: view(),
-      layout,
-      tabs: tabs(),
-    })
+    view().reviewPanel.open()
   }
 
   // One gauge for every placement. The v1 twin took `size={16} strokeWidth={2}`; the v2 scale (14px

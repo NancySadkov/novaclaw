@@ -12,7 +12,6 @@ import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { showToast } from "@/utils/toast"
-import { createSessionTabs } from "@/pages/session/helpers"
 import { nextMessageID, selectVisibleMessages, undoTargetID } from "@/pages/session/revert-view"
 import type { SessionMessageUser } from "@novaclaw/sdk/v2/client"
 import { useSessionLayout } from "@/pages/session/session-layout"
@@ -62,7 +61,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const sessionTabs = useTabs()
   const layout = useLayout()
   const navigate = useNavigate()
-  const { params, sessionKey, tabs, view } = useSessionLayout()
+  const { params, sessionKey, view } = useSessionLayout()
   const sessionOwnership = createSessionOwnership(sessionKey)
   const openDialog = async <T,>(load: () => Promise<T>, show: (value: T) => void) => {
     const owner = sessionOwnership.capture()
@@ -74,20 +73,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     if (!id) return
     return sync().session.get(id)
   }
-  const hasReview = () => !!params.id
-  const normalizeTab = (tab: string) => {
-    if (!tab.startsWith("file://")) return tab
-    return file.tab(tab)
-  }
-  const tabState = createSessionTabs({
-    tabs,
-    pathFromTab: file.pathFromTab,
-    normalizeTab,
-    review: actions.review,
-    hasReview,
-  })
-  const activeFileTab = tabState.activeFileTab
-  const closableTab = tabState.closableTab
+  const selectedFile = () => view().reviewPanel.opened() ? view().reviewPanel.selectedFile() : undefined
 
   const messages = () => {
     const id = params.id
@@ -109,9 +95,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   }
 
   const canAddSelectionContext = () => {
-    const tab = activeFileTab()
-    if (!tab) return false
-    const path = file.pathFromTab(tab)
+    const path = selectedFile()
     if (!path) return false
     return file.selectedLines(path) != null
   }
@@ -157,17 +141,8 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     )
   }
 
-  const closeTab = () => {
-    const tab = closableTab()
-    if (!tab) return
-    tabs().close(tab)
-  }
-
   const addSelection = () => {
-    const tab = activeFileTab()
-    if (!tab) return
-
-    const path = file.pathFromTab(tab)
+    const path = selectedFile()
     if (!path) return
 
     const range = file.selectedLines(path) as SelectedLineRange | null | undefined
@@ -299,7 +274,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   ]
 
   const fileCmds = () => {
-    const tab = closableTab()
+    if (view().reviewPanel.opened()) return []
     return [
       fileCommand({
         id: "file.open",
@@ -308,14 +283,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         keybind: "mod+k,mod+p",
         onSelect: openFile,
       }),
-      tab &&
-        fileCommand({
-          id: "tab.close",
-          title: language.t("command.tab.close"),
-          keybind: "mod+w",
-          onSelect: closeTab,
-        }),
-    ].filter((v) => !!v)
+    ]
   }
 
   const contextCmds = () => [

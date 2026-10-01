@@ -154,6 +154,7 @@ export const dict = {
   "context.breakdown.other": "その他",
   "context.systemPrompt.title": "システムプロンプト",
   "context.stats.messages": "メッセージ",
+  "context.officerStats.title": "オフィサーの統計",
   "context.usage.tokens": "トークン",
   "context.usage.usage": "使用量",
   "context.usage.cost": "コスト",

@@ -316,9 +316,9 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       }),
     )
 
-    // A modal is a current interaction, not a layout preference. Never restore it over the
-    // conversation on startup; only an explicit context/review/file action should open it.
     const [reviewPanelOpened, setReviewPanelOpened] = createSignal(false)
+    const [statsSection, setStatsSection] = createSignal<"context" | "changes" | "all">("context")
+    const [statsFile, setStatsFile] = createSignal<string>()
 
     const MAX_SESSION_KEYS = 50
     const PENDING_MESSAGE_TTL_MS = 2 * 60 * 1000
@@ -812,14 +812,33 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           },
           reviewPanel: {
             opened: reviewPanelOpened,
+            section: statsSection,
+            setSection: setStatsSection,
+            selectedFile: statsFile,
             open() {
+              setStatsSection("context")
+              setStatsFile(undefined)
+              setReviewPanelOpened(true)
+            },
+            openChanges() {
+              setStatsSection("changes")
+              setReviewPanelOpened(true)
+            },
+            openFile(path: string) {
+              setStatsFile(path)
+              setStatsSection("all")
               setReviewPanelOpened(true)
             },
             close() {
               setReviewPanelOpened(false)
             },
             toggle() {
-              setReviewPanelOpened(!reviewPanelOpened())
+              if (reviewPanelOpened()) setReviewPanelOpened(false)
+              else {
+                setStatsSection("context")
+                setStatsFile(undefined)
+                setReviewPanelOpened(true)
+              }
             },
           },
           review: {

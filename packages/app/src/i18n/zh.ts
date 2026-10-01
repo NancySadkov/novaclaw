@@ -183,6 +183,7 @@ export const dict = {
   "context.breakdown.other": "其他",
   "context.systemPrompt.title": "系统提示词",
   "context.stats.messages": "消息数",
+  "context.officerStats.title": "长官统计",
   "context.usage.tokens": "Token",
   "context.usage.usage": "使用率",
   "context.usage.cost": "成本",

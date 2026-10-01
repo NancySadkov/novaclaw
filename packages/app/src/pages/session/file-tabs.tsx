@@ -10,7 +10,6 @@ import { sampledChecksum } from "@novaclaw/core/util/encode"
 import { DropdownMenu } from "@novaclaw/ui/dropdown-menu"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
-import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { ScrollView } from "@novaclaw/ui/scroll-view"
 import { showToast } from "@/utils/toast"
 import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange } from "@/context/file"
@@ -19,7 +18,6 @@ import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
 import { getSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import { createSessionTabs } from "@/pages/session/helpers"
 
 function FileCommentMenu(props: {
   moreLabel: string
@@ -178,12 +176,7 @@ export function FileTabContent(props: { tab: string }) {
   const language = useLanguage()
   const prompt = usePrompt()
   const fileComponent = useFileComponent()
-  const { sessionKey, tabs, view } = useSessionLayout()
-  const activeFileTab = createSessionTabs({
-    tabs,
-    pathFromTab: file.pathFromTab,
-    normalizeTab: (tab) => (tab.startsWith("file://") ? file.tab(tab) : tab),
-  }).activeFileTab
+  const { sessionKey, view } = useSessionLayout()
 
   let find: FileSearchHandle | null = null
 
@@ -194,6 +187,8 @@ export function FileTabContent(props: { tab: string }) {
   }
 
   const path = createMemo(() => file.pathFromTab(props.tab))
+  const activeFile = () =>
+    view().reviewPanel.opened() && view().reviewPanel.section() === "all" && view().reviewPanel.selectedFile() === path()
   const state = createMemo(() => {
     const p = path()
     if (!p) return
@@ -343,7 +338,7 @@ export function FileTabContent(props: { tab: string }) {
     if (typeof window === "undefined") return
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (activeFileTab() !== props.tab) return
+      if (!activeFile()) return
       if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return
       if (event.key.toLowerCase() !== "f") return
 
@@ -370,7 +365,7 @@ export function FileTabContent(props: { tab: string }) {
     const p = path()
     if (!focus || !p) return
     if (focus.file !== p) return
-    if (activeFileTab() !== props.tab) return
+    if (!activeFile()) return
 
     const target = fileComments().find((comment) => comment.id === focus.id)
     if (!target) return
@@ -388,7 +383,7 @@ export function FileTabContent(props: { tab: string }) {
   createEffect(() => {
     const loaded = !!state()?.loaded
     const ready = file.ready()
-    const active = activeFileTab() === props.tab
+    const active = activeFile()
     const restore = (loaded && !prev.loaded) || (ready && !prev.ready) || (active && loaded && !prev.active)
     prev = { loaded, ready, active }
     if (!restore) return
@@ -440,8 +435,7 @@ export function FileTabContent(props: { tab: string }) {
     </div>
   )
 
-  return (
-    <TabsV2.Content value={props.tab} class="mt-3 relative h-full">
+  const content = () => (
       <ScrollView class="h-full" viewportRef={scrollSync.setViewport} onScroll={scrollSync.handleScroll as any}>
         <Switch>
           <Match when={state()?.loaded}>{renderFile(contents())}</Match>
@@ -451,6 +445,6 @@ export function FileTabContent(props: { tab: string }) {
           <Match when={state()?.error}>{(err) => <div class="px-6 py-4 text-text-weak">{err()}</div>}</Match>
         </Switch>
       </ScrollView>
-    </TabsV2.Content>
   )
+  return <div class="relative h-full">{content()}</div>
 }

@@ -174,6 +174,7 @@ export const dict = {
   "context.systemPrompt.title": "系統提示詞",
 
   "context.stats.messages": "訊息數",
+  "context.officerStats.title": "長官統計",
 
   "context.usage.tokens": "Token",
   "context.usage.usage": "使用量",

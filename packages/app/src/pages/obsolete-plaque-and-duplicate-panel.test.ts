@@ -8,7 +8,7 @@ import path from "node:path"
  * Owner, 2026-09-29, on a running build: a session showed a plaque carrying `Stop` and `See changes`.
  * Pressing `See changes` opened a right panel with `0 Changes` and `All files` tabs and no way to
  * close it. The owner's ruling: the plaque is inherited residue and goes "with its roots", and the
- * official route to those tabs is the context ring — AGENTS.md's *"clicking context indicator leads
+ * official route to those sections is the context ring — AGENTS.md's *"clicking context indicator leads
  * to the current stats"*, the character sheet.
  *
  * ⚠️ **THE PREMISE WAS HALF WRONG, AND THAT MATTERS MORE THAN THE REMOVAL.** The context inspector
@@ -16,13 +16,13 @@ import path from "node:path"
  * compaction history and prompt portability, and imports no `FileTree` at all. So deleting the pill
  * without porting would have removed the app's ONLY file browser and diff view, silently, and the
  * inspector would not have replaced them. Hence `SessionFilesSection`: the two `FileTree` lists were
- * MOVED into the inspector, not reimplemented, and this file pins that they are still there.
+ * MOVED into Officer Stats, not reimplemented, and this file pins that they are still there.
  *
  * The `See changes` / `Stop` / `Retry` strings were HARDCODED ENGLISH in the JSX, never an i18n key,
  * which is why they are pinned as literals here: a translation-key search does not find them.
  */
 const SESSION = readFileSync(path.resolve(import.meta.dir, "session.tsx"), "utf8")
-const PANEL = readFileSync(path.resolve(import.meta.dir, "session", "session-side-panel.tsx"), "utf8")
+const PANEL = readFileSync(path.resolve(import.meta.dir, "session", "officer-stats-screen.tsx"), "utf8")
 const SECTION = readFileSync(path.resolve(import.meta.dir, "session", "session-files-section.tsx"), "utf8")
 const CONTEXT = readFileSync(
   path.resolve(import.meta.dir, "..", "components", "session", "session-context-tab.tsx"),
@@ -58,26 +58,24 @@ describe("the panel keeps ONE official road, and the file lists live in the insp
     }
   })
 
-  test("🔴 the context inspector is still rendered, and still closes", () => {
-    // The official route must survive the removal, and it must still be dismissible — the owner's
-    // complaint was a panel with no way out, so the close affordance is load-bearing.
+  test("the stats screen still has a way back to the chat", () => {
     expect(panel_has("SessionContextTab")).toBe(true)
-    expect(code(PANEL)).toContain('tabs().close("context")')
+    expect(code(PANEL)).toContain('view().reviewPanel.close()')
   })
 
   test("🔴 the file list and the changes list were PORTED, not dropped", () => {
     // This is the assertion that would have caught the wrong removal: both trees exist, and both
-    // original click behaviours are preserved (a changed file focuses the diff; a listed file opens
-    // a tab).
+    // A changed file focuses the diff; a listed file opens an in-screen preview.
     const section = code(SECTION)
     expect(section, "the changes list is gone — the app has no diff view").toContain("allowed={diffFiles()}")
     expect(section, "the file list is gone — the app has no file browser").toContain("modified={diffFiles()}")
     expect(section, "a changed file no longer focuses its diff").toContain("props.focusDiff(node.path)")
-    expect(section, "a listed file no longer opens as a tab").toContain("props.openFile(node.path)")
-    // And the section is mounted inside the inspector, not merely defined.
+    expect(section, "a listed file no longer opens in the preview").toContain("props.openFile(node.path)")
+    // And the section is mounted inside the stats screen, not merely defined.
     expect(code(PANEL)).toContain("<SessionFilesSection")
     expect(code(CONTEXT)).not.toContain("props.files")
-    expect(code(PANEL)).toContain('mode={inspectorTab() === "changes" ? "changes" : "all"}')
+    expect(code(PANEL)).toContain('mode="changes"')
+    expect(code(PANEL)).toContain('mode="all"')
   })
 
   test("🔴 nothing can OPEN the file tree any more, because there is no longer one to open", () => {
@@ -99,7 +97,7 @@ describe("the panel keeps ONE official road, and the file lists live in the insp
     // The refresher used to be gated on the docked panel being open. Left pointing there, the
     // inspector's two lists would render against a tree nobody ever loaded.
     const session = code(SESSION)
-    expect(session).toContain("if (!contextOpen()) return")
+    expect(session).toContain("if (!view().reviewPanel.opened()) return")
     expect(session).toContain('file.tree.refresh("")')
   })
 

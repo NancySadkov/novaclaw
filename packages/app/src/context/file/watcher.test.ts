@@ -27,7 +27,7 @@ describe("file watcher invalidation", () => {
     expect(refresh).toEqual(["src"])
   })
 
-  test("reloads files that are open in tabs", () => {
+  test("reloads the open file preview", () => {
     const loads: string[] = []
 
     invalidateFromWatcher(

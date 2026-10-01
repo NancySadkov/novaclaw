@@ -175,6 +175,7 @@ export const dict = {
   "context.systemPrompt.title": "Prompt del Sistema",
 
   "context.stats.messages": "Mensajes",
+  "context.officerStats.title": "Estadísticas del oficial",
 
   "context.usage.tokens": "Tokens",
   "context.usage.usage": "Uso",

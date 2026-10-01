@@ -60,7 +60,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
 
     const scope = createMemo(() => sdk().directory)
     const path = createPathHelpers(scope)
-    const tabs = layout.tabs(() =>
+    const stats = layout.view(() =>
       SessionStateKey.from(serverSDK().scope, SessionRouteKey.fromRoute(base64Encode(sdk().directory), sessionID())),
     )
 
@@ -208,7 +208,10 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       invalidateFromWatcher(e.details, {
         normalize: path.normalize,
         hasFile: (file) => Boolean(store.file[file]),
-        isOpen: (file) => tabs.all().some((tab) => path.pathFromTab(tab) === file),
+        isOpen: (file) =>
+          stats.reviewPanel.opened() &&
+          stats.reviewPanel.section() === "all" &&
+          stats.reviewPanel.selectedFile() === file,
         loadFile: (file) => {
           void load(file, { force: true })
         },

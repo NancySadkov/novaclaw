@@ -467,7 +467,7 @@ export function SessionContextTab() {
       }}
       onScroll={handleScroll}
     >
-      <div data-component="session-character-sheet" class="min-w-0 px-4 pt-3 pb-6 flex flex-col gap-5 @[38rem]:px-6">
+      <div data-component="session-character-sheet" class="mx-auto w-full max-w-5xl min-w-0 px-4 pt-5 pb-8 flex flex-col gap-5 @[38rem]:px-6">
         <section data-slot="context-identity" class="relative min-w-0">
           <div
             data-slot="context-portrait-row"

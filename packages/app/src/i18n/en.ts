@@ -654,6 +654,7 @@ export const dict = {
   "context.compactions.status.running": "Running",
 
   "context.stats.messages": "Messages",
+  "context.officerStats.title": "Officer Stats",
 
   "context.usage.tokens": "Tokens",
   "context.usage.usage": "Usage",

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 
 const titlebar = await Bun.file(new URL("./titlebar.tsx", import.meta.url)).text()
 const strip = await Bun.file(new URL("./titlebar-tab-strip.tsx", import.meta.url)).text()
-const sidePanel = await Bun.file(new URL("../pages/session/session-side-panel.tsx", import.meta.url)).text()
+const statsScreen = await Bun.file(new URL("../pages/session/officer-stats-screen.tsx", import.meta.url)).text()
 
 describe("narrow-window navigation remains reachable", () => {
   test("the home badge keeps All Officers available without taking tab width", () => {
@@ -28,12 +28,9 @@ describe("narrow-window navigation remains reachable", () => {
     expect(titlebar).not.toContain("scrollIntoView")
   })
 
-  test("context stats can render as a modal below the desktop breakpoint", () => {
-    expect(sidePanel).toContain("const reviewOpen = createMemo(() => view().reviewPanel.opened())")
-    expect(sidePanel).toContain("<Show when={!!params.id && (isDesktop() || reviewOpen())}>")
-    // The file tree is gone — its lists moved into the context inspector — so the panel has no
-    // desktop-only rail left and is a modal at every width, which is what `open()` now says.
-    expect(sidePanel).toContain("const open = createMemo(() => reviewOpen())")
-    expect(sidePanel).not.toContain("layout.fileTree")
+  test("officer stats occupies the session screen at every width", () => {
+    expect(statsScreen).toContain("<Show when={!!params.id && view().reviewPanel.opened()}>")
+    expect(statsScreen).toContain('<AppPage data-screen="officer-stats"')
+    expect(statsScreen).not.toContain("Kobalte")
   })
 })

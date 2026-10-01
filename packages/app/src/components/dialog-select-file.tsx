@@ -16,7 +16,6 @@ import { useFile } from "@/context/file"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import { createSessionTabs } from "@/pages/session/helpers"
 import { decode64 } from "@/utils/base64"
 import { getRelativeTime } from "@/utils/time"
 
@@ -137,31 +136,14 @@ function createCommandEntries(props: {
 
 function createFileEntries(props: {
   file: ReturnType<typeof useFile>
-  tabs: () => ReturnType<ReturnType<typeof useLayout>["tabs"]>
+  selectedFile: () => string | undefined
   language: ReturnType<typeof useLanguage>
 }) {
-  const tabState = createSessionTabs({
-    tabs: props.tabs,
-    pathFromTab: props.file.pathFromTab,
-    normalizeTab: (tab) => (tab.startsWith("file://") ? props.file.tab(tab) : tab),
-  })
   const recent = createMemo(() => {
-    const all = tabState.openedTabs()
-    const active = tabState.activeFileTab()
-    const order = active ? [active, ...all.filter((item) => item !== active)] : all
-    const seen = new Set<string>()
+    const path = props.selectedFile()
+    if (!path) return []
     const category = props.language.t("palette.group.files")
-    const items: Entry[] = []
-
-    for (const item of order) {
-      const path = props.file.pathFromTab(item)
-      if (!path) continue
-      if (seen.has(path)) continue
-      seen.add(path)
-      items.push(createFileEntry(path, category))
-    }
-
-    return items.slice(0, ENTRY_LIMIT)
+    return [createFileEntry(path, category)]
   })
 
   const root = createMemo(() => {
@@ -276,12 +258,12 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
   const navigate = useNavigate()
   const serverSDK = useServerSDK()
   const serverSync = useServerSync()
-  const { params, tabs, view } = useSessionLayout()
+  const { params, view } = useSessionLayout()
   const filesOnly = () => props.mode === "files"
   const state = { cleanup: undefined as (() => void) | void, committed: false }
   const [grouped, setGrouped] = createSignal(false)
   const commandEntries = createCommandEntries({ filesOnly, command, language })
-  const fileEntries = createFileEntries({ file, tabs, language })
+  const fileEntries = createFileEntries({ file, selectedFile: () => view().reviewPanel.selectedFile(), language })
 
   const projectDirectory = createMemo(() => decode64(params.dir) ?? "")
   const project = createMemo(() => {
@@ -354,12 +336,9 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
   }
 
   const open = (path: string) => {
-    const value = file.tab(path)
-    void tabs().open(value)
     void file.load(path)
-    if (!view().reviewPanel.opened()) view().reviewPanel.open()
+    view().reviewPanel.openFile(path)
     props.onOpenFile?.(path)
-    tabs().setActive(value)
   }
 
   const handleSelect = (item: Entry | undefined) => {

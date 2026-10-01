@@ -20,7 +20,6 @@ import { debounce } from "@solid-primitives/scheduled"
 import { useLocal } from "@/context/local"
 import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange } from "@/context/file"
 import { createStore } from "solid-js/store"
-import { ResizeHandle } from "@novaclaw/ui/resize-handle"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { previewSelectedLines } from "@novaclaw/session-ui/pierre/selection-bridge"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
@@ -59,7 +58,6 @@ import {
   createSessionComposerRegionController,
   SessionComposerRegion,
 } from "@/pages/session/composer"
-import { createOpenReviewFile, createSessionTabs, createSizing } from "@/pages/session/helpers"
 import { createSessionKeyboardController } from "@/pages/session/keyboard-controller"
 import {
   NativeTimeline,
@@ -73,7 +71,7 @@ import { createReviewNavigation } from "@/pages/session/review-navigation"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
-import { SessionSidePanel } from "@/pages/session/session-side-panel"
+import { OfficerStatsScreen } from "@/pages/session/officer-stats-screen"
 import { TerminalPanel } from "@/pages/session/terminal-panel"
 import { useComposerCommands } from "@/pages/session/use-composer-commands"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
@@ -116,6 +114,16 @@ export default function Page() {
   const { params, sessionKey, workspaceKey, tabs, view } = useSessionLayout()
   const sessionOwnership = createSessionOwnership(sessionKey)
 
+  createEffect(
+    on(
+      sessionKey,
+      (key, previous) => {
+        if (previous && key !== previous) view().reviewPanel.close()
+      },
+      { defer: true },
+    ),
+  )
+
   // ── Presence ────────────────────────────────────────────────────────────────────────────────
   // Who else is looking at this chat, who is driving, and what happens when two surfaces reach for
   // it at once. The rules live in ./session/session-presence.ts (pure) and the instance owns the
@@ -151,10 +159,6 @@ export default function Page() {
       prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
       setSearchParams({ ...searchParams, prompt: undefined })
     })
-  })
-
-  const [ui, setUi] = createStore({
-    reviewSnap: false,
   })
 
   const composer = createSessionComposerController()
@@ -207,14 +211,7 @@ export default function Page() {
   )
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
-  const size = createSizing()
-  const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
-  const desktopSidePanelOpen = createMemo(() => desktopReviewOpen())
-  // Nothing shares the row with the conversation any more. The review floats above it, and the file
-  // lists moved into the context inspector, which floats too — and the layout store still defaults
-  // `fileTree.opened` to TRUE, so reserving width for it renders a permanent empty gap.
-  const sessionPanelWidth = createMemo(() => "100%")
-  const centered = createMemo(() => isDesktop() && !desktopReviewOpen())
+  const centered = createMemo(() => isDesktop())
 
   function normalizeTab(tab: string) {
     if (!tab.startsWith("file://")) return tab
@@ -234,7 +231,7 @@ export default function Page() {
   }
 
   const openReviewPanel = () => {
-    if (!view().reviewPanel.opened()) view().reviewPanel.open()
+    view().reviewPanel.openChanges()
   }
 
   const info = createMemo(() => (params.id ? sync().session.get(params.id) : undefined))
@@ -243,16 +240,6 @@ export default function Page() {
   // T3 (entities.md): review affordances gate on VCS data, not a project entity.
   const canReview = createMemo(() => !!sync().data.vcs)
   const reviewTab = createMemo(() => isDesktop())
-  const tabState = createSessionTabs({
-    tabs,
-    pathFromTab: file.pathFromTab,
-    normalizeTab,
-    review: reviewTab,
-    hasReview: canReview,
-  })
-  const activeTab = tabState.activeTab
-  const activeFileTab = tabState.activeFileTab
-  const contextOpen = tabState.contextOpen
   const revertMessageID = createMemo(() => info()?.revert?.messageID)
   const timeline = createTimelineModel({ sessionID: () => params.id, revertMessageID })
   const createTimelineViewport = (key: string): NativeTimelineViewport => {
@@ -278,14 +265,6 @@ export default function Page() {
   const messagesReady = timeline.ready
   const userMessages = timeline.userMessages
   const visibleUserMessages = timeline.visibleUserMessages
-
-  createEffect(() => {
-    const tab = activeFileTab()
-    if (!tab) return
-
-    const path = file.pathFromTab(tab)
-    if (path) void file.load(path)
-  })
 
   createEffect(
     on(
@@ -336,24 +315,10 @@ export default function Page() {
     return key
   })
 
-  let reviewFrame: number | undefined
   let todoFrame: number | undefined
   let todoTimer: number | undefined
   let diffFrame: number | undefined
   let diffTimer: number | undefined
-
-  createComputed((prev) => {
-    const open = desktopReviewOpen()
-    if (prev === undefined || prev === open) return open
-
-    if (reviewFrame !== undefined) cancelAnimationFrame(reviewFrame)
-    setUi("reviewSnap", true)
-    reviewFrame = requestAnimationFrame(() => {
-      reviewFrame = undefined
-      setUi("reviewSnap", false)
-    })
-    return open
-  }, desktopReviewOpen())
 
   const turnDiffs = () => params.id ? sync().data.session_diff[params.id] : undefined
   const [diffError, setDiffError] = createSignal<unknown>()
@@ -367,9 +332,7 @@ export default function Page() {
     list.push("turn")
     return list
   })
-  const wantsReview = createMemo(() =>
-    isDesktop() ? desktopReviewOpen() && activeTab() === "review" : store.mobileTab === "changes",
-  )
+  const wantsReview = createMemo(() => view().reviewPanel.opened() || store.mobileTab === "changes")
   const sessionStatus = () => sync().data.session_status[params.id ?? ""]?.type ?? "idle"
   const executionQuery = createQuery(() => ({
     queryKey: ["session-execution", server.current?.http.url ?? "", params.id ?? ""],
@@ -697,7 +660,6 @@ export default function Page() {
     ),
   )
 
-  const fileTreeTab = () => layout.fileTree.tab()
 
   const [tree, setTree] = createStore({
     reviewScroll: undefined as HTMLDivElement | undefined,
@@ -718,11 +680,6 @@ export default function Page() {
       { defer: true },
     ),
   )
-
-  const showAllFiles = () => {
-    if (fileTreeTab() !== "changes") return
-    layout.fileTree.setTab("all")
-  }
 
   const focusInput = () => {
     if (isChildSession()) return
@@ -778,13 +735,10 @@ export default function Page() {
     restoreRevert: (messageID) => restore(messageID),
   })
 
-  const openReviewFile = createOpenReviewFile({
-    showAllFiles,
-    tabForPath: file.tab,
-    openTab: tabs().open,
-    setActive: tabs().setActive,
-    loadFile: file.load,
-  })
+  const openReviewFile = (path: string) => {
+    void file.load(path)
+    view().reviewPanel.openFile(path)
+  }
 
   const changesTitle = () => {
     if (!canReview()) {
@@ -917,18 +871,6 @@ export default function Page() {
     </div>
   )
 
-  createEffect(
-    on(
-      activeFileTab,
-      (active) => {
-        if (!active) return
-        if (fileTreeTab() !== "changes") return
-        showAllFiles()
-      },
-      { defer: true },
-    ),
-  )
-
   const reviewNavigation = createReviewNavigation({
     root: () => tree.reviewScroll,
     pending: () => tree.pendingDiff,
@@ -983,29 +925,13 @@ export default function Page() {
   let treeDir: string | undefined
   createEffect(() => {
     const dir = sdk().directory
-    if (!contextOpen()) return
+    if (!view().reviewPanel.opened()) return
     if (sync().status === "loading") return
 
-    // The file lists render inside the context inspector now, so the tree is populated when THAT is
-    // open. It used to be the docked file-tree panel, which no longer exists.
     const refresh = treeDir !== dir
     treeDir = dir
     void (refresh ? file.tree.refresh("") : file.tree.list(""))
   })
-
-  createEffect(
-    on(
-      () => sdk().directory,
-      () => {
-        const tab = activeFileTab()
-        if (!tab) return
-        const path = file.pathFromTab(tab)
-        if (!path) return
-        void file.load(path, { force: true })
-      },
-      { defer: true },
-    ),
-  )
 
   createEffect(
     on(
@@ -1021,7 +947,6 @@ export default function Page() {
   })
 
   onCleanup(() => {
-    if (reviewFrame !== undefined) cancelAnimationFrame(reviewFrame)
     if (todoFrame !== undefined) cancelAnimationFrame(todoFrame)
     if (todoTimer !== undefined) window.clearTimeout(todoTimer)
     if (diffFrame !== undefined) cancelAnimationFrame(diffFrame)
@@ -1163,7 +1088,7 @@ export default function Page() {
         user that they had done something wrong. It sits BELOW the recovery banner because a fault
         outranks company.
       */}
-      <Show when={presenceState().line ?? presenceHandoff()}>
+      <Show when={!view().reviewPanel.opened() && (presenceState().line ?? presenceHandoff())}>
         <div
           data-slot="session-presence"
           data-presence-state={presenceSnapshot()?.state ?? "unattended"}
@@ -1189,18 +1114,10 @@ export default function Page() {
           </Show>
         </div>
       </Show>
-      {/* `gap-2` but no padding: the gap separates two PANES, which is real information, while the
-          padding only inset the whole chat from the window's own edge (owner, 2026-08-13). */}
-      <div class="flex-1 min-h-0 flex flex-col md:flex-row gap-2">
+      <div class="flex-1 min-h-0 flex flex-col">
         <div
-          classList={{
-            "@container relative shrink-0 flex flex-col min-h-0 h-full flex-1 md:flex-none transition-[width]": true,
-            "duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
-              !size.active() && !ui.reviewSnap,
-          }}
-          style={{
-            width: sessionPanelWidth(),
-          }}
+          class="@container relative min-h-0 h-full w-full flex-1 flex-col"
+          classList={{ flex: !view().reviewPanel.opened(), hidden: view().reviewPanel.opened() }}
         >
           {/* The conversation IS the window here — no rounding, no elevation. A radius and a drop
               shadow describe something lying on top of a surface; the chat is the surface. */}
@@ -1295,39 +1212,21 @@ export default function Page() {
             <Show when={params.id}>{(_) => composerRegion()}</Show>
           </div>
 
-          <Show when={desktopReviewOpen()}>
-            <div onPointerDown={() => size.start()}>
-              <ResizeHandle
-                classList={{ "-right-1": true }}
-                direction="horizontal"
-                size={layout.session.width()}
-                min={450}
-                max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.45}
-                onResize={(width) => {
-                  size.touch()
-                  layout.session.resize(width)
-                }}
-              />
-            </div>
-          </Show>
         </div>
 
-        <SessionSidePanel
+        <OfficerStatsScreen
           canReview={canReview}
           diffs={reviewDiffs}
           diffsReady={reviewReady}
-          empty={reviewEmptyText}
           hasReview={hasReview}
           reviewCount={reviewCount}
           reviewPanel={reviewPanel}
           activeDiff={tree.activeDiff}
           focusReviewDiff={focusReviewDiff}
-          reviewSnap={ui.reviewSnap}
-          size={size}
         />
       </div>
 
-      <TerminalPanel />
+      <Show when={!view().reviewPanel.opened()}><TerminalPanel /></Show>
     </div>
   )
 }

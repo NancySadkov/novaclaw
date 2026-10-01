@@ -153,6 +153,7 @@ export const dict = {
   "context.breakdown.other": "기타",
   "context.systemPrompt.title": "시스템 프롬프트",
   "context.stats.messages": "메시지",
+  "context.officerStats.title": "오피서 통계",
   "context.usage.tokens": "토큰",
   "context.usage.usage": "사용량",
   "context.usage.cost": "비용",

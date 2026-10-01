@@ -21,7 +21,6 @@
 @import "./components/titlebar-tab-nav.css" layer(components);
 @import "./components/settings-v2/settings-v2.css" layer(components);
 @import "./components/settings-v2/about.css" layer(components);
-@import "./pages/session/file-tabs.css" layer(components);
 @import "./pages/session/session-surface.css" layer(components);
 @import "./pages/home-screen/home-screen.css" layer(components);
 @import "./pages/contacts.css" layer(components);

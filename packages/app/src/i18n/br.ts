@@ -154,6 +154,7 @@ export const dict = {
   "context.breakdown.other": "Outros",
   "context.systemPrompt.title": "Prompt do Sistema",
   "context.stats.messages": "Mensagens",
+  "context.officerStats.title": "Estatísticas do oficial",
   "context.usage.tokens": "Tokens",
   "context.usage.usage": "Uso",
   "context.usage.cost": "Custo",

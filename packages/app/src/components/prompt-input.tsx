@@ -1,6 +1,5 @@
 import { useSpring } from "@novaclaw/ui/motion-spring"
 import {
-  batch,
   createEffect,
   on,
   Component,
@@ -116,15 +115,11 @@ export type PromptInputControls = {
   // own permission mode and Strict state are read from `local` by `prompt-input/submit.ts`.
   session: {
     id?: string
-    tabs: {
-      active: () => string | undefined
-      all: () => string[]
-      open: (tab: string) => void | Promise<void>
-      setActive: (tab: string) => void
-    }
     reviewPanel: {
       opened: () => boolean
       open: () => void
+      openChanges: () => void
+      openFile: (path: string) => void
     }
   }
 }
@@ -162,7 +157,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const language = useLanguage()
   const platform = usePlatform()
   const expertise = useExpertise()
-  const tabs = () => props.controls.session.tabs
   let editorRef!: HTMLDivElement
   let fileInputRef: HTMLInputElement | undefined
   let scrollRef!: HTMLDivElement
@@ -227,20 +221,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
     const wantsReview = item.commentOrigin === "review" || (item.commentOrigin !== "file" && commentInReview(item.path))
     if (wantsReview) {
-      batch(() => {
-        tabs().setActive("review")
-        if (!props.controls.session.reviewPanel.opened()) props.controls.session.reviewPanel.open()
-      })
+      props.controls.session.reviewPanel.openChanges()
       queueCommentFocus()
       return
     }
 
-    const tab = files.tab(item.path)
-    batch(() => {
-      void tabs().open(tab)
-      tabs().setActive(tab)
-      if (!props.controls.session.reviewPanel.opened()) props.controls.session.reviewPanel.open()
-    })
+    props.controls.session.reviewPanel.openFile(item.path)
     void Promise.resolve(files.load(item.path)).finally(() => queueCommentFocus())
   }
 
