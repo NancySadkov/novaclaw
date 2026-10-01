@@ -209,8 +209,7 @@ export const adoptRecovered = (input: {
      * resumed either.
      *
      * ⚠️ Workers are covered by the same call, deliberately. A worker is part of its officer's turn,
-     * so it inherits the officer's answer: an unattended officer's workers come back with it, an
-     * interactive officer's stay down. That is the owner's decision to make, not the worker's.
+     * so it inherits the officer's answer and can finish a turn interrupted by process loss.
      */
     const resumable: SessionSchema.ID[] = []
     for (const sessionID of ordered) {

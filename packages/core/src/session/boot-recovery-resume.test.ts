@@ -122,7 +122,6 @@ describe("Steering.resume — who may be started with nobody asking", () => {
       expect((yield* Steering.resume(db, id("ses_interactive"))).reason).toBe("interactive")
     }))
 
-  // The owner's own words: resumption is for unattended officers "and their workers".
   dbIt.effect("🔴 a WORKER inherits its officer's answer, both ways", () =>
     Effect.gen(function* () {
       const { db } = yield* Database.Service
@@ -136,8 +135,9 @@ describe("Steering.resume — who may be started with nobody asking", () => {
       yield* putAgent(db, "ariadne", { kind: "agent", operationMode: "interactive" })
       // An unattended officer's worker comes back with it.
       expect((yield* Steering.resume(db, id("ses_worker_u"))).allowed).toBe(true)
-      // An interactive officer's worker stays down, because the owner never gave consent.
+      // An interactive officer's worker stays down when no turn was already admitted.
       expect((yield* Steering.resume(db, id("ses_worker_i"))).reason).toBe("interactive")
+      expect((yield* Steering.resume(db, id("ses_worker_i"), { hasWork: true })).allowed).toBe(true)
     }))
 })
 
@@ -194,6 +194,19 @@ describe("adoptRecovered asks the seam before it adopts anyone", () => {
       expect(count).toBe(0)
     }))
 
+  dbIt.effect("resumes an interactive officer and its worker after a process dies mid-turn", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* db.insert(SessionTable).values([
+        root("ses_interactive", "sopitis"),
+        worker("ses_interactive_worker", "ses_interactive"),
+      ])
+      yield* putAgent(db, "sopitis", { kind: "agent", operationMode: "interactive" })
+      const { woken, count } = yield* run(db, [entry("ses_interactive", SAFE), entry("ses_interactive_worker", SAFE)])
+      expect(woken).toEqual(["ses_interactive", "ses_interactive_worker"])
+      expect(count).toBe(2)
+    }))
+
   dbIt.effect("one failed recovery does not strand the remaining runs", () =>
     Effect.gen(function* () {
       const { db } = yield* Database.Service
@@ -238,8 +251,9 @@ describe("the pure rule holds without a database", () => {
     })
   })
 
-  test("an interactive officer is not resumable, an unattended one is", () => {
-    expect(Steering.mayResume({ mode: "agent", operationMode: "interactive", hasWork: true }).allowed).toBe(false)
+  test("an interactive officer finishes admitted work but cannot start an idle turn", () => {
+    expect(Steering.mayResume({ mode: "agent", operationMode: "interactive", hasWork: true }).allowed).toBe(true)
+    expect(Steering.mayResume({ mode: "agent", operationMode: "interactive" }).reason).toBe("interactive")
     expect(Steering.mayResume({ mode: "agent", operationMode: "unattended", hasWork: true }).allowed).toBe(true)
   })
 

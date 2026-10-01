@@ -115,24 +115,25 @@ export interface ResumeAuthority {
  * policy decision the code never made.
  *
  * ⚠️ Workers inherit their officer's answer rather than deciding for themselves. A spawned worker is
- * part of its parent's turn, so an unattended officer's workers resume with it and an interactive
- * officer's do not — which is the owner's call to make, not the worker's.
+ * part of its parent's turn, so a worker may finish an interrupted turn even when its officer is
+ * interactive. An idle interactive officer still waits for a person to start the next turn.
  */
 export function mayResume(input: {
   readonly mode: "agent" | "chat" | "human"
   readonly operationMode: "interactive" | "unattended" | undefined
-  /** Does this session have work to continue? Absent means "not known", which is treated as yes. */
+  /** True when a durable attempt was already running before the process stopped. */
   readonly hasWork?: boolean
 }): ResumeAuthority {
   if (input.hasWork === false) return { allowed: false, reason: "idle" }
   if (input.mode !== "agent") return { allowed: false, reason: input.mode }
-  if (input.operationMode === "interactive") return { allowed: false, reason: "interactive" }
+  if (input.operationMode === "interactive" && input.hasWork !== true)
+    return { allowed: false, reason: "interactive" }
   return { allowed: true }
 }
 
 /**
- * May this session be resumed without being asked — by boot recovery, a nudge, or any other
- * system-initiated wake?
+ * May this session be resumed by boot recovery, a nudge, or another system wake? An already admitted
+ * turn has authority to finish after process loss; a new interactive turn still needs a person.
  *
  * Returns the authority, and records the refusal. Callers do not check and must not: this is the one
  * place the rule lives, the same bargain `inject` makes.

@@ -220,6 +220,27 @@ describe("SessionExecutionAttempt", () => {
     }),
   )
 
+  it.effect("does not count each boot resweep as another crashed attempt", () =>
+    Effect.gen(function* () {
+      const sessionID = SessionSchema.ID.make("ses_execution_resweep_once")
+      yield* makeSession(sessionID)
+      const attempts = yield* SessionExecutionAttempt.Service
+      yield* attempts.start(sessionID, "dead-host")
+      const { db } = yield* Database.Service
+      yield* db.update(SessionExecutionTable).set({ heartbeat_at: 1 })
+        .where(eq(SessionExecutionTable.session_id, sessionID)).run().pipe(Effect.orDie)
+
+      expect(yield* attempts.recoverStale(2)).toHaveLength(1)
+      expect(yield* attempts.recoverStale(2)).toHaveLength(0)
+      expect(yield* attempts.get(sessionID)).toMatchObject({ state: "recovering", failureCount: 1 })
+
+      yield* db.update(SessionExecutionTable).set({ heartbeat_at: 1 })
+        .where(eq(SessionExecutionTable.session_id, sessionID)).run().pipe(Effect.orDie)
+      expect(yield* attempts.recoverStale(2)).toHaveLength(1)
+      expect(yield* attempts.get(sessionID)).toMatchObject({ state: "recovering", failureCount: 2 })
+    }),
+  )
+
   it.effect("keeps provider recovery on the fenced execution owner", () =>
     Effect.gen(function* () {
       const sessionID = SessionSchema.ID.make("ses_execution_provider_recovery")

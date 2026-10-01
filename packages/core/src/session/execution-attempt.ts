@@ -880,6 +880,7 @@ export const layer = Layer.effect(
                           ? "A tool was dispatched without a durable result; inspect its target before retrying"
                           : "The previous process stopped before settlement; recovery will continue automatically",
                       failure_count: failureCount,
+                      heartbeat_at: now,
                       time_updated: now,
                     })
                     .where(
