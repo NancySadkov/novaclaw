@@ -33,7 +33,7 @@ const themePreloadSha256 = createHash("sha256")
   .update(readFileSync(new URL("../app/public/oc-theme-preload.js", import.meta.url)))
   .digest("base64")
 
-export default defineConfig({
+const configuration = defineConfig({
   main: {
     define: {
       "import.meta.env.NOVACLAW_CHANNEL": JSON.stringify(channel),
@@ -105,4 +105,12 @@ export default defineConfig({
       },
     },
   },
+})
+
+export default defineConfig(({ command }) => {
+  const stage = command === "build" ? process.env.NOVACLAW_ELECTRON_BUILD_STAGE : undefined
+  if (stage === undefined) return configuration
+  if (stage !== "main" && stage !== "preload" && stage !== "renderer")
+    throw new Error(`Unknown Electron build stage: ${stage}`)
+  return { [stage]: configuration[stage] }
 })

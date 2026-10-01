@@ -25,6 +25,13 @@ cd /d "%~dp0..\..\novaclaw"
 call script/build-node.bat
 if not "%errorlevel%"=="0" exit /b %errorlevel%
 cd /d "%~dp0.."
+set "NOVACLAW_ELECTRON_BUILD_STAGE=main"
+call node --expose-gc node_modules/electron-vite/bin/electron-vite.js build
+if not "%errorlevel%"=="0" exit /b %errorlevel%
+set "NOVACLAW_ELECTRON_BUILD_STAGE=preload"
+call node --expose-gc node_modules/electron-vite/bin/electron-vite.js build
+if not "%errorlevel%"=="0" exit /b %errorlevel%
+set "NOVACLAW_ELECTRON_BUILD_STAGE=renderer"
 call node --expose-gc node_modules/electron-vite/bin/electron-vite.js build
 if not "%errorlevel%"=="0" exit /b %errorlevel%
 call bun --smol scripts/sanitize-build-output.ts

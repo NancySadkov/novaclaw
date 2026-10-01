@@ -3,6 +3,37 @@ import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { MINIMUM_FREE_BYTES } from "./build-memory"
 import { BUILD_MEMORY_LIMIT_BYTES } from "../../../script/lib/build-memory"
+import desktopConfiguration from "../electron.vite.config"
+
+test("Electron production stages run in separate processes while development retains all stages", () => {
+  const previous = process.env.NOVACLAW_ELECTRON_BUILD_STAGE
+  try {
+    for (const stage of ["main", "preload", "renderer"]) {
+      process.env.NOVACLAW_ELECTRON_BUILD_STAGE = stage
+      expect(Object.keys(desktopConfiguration({ command: "build", mode: "production" }))).toEqual([stage])
+      expect(Object.keys(desktopConfiguration({ command: "serve", mode: "development" })).sort()).toEqual([
+        "main",
+        "preload",
+        "renderer",
+      ])
+    }
+    process.env.NOVACLAW_ELECTRON_BUILD_STAGE = "unknown"
+    expect(() => desktopConfiguration({ command: "build", mode: "production" })).toThrow("Unknown Electron build stage")
+    delete process.env.NOVACLAW_ELECTRON_BUILD_STAGE
+    expect(Object.keys(desktopConfiguration({ command: "build", mode: "production" })).sort()).toEqual([
+      "main",
+      "preload",
+      "renderer",
+    ])
+    const pipeline = readFileSync(new URL("build-desktop.bat", import.meta.url), "utf8")
+    expect(
+      pipeline.match(/node --expose-gc node_modules\/electron-vite\/bin\/electron-vite.js build/g) ?? [],
+    ).toHaveLength(3)
+  } finally {
+    if (previous === undefined) delete process.env.NOVACLAW_ELECTRON_BUILD_STAGE
+    else process.env.NOVACLAW_ELECTRON_BUILD_STAGE = previous
+  }
+})
 
 test("admission uses the same budget the operating system enforces", () => {
   expect(MINIMUM_FREE_BYTES).toBe(BUILD_MEMORY_LIMIT_BYTES)
