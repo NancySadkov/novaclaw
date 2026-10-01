@@ -167,16 +167,8 @@ export const dict = {
   "language.de": "Deutsch",
   "language.es": "Español",
   "language.fr": "Français",
-  "language.da": "Dansk",
   "language.ja": "日本語",
-  "language.pl": "Polski",
-  "language.ru": "Русский",
-  "language.ar": "العربية",
-  "language.no": "Norsk",
   "language.br": "Português (Brasil)",
-  "language.bs": "Bosanski",
-  "language.th": "ไทย",
-  "language.tr": "Türkçe",
   "toast.model.none.title": "Aucun modèle sélectionné",
   "toast.model.none.description": "Connectez un fournisseur pour résumer cette session",
   "toast.file.loadFailed.title": "Échec du chargement du fichier",
@@ -188,7 +180,8 @@ export const dict = {
   "error.page.description": "Une erreur s'est produite lors du chargement de l'application.",
   "error.page.details.label": "Détails de l'erreur",
   "error.page.action.restart": "Redémarrer",
-  "error.page.report.prefix": "Si le problème persiste, copiez les détails de l'erreur ou exportez les journaux pour la personne qui gère cette instance.",
+  "error.page.report.prefix":
+    "Si le problème persiste, copiez les détails de l'erreur ou exportez les journaux pour la personne qui gère cette instance.",
   "error.page.report.discord": "sur Discord",
   "error.page.version": "Version : {{version}}",
   "error.dev.rootNotFound":
@@ -262,7 +255,8 @@ export const dict = {
   "settings.tab.general": "Général",
   "settings.tab.shortcuts": "Raccourcis",
   "settings.general.section.notifications": "Notifications",
-  "settings.general.notifications.description": "Alertes lorsqu’un officier a besoin de vous ou qu’une erreur survient.",
+  "settings.general.notifications.description":
+    "Alertes lorsqu’un officier a besoin de vous ou qu’une erreur survient.",
   "settings.general.section.sounds": "Effets sonores",
   "settings.general.row.language.title": "Langue",
   "settings.general.row.language.description": "Changer la langue d'affichage pour NovaClaw",
@@ -449,7 +443,8 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "Le mode hors ligne a bloqué cette requête vers {{endpoint}} : elle n'a jamais quitté votre ordinateur.",
   "session.error.invalidRequest": "Le modèle a rejeté cette requête.",
-  "session.error.modelMissing": "Cette conversation utilise un modèle que son fournisseur ne propose plus. Choisissez un autre modèle pour cette conversation.",
+  "session.error.modelMissing":
+    "Cette conversation utilise un modèle que son fournisseur ne propose plus. Choisissez un autre modèle pour cette conversation.",
   "session.error.noRoute": "Aucune route n'est configurée pour ce modèle.",
   "session.error.authentication": "Le fournisseur du modèle a rejeté les identifiants de ce modèle.",
   "session.error.rateLimit": "Le fournisseur du modèle limite le débit de ce compte — réessayez dans un instant.",

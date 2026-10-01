@@ -121,7 +121,19 @@ try {
     headers: { authorization: auth, "content-type": "application/json" },
     body: "{}",
   })
-  if (!response.ok) throw new Error(`memory list answered ${response.status}: ${(await response.text()).slice(0, 400)}`)
+  if (process.argv.includes("--seed-memory")) {
+    if (response.status !== 400 || !(await response.text()).includes("memory is turned off in Settings"))
+      throw new Error("The fresh instance did not keep memory off")
+    const configured = await fetch(`http://127.0.0.1:${port}/global/config`, {
+      method: "PATCH",
+      headers: { authorization: auth, "content-type": "application/json" },
+      body: JSON.stringify({ memory: { enabled: true } }),
+    })
+    if (!configured.ok || (await configured.json()).memory?.enabled !== true)
+      throw new Error("Could not enable memory in the isolated smoke instance")
+  } else if (!response.ok) {
+    throw new Error(`memory list answered ${response.status}: ${(await response.text()).slice(0, 400)}`)
+  }
 } catch (error) {
   failures += 1
   console.error(`node-sidecar-smoke: memory worker integration failed — ${error?.stack ?? error}`)
@@ -148,7 +160,9 @@ try {
     portrait.length < 4 ||
     String.fromCharCode(...portrait.slice(0, 4)) !== "RIFF"
   ) {
-    throw new Error(`portrait route returned ${portraitResponse.status} ${portraitResponse.headers.get("content-type")}`)
+    throw new Error(
+      `portrait route returned ${portraitResponse.status} ${portraitResponse.headers.get("content-type")}`,
+    )
   }
 
   /**

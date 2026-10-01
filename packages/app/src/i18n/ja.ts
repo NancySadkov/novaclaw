@@ -165,16 +165,8 @@ export const dict = {
   "language.de": "Deutsch",
   "language.es": "Español",
   "language.fr": "Français",
-  "language.da": "Dansk",
   "language.ja": "日本語",
-  "language.pl": "Polski",
-  "language.ru": "Русский",
-  "language.ar": "العربية",
-  "language.no": "Norsk",
   "language.br": "Português (Brasil)",
-  "language.bs": "Bosanski",
-  "language.th": "ไทย",
-  "language.tr": "Türkçe",
   "toast.model.none.title": "モデルが選択されていません",
   "toast.model.none.description": "このセッションを要約するにはプロバイダーを接続してください",
   "toast.file.loadFailed.title": "ファイルの読み込みに失敗しました",
@@ -186,7 +178,8 @@ export const dict = {
   "error.page.description": "アプリケーションの読み込み中にエラーが発生しました。",
   "error.page.details.label": "エラー詳細",
   "error.page.action.restart": "再起動",
-  "error.page.report.prefix": "問題が続く場合は、エラーの詳細をコピーするかログをエクスポートし、このインスタンスの管理者に渡してください。",
+  "error.page.report.prefix":
+    "問題が続く場合は、エラーの詳細をコピーするかログをエクスポートし、このインスタンスの管理者に渡してください。",
   "error.page.report.discord": "Discord",
   "error.page.version": "バージョン: {{version}}",
   "error.dev.rootNotFound":
@@ -441,7 +434,8 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "オフラインモードが {{endpoint}} へのリクエストをブロックしました。リクエストはこのコンピューターから外に出ていません。",
   "session.error.invalidRequest": "モデルがこのリクエストを拒否しました。",
-  "session.error.modelMissing": "このチャットは、プロバイダーが提供しなくなったモデルに設定されています。別のモデルを選んでください。",
+  "session.error.modelMissing":
+    "このチャットは、プロバイダーが提供しなくなったモデルに設定されています。別のモデルを選んでください。",
   "session.error.noRoute": "このモデルにはルートが設定されていません。",
   "session.error.authentication": "モデルプロバイダーがこのモデルの認証情報を拒否しました。",
   "session.error.rateLimit":

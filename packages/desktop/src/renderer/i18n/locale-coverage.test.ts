@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { LOCALES, build } from "./index"
-import { LOCALES as SHARED_LOCALES } from "@novaclaw/schema/locale"
+import { LOCALES as SHARED_LOCALES, normalizeLocale } from "@novaclaw/schema/locale"
 
 // 🔴 EVERY LANGUAGE THE PICKER OFFERS MUST REACH THE DESKTOP SHELL.
 //
@@ -17,6 +17,8 @@ import { LOCALES as SHARED_LOCALES } from "@novaclaw/schema/locale"
 describe("the desktop shell speaks every language the app offers", () => {
   test("the locale table is the shared one, not a copy", () => {
     expect(LOCALES).toBe(SHARED_LOCALES)
+    expect(LOCALES).toEqual(["en", "de", "zh", "zht", "ja", "ko", "fr", "br", "es"])
+    for (const value of ["ar", "ru", "da", "nl", "unknown"]) expect(normalizeLocale(value)).toBe("en")
   })
 
   test("every non-English locale translates a substantial share of the shell", async () => {

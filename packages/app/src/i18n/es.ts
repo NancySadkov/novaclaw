@@ -15,7 +15,6 @@ export const dict = {
   "command.category.mcp": "MCP",
   "command.category.settings": "Ajustes",
 
-
   "command.project.open": "Abrir proyecto",
   "command.provider.connect": "Conectar proveedor",
   "command.settings.open": "Abrir ajustes",
@@ -95,7 +94,6 @@ export const dict = {
   "prompt.placeholder.simple": "Pregunta cualquier cosa...",
   "prompt.mode.shell": "Shell",
   "prompt.mode.normal": "Prompt",
-
 
   "prompt.dropzone.label": "Suelta imágenes, PDFs o archivos de texto aquí",
   "prompt.context.removeFile": "Eliminar archivo del contexto",
@@ -190,17 +188,8 @@ export const dict = {
   "language.de": "Deutsch",
   "language.es": "Español",
   "language.fr": "Français",
-  "language.da": "Dansk",
   "language.ja": "日本語",
-  "language.pl": "Polski",
-  "language.ru": "Русский",
-  "language.ar": "العربية",
-  "language.no": "Norsk",
   "language.br": "Português (Brasil)",
-  "language.bs": "Bosanski",
-  "language.th": "ไทย",
-  "language.tr": "Türkçe",
-
 
   "toast.model.none.title": "Ningún modelo seleccionado",
   "toast.model.none.description": "Conecta un proveedor para resumir esta sesión",
@@ -217,7 +206,8 @@ export const dict = {
   "error.page.description": "Ocurrió un error al cargar la aplicación.",
   "error.page.details.label": "Detalles del error",
   "error.page.action.restart": "Reiniciar",
-  "error.page.report.prefix": "Si esto continúa, copia los detalles del error o exporta los registros para quien administra esta instancia.",
+  "error.page.report.prefix":
+    "Si esto continúa, copia los detalles del error o exporta los registros para quien administra esta instancia.",
   "error.page.report.discord": "en Discord",
   "error.page.version": "Versión: {{version}}",
 
@@ -247,7 +237,6 @@ export const dict = {
   "error.chain.configInvalid": "El archivo de configuración en {{path}} es inválido",
   "error.chain.configInvalidWithMessage": "El archivo de configuración en {{path}} es inválido: {{message}}",
 
-
   "notification.session.responseReady.title": "Respuesta lista",
   "notification.session.error.title": "Error de sesión",
   "notification.session.error.fallbackDescription": "Ocurrió un error",
@@ -264,7 +253,6 @@ export const dict = {
   "session.files.all": "Todos los archivos",
   "session.files.empty": "Sin archivos",
 
-
   "session.todo.collapse": "Contraer",
   "session.todo.expand": "Expandir",
   "session.revertDock.summary.one": "{{count}} mensaje revertido",
@@ -278,7 +266,6 @@ export const dict = {
   "session.new.worktree.mainWithBranch": "Rama principal ({{branch}})",
 
   "session.header.searchFiles": "Buscar archivos",
-
 
   "session.share.copy.copied": "Copiado",
 
@@ -320,7 +307,6 @@ export const dict = {
   "settings.general.row.terminalFont.description": "Personaliza la fuente usada en el terminal",
   "settings.general.row.uiFont.title": "Fuente de la interfaz",
   "settings.general.row.uiFont.description": "Personaliza la fuente usada en toda la interfaz",
-
 
   "sound.option.none": "Ninguno",
   "sound.option.alert01": "Alerta 01",
@@ -369,7 +355,6 @@ export const dict = {
   "sound.option.yup05": "Sí 05",
   "sound.option.yup06": "Sí 06",
 
-
   "settings.general.sounds.agent.title": "Agente",
   "settings.general.sounds.agent.description": "Reproducir sonido cuando el agente termine o necesite atención",
   "settings.general.sounds.permissions.title": "Permisos",
@@ -413,7 +398,6 @@ export const dict = {
   "settings.permissions.tool.webfetch.description": "Obtener contenido de una URL",
   "settings.permissions.tool.websearch.title": "Búsqueda Web",
   "settings.permissions.tool.websearch.description": "Buscar en la web",
-
 
   "workspace.new": "Nuevo espacio de trabajo",
   "workspace.type.local": "local",
@@ -503,7 +487,8 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "El modo sin conexión bloqueó esta solicitud a {{endpoint}}, así que nunca salió de tu equipo.",
   "session.error.invalidRequest": "El modelo rechazó esta solicitud.",
-  "session.error.modelMissing": "Este chat está configurado con un modelo que su proveedor ya no ofrece. Elige otro modelo para este chat.",
+  "session.error.modelMissing":
+    "Este chat está configurado con un modelo que su proveedor ya no ofrece. Elige otro modelo para este chat.",
   "session.error.noRoute": "No hay ninguna ruta configurada para este modelo.",
   "session.error.authentication": "El proveedor del modelo rechazó las credenciales de este modelo.",
   "session.error.rateLimit":

@@ -1,41 +1,23 @@
 import { describe, expect, test } from "bun:test"
 import { dict as en } from "./en"
-import { dict as ar } from "./ar"
 import { dict as br } from "./br"
-import { dict as bs } from "./bs"
-import { dict as da } from "./da"
 import { dict as de } from "./de"
 import { dict as es } from "./es"
 import { dict as fr } from "./fr"
 import { dict as ja } from "./ja"
 import { dict as ko } from "./ko"
-import { dict as no } from "./no"
-import { dict as pl } from "./pl"
-import { dict as ru } from "./ru"
-import { dict as uk } from "./uk"
-import { dict as th } from "./th"
 import { dict as zh } from "./zh"
 import { dict as zht } from "./zht"
-import { dict as tr } from "./tr"
 import { EXTRA_PLURAL_CATEGORIES, pluralGroups } from "./resolve"
 import { dict as uiEn } from "@novaclaw/ui/i18n/en"
-import { dict as uiAr } from "@novaclaw/ui/i18n/ar"
 import { dict as uiBr } from "@novaclaw/ui/i18n/br"
-import { dict as uiBs } from "@novaclaw/ui/i18n/bs"
-import { dict as uiDa } from "@novaclaw/ui/i18n/da"
 import { dict as uiDe } from "@novaclaw/ui/i18n/de"
 import { dict as uiEs } from "@novaclaw/ui/i18n/es"
 import { dict as uiFr } from "@novaclaw/ui/i18n/fr"
 import { dict as uiJa } from "@novaclaw/ui/i18n/ja"
 import { dict as uiKo } from "@novaclaw/ui/i18n/ko"
-import { dict as uiNo } from "@novaclaw/ui/i18n/no"
-import { dict as uiPl } from "@novaclaw/ui/i18n/pl"
-import { dict as uiRu } from "@novaclaw/ui/i18n/ru"
-import { dict as uiUk } from "@novaclaw/ui/i18n/uk"
-import { dict as uiTh } from "@novaclaw/ui/i18n/th"
 import { dict as uiZh } from "@novaclaw/ui/i18n/zh"
 import { dict as uiZht } from "@novaclaw/ui/i18n/zht"
-import { dict as uiTr } from "@novaclaw/ui/i18n/tr"
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // The i18n parity ratchet.
@@ -99,41 +81,23 @@ import { dict as uiTr } from "@novaclaw/ui/i18n/tr"
 type Dict = Record<string, unknown>
 
 const APP_LOCALES: ReadonlyArray<readonly [string, Dict]> = [
-  ["ar", ar],
   ["br", br],
-  ["bs", bs],
-  ["da", da],
   ["de", de],
   ["es", es],
   ["fr", fr],
   ["ja", ja],
   ["ko", ko],
-  ["no", no],
-  ["pl", pl],
-  ["ru", ru],
-  ["th", th],
-  ["tr", tr],
-  ["uk", uk],
   ["zh", zh],
   ["zht", zht],
 ]
 
 const UI_LOCALES: ReadonlyArray<readonly [string, Dict]> = [
-  ["ar", uiAr],
   ["br", uiBr],
-  ["bs", uiBs],
-  ["da", uiDa],
   ["de", uiDe],
   ["es", uiEs],
   ["fr", uiFr],
   ["ja", uiJa],
   ["ko", uiKo],
-  ["no", uiNo],
-  ["pl", uiPl],
-  ["ru", uiRu],
-  ["th", uiTh],
-  ["tr", uiTr],
-  ["uk", uiUk],
   ["zh", uiZh],
   ["zht", uiZht],
 ]
@@ -238,9 +202,7 @@ function compare(base: Dict, locale: Dict): Report {
     if (!sameSet(baseSet, localeSet))
       placeholder.push(`${group}.* — en {{${show(baseSet)}}} vs locale {{${show(localeSet)}}}`)
     else if (
-      keys.some(
-        (key) => !sameSet(placeholders(base[baseKeyFor(key)!] as string), placeholders(locale[key] as string)),
-      )
+      keys.some((key) => !sameSet(placeholders(base[baseKeyFor(key)!] as string), placeholders(locale[key] as string)))
     )
       moves++
   }
@@ -263,7 +225,11 @@ describe("i18n parity", () => {
     const BASE = { "x.one": "{{count}} item", "x.other": "{{count}} items", "y.other": "Other" }
 
     test("a locale may carry the CLDR categories its language has and en does not", () => {
-      const report = compare(BASE, { "x.one": "{{count}} штука", "x.few": "{{count}} штуки", "x.many": "{{count}} штук" })
+      const report = compare(BASE, {
+        "x.one": "{{count}} штука",
+        "x.few": "{{count}} штуки",
+        "x.many": "{{count}} штук",
+      })
       expect({ extra: report.extra, placeholder: report.placeholder }).toEqual({ extra: [], placeholder: [] })
     })
 

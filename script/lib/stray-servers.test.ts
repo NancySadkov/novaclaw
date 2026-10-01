@@ -20,6 +20,7 @@ const SERVERS = [
 
 /** One per heavy pattern — the set that must survive a sweep untouched. */
 const HEAVY = [
+  "bun.exe script/bounded-build.ts --desktop",
   "bun.exe x electron-builder --win --config electron-builder.config.ts",
   "bun.exe x electron-vite build",
   "bun.exe packages/desktop/scripts/prebuild.ts",

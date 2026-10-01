@@ -165,16 +165,8 @@ export const dict = {
   "language.de": "Deutsch",
   "language.es": "Español",
   "language.fr": "Français",
-  "language.da": "Dansk",
   "language.ja": "日本語",
-  "language.pl": "Polski",
-  "language.ru": "Русский",
-  "language.ar": "العربية",
-  "language.no": "Norsk",
   "language.br": "Português (Brasil)",
-  "language.bs": "Bosanski",
-  "language.th": "ไทย",
-  "language.tr": "Türkçe",
   "toast.model.none.title": "Nenhum modelo selecionado",
   "toast.model.none.description": "Conecte um provedor para resumir esta sessão",
   "toast.file.loadFailed.title": "Falha ao carregar arquivo",
@@ -186,7 +178,8 @@ export const dict = {
   "error.page.description": "Ocorreu um erro ao carregar a aplicação.",
   "error.page.details.label": "Detalhes do Erro",
   "error.page.action.restart": "Reiniciar",
-  "error.page.report.prefix": "Se o problema continuar, copie os detalhes do erro ou exporte os registros para quem administra esta instância.",
+  "error.page.report.prefix":
+    "Se o problema continuar, copie os detalhes do erro ou exporte os registros para quem administra esta instância.",
   "error.page.report.discord": "no Discord",
   "error.page.version": "Versão: {{version}}",
   "error.dev.rootNotFound":
@@ -443,7 +436,8 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "O modo offline bloqueou esta solicitação para {{endpoint}}, então ela nunca saiu do seu computador.",
   "session.error.invalidRequest": "O modelo rejeitou esta solicitação.",
-  "session.error.modelMissing": "Esta conversa está definida para um modelo que o provedor não oferece mais. Escolha outro modelo para esta conversa.",
+  "session.error.modelMissing":
+    "Esta conversa está definida para um modelo que o provedor não oferece mais. Escolha outro modelo para esta conversa.",
   "session.error.noRoute": "Nenhuma rota está configurada para este modelo.",
   "session.error.authentication": "O provedor do modelo rejeitou as credenciais deste modelo.",
   "session.error.rateLimit": "O provedor do modelo está limitando a taxa desta conta — tente novamente em um instante.",

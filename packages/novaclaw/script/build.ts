@@ -1,13 +1,13 @@
 #!/usr/bin/env bun
 
 import { $ } from "bun"
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "path"
 import { fileURLToPath } from "url"
 
-import { Shell } from "@novaclaw/core/shell"
-import { dhtExecutableName } from "@novaclaw/core/community/dht"
+import { killTree } from "@novaclaw/core/util/kill-tree"
+import { dhtExecutableName } from "../../dht/protocol"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -15,7 +15,14 @@ const dir = path.resolve(__dirname, "..")
 
 process.chdir(dir)
 
-const generated = await import("./generate.ts")
+const prepareBundle = process.argv.includes("--prepare-bundle")
+const compileBundle = process.argv.includes("--compile-bundle")
+if (prepareBundle === compileBundle || !process.env.NOVACLAW_SERVER_BUILD_DIR)
+  throw new Error("Run script/build-server.bat to build the standalone server")
+const bundleDirectory = path.resolve(process.env.NOVACLAW_SERVER_BUILD_DIR)
+const scratchDirectory = path.resolve(dir, "../../tmp")
+if (!bundleDirectory.startsWith(scratchDirectory + path.sep)) throw new Error("Unexpected server build directory")
+const generated = prepareBundle ? await import("./generate.ts") : undefined
 
 import { Script } from "@novaclaw/script"
 import pkg from "../package.json"
@@ -25,17 +32,19 @@ const baselineFlag = process.argv.includes("--baseline")
 const skipInstall = process.argv.includes("--skip-install")
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
+const reuseWebUi = process.argv.includes("--reuse-web-ui")
 /**
  * Boot each host-matching artifact and prove it serves. OFF by default, on purpose — see the block at
  * the bottom of the target loop. The release gate passes it; a plain compile does not.
  */
 const verifyArtifacts = process.argv.includes("--verify")
 
-const createEmbeddedWebUIBundle = async () => {
-  console.log(`Building Web UI to embed in the binary`)
+const createWebUIResourceMap = async () => {
+  console.log(`Preparing Web UI resources`)
   const appDir = path.join(import.meta.dirname, "../../app")
   const dist = path.join(appDir, "dist")
-  await $`NOVACLAW_CHANNEL=${Script.channel} bun run --cwd ${appDir} build`
+  if (!reuseWebUi) await $`NOVACLAW_CHANNEL=${Script.channel} bun --smol run --cwd ${appDir} build`
+  if (!existsSync(path.join(dist, "index.html"))) throw new Error("The embedded Web UI has not been built")
   const files = (await Array.fromAsync(new Bun.Glob("**/*").scan({ cwd: dist })))
     .map((file) => file.replaceAll("\\", "/"))
     .filter((file) => !file.endsWith(".map"))
@@ -55,7 +64,7 @@ const createEmbeddedWebUIBundle = async () => {
   ].join("\n")
 }
 
-const embeddedFileMap = skipEmbedWebUi ? null : await createEmbeddedWebUIBundle()
+const embeddedFileMap = !prepareBundle || skipEmbedWebUi ? null : await createWebUIResourceMap()
 
 const allTargets: {
   os: string
@@ -214,7 +223,7 @@ async function smokeServer(binaryPath: string, expectEmbeddedUI: boolean) {
     console.log(`Note: no KB engine copy is staged into ${path.dirname(binaryPath)}; RAG is resolved via NODE_PATH.`)
   } finally {
     // By TREE (pitfall #8): `serve` can spawn MCP children, and a bare kill leaves them holding GBs.
-    await Shell.killTree(server.pid).catch(() => undefined)
+    await killTree(server.pid).catch(() => undefined)
     // A Windows handle (the memory worker's database, a scanner) can outlive the kill by a moment.
     // A cleanup failure must never REPLACE the smoke's own error with "EBUSY" — which is exactly how
     // this step spent two release builds reporting the wrong cause. Retry, then leave the temp dir.
@@ -229,20 +238,20 @@ async function smokeServer(binaryPath: string, expectEmbeddedUI: boolean) {
   }
 }
 
-
 // Best-effort clean, NOT fatal. On Windows a virus scanner or the search indexer routinely keeps a
 // handle on the directory of a binary that was just deleted, so `rm` fails with "Device or resource
 // busy" on a directory that is EMPTY and still perfectly writable — and the whole build died over
 // it. Every artifact below is written to a fixed path and overwritten, so continuing after a partial
 // clean cannot produce a wrong binary; it can only leave an unrelated stale file from an earlier
 // target, which is why this warns loudly instead of failing silently.
-await $`rm -rf dist`.catch((error) => {
-  console.warn(`WARNING: could not fully clean dist/ — ${error?.stderr?.toString().trim() || error}`)
-  console.warn(`Continuing: build outputs are overwritten by name, but stale files may remain.`)
-})
+if (prepareBundle)
+  await $`rm -rf dist`.catch((error) => {
+    console.warn(`WARNING: could not fully clean dist/ — ${error?.stderr?.toString().trim() || error}`)
+    console.warn(`Continuing: build outputs are overwritten by name, but stale files may remain.`)
+  })
 
 const binaries: Record<string, string> = {}
-if (!skipInstall) {
+if (prepareBundle && !skipInstall) {
   await $`bun install --os="*" --cpu="*" @ff-labs/fff-bun@${pkg.dependencies["@ff-labs/fff-bun"]}`
 }
 
@@ -261,9 +270,10 @@ if (!skipInstall) {
  */
 const hostLibrary = `host.${process.platform === "win32" ? "dll" : process.platform === "darwin" ? "dylib" : "so"}`
 const hostBuilt = path.resolve(dir, "../host/build", hostLibrary)
-await $`bun ${path.resolve(dir, "../host/build.ts")}`.catch((error) => {
-  console.warn(`WARNING: could not build the host module — ${error?.stderr?.toString().trim() || error}`)
-})
+if (prepareBundle)
+  await import("../../host/build").catch((error) => {
+    console.warn(`WARNING: could not build the host module — ${error?.stderr?.toString().trim() || error}`)
+  })
 
 /**
  * The DHT sidecar (`packages/dht`), which finds instances through a public Kademlia DHT.
@@ -281,9 +291,10 @@ const dhtBinary = dhtExecutableName()
 // ⚠️ `build/`, not `target/release/` — the sidecar build publishes its one artifact there so the
 // desktop packager can copy a directory without dragging cargo's whole scratch tree with it.
 const dhtBuilt = path.resolve(dir, "../dht/build", dhtBinary)
-await $`bun ${path.resolve(dir, "../dht/build.ts")}`.catch((error) => {
-  console.warn(`WARNING: could not build the DHT sidecar — ${error?.stderr?.toString().trim() || error}`)
-})
+if (prepareBundle)
+  await (await import("../../dht/build")).buildDht({ development: false }).catch((error) => {
+    console.warn(`WARNING: could not build the DHT sidecar — ${error?.stderr?.toString().trim() || error}`)
+  })
 /**
  * Make a compiled Windows binary a GUI-subsystem executable, so it never opens a console window.
  *
@@ -318,8 +329,8 @@ function makeWindowsSubsystemGui(executable: string) {
   if (written !== 2) throw new Error(`${executable}: subsystem is ${written} after patching, expected 2`)
 }
 
-for (const item of targets) {
-  const name = [
+const targetName = (item: (typeof allTargets)[number]) =>
+  [
     pkg.name,
     // changing to win32 flags npm for some reason
     item.os === "win32" ? "windows" : item.os,
@@ -329,20 +340,44 @@ for (const item of targets) {
   ]
     .filter(Boolean)
     .join("-")
+if (prepareBundle) {
+  mkdirSync(bundleDirectory, { recursive: true })
+  await Bun.write(
+    path.join(bundleDirectory, "plan.json"),
+    JSON.stringify(
+      targets.map((item) => ({
+        root: dir,
+        output: path.join(bundleDirectory, targetName(item), "server.mjs"),
+        launcher: path.join(bundleDirectory, targetName(item), "launcher.ts"),
+        embeddedFileMap,
+        sourcemaps: sourcemapsFlag,
+        define: {
+          FFF_LIBC: JSON.stringify(item.abi === "musl" ? "musl" : "gnu"),
+          "process.platform": JSON.stringify(item.os),
+          "process.arch": JSON.stringify(item.arch),
+          NOVACLAW_MODELS_DEV: JSON.stringify(generated!.modelsData),
+          NOVACLAW_CHANNEL: `'${Script.channel}'`,
+          NOVACLAW_LIBC: JSON.stringify(item.os === "linux" ? (item.abi ?? "glibc") : ""),
+          NOVACLAW_STANDALONE_BINARY: "true",
+        },
+      })),
+    ),
+  )
+  process.exit(0)
+}
+
+for (const item of targets) {
+  const name = targetName(item)
   console.log(`building ${name}`)
   await $`mkdir -p dist/${name}/bin`
 
-  await Bun.build({
+  const result = await Bun.build({
     conditions: ["bun", "node"],
     tsconfig: "./tsconfig.json",
     external: ["node-gyp"],
     format: "esm",
-    minify: true,
+    minify: false,
     sourcemap: sourcemapsFlag ? "linked" : "none",
-    // A compiled executable must keep the runtime graph in ONE module. Bun's split chunks can
-    // evaluate circular LayerNode imports in a different order than the source graph, leaving a
-    // dependency undefined — and only AFTER the first HTTP request, so `--version` still passes and
-    // the binary looks fine. Reported against the standalone Linux build by an outside contributor.
     splitting: false,
     compile: {
       autoloadBunfig: false,
@@ -370,21 +405,11 @@ for (const item of targets) {
             }
           : {},
     },
-    files: embeddedFileMap ? { "novaclaw-web-ui.gen.ts": embeddedFileMap } : {},
-    // The embedded UI map is reachable from `src/index.ts`; listing it as a SECOND entrypoint was
-    // what forced a shared chunk even with splitting off, reintroducing the ordering hazard above.
-    entrypoints: ["./src/index.ts"],
-    define: {
-      FFF_LIBC: JSON.stringify(item.abi === "musl" ? "musl" : "gnu"),
-      // No NOVACLAW_VERSION define: the version is no longer a build-time global. It comes from
-      // `installation/version.gen.ts`, generated from the root package.json — so it is right in every
-      // bundle, including ones (like the Electron sidecar's build-node.ts) that never set a define.
-      NOVACLAW_MODELS_DEV: generated.modelsData,
-      NOVACLAW_CHANNEL: `'${Script.channel}'`,
-      NOVACLAW_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "",
-      NOVACLAW_STANDALONE_BINARY: "true",
-    },
+    entrypoints: [path.join(bundleDirectory, name, "launcher.ts")],
   })
+  if (!result.success) throw new AggregateError(result.logs, `Could not compile ${name}`)
+  cpSync(path.join(bundleDirectory, name, "server.mjs"), `dist/${name}/bin/server.mjs`)
+  cpSync(path.join(bundleDirectory, name, "assets"), `dist/${name}/bin/assets`, { recursive: true })
 
   if (item.os === "win32") makeWindowsSubsystemGui(`dist/${name}/bin/novaclaw.exe`)
 
@@ -507,4 +532,5 @@ if (!verifyArtifacts)
       "Pass --verify, or run `bun run verify:sidecar`, before treating them as release-ready.",
   )
 
+rmSync(bundleDirectory, { recursive: true, force: true })
 export { binaries }

@@ -164,16 +164,8 @@ export const dict = {
   "language.de": "Deutsch",
   "language.es": "Español",
   "language.fr": "Français",
-  "language.da": "Dansk",
   "language.ja": "日本語",
-  "language.pl": "Polski",
-  "language.ru": "Русский",
-  "language.ar": "العربية",
-  "language.no": "Norsk",
   "language.br": "Português (Brasil)",
-  "language.bs": "Bosanski",
-  "language.th": "ไทย",
-  "language.tr": "Türkçe",
   "toast.model.none.title": "선택된 모델 없음",
   "toast.model.none.description": "이 세션을 요약하려면 공급자를 연결하세요",
   "toast.file.loadFailed.title": "파일 로드 실패",
@@ -185,7 +177,8 @@ export const dict = {
   "error.page.description": "애플리케이션을 로드하는 동안 오류가 발생했습니다.",
   "error.page.details.label": "오류 세부 정보",
   "error.page.action.restart": "다시 시작",
-  "error.page.report.prefix": "문제가 계속되면 오류 세부 정보를 복사하거나 로그를 내보내 이 인스턴스 관리자에게 전달하세요.",
+  "error.page.report.prefix":
+    "문제가 계속되면 오류 세부 정보를 복사하거나 로그를 내보내 이 인스턴스 관리자에게 전달하세요.",
   "error.page.report.discord": "Discord",
   "error.page.version": "버전: {{version}}",
   "error.dev.rootNotFound":
@@ -438,7 +431,8 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "오프라인 모드가 {{endpoint}}(으)로 향하는 요셈을 차단했습니다. 요셈은 이 컴퓨턼를 떠나지 않았습니다.",
   "session.error.invalidRequest": "모델이 이 요청을 거부했습니다.",
-  "session.error.modelMissing": "이 대화는 제공자가 더 이상 제공하지 않는 모델로 설정되어 있습니다. 이 대화에 사용할 다른 모델을 선택하세요.",
+  "session.error.modelMissing":
+    "이 대화는 제공자가 더 이상 제공하지 않는 모델로 설정되어 있습니다. 이 대화에 사용할 다른 모델을 선택하세요.",
   "session.error.noRoute": "이 모델에 대해 구성된 경로가 없습니다.",
   "session.error.authentication": "모델 공급자가 이 모델의 자격 증명을 거부했습니다.",
   "session.error.rateLimit": "모델 공급자가 이 계정의 요청 속도를 제한하고 있습니다. 잠시 후 다시 시도하세요.",

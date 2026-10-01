@@ -3,6 +3,9 @@ import { HTML_EMBED_CSP, HTML_EMBED_PATH } from "@novaclaw/schema/html-embed"
 import { htmlEmbedBootstrap } from "@novaclaw/schema/html-embed-bootstrap"
 import solidPlugin from "vite-plugin-solid"
 import tailwindcss from "@tailwindcss/vite"
+import { sequentialAssets } from "./build-assets.js"
+import { serialMinification } from "./build-minify.js"
+import { syntaxLanguages } from "./build-syntax.js"
 import { fileURLToPath } from "url"
 
 const theme = fileURLToPath(new URL("./public/oc-theme-preload.js", import.meta.url))
@@ -20,6 +23,9 @@ const channel = (() => {
  * @type {import("vite").PluginOption}
  */
 export default [
+  syntaxLanguages(),
+  sequentialAssets(),
+  serialMinification(),
   {
     // NovaClaw supplies one custom syntax theme. The umbrella entry points also advertise every
     // third-party theme as a dynamic import, making Vite emit an unused asset for every one. Keep
@@ -39,6 +45,8 @@ export default [
       return {
         build: {
           sourcemap: channel !== "prod",
+          reportCompressedSize: false,
+          rollupOptions: { maxParallelFileOps: 16 },
         },
         resolve: {
           alias: {

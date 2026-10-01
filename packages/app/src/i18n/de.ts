@@ -167,16 +167,8 @@ export const dict = {
   "language.de": "Deutsch",
   "language.es": "Español",
   "language.fr": "Français",
-  "language.da": "Dansk",
   "language.ja": "日本語",
-  "language.pl": "Polski",
-  "language.ru": "Русский",
-  "language.ar": "العربية",
-  "language.no": "Norsk",
   "language.br": "Português (Brasil)",
-  "language.bs": "Bosanski",
-  "language.th": "ไทย",
-  "language.tr": "Türkçe",
   "toast.model.none.title": "Kein Modell ausgewählt",
   "toast.model.none.description": "Verbinden Sie einen Anbieter, um diese Sitzung zusammenzufassen",
   "toast.file.loadFailed.title": "Datei konnte nicht geladen werden",
@@ -188,7 +180,8 @@ export const dict = {
   "error.page.description": "Beim Laden der Anwendung ist ein Fehler aufgetreten.",
   "error.page.details.label": "Fehlerdetails",
   "error.page.action.restart": "Neustart",
-  "error.page.report.prefix": "Wenn das Problem bleibt, kopieren Sie die Fehlerdetails oder exportieren Sie die Protokolle für die Person, die diese Instanz betreut.",
+  "error.page.report.prefix":
+    "Wenn das Problem bleibt, kopieren Sie die Fehlerdetails oder exportieren Sie die Protokolle für die Person, die diese Instanz betreut.",
   "error.page.report.discord": "auf Discord",
   "error.page.version": "Version: {{version}}",
   "error.dev.rootNotFound":
@@ -448,7 +441,8 @@ export const dict = {
   "session.error.offlineBlockedEndpoint":
     "Der Offline-Modus hat diese Anfrage an {{endpoint}} blockiert – sie hat Ihren Computer nie verlassen.",
   "session.error.invalidRequest": "Das Modell hat diese Anfrage abgelehnt.",
-  "session.error.modelMissing": "Dieser Chat ist auf ein Modell eingestellt, das sein Anbieter nicht mehr bereitstellt. Wähle ein anderes Modell für diesen Chat.",
+  "session.error.modelMissing":
+    "Dieser Chat ist auf ein Modell eingestellt, das sein Anbieter nicht mehr bereitstellt. Wähle ein anderes Modell für diesen Chat.",
   "session.error.noRoute": "Für dieses Modell ist keine Route konfiguriert.",
   "session.error.authentication": "Der Modellanbieter hat die Zugangsdaten dieses Modells abgelehnt.",
   "session.error.rateLimit": "Der Modellanbieter drosselt dieses Konto — versuchen Sie es gleich noch einmal.",

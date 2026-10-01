@@ -112,7 +112,7 @@ export type Provider = Schema.Schema.Type<typeof Provider>
 
 export const Event = ModelsDev.Event
 
-declare const NOVACLAW_MODELS_DEV: Record<string, Provider> | undefined
+declare const NOVACLAW_MODELS_DEV: string | undefined
 
 export interface Interface {
   readonly get: () => Effect.Effect<Record<string, Provider>>
@@ -179,7 +179,9 @@ export const layer = Layer.effect(
     )
 
     const loadSnapshot = Effect.sync(() =>
-      typeof NOVACLAW_MODELS_DEV === "undefined" ? undefined : NOVACLAW_MODELS_DEV,
+      typeof NOVACLAW_MODELS_DEV === "undefined"
+        ? undefined
+        : (JSON.parse(NOVACLAW_MODELS_DEV) as Record<string, Provider>),
     )
 
     const fetchAndWrite = Effect.fn("ModelsDev.fetchAndWrite")(function* () {

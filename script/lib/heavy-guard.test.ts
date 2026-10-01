@@ -1,7 +1,15 @@
 import { describe, expect, test } from "bun:test"
-import { bypassesGuard, hasEnoughFreeMemory, heavyJobLabels } from "./heavy-guard"
+import { bypassesGuard, hasEnoughCommitCapacity, hasEnoughFreeMemory, heavyJobLabels } from "./heavy-guard"
 
 describe("heavy job classification", () => {
+  test("bounded admission reserves the entire build budget below the host commit ceiling", () => {
+    const gb = 1024 ** 3
+    expect(hasEnoughCommitCapacity(24.1 * gb, 32 * gb)).toBe(false)
+    expect(hasEnoughCommitCapacity(24 * gb, 32 * gb, 1.25 * gb)).toBe(true)
+    expect(hasEnoughCommitCapacity(28 * gb, 32 * gb, 1.25 * gb)).toBe(false)
+    for (const bytes of [0, -1, NaN, Infinity]) expect(hasEnoughCommitCapacity(24 * gb, 32 * gb, bytes)).toBe(false)
+    expect(hasEnoughCommitCapacity(NaN, 32 * gb, 1.25 * gb)).toBe(false)
+  })
   test("treats a managed llama.cpp server as incompatible with the test suite", () => {
     expect(
       heavyJobLabels(
@@ -25,6 +33,13 @@ describe("heavy job classification", () => {
     expect(heavyJobLabels("app-builder.exe", "app-builder electron-builder package")).toContain(
       "an electron-builder package step",
     )
+    expect(heavyJobLabels("bun.exe", "bun --smol C:\\repo\\script\\bounded-build.ts --desktop")).toContain(
+      "a desktop build controller",
+    )
+    expect(
+      heavyJobLabels("powershell.exe", 'powershell -File "C:\\repo\\script\\bounded-build.ps1" -BuildScript build.bat'),
+    ).toEqual(["a desktop build controller"])
+    expect(heavyJobLabels("pwsh.exe", 'pwsh -Command "Get-Content script/bounded-build.ps1"')).toEqual([])
   })
 
   test("the test runner cannot bypass the guard with force or CI environment flags", () => {

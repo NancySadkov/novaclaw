@@ -8,17 +8,9 @@
  * 179 MB `.7z` gone. A guard whose stated purpose is to refuse *before* the machine is forced into
  * sustained paging should also refuse before destroying the thing it is protecting.
  *
- *   bun script/guard.ts "a desktop build" --min-free-gb 2.5
- *
  * Exits 0 when it is safe to proceed, 2 with the refusal on stderr otherwise — the same verdict
  * `prebuild.ts` enforces, from the same function, so the two can never disagree about what is safe.
  *
- * ⚠️ **Pass the caller's floor, or this is stricter than the job it guards.** The default is 6 GB;
- * a desktop build declares 2.5 GB, justified in `prebuild.ts` by measurement ("the production Vite
- * stage completes under a 1.25 GB V8 old-space cap and electron-builder stayed below 1 GB"). Running
- * this without `--min-free-gb` in front of that build would refuse runs that would have succeeded —
- * which is a worse failure than the one it fixes, because it is invisible: the build simply never
- * starts and the machine looks busy.
  */
 /**
  * ⚠️ **RESTORED 2026-09-03, and the deletion is the lesson.** This was removed as dead code by the
@@ -32,6 +24,7 @@
  * the sibling repo — `git -C .. grep <name>` is the whole check.
  */
 import { enforce } from "./lib/heavy-guard"
+import { BUILD_MEMORY_LIMIT_BYTES, buildMemoryBoundary } from "./lib/build-memory"
 
 const flag = process.argv.indexOf("--min-free-gb")
 const gb = flag >= 0 ? Number(process.argv[flag + 1]) : undefined
@@ -40,8 +33,10 @@ if (flag >= 0 && !Number.isFinite(gb)) {
   process.exit(2)
 }
 
-enforce(
-  process.argv[2] ?? "this job",
-  process.argv,
-  gb === undefined ? {} : { minimumFreeBytes: gb * 1024 ** 3 },
-)
+const bounded = process.argv.includes("--bounded-build")
+if (bounded) await buildMemoryBoundary()
+
+enforce(process.argv[2] ?? "this job", process.argv, {
+  ...(gb === undefined ? {} : { minimumFreeBytes: gb * 1024 ** 3 }),
+  ...(bounded ? { requireMeasurement: true, committedReservationBytes: BUILD_MEMORY_LIMIT_BYTES } : {}),
+})

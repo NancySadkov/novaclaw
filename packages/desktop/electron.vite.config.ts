@@ -40,6 +40,7 @@ export default defineConfig({
       "import.meta.env.NOVACLAW_THEME_PRELOAD_SHA256": JSON.stringify(themePreloadSha256),
     },
     build: {
+      reportCompressedSize: false,
       rollupOptions: {
         input: { index: "src/main/index.ts", sidecar: "src/main/sidecar.ts" },
       },
@@ -82,6 +83,7 @@ export default defineConfig({
   },
   preload: {
     build: {
+      reportCompressedSize: false,
       rollupOptions: {
         input: { index: "src/preload/index.ts" },
         output: {

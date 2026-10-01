@@ -9,7 +9,7 @@
     "test": "bun test --timeout 30000 --only-failures",
     "bench:test": "bun run script/bench-test-suite.ts",
     "profile:test": "bun run script/profile-test-files.ts",
-    "build": "bun run script/build.ts",
+    "build": "cmd /d /c script/build-server.bat",
     "verify:sidecar": "bun run script/verify-node-sidecar.ts",
     "dev": "bun run --conditions=browser ./src/index.ts",
     "dev:temporary": "bun run --conditions=browser ./src/temporary.ts"
@@ -39,6 +39,7 @@
     "@types/yargs": "17.0.33",
     "@typescript/native-preview": "catalog:",
     "drizzle-orm": "catalog:",
+    "esbuild": "0.28.2",
     "prettier": "3.6.2",
     "typescript": "catalog:"
   },

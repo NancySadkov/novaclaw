@@ -15,7 +15,6 @@ export const dict = {
   "command.category.mcp": "MCP",
   "command.category.settings": "设置",
 
-
   "command.project.open": "打开项目",
 
   "command.provider.connect": "连接提供商",
@@ -36,7 +35,6 @@ export const dict = {
   "command.input.focus": "聚焦输入框",
 
   "command.terminal.toggle": "切换终端",
-
 
   "command.review.toggle": "切换审查",
 
@@ -59,7 +57,6 @@ export const dict = {
 
   "command.prompt.mode.shell": "Shell",
   "command.prompt.mode.normal": "Prompt",
-
 
   "command.session.undo": "撤销",
   "command.session.undo.description": "撤销上一条消息",
@@ -198,16 +195,8 @@ export const dict = {
   "language.de": "Deutsch",
   "language.es": "Español",
   "language.fr": "Français",
-  "language.da": "Dansk",
   "language.ja": "日本語",
-  "language.pl": "Polski",
-  "language.ru": "Русский",
-  "language.ar": "العربية",
-  "language.no": "Norsk",
   "language.br": "Português (Brasil)",
-  "language.bs": "Bosanski",
-  "language.th": "ไทย",
-  "language.tr": "Türkçe",
 
   "toast.model.none.title": "未选择模型",
   "toast.model.none.description": "请先连接提供商以总结此会话",
@@ -274,7 +263,6 @@ export const dict = {
   "session.new.worktree.main": "主分支",
   "session.new.worktree.mainWithBranch": "主分支（{{branch}}）",
   "session.header.searchFiles": "搜索文件",
-
 
   "session.share.copy.copied": "已复制",
 
@@ -404,7 +392,6 @@ export const dict = {
   "settings.permissions.tool.webfetch.description": "从 URL 获取内容",
   "settings.permissions.tool.websearch.title": "网页搜索",
   "settings.permissions.tool.websearch.description": "搜索网页",
-
 
   "workspace.new": "新建工作区",
   "workspace.type.local": "本地",

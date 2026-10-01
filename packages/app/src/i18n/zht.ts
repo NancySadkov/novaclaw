@@ -96,7 +96,6 @@ export const dict = {
   "prompt.mode.shell": "Shell",
   "prompt.mode.normal": "Prompt",
 
-
   "prompt.dropzone.label": "將圖片、PDF 或文字檔案拖放到此處",
   "prompt.context.removeFile": "從上下文移除檔案",
   "prompt.action.attachFile": "附加檔案",
@@ -188,17 +187,8 @@ export const dict = {
   "language.de": "Deutsch",
   "language.es": "Español",
   "language.fr": "Français",
-  "language.da": "Dansk",
   "language.ja": "日本語",
-  "language.pl": "Polski",
-  "language.ru": "Русский",
-  "language.ar": "العربية",
-  "language.no": "Norsk",
   "language.br": "Português (Brasil)",
-  "language.bs": "Bosanski",
-  "language.th": "ไทย",
-  "language.tr": "Türkçe",
-
 
   "toast.model.none.title": "未選擇模型",
   "toast.model.none.description": "請先連線提供者以總結此工作階段",
@@ -242,7 +232,6 @@ export const dict = {
   "error.chain.configInvalid": "設定檔 {{path}} 無效",
   "error.chain.configInvalidWithMessage": "設定檔 {{path}} 無效: {{message}}",
 
-
   "notification.session.responseReady.title": "回覆已就緒",
   "notification.session.error.title": "工作階段錯誤",
   "notification.session.error.fallbackDescription": "發生錯誤",
@@ -271,7 +260,6 @@ export const dict = {
   "session.new.worktree.mainWithBranch": "主分支 ({{branch}})",
 
   "session.header.searchFiles": "搜尋檔案",
-
 
   "session.share.copy.copied": "已複製",
 
@@ -313,7 +301,6 @@ export const dict = {
   "settings.general.row.terminalFont.description": "自訂終端機使用的字型",
   "settings.general.row.uiFont.title": "介面字型",
   "settings.general.row.uiFont.description": "自訂整個介面使用的字型",
-
 
   "sound.option.none": "無",
   "sound.option.alert01": "警報 01",
@@ -403,7 +390,6 @@ export const dict = {
   "settings.permissions.tool.webfetch.description": "從 URL 取得內容",
   "settings.permissions.tool.websearch.title": "Web Search",
   "settings.permissions.tool.websearch.description": "搜尋網頁",
-
 
   "workspace.new": "新增工作區",
   "workspace.type.local": "本地",

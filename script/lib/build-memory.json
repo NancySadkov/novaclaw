@@ -1,0 +1,7 @@
+{
+  "budgetMiB": 1280,
+  "nodeHeapMiB": 576,
+  "assetHeapMiB": 384,
+  "nodeSemiSpaceMiB": 8,
+  "goMemoryMiB": 64
+}

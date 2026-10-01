@@ -60,6 +60,7 @@ const verify = (
 const HOST: StagedResource = { from: "../host/build/", to: "host/" }
 const DHT: StagedResource = { from: "../dht/build/", to: "dht/" }
 const WATCHDOG: StagedResource = { from: "../watchdog/build/", to: "watchdog/" }
+const SERVER: StagedResource = { from: "../novaclaw/dist/novaclaw-windows-x64/bin/", to: "server/" }
 const RIPGREP: StagedResource = { from: "resources/third-party/ripgrep/", to: "third-party/ripgrep/" }
 const PORTABLE_GIT: StagedResource = { from: "resources/third-party/portable-git/", to: "third-party/portable-git/" }
 
@@ -137,6 +138,17 @@ test("the watchdog is required because the desktop service cannot run without it
   expect(verify([WATCHDOG], "prod")).toEqual([{ to: "watchdog/", verdict: "verified" }])
 })
 
+test("the server executable requires its bundled code and non-empty assets", () => {
+  stage(SERVER.to, { "novaclaw.exe": PE })
+  expect(() => verify([SERVER])).toThrow(/server\.mjs.*missing/)
+  stage(SERVER.to, { "server.mjs": "export {}" })
+  expect(() => verify([SERVER])).toThrow(/assets.*missing/)
+  stage(SERVER.to + "assets/")
+  expect(() => verify([SERVER])).toThrow(/assets.*empty/i)
+  stage(SERVER.to, { "assets/fixture.bin": PE })
+  expect(verify([SERVER])).toEqual([{ to: "server/", verdict: "verified" }])
+})
+
 test("a staged resource nobody classified fails the build by name", () => {
   // 🔴 The arm that keeps the ledger from going stale. Adding a native tree to the package without
   // saying what its absence MEANS is how `host/` ended up with no guard while its two neighbours had
@@ -162,7 +174,17 @@ test("every entry the packager actually copies is classified", async () => {
   for (const entry of resources) {
     // Everything is staged so nothing can fail for absence — the only failure available here is the
     // unclassified arm, which is what this case is about.
-    stage(entry.to, { "host.dll": PE, "novaclaw-watchdog.exe": PE, "novaclaw.exe": PE, "usr/bin/bash.exe": PE, "usr/bin/ssh.exe": PE, "cmd/git.exe": PE, "placeholder.bin": PE })
+    stage(entry.to, {
+      "host.dll": PE,
+      "novaclaw-watchdog.exe": PE,
+      "novaclaw.exe": PE,
+      "server.mjs": "export {}",
+      "assets/fixture.bin": PE,
+      "usr/bin/bash.exe": PE,
+      "usr/bin/ssh.exe": PE,
+      "cmd/git.exe": PE,
+      "placeholder.bin": PE,
+    })
     expect(() => verify([entry])).not.toThrow()
   }
 })

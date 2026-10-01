@@ -8,4 +8,4 @@ import { resolveChannel } from "./utils"
 await $`bun ./scripts/copy-icons.ts ${resolveChannel()}`
 
 await $`bun ../watchdog/build.ts`
-await $`cd ../novaclaw && bun script/build-node.ts`
+await $`cd ../novaclaw && cmd /d /c script/build-node.bat`

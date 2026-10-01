@@ -34,6 +34,12 @@ export function hasEnoughFreeMemory(freeBytes: number, minimumFreeBytes: number 
   return Number.isFinite(freeBytes) && freeBytes >= minimumFreeBytes
 }
 
+export function hasEnoughCommitCapacity(usedBytes: number, limitBytes: number, reservationBytes?: number): boolean {
+  if (!Number.isFinite(usedBytes) || usedBytes < 0 || !Number.isFinite(limitBytes) || limitBytes <= 0) return false
+  if (reservationBytes === undefined) return usedBytes / limitBytes <= COMMIT_CEILING
+  return Number.isFinite(reservationBytes) && reservationBytes > 0 && usedBytes + reservationBytes <= limitBytes * 0.9
+}
+
 export interface Verdict {
   readonly ok: boolean
   readonly reason?: string
@@ -47,6 +53,7 @@ export interface Options {
   readonly requireMeasurement?: boolean
   /** A measured stage-specific floor; omitted for the conservative full-suite default. */
   readonly minimumFreeBytes?: number
+  readonly committedReservationBytes?: number
   /**
    * THIS runner already has units in flight, so only the foreign-job arm is meaningful.
    *
@@ -212,6 +219,7 @@ function windowsCommit(): { usedGb: number; limitGb: number } | undefined {
 
 /** Our own heavy jobs, by the command line that identifies them. */
 const HEAVY_PATTERNS: Array<{ label: string; match: RegExp }> = [
+  { label: "a desktop build controller", match: /script[\\/]bounded-build\.ts/i },
   { label: "an electron-builder package step", match: /electron-builder|app-builder/i },
   { label: "an electron-vite build", match: /electron-vite\s+build/i },
   { label: "a desktop prebuild (server sidecar bundle)", match: /scripts[\\/]prebuild\.ts|script[\\/]build-node\.ts/i },
@@ -249,6 +257,13 @@ const isBunTestUnit = (name: string, commandLine: string): boolean =>
 
 /** Pure classifier kept public so adding a new inference/runtime process is pinned by a cheap test. */
 export function heavyJobLabels(name: string, commandLine: string): string[] {
+  if (/^(powershell|pwsh)\.exe$/i.test(name.trim()))
+    return !/(?:^|\s)-(?:Command|EncodedCommand)(?:\s|$)/i.test(commandLine) &&
+      /(?:^|\s)-File\s+(?:"[^"]*[\\/]script[\\/]bounded-build\.ps1"|[^\s"]*[\\/]script[\\/]bounded-build\.ps1)(?:\s|$)/i.test(
+        commandLine,
+      )
+      ? ["a desktop build controller"]
+      : []
   if (!HEAVY_EXECUTABLES.test(name.trim())) return []
   if (/heavy-guard|Get-CimInstance|Win32_Process/i.test(commandLine)) return []
   if (isBunTestUnit(name, commandLine)) return []
@@ -314,13 +329,18 @@ export function check(argv: readonly string[] = process.argv, options: Options =
           `THE RUN HAS STOPPED — this is not a slow unit. If WMI answers now ` +
           `(\`Get-CimInstance Win32_OperatingSystem\`), it was a transient miss and a re-run will pass.`,
       }
-    if (commit && commit.usedGb / commit.limitGb > COMMIT_CEILING)
+    if (
+      commit &&
+      !hasEnoughCommitCapacity(commit.usedGb * 1024 ** 3, commit.limitGb * 1024 ** 3, options.committedReservationBytes)
+    )
       return {
         ok: false,
         reason: "the machine is already low on memory",
         detail:
           `Commit charge is ${commit.usedGb.toFixed(1)} GB of ${commit.limitGb.toFixed(1)} GB ` +
-          `(${((100 * commit.usedGb) / commit.limitGb).toFixed(0)}%, ceiling ${COMMIT_CEILING * 100}%).\n` +
+          (options.committedReservationBytes === undefined
+            ? `(${((100 * commit.usedGb) / commit.limitGb).toFixed(0)}%, ceiling ${COMMIT_CEILING * 100}%).\n`
+            : `and the bounded build reserves ${(options.committedReservationBytes / 1024 ** 3).toFixed(2)} GB within a 90% ceiling.\n`) +
           `Close what you can (stray bun/node processes are the usual culprits — see AGENTS.md #8) and\n` +
           `re-run. Starting now risks a wall-clock kill that looks like a real test failure.`,
       }

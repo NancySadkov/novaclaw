@@ -7,7 +7,7 @@
     "emitDeclarationOnly": false,
     "noEmit": true
   },
-  "include": ["src/**/*.test.ts", "test/**/*.ts"],
+  "include": ["src/**/*.test.ts", "test/**/*.ts", "script/**/*.ts"],
   "exclude": [],
   "references": []
 }

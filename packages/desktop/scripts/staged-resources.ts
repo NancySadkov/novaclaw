@@ -34,6 +34,7 @@ export type StagedResource = { readonly from: string; readonly to: string }
 
 type Policy = {
   readonly requirement: StagingRequirement
+  readonly contents?: readonly string[]
   /**
    * A named file that must exist inside the staged directory, when we know one. A directory holding
    * *something* is a weaker claim than a directory holding the artifact this platform needs, and the
@@ -78,7 +79,7 @@ const POLICIES: Readonly<Record<string, Policy>> = {
   "third-party/w64devkit/": { requirement: "required" },
   "third-party/portable-git/": {
     requirement: "required",
-    binary: (platform) => platform === "win32" ? ["usr/bin/bash.exe", "usr/bin/ssh.exe", "cmd/git.exe"] : undefined,
+    binary: (platform) => (platform === "win32" ? ["usr/bin/bash.exe", "usr/bin/ssh.exe", "cmd/git.exe"] : undefined),
   },
   "third-party/imagemagick/": { requirement: "required" },
   // The compiled headless server, staged so a packaged desktop launches it instead of the Electron
@@ -87,6 +88,7 @@ const POLICIES: Readonly<Record<string, Policy>> = {
   // (which rebuilds from source in seconds) and tolerates its absence.
   "server/": {
     requirement: "release-only",
+    contents: ["server.mjs", "assets"],
     binary: (platform) => (platform === "win32" ? "novaclaw.exe" : "novaclaw"),
   },
 }
@@ -193,6 +195,15 @@ export function verifyStagedResources(input: {
       return { to: entry.to, verdict: "absent" }
     }
 
+    for (const name of policy.contents ?? []) {
+      const file = path.join(directory, name)
+      const present = existsSync(file) && (statSync(file).isFile() ? statSync(file).size > 0 : firstFile(file))
+      if (!present) {
+        if (required) throw new Error(`${input.label}: "${entry.to}" is REQUIRED and ${file} is missing or empty`)
+        warn(`DEVELOPMENT ONLY: packaging without "${entry.to}" (${file} is missing or empty).`)
+        return { to: entry.to, verdict: "absent" }
+      }
+    }
     if (binary) {
       for (const name of typeof binary === "string" ? [binary] : binary) {
         const file = path.join(directory, name)

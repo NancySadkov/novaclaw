@@ -96,20 +96,29 @@ const runSmoke = async () => {
   // this block is actually about.
   const env: Record<string, string | undefined> = {
     ...process.env,
-    NOVACLAW_DB: ":memory:",
+    NOVACLAW_HOME: home,
+    NOVACLAW_DB: path.join(home, "novaclaw.db"),
     XDG_DATA_HOME: path.join(home, "data"),
     XDG_CONFIG_HOME: path.join(home, "config"),
     XDG_CACHE_HOME: path.join(home, "cache"),
     XDG_STATE_HOME: path.join(home, "state"),
     NODE_PATH: path.resolve(dir, "../desktop/node_modules"),
+    NOVACLAW_PORTABLE_GIT_PATH: path.resolve(dir, "../desktop/resources/third-party/portable-git"),
+    NOVACLAW_W64DEVKIT_PATH: path.resolve(dir, "../desktop/resources/third-party/w64devkit"),
+    NOVACLAW_IMAGEMAGICK_PATH: path.resolve(dir, "../desktop/resources/third-party/imagemagick"),
+    NOVACLAW_RIPGREP_PATH: path.resolve(dir, "../desktop/resources/third-party/ripgrep/rg.exe"),
   }
   delete env.NOVACLAW_SERVER_PASSWORD
   delete env.NOVACLAW_SERVER_USERNAME
   try {
-    return Bun.spawnSync(
-      [nodeExe, "--experimental-sqlite", "./script/node-sidecar-smoke.mjs", "./dist/node/node.js"],
-      { stdout: "inherit", stderr: "inherit", env },
-    ).exitCode
+    for (const flags of [["--seed-memory"], []]) {
+      const result = Bun.spawnSync(
+        [nodeExe, "--experimental-sqlite", "./script/node-sidecar-smoke.mjs", "./dist/node/node.js", ...flags],
+        { stdout: "inherit", stderr: "inherit", env },
+      )
+      if (result.exitCode !== 0) return result.exitCode
+    }
+    return 0
   } finally {
     await rm(home, { recursive: true, force: true })
   }
@@ -128,10 +137,11 @@ if (code === SMOKE_WEDGED)
   )
 if (code !== 0) throw new Error("Node sidecar smoke failed — the built bundle does not serve")
 
-const memoryWorker = Bun.spawnSync(
-  [nodeExe, "./script/memory-worker-smoke.mjs", "./dist/node/memory-worker-node.js"],
-  { stdout: "inherit", stderr: "inherit", env: { ...process.env, NODE_PATH: path.resolve(dir, "../desktop/node_modules") } },
-)
+const memoryWorker = Bun.spawnSync([nodeExe, "./script/memory-worker-smoke.mjs", "./dist/node/memory-worker-node.js"], {
+  stdout: "inherit",
+  stderr: "inherit",
+  env: { ...process.env, NODE_PATH: path.resolve(dir, "../desktop/node_modules") },
+})
 if (memoryWorker.exitCode !== 0) throw new Error("Node memory worker smoke failed")
 
 console.log("Sidecar verification complete")

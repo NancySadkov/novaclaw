@@ -15,14 +15,12 @@
     "test": "bun test src electron-builder.config.test.ts scripts --only-failures",
     "predev": "bun ./scripts/predev.ts",
     "dev": "electron-vite dev",
-    "prebuild": "bun ./scripts/prebuild.ts",
-    "build": "electron-vite build",
-    "postbuild": "bun ./scripts/sanitize-build-output.ts",
+    "build": "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ../../script/bounded-build.ps1 -BuildScript ./scripts/build-desktop.bat",
     "preview": "electron-vite preview",
-    "package": "electron-builder --config electron-builder.config.ts",
-    "package:mac": "electron-builder --mac --config electron-builder.config.ts",
-    "package:win": "electron-builder --win --config electron-builder.config.ts",
-    "package:linux": "electron-builder --linux --config electron-builder.config.ts"
+    "package": "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ../../script/bounded-build.ps1 -BuildScript ./scripts/package-desktop.bat",
+    "package:mac": "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ../../script/bounded-build.ps1 -BuildScript ./scripts/package-desktop.bat -BuildArgument --mac",
+    "package:win": "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ../../script/bounded-build.ps1 -BuildScript ./scripts/package-desktop.bat -BuildArgument --win",
+    "package:linux": "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ../../script/bounded-build.ps1 -BuildScript ./scripts/package-desktop.bat -BuildArgument --linux"
   },
   "main": "./out/main/index.js",
   "dependencies": {

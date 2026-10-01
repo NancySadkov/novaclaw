@@ -89,7 +89,9 @@ test("embeds PortableGit beside w64devkit on Windows", async () => {
   const module = await import(`./electron-builder.config.ts?portablegit=${Date.now()}`)
   const config = module.default as Configuration
   if (process.platform !== "win32")
-    return expect(config.extraResources).not.toContainEqual(expect.objectContaining({ to: "third-party/portable-git/" }))
+    return expect(config.extraResources).not.toContainEqual(
+      expect.objectContaining({ to: "third-party/portable-git/" }),
+    )
   expect(config.extraResources).toContainEqual({
     from: "resources/third-party/portable-git/",
     to: "third-party/portable-git/",
@@ -184,7 +186,10 @@ test("normal builds scrub retired vendor markers from emitted text", async () =>
   const pkg = JSON.parse(readFileSync(join(import.meta.dir, "package.json"), "utf8")) as {
     scripts?: Record<string, string>
   }
-  expect(pkg.scripts?.postbuild).toBe("bun ./scripts/sanitize-build-output.ts")
+  expect(pkg.scripts?.build).toContain("bounded-build.ps1 -BuildScript ./scripts/build-desktop.bat")
+  expect(readFileSync(join(import.meta.dir, "scripts/build-desktop.bat"), "utf8")).toContain(
+    "call bun --smol scripts/sanitize-build-output.ts",
+  )
 
   const directory = await mkdtemp(join(os.tmpdir(), "novaclaw-output-sanitize-"))
   const file = join(directory, "bundle.js")

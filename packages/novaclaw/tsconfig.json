@@ -3,7 +3,7 @@
   "extends": "@tsconfig/bun/tsconfig.json",
   "compilerOptions": {
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "types": [],
+    "types": ["bun"],
     "noUncheckedIndexedAccess": false,
     "customConditions": ["browser"],
     "composite": true,
@@ -16,7 +16,7 @@
       "@test/*": ["./test/*"]
     }
   },
-  "include": ["src/**/*.ts", "script/**/*.ts", "package.json"],
+  "include": ["src/**/*.ts", "package.json"],
   "exclude": ["src/**/*.test.ts", "test/**/*.ts"],
   "references": [
     { "path": "../core" },

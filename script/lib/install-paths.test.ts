@@ -210,7 +210,17 @@ describe("the scanner itself", () => {
   test("stripComments blanks rather than deletes, so line numbers survive", () => {
     const stripped = stripComments("a\n/* x\n y */\nb // c\n", "ts")
     expect(stripped.split("\n").length).toBe(5)
-    expect(stripped.split("\n")[3]).toBe("b ")
+    expect(stripped.split("\n")[3]?.trimEnd()).toBe("b")
+  })
+
+  test("glob and URL literals cannot hide a later install invocation", () => {
+    const root = fixtureRepo({
+      "script/build.ts":
+        'const glob = "**/*"\nconst url = "https://example.test"\nawait $`bun install --frozen-lockfile`\nconst later = "**/*"\n',
+    })
+    expect(scanInstallInvocations(root).map((item) => ({ line: item.line, frozen: item.frozen }))).toEqual([
+      { line: 3, frozen: true },
+    ])
   })
 })
 

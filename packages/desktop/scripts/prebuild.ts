@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { $ } from "bun"
 
+import { buildMemoryBoundary } from "../../../script/lib/build-memory"
 import { enforce } from "../../../script/lib/heavy-guard"
 import { MINIMUM_FREE_BYTES } from "./build-memory"
 import { sweepStrayServers } from "../../../script/lib/stray-servers"
@@ -9,27 +10,14 @@ import { prepareW64devkit } from "./prepare-w64devkit"
 import { preparePortableGit } from "./prepare-portable-git"
 import { prepareImageMagick } from "./prepare-imagemagick"
 import { prepareRipgrep } from "./prepare-ripgrep"
-import { dhtBuildArguments } from "./dht-packaging"
 
-// The guard has to bite from BOTH sides. prebuild is the first lifecycle step of every desktop build,
-// so refusing here stops a build from piling onto a suite already running. The floor is DERIVED from
-// the measured peak in `build-memory.ts` rather than typed here, so the number and the measurement
-// that justifies it cannot drift apart. The independent commit-charge ceiling still catches broader
-// system pressure.
-enforce("a desktop build", process.argv, { minimumFreeBytes: MINIMUM_FREE_BYTES })
-
-/**
- * 🔴 **Idle backends are swept before the build touches a file** (owner, 2026-08-28: *"please ensure
- * that bun startup is guarded, so unless explicitly overridden, launching new bun or launching build
- * kills existing buns"*). The 0.1.67 build refused to package minutes earlier: four `bun` servers
- * left over from a session still held `packages/host/build/host.dll` open, and the linker reported
- * `Permission denied`.
- *
- * ⚠️ AFTER `enforce`, never before. The heavy guard REFUSES when somebody else's build or suite is
- * running, and that refusal is what protects a concurrent session — a sweep that ran first would be
- * deciding the same question with a kill instead of a wait. This only removes what the heavy guard
- * deliberately does not name: idle servers, which are free to restart.
- */
+const boundary = await buildMemoryBoundary()
+if (!boundary.inherited)
+  enforce("a desktop prebuild", process.argv, {
+    minimumFreeBytes: MINIMUM_FREE_BYTES,
+    committedReservationBytes: MINIMUM_FREE_BYTES,
+    requireMeasurement: true,
+  })
 sweepStrayServers({ reason: "a desktop build" })
 
 const channel = resolveChannel()
@@ -62,7 +50,7 @@ await prepareImageMagick()
  * `fs.watch`, loading no library. What a missing `host.dll` costs is the BUN side — the compiled
  * `novaclaw` CLI, where `watcher.ts` answers a failed load with an empty service.
  */
-await $`bun ../host/build.ts`.catch((error) => {
+await import("../../host/build").catch((error) => {
   const detail = String(error?.stderr?.toString().trim() || error)
   if (process.platform === "win32") {
     console.error(`the host module FAILED to build — refusing to package a Windows build without it.`)
@@ -72,8 +60,8 @@ await $`bun ../host/build.ts`.catch((error) => {
   console.warn(`WARNING: could not build the host module — the Bun runtime will have no file watcher here.`)
   console.warn(detail)
 })
-await $`bun ./scripts/copy-icons.ts ${channel}`
-await $`bun ./scripts/copy-metainfo.ts ${channel}`
+await $`bun --smol ./scripts/copy-icons.ts ${channel}`
+await $`bun --smol ./scripts/copy-metainfo.ts ${channel}`
 
 /**
  * The DHT sidecar, for the same reason and with the same rules as the host module above: built here
@@ -89,19 +77,6 @@ await $`bun ./scripts/copy-metainfo.ts ${channel}`
  * public discovery is an incomplete product, so `build.ts` is strict there and this call is not
  * wrapped in a catch. The builder itself verifies the resulting staged executable again.
  */
-await $`bun ../dht/build.ts ${dhtBuildArguments(channel)}`
+await (await import("../../dht/build")).buildDht({ development: channel === "dev" })
 
-await $`bun ../watchdog/build.ts`
-
-/**
- * The standalone headless server, for every channel but `dev`.
- *
- * It is what a packaged desktop launches as its local instance, so its absence on a release channel
- * is not a degradation — `verifyStagedResources` refuses the package by name. `--single` builds only
- * the host target; cross-target binaries belong to the CLI release, not to this desktop package.
- * ⚠️ This must run BEFORE `build-node.ts`: `build.ts` recreates `dist/` wholesale, and build-node
- * owns only `dist/node` under it.
- */
-if (channel !== "dev") await $`cd ../novaclaw && bun script/build.ts --single --skip-install`
-
-await $`cd ../novaclaw && bun script/build-node.ts`
+await import("../../watchdog/build")

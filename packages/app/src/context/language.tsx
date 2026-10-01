@@ -92,17 +92,8 @@ const INTL: Record<Locale, string> = {
   de: "de",
   es: "es",
   fr: "fr",
-  da: "da",
   ja: "ja",
-  pl: "pl",
-  ru: "ru",
-  uk: "uk",
-  ar: "ar",
-  no: "nb-NO",
   br: "pt-BR",
-  th: "th",
-  bs: "bs",
-  tr: "tr",
 }
 
 const LABEL_KEY: Record<Locale, keyof Dictionary> = {
@@ -113,17 +104,8 @@ const LABEL_KEY: Record<Locale, keyof Dictionary> = {
   de: "language.de",
   es: "language.es",
   fr: "language.fr",
-  da: "language.da",
   ja: "language.ja",
-  pl: "language.pl",
-  ru: "language.ru",
-  uk: "language.uk",
-  ar: "language.ar",
-  no: "language.no",
   br: "language.br",
-  th: "language.th",
-  bs: "language.bs",
-  tr: "language.tr",
 }
 
 const base = i18n.flatten({ ...en, ...uiEn })
@@ -139,17 +121,8 @@ const loaders: Record<Exclude<Locale, "en">, () => Promise<Dictionary>> = {
   de: () => merge(import("@/i18n/de"), import("@novaclaw/ui/i18n/de")),
   es: () => merge(import("@/i18n/es"), import("@novaclaw/ui/i18n/es")),
   fr: () => merge(import("@/i18n/fr"), import("@novaclaw/ui/i18n/fr")),
-  da: () => merge(import("@/i18n/da"), import("@novaclaw/ui/i18n/da")),
   ja: () => merge(import("@/i18n/ja"), import("@novaclaw/ui/i18n/ja")),
-  pl: () => merge(import("@/i18n/pl"), import("@novaclaw/ui/i18n/pl")),
-  ru: () => merge(import("@/i18n/ru"), import("@novaclaw/ui/i18n/ru")),
-  uk: () => merge(import("@/i18n/uk"), import("@novaclaw/ui/i18n/uk")),
-  ar: () => merge(import("@/i18n/ar"), import("@novaclaw/ui/i18n/ar")),
-  no: () => merge(import("@/i18n/no"), import("@novaclaw/ui/i18n/no")),
   br: () => merge(import("@/i18n/br"), import("@novaclaw/ui/i18n/br")),
-  th: () => merge(import("@/i18n/th"), import("@novaclaw/ui/i18n/th")),
-  bs: () => merge(import("@/i18n/bs"), import("@novaclaw/ui/i18n/bs")),
-  tr: () => merge(import("@/i18n/tr"), import("@novaclaw/ui/i18n/tr")),
 }
 
 function loadDict(locale: Locale) {
@@ -167,30 +140,6 @@ export function loadLocaleDict(locale: Locale) {
   return loadDict(locale).then(() => undefined)
 }
 
-const localeMatchers: Array<{ locale: Locale; match: (language: string) => boolean }> = [
-  { locale: "en", match: (language) => language.startsWith("en") },
-  { locale: "zht", match: (language) => language.startsWith("zh") && language.includes("hant") },
-  { locale: "zh", match: (language) => language.startsWith("zh") },
-  { locale: "ko", match: (language) => language.startsWith("ko") },
-  { locale: "de", match: (language) => language.startsWith("de") },
-  { locale: "es", match: (language) => language.startsWith("es") },
-  { locale: "fr", match: (language) => language.startsWith("fr") },
-  { locale: "da", match: (language) => language.startsWith("da") },
-  { locale: "ja", match: (language) => language.startsWith("ja") },
-  { locale: "pl", match: (language) => language.startsWith("pl") },
-  { locale: "ru", match: (language) => language.startsWith("ru") },
-  { locale: "uk", match: (language) => language.startsWith("uk") },
-  { locale: "ar", match: (language) => language.startsWith("ar") },
-  {
-    locale: "no",
-    match: (language) => language.startsWith("no") || language.startsWith("nb") || language.startsWith("nn"),
-  },
-  { locale: "br", match: (language) => language.startsWith("pt") },
-  { locale: "th", match: (language) => language.startsWith("th") },
-  { locale: "bs", match: (language) => language.startsWith("bs") },
-  { locale: "tr", match: (language) => language.startsWith("tr") },
-]
-
 function readStoredLocale() {
   if (typeof localStorage !== "object") return
   try {
@@ -207,7 +156,11 @@ function readStoredLocale() {
 const warm = readStoredLocale() ?? detectLocale()
 if (warm !== "en") void loadDict(warm)
 
-export const { use: useLanguage, provider: LanguageProvider, context: LanguageContext } = createSimpleContext({
+export const {
+  use: useLanguage,
+  provider: LanguageProvider,
+  context: LanguageContext,
+} = createSimpleContext({
   name: "Language",
   gate: false,
   init: (props: { locale?: Locale }) => {

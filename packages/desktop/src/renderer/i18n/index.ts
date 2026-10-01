@@ -7,15 +7,8 @@ import { dict as desktopKo } from "./ko"
 import { dict as desktopDe } from "./de"
 import { dict as desktopEs } from "./es"
 import { dict as desktopFr } from "./fr"
-import { dict as desktopDa } from "./da"
 import { dict as desktopJa } from "./ja"
-import { dict as desktopPl } from "./pl"
-import { dict as desktopRu } from "./ru"
-import { dict as desktopUk } from "./uk"
-import { dict as desktopAr } from "./ar"
-import { dict as desktopNo } from "./no"
 import { dict as desktopBr } from "./br"
-import { dict as desktopBs } from "./bs"
 
 import { dict as appEn } from "../../../../app/src/i18n/en"
 
@@ -88,17 +81,8 @@ const appOverlayLoaders: Record<Exclude<Locale, "en">, () => Promise<AppLocaleMo
   de: () => import("../../../../app/src/i18n/de"),
   es: () => import("../../../../app/src/i18n/es"),
   fr: () => import("../../../../app/src/i18n/fr"),
-  da: () => import("../../../../app/src/i18n/da"),
   ja: () => import("../../../../app/src/i18n/ja"),
-  pl: () => import("../../../../app/src/i18n/pl"),
-  ru: () => import("../../../../app/src/i18n/ru"),
-  uk: () => import("../../../../app/src/i18n/uk"),
-  ar: () => import("../../../../app/src/i18n/ar"),
-  no: () => import("../../../../app/src/i18n/no"),
   br: () => import("../../../../app/src/i18n/br"),
-  bs: () => import("../../../../app/src/i18n/bs"),
-  th: () => import("../../../../app/src/i18n/th"),
-  tr: () => import("../../../../app/src/i18n/tr"),
 }
 
 const desktopOverlays: Record<Exclude<Locale, "en">, () => Dictionary> = {
@@ -108,17 +92,8 @@ const desktopOverlays: Record<Exclude<Locale, "en">, () => Dictionary> = {
   de: () => ({ ...base, ...i18n.flatten(desktopDe) }),
   es: () => ({ ...base, ...i18n.flatten(desktopEs) }),
   fr: () => ({ ...base, ...i18n.flatten(desktopFr) }),
-  da: () => ({ ...base, ...i18n.flatten(desktopDa) }),
   ja: () => ({ ...base, ...i18n.flatten(desktopJa) }),
-  pl: () => ({ ...base, ...i18n.flatten(desktopPl) }),
-  ru: () => ({ ...base, ...i18n.flatten(desktopRu) }),
-  uk: () => ({ ...base, ...i18n.flatten(desktopUk) }),
-  ar: () => ({ ...base, ...i18n.flatten(desktopAr) }),
-  no: () => ({ ...base, ...i18n.flatten(desktopNo) }),
   br: () => ({ ...base, ...i18n.flatten(desktopBr) }),
-  bs: () => ({ ...base, ...i18n.flatten(desktopBs) }),
-  th: () => base,
-  tr: () => base,
 }
 
 export async function build(locale: Locale): Promise<Dictionary> {

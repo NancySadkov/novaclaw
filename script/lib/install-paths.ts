@@ -44,6 +44,7 @@
  */
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
+import ts from "typescript"
 
 /** A package manager whose install command replays (or re-resolves) a lockfile. */
 export type Manager = "bun" | "npm" | "pnpm" | "yarn"
@@ -111,18 +112,21 @@ const TERMINATORS = /^(\||\|\||&&|;|&|>|>>|<|2>&1|\)|\}|\/\/|\/\*)/
 export function stripComments(source: string, language: "ts" | "shell"): string {
   let text = source
   if (language === "ts") {
-    text = text.replace(/\/\*[\s\S]*?\*\//g, (match) => match.replace(/[^\n]/g, " "))
+    const source = ts.createSourceFile("build.ts", text, ts.ScriptTarget.Latest, false)
+    const ranges = new Map<number, ts.CommentRange>()
+    const visit = (node: ts.Node) => {
+      for (const range of [
+        ...(ts.getLeadingCommentRanges(text, node.pos) ?? []),
+        ...(ts.getTrailingCommentRanges(text, node.end) ?? []),
+      ])
+        ranges.set(range.pos, range)
+      for (const child of node.getChildren(source)) visit(child)
+    }
+    visit(source)
+    for (const range of [...ranges.values()].sort((left, right) => right.pos - left.pos))
+      text =
+        text.slice(0, range.pos) + text.slice(range.pos, range.end).replace(/[^\r\n]/g, " ") + text.slice(range.end)
     return text
-      .split("\n")
-      .map((line) => {
-        // Not a full JS lexer: this drops a line comment marker inside a string literal too. Safe direction
-        // — it can only hide a would-be match, and a `bun install` written inside a string after a `//`
-        // on the same line is not a shape this repo has ever used. The array-literal form
-        // (`["bun", "install", …]`) is matched separately and is unaffected, because it has no `//`.
-        const index = line.indexOf("//")
-        return index === -1 ? line : line.slice(0, index)
-      })
-      .join("\n")
   }
   return text
     .split("\n")
