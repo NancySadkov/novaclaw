@@ -457,6 +457,53 @@ describe("SessionV2.create", () => {
     }),
   )
 
+  /**
+   * The `!command` row is the same class as the compaction audit row: a durable row that says "this
+   * is still running", created before the work and settled only at the tail of the effect that
+   * created it. A Stop landing on a running child process used to leave a `shell` message with no
+   * completion and no output — a command echoed in the transcript with nothing under it.
+   *
+   * The interrupt is the thing under test, so it is DELIVERED here rather than simulated: the
+   * timeout tears the fiber down exactly the way a Stop, a lease steal or a preempted drain does,
+   * and the assertion is that the row still settled.
+   */
+  it.live("settles the shell row when the command is interrupted mid-run", () =>
+    Effect.gen(function* () {
+      const dir = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+      )
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({
+        location: Location.Ref.make({ directory: AbsolutePath.make(dir.path) }),
+        agent,
+      })
+
+      yield* session
+        .shell({ sessionID: created.id, command: "sleep 30" })
+        .pipe(Effect.timeout("500 millis"), Effect.ignore)
+
+      const shellEvents = Array.from(
+        yield* session.events({ sessionID: created.id }).pipe(
+          Stream.filter(
+            (event) => event.type === SessionEvent.Shell.Started.type || event.type === SessionEvent.Shell.Ended.type,
+          ),
+          Stream.take(2),
+          Stream.runCollect,
+        ),
+      )
+      const started = shellEvents.find((event) => event.type === SessionEvent.Shell.Started.type)?.data as
+        | { callID: string }
+        | undefined
+      const ended = shellEvents.find((event) => event.type === SessionEvent.Shell.Ended.type)?.data as
+        | { callID: string; output: string }
+        | undefined
+      expect(started?.callID).toBeDefined()
+      expect(ended?.callID).toBe(started?.callID)
+      expect(ended?.output).toBe("")
+    }),
+  )
+
   it.effect("switches the selected agent through the durable Session event", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service

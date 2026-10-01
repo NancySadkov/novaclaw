@@ -2,7 +2,7 @@ import { expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { Effect, Stream } from "effect"
+import { Duration, Effect, Stream } from "effect"
 import { LLM, LLMEvent, Message, Model, SystemPart, type LLMRequest } from "@novaclaw/llm"
 import * as OpenAIChat from "@novaclaw/llm/protocols/openai-compatible-chat"
 import { SessionCompaction } from "@novaclaw/core/session/compaction"
@@ -30,6 +30,8 @@ async function compact(input: {
   unbounded?: boolean
   chunkSize?: number
   reasoning?: boolean
+  hang?: boolean
+  settleWithin?: number
 }) {
   const context = input.context ?? 32_768
   const model = Model.make({
@@ -39,18 +41,21 @@ async function compact(input: {
   })
   const requests: LLMRequest[] = []
   let deltas = 0
+  let started: any
   let ended: any
   let outcome: SessionCompaction.Outcome | undefined
   const compactor = SessionCompaction.make({
     events: {
       publish: (definition: any, data: any, options: any) =>
         Effect.sync(() => {
+          if (definition.type === "session.next.compaction.started") started = { ...data, metadata: options?.metadata }
           if (definition.type === "session.next.compaction.ended") ended = { ...data, metadata: options?.metadata }
         }),
     } as never,
     llm: {
       stream: (request) => {
         requests.push(request)
+        if (input.hang) return Stream.never
         if (input.unbounded)
           return Stream.fromIterable<LLMEvent>(
             (function* () {
@@ -78,22 +83,28 @@ async function compact(input: {
   const request =
     input.request ??
     LLM.request({ model, system: [SystemPart.make("System rules. ".repeat(300))], messages: [], tools: [] })
-  const compacted = await Effect.runPromise(
-    compactor.compactAfterOverflow({
-      sessionID: "ses_recovery" as never,
-      model,
-      request,
-      entries: input.messages.map((message, i) => ({ seq: i + 1, message })) as never,
-      scratchFolder: input.scratchFolder,
-      summaryAllowed: input.summaryAllowed,
-      onOutcome: (value) => {
-        outcome = value
-      },
-    }),
-  )
+  const cycle = compactor.compactAfterOverflow({
+    sessionID: "ses_recovery" as never,
+    model,
+    request,
+    entries: input.messages.map((message, i) => ({ seq: i + 1, message })) as never,
+    scratchFolder: input.scratchFolder,
+    summaryAllowed: input.summaryAllowed,
+    onOutcome: (value) => {
+      outcome = value
+    },
+  })
+  // `settleWithin` is the interrupt the test DELIVERS, not a guard the code has: a timeout here
+  // tears the fiber down exactly the way a Stop, a lease steal or a preempted drain does.
+  const bounded =
+    input.settleWithin === undefined ? cycle : cycle.pipe(Effect.timeout(Duration.millis(input.settleWithin)))
+  const compacted = await Effect.runPromise(bounded).catch((error: unknown) => {
+    if (input.settleWithin === undefined) throw error
+    return error
+  })
   const overlay =
     ended === undefined ? undefined : { ...ended, type: "compaction", id: ended.messageID, summary: ended.text }
-  return { compacted, ended, overlay, outcome, requests, model, request, deltas }
+  return { compacted, started, ended, overlay, outcome, requests, model, request, deltas }
 }
 
 for (let context = 4096; context <= 1_048_576; context *= 2) {
@@ -256,4 +267,51 @@ test("bounded semantic evidence preserves the previous summary across a large ne
   expect(evidence).toContain("ANCHORED_CRITICAL_FACT")
   expect(evidence).toContain("LATEST_FACT")
   expect(PromptEstimate.whole(run.requests[0]!)).toBeLessThanOrEqual(SessionCompaction.DEFAULT_SUMMARY_INPUT_TOKENS)
+})
+
+/**
+ * The ratchet for the defect measured on a live packaged instance (`ses_lamprias`,
+ * 2026-10-01 18:51:18Z–18:52:53Z): six `compaction.started` events with no `compaction.ended`
+ * among them, and therefore six `compaction-status` rows frozen at `status: "running"` — which the
+ * transcript renders, permanently, as "Compacting the context ~0 tokens".
+ *
+ * A started row is a CLAIM that work is in progress, so the only acceptable number of terminal
+ * events for one start is exactly one, on EVERY exit. An interrupt is the exit that was missing, and
+ * it is not exotic: a Stop, a lease steal, a preempted drain and a process death all arrive that way.
+ */
+test("an interrupted compaction settles its audit row instead of leaving it running", async () => {
+  const run = await compact({
+    context: 4096,
+    messages: [user("history ".repeat(4000))],
+    hang: true,
+    settleWithin: 40,
+  })
+  expect(run.started?.messageID).toBeDefined()
+  expect(run.ended?.messageID).toBe(run.started.messageID)
+  expect(run.ended.failure).toBe("interrupted")
+  // A failure settlement must not be mistaken for a fold: the projector skips the compaction
+  // overlay for a `failure`, so an empty text/recent here is what leaves history untouched.
+  expect(run.ended.text).toBe("")
+  expect(run.ended.recent).toBe("")
+  expect(run.ended.prefixSeq).toBe(1)
+  expect(run.ended.prefixHash).toBe("a".repeat(64))
+  expect(run.compacted).not.toBe(true)
+})
+
+test("a compaction that settles normally still publishes exactly one terminal event", async () => {
+  const run = await compact({ context: 4096, messages: [user("history ".repeat(4000))] })
+  expect(run.started?.messageID).toBeDefined()
+  expect(run.ended.messageID).toBe(run.started.messageID)
+  expect(run.ended.failure).toBeUndefined()
+  expect(run.compacted).toBe(true)
+})
+
+test("a decline before the start stays silent — the finalizer settles nothing it did not start", async () => {
+  // A transcript with nothing foldable declines BEFORE the row exists, so neither event may fire.
+  // This is the other half of the invariant: the settlement belongs to a started row and to nothing
+  // else, which is what keeps the counter honest in both directions.
+  const run = await compact({ context: 4096, messages: [user("x")], summaryAllowed: false })
+  expect(run.started).toBeUndefined()
+  expect(run.ended).toBeUndefined()
+  expect(run.compacted).toBe(false)
 })

@@ -1,7 +1,7 @@
 export * as SessionCompaction from "./compaction"
 
 import { LLM, LLMError, LLMEvent, Message, type FinishReason, type LLMRequest, type Model } from "@novaclaw/llm"
-import { DateTime, Effect, Stream } from "effect"
+import { Cause, DateTime, Effect, Exit, Stream } from "effect"
 import { OldContext } from "./old-context"
 import { displayPath } from "../util/path"
 import type { ConfigCompaction } from "../config/compaction"
@@ -675,6 +675,58 @@ export const make = (dependencies: Dependencies) => {
       "compaction.before.tokens": input.overflowPromptTokens ?? PromptEstimate.withMargin(triggerEstimate),
       "compaction.entries": input.entries.length,
     }
+    /**
+     * 🔴 **THE AUDIT ROW IS CREATED LAST OF THE INPUTS, AND IT HAS EXACTLY ONE OWNER.**
+     *
+     * A durable "compaction is running" row must never outlive the effect that created it. Measured
+     * on a live packaged instance (`ses_lamprias`, 2026-10-01 18:51:18Z–18:52:53Z): six consecutive
+     * `session.next.compaction.started` events, each with its own `messageID`, and not ONE
+     * `compaction.progress` or `compaction.ended` among them. Each is a `compaction-status` row left
+     * at `status: "running"`, which the transcript renders forever as "Compacting the context ~0
+     * tokens" — forever, because a row that never settles has no completion time and no character
+     * count, and the next turn's over-threshold trigger then stacks another one beside it. The
+     * repair (`settleInterruptedCompactions`) runs once per process boot, so the user saw six
+     * identical spinners and one real fold.
+     *
+     * The hole was shape, not a missing branch: the row was created at the START and settled at the
+     * END of a long tail (prefix hash, scheduler maintenance lease, provider stream, filesystem
+     * archive), so any exit that was not one of the two `Ended` publishes left a row claiming work
+     * in progress with nobody left to finish it — a Stop, a lease steal, a preempted drain, a defect.
+     * So `prefixSeq`/`prefixHash` are resolved BEFORE the row exists (a hash read that dies can no
+     * longer orphan anything), and `end` below is the only writer: the body calls it, and the
+     * finalizer calls it for whatever the body did not.
+     */
+    const prefixSeq = input.entries.reduce((highest, entry) => Math.max(highest, entry.seq), 0)
+    const prefixHash = yield* dependencies.prefixHash(input.sessionID, prefixSeq)
+    let settled = false
+    const end = (
+      payload: {
+        readonly text: string
+        readonly recent: string
+        readonly failure?: string
+        readonly generatedChars?: number
+      },
+      metadata?: Record<string, unknown>,
+    ) =>
+      Effect.suspend(() => {
+        if (settled) return Effect.void
+        settled = true
+        return Effect.gen(function* () {
+          yield* dependencies.events.publish(
+            SessionEvent.Compaction.Ended,
+            {
+              sessionID: input.sessionID,
+              messageID,
+              timestamp: yield* DateTime.now,
+              reason,
+              prefixSeq,
+              prefixHash,
+              ...payload,
+            },
+            metadata === undefined ? undefined : { metadata: { ...decision, ...metadata } },
+          )
+        })
+      })
     yield* dependencies.events.publish(
       SessionEvent.Compaction.Started,
       {
@@ -685,115 +737,90 @@ export const make = (dependencies: Dependencies) => {
       },
       { metadata: decision },
     )
-    const prefixSeq = input.entries.reduce((highest, entry) => Math.max(highest, entry.seq), 0)
-    const prefixHash = yield* dependencies.prefixHash(input.sessionID, prefixSeq)
-    let why: DeclineReason = !config.summarize
-      ? "prune-only"
-      : input.summaryAllowed === false
-        ? "summarizer-backoff"
-        : "context-too-small"
-    let summary = ""
-    let retained = trimSummaryHead(transcript, budget, false, (text) => replacementTokens("", text))
-    let mode: Outcome["mode"] = "deterministic"
     let generatedChars = 0
-    const promptCeiling = summarizeInputCeiling(context, summaryOutput, config.summarizeInput)
-    if (canSummarize) {
-      // One bounded prefill and one answer at any context size. Evidence precedes the operation.
-      // The complete evidence stays in the archive when a 1M transcript exceeds this prefill cap.
-      const requestFor = (evidence: string) =>
-        LLM.request({
-          model: input.model,
-          messages: [Message.user(buildPrompt({ previousSummary: checkpoint?.summary, context: [evidence] }))],
-          tools: [],
-          generation: { maxTokens: summaryOutput },
-        })
-      const evidence = trimSummaryHead(
-        [checkpoint?.recent ?? "", ...entries.map((entry) => serializeMessage(entry.message))]
-          .filter(Boolean)
-          .join("\n\n"),
-        promptCeiling,
-        false,
-        (text) => PromptEstimate.whole(requestFor(text), input.imagePatchPixels),
-        HISTORY_HEAD_REMOVED,
-      )
-      const request = requestFor(evidence)
-      if (!evidence || PromptEstimate.whole(request, input.imagePatchPixels) > promptCeiling) {
-        why = "transcript-too-large"
-      } else {
-        const answer = yield* summarize({
-          request,
-          model: input.model,
-          outputTokens: summaryOutput,
-          sessionID: input.sessionID,
-          messageID,
-          maintenance: input.maintenance,
-          guard: input.guard,
-        })
-        generatedChars = answer.generatedChars
-        const candidateTokens = replacementTokens(answer.text, recent)
-        if (answer.overBudget) why = "summary-unusable"
-        else if (!answer.completed || answer.failed || !answer.text.trim()) why = "summarizer-unavailable"
-        else if (
-          answer.finish !== "stop" ||
-          !summaryWithinBudget(answer.text, summaryOutput, answer.reportedTokens) ||
-          candidateTokens >= before ||
-          candidateTokens > budget
+    const cycle = Effect.gen(function* () {
+      let why: DeclineReason = !config.summarize
+        ? "prune-only"
+        : input.summaryAllowed === false
+          ? "summarizer-backoff"
+          : "context-too-small"
+      let summary = ""
+      let retained = trimSummaryHead(transcript, budget, false, (text) => replacementTokens("", text))
+      let mode: Outcome["mode"] = "deterministic"
+      const promptCeiling = summarizeInputCeiling(context, summaryOutput, config.summarizeInput)
+      if (canSummarize) {
+        // One bounded prefill and one answer at any context size. Evidence precedes the operation.
+        // The complete evidence stays in the archive when a 1M transcript exceeds this prefill cap.
+        const requestFor = (evidence: string) =>
+          LLM.request({
+            model: input.model,
+            messages: [Message.user(buildPrompt({ previousSummary: checkpoint?.summary, context: [evidence] }))],
+            tools: [],
+            generation: { maxTokens: summaryOutput },
+          })
+        const evidence = trimSummaryHead(
+          [checkpoint?.recent ?? "", ...entries.map((entry) => serializeMessage(entry.message))]
+            .filter(Boolean)
+            .join("\n\n"),
+          promptCeiling,
+          false,
+          (text) => PromptEstimate.whole(requestFor(text), input.imagePatchPixels),
+          HISTORY_HEAD_REMOVED,
         )
-          why = "summary-unusable"
-        else {
-          summary = answer.text
-          retained = recent
-          mode = "semantic"
-        }
-        if (mode === "deterministic" && why === "summary-unusable")
-          yield* Log.event("session.compaction.summary.truncated", {
-            "session.id": String(input.sessionID),
-            "compaction.output.cap": summaryOutput,
-            "compaction.summary.chars": answer.generatedChars,
-          })
-      }
-    }
-    const after = replacementTokens(summary, retained)
-    if (after >= before || after > budget) {
-      yield* dependencies.events.publish(SessionEvent.Compaction.Ended, {
-        sessionID: input.sessionID,
-        messageID,
-        timestamp: yield* DateTime.now,
-        reason,
-        text: "",
-        recent: "",
-        prefixSeq,
-        prefixHash,
-        failure: "nothing-to-fold",
-        generatedChars,
-      })
-      return decline("nothing-to-fold")
-    }
-    const saved =
-      input.scratchFolder === undefined
-        ? undefined
-        : yield* saveFoldedChat({
-            scratchFolder: input.scratchFolder,
-            text: original,
+        const request = requestFor(evidence)
+        if (!evidence || PromptEstimate.whole(request, input.imagePatchPixels) > promptCeiling) {
+          why = "transcript-too-large"
+        } else {
+          const answer = yield* summarize({
+            request,
+            model: input.model,
+            outputTokens: summaryOutput,
             sessionID: input.sessionID,
-            at: archiveAt,
+            messageID,
+            maintenance: input.maintenance,
+            guard: input.guard,
           })
-    yield* dependencies.events.publish(
-      SessionEvent.Compaction.Ended,
-      {
-        sessionID: input.sessionID,
-        messageID,
-        timestamp: yield* DateTime.now,
-        reason,
-        text: summary,
-        recent: retained,
-        prefixSeq,
-        prefixHash,
-        generatedChars,
-      },
-      {
-        metadata: {
-          ...decision,
+          generatedChars = answer.generatedChars
+          const candidateTokens = replacementTokens(answer.text, recent)
+          if (answer.overBudget) why = "summary-unusable"
+          else if (!answer.completed || answer.failed || !answer.text.trim()) why = "summarizer-unavailable"
+          else if (
+            answer.finish !== "stop" ||
+            !summaryWithinBudget(answer.text, summaryOutput, answer.reportedTokens) ||
+            candidateTokens >= before ||
+            candidateTokens > budget
+          )
+            why = "summary-unusable"
+          else {
+            summary = answer.text
+            retained = recent
+            mode = "semantic"
+          }
+          if (mode === "deterministic" && why === "summary-unusable")
+            yield* Log.event("session.compaction.summary.truncated", {
+              "session.id": String(input.sessionID),
+              "compaction.output.cap": summaryOutput,
+              "compaction.summary.chars": answer.generatedChars,
+            })
+        }
+      }
+      const after = replacementTokens(summary, retained)
+      if (after >= before || after > budget) {
+        yield* end({ text: "", recent: "", failure: "nothing-to-fold", generatedChars })
+        return decline("nothing-to-fold")
+      }
+      const saved =
+        input.scratchFolder === undefined
+          ? undefined
+          : yield* saveFoldedChat({
+              scratchFolder: input.scratchFolder,
+              text: original,
+              sessionID: input.sessionID,
+              at: archiveAt,
+            })
+      yield* end(
+        { text: summary, recent: retained, generatedChars },
+        {
           "compaction.mode": mode,
           ...(mode === "deterministic" ? { "compaction.deterministic.reason": why } : {}),
           "compaction.after.tokens": after,
@@ -803,10 +830,30 @@ export const make = (dependencies: Dependencies) => {
           "compaction.summary.chars": summary.length,
           "compaction.recent.chars": retained.length,
         },
-      },
+      )
+      input.onOutcome?.({ mode, ...(mode === "deterministic" ? { reason: why } : {}) })
+      return true
+    })
+    /**
+     * The finalizer, not a branch. `Effect.onExit` runs on success, on a typed failure, on a defect
+     * AND on an interrupt, and it runs uninterruptibly — which is the only place an abandoned
+     * compaction is still able to speak (measured: `interrupt-notice.ts` records the same fact for
+     * the turn-level notice, where two in-flow attempts were proven dead by compiled-in probes).
+     * `end` is idempotent, so a cycle that already settled costs nothing here.
+     *
+     * ⚠️ Best-effort, and deliberately so: a torn-down turn is already lost, and a settlement publish
+     * that fails must not convert that loss into a thrown error on a path that is being unwound.
+     */
+    return yield* cycle.pipe(
+      Effect.onExit((exit) =>
+        end({
+          text: "",
+          recent: "",
+          generatedChars,
+          failure: Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause) ? "interrupted" : "faulted",
+        }).pipe(Effect.ignore),
+      ),
     )
-    input.onOutcome?.({ mode, ...(mode === "deterministic" ? { reason: why } : {}) })
-    return true
   })
   const compactIfNeeded = Effect.fn("SessionCompaction.compactIfNeeded")(function* (input: Input) {
     // The trigger's own three exits report through the same channel as the nine below it, so a

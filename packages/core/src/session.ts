@@ -1365,30 +1365,54 @@ export const layer = Layer.effect(
           command: input.command,
           timestamp: yield* DateTime.now,
         })
-        const output = yield* Effect.gen(function* () {
-          const loc = yield* Location.Service
-          const appProcess = yield* AppProcess.Service
-          const shellPath = Shell.preferred()
-          const command = ChildProcess.make(shellPath, Shell.args(shellPath, input.command, loc.directory), {
-            cwd: loc.directory,
-            extendEnv: true,
-            env: { ...Shell.toolchainEnv(shellPath), TERM: "dumb" },
-            stdin: "ignore",
-            forceKillAfter: Duration.seconds(3),
+        /**
+         * The `!command` row's ONE owner, for the same reason the compaction audit row has one: a
+         * durable row that says "this is still running" must not survive the effect that opened it.
+         * The child process between Started and Ended is interruptible, and an interrupt here left a
+         * `shell` message with no completion and no output — a command echoed in the transcript with
+         * nothing under it and nothing in the record saying it had stopped. Same class as the
+         * compaction row, and the same fix: a finalizer, not a branch.
+         */
+        let settled = false
+        const end = (output: string) =>
+          Effect.suspend(() => {
+            if (settled) return Effect.void
+            settled = true
+            return Effect.gen(function* () {
+              yield* events.publish(SessionEvent.Shell.Ended, {
+                sessionID: input.sessionID,
+                callID,
+                output,
+                timestamp: yield* DateTime.now,
+              })
+            })
           })
-          const run = yield* appProcess.run(command, {
-            combineOutput: true,
-            maxOutputBytes: SHELL_MAX_OUTPUT_BYTES,
-          })
-          return run.output?.toString("utf8") ?? ""
-        }).pipe(Effect.provide(locations.get(session.location)), Effect.provide(AppProcess.defaultLayer), Effect.orDie)
-        yield* events.publish(SessionEvent.Shell.Ended, {
-          sessionID: input.sessionID,
-          callID,
-          output,
-          timestamp: yield* DateTime.now,
+        const cycle = Effect.gen(function* () {
+          const output = yield* Effect.gen(function* () {
+            const loc = yield* Location.Service
+            const appProcess = yield* AppProcess.Service
+            const shellPath = Shell.preferred()
+            const command = ChildProcess.make(shellPath, Shell.args(shellPath, input.command, loc.directory), {
+              cwd: loc.directory,
+              extendEnv: true,
+              env: { ...Shell.toolchainEnv(shellPath), TERM: "dumb" },
+              stdin: "ignore",
+              forceKillAfter: Duration.seconds(3),
+            })
+            const run = yield* appProcess.run(command, {
+              combineOutput: true,
+              maxOutputBytes: SHELL_MAX_OUTPUT_BYTES,
+            })
+            return run.output?.toString("utf8") ?? ""
+          }).pipe(
+            Effect.provide(locations.get(session.location)),
+            Effect.provide(AppProcess.defaultLayer),
+            Effect.orDie,
+          )
+          yield* end(output)
+          return messageID
         })
-        return messageID
+        return yield* cycle.pipe(Effect.onExit(() => end("").pipe(Effect.ignore)))
       }),
       // The `/command` op: expand a saved slash-command template and submit it as a prompt —
       // the model turn then rides the normal runner (V1 `SessionPrompt.command` likewise just
