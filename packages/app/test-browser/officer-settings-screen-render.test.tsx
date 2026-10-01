@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createSignal } from "solid-js"
 import { render } from "solid-js/web"
-import { MemoryRouter, Route } from "@solidjs/router"
+import { MemoryRouter, Route, useNavigate } from "@solidjs/router"
 import { DialogProvider } from "@novaclaw/ui/context/dialog"
 import { OfficerSettingsScreen } from "@/components/officer-settings-screen"
 import { GlobalContext } from "@/context/global"
@@ -33,7 +33,7 @@ import { dict } from "@/i18n/en"
  *   provider catalog's cold start). The symptom is silent: a colleague bound to a specific model
  *   reads "Inherit the instance default".
  *
- *   **D3** — Save was enabled before the screen had loaded the fields it writes. `dirty()` needs one
+ *   **D3** — The screen once wrote before it had loaded the fields it writes. `dirty()` needs one
  *   touched field, and the `*Value()` accessors fall back draft → stored → `""`, so one character
  *   typed into Name before the fetch landed wrote `title` away as an empty string.
  *
@@ -85,7 +85,7 @@ function mount(options: {
   models?: () => unknown[]
   /** Drives the kernel's enablement predicate; absent means every model is runnable. */
   modelsEnabled?: (key: { providerID: string; modelID: string }) => boolean
-  write?: (patch: unknown) => void
+  write?: (patch: unknown) => unknown
   remove?: (paths: string[][]) => void
 }) {
   host = document.createElement("div")
@@ -139,34 +139,43 @@ function mount(options: {
    */
   const tabsStub = { closeSessionTab: () => {}, store: [] as never[] }
 
+  const SettingsView = () => {
+    const navigate = useNavigate()
+    return (
+      <SettingsProvider>
+        <LanguageContext.Provider value={languageStub as never}>
+          <GlobalContext.Provider value={globalStub as never}>
+            <ServerContext.Provider value={{ current: connection } as never}>
+              <ServerSDKProvider>
+                <ServerSyncContext.Provider value={syncStub as never}>
+                  <ModelsContext.Provider value={modelsStub as never}>
+                    <TabsContext.Provider value={tabsStub as never}>
+                      <DialogProvider>
+                        <button data-action="test-home" onClick={() => navigate("/home")} />
+                        <button data-action="test-officer-tab" onClick={() => navigate("/officer")} />
+                        <OfficerSettingsScreen
+                          agentID={options.agentID ?? "theron"}
+                          onDismiss={() => navigate("/back")}
+                        />
+                      </DialogProvider>
+                    </TabsContext.Provider>
+                  </ModelsContext.Provider>
+                </ServerSyncContext.Provider>
+              </ServerSDKProvider>
+            </ServerContext.Provider>
+          </GlobalContext.Provider>
+        </LanguageContext.Provider>
+      </SettingsProvider>
+    )
+  }
   dispose = render(
     () => (
       <PlatformProvider value={{ platform: "web" } as never}>
         <MemoryRouter>
-          <Route
-            path="/"
-            component={() => (
-              <SettingsProvider>
-                <LanguageContext.Provider value={languageStub as never}>
-                  <GlobalContext.Provider value={globalStub as never}>
-                    <ServerContext.Provider value={{ current: connection } as never}>
-                      <ServerSDKProvider>
-                        <ServerSyncContext.Provider value={syncStub as never}>
-                          <ModelsContext.Provider value={modelsStub as never}>
-                            <TabsContext.Provider value={tabsStub as never}>
-                              <DialogProvider>
-                                <OfficerSettingsScreen agentID={options.agentID ?? "theron"} onDismiss={() => {}} />
-                              </DialogProvider>
-                            </TabsContext.Provider>
-                          </ModelsContext.Provider>
-                        </ServerSyncContext.Provider>
-                      </ServerSDKProvider>
-                    </ServerContext.Provider>
-                  </GlobalContext.Provider>
-                </LanguageContext.Provider>
-              </SettingsProvider>
-            )}
-          />
+          <Route path="/" component={SettingsView} />
+          <Route path="/back" component={() => <div data-page="back" />} />
+          <Route path="/home" component={() => <div data-page="home" />} />
+          <Route path="/officer" component={() => <div data-page="officer" />} />
         </MemoryRouter>
       </PlatformProvider>
     ),
@@ -222,10 +231,7 @@ const chooseText = async (select: HTMLElement, label: string) => {
   option!.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }))
   await settle()
 }
-const saveButton = () =>
-  [...document.querySelectorAll("button")].find((b) => b.textContent?.includes("agentConfig.save")) as
-    | HTMLButtonElement
-    | undefined
+const backButton = () => document.querySelector<HTMLButtonElement>('[data-action="agent-config-back"]')!
 /**
  * Controls that could rewrite the CHARTER: a text field, a textarea, a picker. Counted, not returned
  * — see the note at `charterControls`'s first use below on what handing a failing assertion an
@@ -305,17 +311,18 @@ describe("Officer Settings screen renders", () => {
     expect(labelCount("agentConfig.clone")).toBe(0)
     expect(labelCount("agentConfig.retire")).toBe(0)
     expect(screenText()).toContain("agentConfig.folderGoverning")
-    // The lifecycle actions that still apply ARE present — pausing is not one of the three exceptions,
-    // and Save is now unconditional because the profile above it is editable.
+    // The lifecycle actions that still apply ARE present — pausing is not one of the three exceptions.
     // ⚠️ ONE object comparison rather than two `toBe(true)`s, so a failure NAMES the control that is
     // missing instead of reporting a bare `false`. Asserting on booleans, never on the nodes.
     expect({
       pause: document.querySelector('[data-action="agent-pause"]') !== null,
-      save: saveButton() !== undefined,
+      back: backButton() !== null,
       clearChat: document.querySelector('[data-action="agent-clear-chat"]') !== null,
-    }).toEqual({ pause: true, save: true, clearChat: false })
-    // The claim VR-001 was always about: a Save may exist, but the screen wrote nothing merely for
-    // being opened.
+    }).toEqual({ pause: true, back: true, clearChat: false })
+    expect(writes).toEqual([])
+    backButton().click()
+    await settle()
+    expect(document.querySelector('[data-page="back"]')).not.toBeNull()
     expect(writes).toEqual([])
     expect(screenText()).not.toContain("NOTHING was written")
   })
@@ -326,11 +333,13 @@ describe("Officer Settings screen renders", () => {
     await settle()
     const header = document.querySelector('[data-slot="agent-settings-header"]')
     expect(header !== null).toBe(true)
-    for (const action of ["agent-pause", "agent-clone", "agent-retire", "agent-config-cancel", "agent-config-save"]) {
+    for (const action of ["agent-config-back", "agent-pause", "agent-clone", "agent-retire"]) {
       const buttons = document.querySelectorAll(`[data-action="${action}"]`)
       expect(buttons.length).toBe(1)
       expect(header?.contains(buttons[0]!)).toBe(true)
     }
+    expect(document.querySelector('[data-action="agent-config-cancel"]')).toBeNull()
+    expect(document.querySelector('[data-action="agent-config-save"]')).toBeNull()
     expect(labelCount("agentConfig.close")).toBe(0)
     expect(document.querySelector('[data-action="agent-clear-chat"]') === null).toBe(true)
     document.querySelector<HTMLButtonElement>('[data-action="agent-pause"]')!.click()
@@ -443,7 +452,7 @@ describe("Officer Settings screen renders", () => {
       const label = [...document.querySelectorAll("label")].find((row) => row.textContent?.includes(title))
       label?.querySelector<HTMLInputElement>('input[type="checkbox"]')?.click()
     }
-    saveButton()!.click()
+    backButton().click()
     await settle()
     expect(writes.at(-1)).toMatchObject({
       agents: {
@@ -488,7 +497,7 @@ describe("Officer Settings screen renders", () => {
     attempts.dispatchEvent(new Event("input", { bubbles: true }))
     await settle()
 
-    saveButton()!.click()
+    backButton().click()
     await settle()
     expect(writes.at(-1)).toMatchObject({
       agents: { theron: { strict: { enabled: true, attempts: 5, verification: false } } },
@@ -520,7 +529,7 @@ describe("Officer Settings screen renders", () => {
     temperature.dispatchEvent(new Event("input", { bubbles: true }))
     await settle()
 
-    saveButton()!.click()
+    backButton().click()
     await settle()
     expect(writes.at(-1)).toMatchObject({
       agents: { theron: { affective: { enabled: true, temperature: 0.4 } } },
@@ -561,7 +570,7 @@ describe("Officer Settings screen renders", () => {
   })
 
   test("Capabilities denies a tool live and adds a private recipe", async () => {
-    // 🔴 Horizon and recipes save LIVE (like Nudges), not through Save: they are
+    // 🔴 Horizon and recipes save LIVE (like Nudges), rather than on screen exit: they are
     // replace-semantics lists, and a second save path for the same struct is how one of them
     // silently wins. Each action below asserts its own write the moment it lands.
     const writes: unknown[] = []
@@ -656,6 +665,25 @@ describe("Officer Settings screen renders", () => {
     const fragment = (writes.at(-1) as { agents: { theron: Record<string, unknown> } }).agents.theron
     expect("system" in fragment).toBe(false)
     expect("name" in fragment).toBe(false)
+  })
+
+  test("copy tuning saves pending profile edits before applying the prototype", async () => {
+    const writes: unknown[] = []
+    mount({
+      agents: [AGENT, { ...AGENT, id: "iris", name: "Iris", config: { model: "spark/qwen" } }],
+      write: (patch) => writes.push(patch),
+    })
+    await settle()
+    const name = document.querySelector("input") as HTMLInputElement
+    name.value = "Theron the Second"
+    name.dispatchEvent(new Event("input", { bubbles: true }))
+    await choose(document.querySelector<HTMLElement>('[aria-label="Prototype officer"]')!, "iris")
+    const copy = document.querySelector<HTMLButtonElement>('[data-action="agent-copy-tuning"]')!
+    expect(copy.disabled).toBe(false)
+    copy.click()
+    await settle()
+    expect((writes[0] as { agents: { theron: { name: string } } }).agents.theron.name).toBe("Theron the Second")
+    expect(writes[1]).toMatchObject({ agents: { theron: { model: "spark/qwen" } } })
   })
 
   test("copy tuning confirms before replacing the officer's own nudges", async () => {
@@ -789,59 +817,101 @@ describe("Officer Settings screen renders", () => {
     expect(labels).toContain("Holo 3.1")
   })
 
-  test("D3 · Save is disabled while the roster is still in flight", async () => {
-    // `agents: undefined` is the blank window — `agent()` is undefined, so `titleValue()` resolves
-    // to "". Save must not be reachable here even once a field is dirty.
-    mount({ agents: undefined })
+  test("a draft stays on screen while the roster is still loading", async () => {
+    const writes: unknown[] = []
+    mount({ agents: undefined, write: (patch) => writes.push(patch) })
     await settle()
-    const save = saveButton()
-    expect(save).toBeDefined()
-    expect(save!.disabled).toBe(true)
-
     const name = document.querySelector("input") as HTMLInputElement | null
     if (name) {
       name.value = "Theron the Second"
       name.dispatchEvent(new Event("input", { bubbles: true }))
     }
-    // Dirty, but still not loaded: the Clone button beside it has always carried this guard.
-    expect(saveButton()!.disabled).toBe(true)
+    backButton().click()
+    await settle()
+    expect(document.querySelector('[data-component="agent-settings"]')).not.toBeNull()
+    expect(writes).toEqual([])
   })
 
-  test("D3 · Save becomes reachable once the roster has loaded and a field is edited", async () => {
-    mount({ agents: [AGENT] })
-    await settle()
-    expect(saveButton()!.disabled).toBe(true) // loaded, but nothing touched yet
+  for (const [action, destination] of [
+    ["agent-config-back", "back"],
+    ["test-home", "home"],
+    ["test-officer-tab", "officer"],
+  ]) {
+    test(`closing through ${action} saves the draft before navigating`, async () => {
+      const writes: unknown[] = []
+      let finishWrite: (() => void) | undefined
+      mount({
+        agents: [AGENT],
+        write: (patch) => {
+          writes.push(patch)
+          return new Promise<void>((resolve) => { finishWrite = resolve })
+        },
+      })
+      await settle()
+      const name = document.querySelector("input") as HTMLInputElement
+      name.value = "Theron the Second"
+      name.dispatchEvent(new Event("input", { bubbles: true }))
+      document.querySelector<HTMLButtonElement>(`[data-action="${action}"]`)!.click()
+      await settle()
+      expect(document.querySelector('[data-component="agent-settings"]')).not.toBeNull()
+      expect(document.querySelector('[role="status"]')?.textContent).toContain("agentConfig.saving")
+      expect(writes).toHaveLength(1)
+      finishWrite!()
+      await settle()
+      expect(document.querySelector(`[data-page="${destination}"]`)).not.toBeNull()
+      expect((writes[0] as { agents: { theron: { name: string } } }).agents.theron.name).toBe("Theron the Second")
+    })
+  }
 
+  test("a failed write retains the draft and the destination can be retried", async () => {
+    const writes: unknown[] = []
+    let fail = true
+    mount({
+      agents: [AGENT],
+      write: (patch) => {
+        writes.push(patch)
+        if (fail) throw new Error("offline")
+      },
+    })
+    await settle()
     const name = document.querySelector("input") as HTMLInputElement
     name.value = "Theron the Second"
     name.dispatchEvent(new Event("input", { bubbles: true }))
-    expect(saveButton()!.disabled).toBe(false)
+    backButton().click()
+    await settle()
+    expect(document.querySelector('[data-component="agent-settings"]')).not.toBeNull()
+    expect(name.value).toBe("Theron the Second")
+    fail = false
+    backButton().click()
+    await settle()
+    expect(document.querySelector('[data-page="back"]')).not.toBeNull()
+    expect(writes).toHaveLength(2)
   })
 
-  test("the first unsaved edit glints Save once per visit, then never again", async () => {
-    mount({ agents: [AGENT] })
+  test("the latest destination wins when navigation changes during a save", async () => {
+    let finishWrite: (() => void) | undefined
+    let writes = 0
+    mount({
+      agents: [AGENT],
+      write: () => {
+        writes++
+        return new Promise<void>((resolve) => {
+          finishWrite = resolve
+        })
+      },
+    })
     await settle()
-    const save = saveButton()!
-    const mood = document.querySelector('[data-section="affective"] input[type="checkbox"]') as HTMLInputElement
-    expect(save.getAttribute("data-sparkle")).toBeNull()
-
-    mood.checked = true
-    mood.dispatchEvent(new Event("change", { bubbles: true }))
-    expect(save.getAttribute("data-sparkle")).toBe("true")
-
-    await new Promise((resolve) => setTimeout(resolve, 1100))
-    expect(save.getAttribute("data-sparkle")).toBeNull()
-
-    // Clear the edit — no stored config, so the reset is immediate — then edit again. The second edit
-    // makes the screen dirty again but must NOT glint, because one visit gets one glint.
-    document.querySelector<HTMLButtonElement>('[data-action="agent-reset-affective"]')!.click()
+    const name = document.querySelector("input") as HTMLInputElement
+    name.value = "Theron the Second"
+    name.dispatchEvent(new Event("input", { bubbles: true }))
+    document.querySelector<HTMLButtonElement>('[data-action="test-home"]')!.click()
+    document.querySelector<HTMLButtonElement>('[data-action="test-officer-tab"]')!.click()
     await settle()
-    expect(save.disabled).toBe(true)
-
-    mood.checked = false
-    mood.dispatchEvent(new Event("change", { bubbles: true }))
-    expect(save.disabled).toBe(false)
-    expect(save.getAttribute("data-sparkle")).toBeNull()
+    expect(writes).toBe(1)
+    finishWrite!()
+    await settle()
+    expect(document.querySelector('[data-page="officer"]')).not.toBeNull()
+    expect(document.querySelector('[data-page="home"]')).toBeNull()
   })
 
   test("an officer can set zero as a real reasoning override", async () => {
@@ -852,7 +922,7 @@ describe("Officer Settings screen renders", () => {
     budget.value = "0"
     budget.dispatchEvent(new Event("input", { bubbles: true }))
     expect(screenText()).toContain("agentConfig.reasoningBudgetOff")
-    saveButton()!.click()
+    backButton().click()
     await settle()
     expect((writes[0] as { agents: { theron: Record<string, unknown> } }).agents.theron.reasoningBudget).toBe(0)
   })
@@ -882,7 +952,7 @@ describe("Officer Settings screen renders", () => {
       new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
     )
     await settle()
-    saveButton()!.click()
+    backButton().click()
     await settle()
     expect((writes[0] as { agents: { theron: Record<string, unknown> } }).agents.theron.superior).toBe("wren")
   })
@@ -900,13 +970,16 @@ test("Memory shows the three-day horizon and saves a positive whole-day override
   for (const invalid of ["0", "-1", "1.5", ""]) {
     input.value = invalid
     input.dispatchEvent(new Event("input", { bubbles: true }))
-    expect(saveButton()!.disabled).toBe(true)
+    backButton().click()
+    await settle()
+    expect(document.querySelector('[data-component="agent-settings"]')).not.toBeNull()
+    expect(writes).toEqual([])
   }
   input.value = "7"
   input.dispatchEvent(new Event("input", { bubbles: true }))
-  expect(saveButton()!.disabled).toBe(false)
-  saveButton()!.click()
+  backButton().click()
   await settle()
+  expect(document.querySelector('[data-page="back"]')).not.toBeNull()
   expect((writes[0] as { agents: { theron: Record<string, unknown> } }).agents.theron.horizonDays).toBe(7)
 })
 
@@ -951,7 +1024,7 @@ test("returning a colleague to default model and no requirement deletes both ove
   const budget = document.querySelector("#agent-reasoning-budget") as HTMLInputElement
   budget.value = ""
   budget.dispatchEvent(new Event("input", { bubbles: true }))
-  saveButton()!.click()
+  backButton().click()
   await settle()
   const patch = writes[0] as { agents: { theron: Record<string, unknown> } }
   expect(patch.agents.theron.model).toBeUndefined()

@@ -1,5 +1,5 @@
 import type { ConfigV2Agent } from "@novaclaw/sdk/v2/client"
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { Tabs as KobalteTabs } from "@kobalte/core/tabs"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
@@ -25,7 +25,7 @@ import { GOVERNING_ID, displayName, isColleague, memoryKey, superiorCandidates, 
 import { ownerRoute } from "@/apps/memory-owner"
 import { worldMemoryClearScopeVerified } from "@/utils/memory-api"
 import { DEFAULT_HORIZON_DAYS } from "@novaclaw/schema/scratch-horizon"
-import { useLocation, useNavigate } from "@solidjs/router"
+import { useBeforeLeave, useLocation, useNavigate, type BeforeLeaveEventArgs } from "@solidjs/router"
 import { AgentPortrait } from "@/components/agent-portrait"
 import { AGENT_AVATAR_TYPES, removeAgentAvatar, uploadAgentAvatar } from "@/apps/agent-avatar"
 import { isAgentPortraitURL } from "@/apps/agent-portrait"
@@ -73,8 +73,7 @@ type OfficerMode = (typeof MODE_CHOICES)[number]
  *
  * `undefined` draft = untouched (the stored value, if any, rides along untouched);
  * `""` = back to inherit (the key leaves the struct, even when stored); anything else
- * replaces. A non-finite number is refused rather than written — the Save button already
- * guards every numeric draft, so reaching one here is a caller bug, not user input.
+ * replaces. A non-finite number is refused rather than written.
  */
 const mergeDraft = (stored: Record<string, unknown>, touched: Record<string, unknown>): Record<string, unknown> => {
   const next = { ...stored }
@@ -149,7 +148,7 @@ export function OfficerSettingsScreen(props: {
   })
   // 🔴 The server context's ONE shared roster — this screen used to fetch `GET /api/agent` again on
   // EVERY open (review D8), and that in-flight window is what made D3 possible: `agent()` was
-  // `undefined` for a moment on a page that had the data on screen a second earlier, so a Save fired
+  // `undefined` for a moment on a page that had the data on screen a second earlier, so a write fired
   // in that window wrote the colleague's brief away as `""`. It also carries the `.catch` this call
   // site was missing (D1) — a rejected resource read from the eager memo below reached the app's one
   // ErrorBoundary, at its root, and replaced the whole UI.
@@ -188,7 +187,7 @@ export function OfficerSettingsScreen(props: {
   const [superior, setSuperior] = createSignal<string | undefined>()
   // `""` is a real value here and means "back to its own scratch" — distinct from `undefined`, which
   // means "the user has not touched this field". Collapsing the two would make Clear indistinguishable
-  // from Cancel.
+  // from an untouched field.
   const [directory, setDirectory] = createSignal<string | undefined>()
   const [posture, setPosture] = createSignal<"agent" | "chat" | "human" | undefined>()
   const [permissionMode, setPermissionMode] = createSignal<string | undefined>()
@@ -221,14 +220,13 @@ export function OfficerSettingsScreen(props: {
   const [intrInterjection, setIntrInterjection] = createSignal<string | undefined>()
   const [intrGenerate, setIntrGenerate] = createSignal<boolean | undefined>()
   /**
-   * Tools-tab drafts. Recipes and the horizon save LIVE (like Nudges), not through the Save
-   * button: they are replace-semantics lists, and merging them with the scalar drafts would
+   * Tools-tab drafts. Recipes and the horizon save live (like Nudges), rather than on screen exit:
+   * they are replace-semantics lists, and merging them with the scalar drafts would
    * need a second save path for the same struct. The editor below is a draft; everything
    * else here writes through immediately and says so where it does.
    */
   const [horizonAdd, setHorizonAdd] = createSignal("")
-  /** Copy-tuning source officer. `undefined` = none picked. Blocked while scalar drafts are
-   *  dirty — a live copy underneath unsaved edits would silently lose to them on Save. */
+  /** Copy-tuning source officer. `undefined` = none picked. */
   const [copySource, setCopySource] = createSignal<string | undefined>()
   /**
    * Tool-call captions, drafted as the OPT-OUT. `undefined` = untouched; ON is the default, so a
@@ -780,22 +778,6 @@ export function OfficerSettingsScreen(props: {
 
   const [busy, setBusy] = createSignal<"clone" | "clear-memory" | "retire" | "pause" | "copy" | undefined>()
 
-  // A one-second gold glint on Save the moment the first unsaved edit lands: the label that used to sit
-  // here is gone, and a person who changes a field should still be told, without words, where it goes.
-  // Once per visit — the screen is remounted for each visit, and within one it never glints twice.
-  const [saveSparkle, setSaveSparkle] = createSignal(false)
-  let sparkleShown = false
-  let sparkleTimer: ReturnType<typeof setTimeout> | undefined
-  createEffect(() => {
-    if (dirty() && !sparkleShown) {
-      sparkleShown = true
-      setSaveSparkle(true)
-      clearTimeout(sparkleTimer)
-      sparkleTimer = setTimeout(() => setSaveSparkle(false), 1000)
-    }
-  })
-  onCleanup(() => clearTimeout(sparkleTimer))
-
   // The shared roster is also used by render/offline states that deliberately have no SDK yet.
   // Treat that as "not connected", not as a component crash during construction.
   const sdk = () => ctx()?.sdk?.client?.v2
@@ -870,7 +852,7 @@ export function OfficerSettingsScreen(props: {
     if (parsed.profile.name !== undefined) setRenamed(parsed.profile.name)
     if (parsed.profile.title !== undefined) setTitle(parsed.profile.title)
     if (parsed.profile.job !== undefined) setJob(parsed.profile.job)
-    showToast({ variant: "success", title: "Profile loaded — review it, then Save" })
+    showToast({ variant: "success", title: "Profile loaded — review it before leaving" })
   }
 
   /** Officers this colleague may adopt tuning from: every colleague but itself. Nova is a
@@ -878,12 +860,7 @@ export function OfficerSettingsScreen(props: {
   const copyCandidates = createMemo(() =>
     (agents() ?? []).filter((candidate) => candidate.id !== props.agentID && isColleague(candidate)),
   )
-  /**
-   * Adopt another officer's tuning onto THIS officer. Identity and work never cross (the
-   * planner enforces it); private lists replace only behind a confirm, because replacing is
-   * destroying. Writes live, like Clone — and like Clone it refuses to run over unsaved
-   * scalar drafts, which a live write underneath would silently lose to on Save.
-   */
+  /** Adopt another officer's tuning onto this officer. */
   const copyTuning = async () => {
     const target = props.agentID
     const prototypeID = copySource()
@@ -911,6 +888,7 @@ export function OfficerSettingsScreen(props: {
       )
         return
     }
+    if (dirty() && !(await commitDraft())) return
     setBusy("copy")
     try {
       await sync().updateConfig({ agents: { [target]: plan.fragment } } as never)
@@ -925,6 +903,10 @@ export function OfficerSettingsScreen(props: {
 
   /** Hire a copy: same brief, new identity (`apps/agent-clone.ts`). */
   const clone = async () => {
+    if (dirty()) {
+      if (!(await commitDraft())) return
+      await ctx()?.agents.refetch()
+    }
     const source = agent()
     if (source === undefined) return
     setBusy("clone")
@@ -1057,8 +1039,9 @@ export function OfficerSettingsScreen(props: {
         confirmLabel: language.t("agentConfig.retire.confirm.action"),
         destructive: true,
       }))
-    )
+      )
       return
+    if (dirty() && !(await commitDraft())) return
     setBusy("retire")
     try {
       await (client as never as { agent: { remove: (input: unknown) => Promise<{ error?: unknown }> } }).agent
@@ -1157,7 +1140,36 @@ export function OfficerSettingsScreen(props: {
       setIntrGenerate(undefined)
     })
 
-  const save = async () => {
+  const canSave = () =>
+    agent() !== undefined &&
+    busy() === undefined &&
+    reasoningBudgetValid() &&
+    maxToolTimeoutValid() &&
+    strictAttemptsValid() &&
+    strictWallMinutesValid() &&
+    strictExecutionTokensValid() &&
+    strictReasoningTokensValid() &&
+    affTemperatureValid() &&
+    intrCadenceValid() &&
+    !Number.isNaN(parsedMaxWorkers()) &&
+    !Number.isNaN(parsedSpawnDepth()) &&
+    !Number.isNaN(parsedRuntimeHeartbeatMinutes()) &&
+    !Number.isNaN(parsedColleagueMessageIntervalMinutes()) &&
+    !Number.isNaN(parsedHorizonDays())
+
+  const save = async (): Promise<boolean> => {
+    if (!canSave()) {
+      showToast({
+        variant: "error",
+        title:
+          agent() === undefined
+            ? language.t("agentConfig.waitForLoad")
+            : busy() !== undefined
+              ? language.t("agentConfig.waitForAction")
+              : language.t("agentConfig.invalidSettings"),
+      })
+      return false
+    }
     const id = props.agentID
     setSaving(true)
     try {
@@ -1168,8 +1180,8 @@ export function OfficerSettingsScreen(props: {
       // unconditionally from a `*Value()` accessor whose fallback chain is draft → stored → empty —
       // so while the screen's own roster fetch was still in flight, `agent()` was `undefined` and
       // `title`/`personality` resolved to `""`. One character typed into Name before the fetch
-      // landed, then Save, wrote away the brief the user spent ten minutes on, and the toast said it
-      // worked. The guard on the button (`agent() === undefined`) closes the window; sending only
+      // landed, then a write erased the brief the user spent ten minutes on, and the toast said it
+      // worked. The loaded-agent guard closes the window; sending only
       // what was loaded or touched closes the class.
       const requirement = classifyRequirement(needsTaxonomyValue())
       const binding: Pick<ConfigV2Agent, "model" | "needsTaxonomy"> & {
@@ -1412,15 +1424,36 @@ export function OfficerSettingsScreen(props: {
       setSuperior(undefined)
       setNeedsTaxonomy(undefined)
       props.onChanged?.()
-      props.onDismiss()
+      return true
     } catch (error) {
       // A failed save is SAID, never swallowed: the fields still hold the user's words, and telling
       // them it worked when it did not is how a person loses a brief they spent ten minutes writing.
       showToast({ variant: "error", title: language.t("agentConfig.saveFailed"), description: String(error) })
+      return false
     } finally {
       setSaving(false)
     }
   }
+
+  let saveFlight: Promise<boolean> | undefined
+  const commitDraft = () => {
+    if (!saveFlight)
+      saveFlight = save().finally(() => {
+        saveFlight = undefined
+      })
+    return saveFlight
+  }
+  let pendingNavigation: BeforeLeaveEventArgs | undefined
+  useBeforeLeave((event) => {
+    if (!dirty() && !saving()) return
+    event.preventDefault()
+    pendingNavigation = event
+    void commitDraft().then((saved) => {
+      const navigation = pendingNavigation
+      pendingNavigation = undefined
+      if (saved) navigation?.retry(true)
+    })
+  })
 
   return (
     <div
@@ -1462,6 +1495,9 @@ export function OfficerSettingsScreen(props: {
         >
           <Icon name="help" class="size-4" />
         </button>
+        <Show when={saving()}>
+          <span role="status" class="text-xs text-v2-text-text-muted">{language.t("agentConfig.saving")}</span>
+        </Show>
         <div
           data-slot="agent-settings-actions"
           class="flex w-full flex-wrap items-center justify-end gap-1 sm:w-auto sm:shrink-0"
@@ -1499,43 +1535,6 @@ export function OfficerSettingsScreen(props: {
               {busy() === "retire" ? language.t("agentConfig.retiring") : language.t("agentConfig.retire")}
             </button>
           </Show>
-          <span aria-hidden="true" class="mx-1 h-4 border-l border-v2-border-border-base" />
-          <button
-            type="button"
-            data-action="agent-config-cancel"
-            class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02"
-            onClick={props.onDismiss}
-          >
-            {language.t("agentConfig.cancel")}
-          </button>
-          <button
-            type="button"
-            data-action="agent-config-save"
-            data-sparkle={saveSparkle() ? "true" : undefined}
-            class="rounded-md border border-v2-border-border-strong bg-v2-background-bg-layer-03 px-3 py-1.5 text-xs font-semibold text-v2-text-text-base shadow-sm hover:brightness-110 disabled:opacity-40"
-            disabled={
-              !dirty() ||
-              !reasoningBudgetValid() ||
-              !maxToolTimeoutValid() ||
-              !strictAttemptsValid() ||
-              !strictWallMinutesValid() ||
-              !strictExecutionTokensValid() ||
-              !strictReasoningTokensValid() ||
-              !affTemperatureValid() ||
-              !intrCadenceValid() ||
-              Number.isNaN(parsedMaxWorkers()) ||
-              Number.isNaN(parsedSpawnDepth()) ||
-              Number.isNaN(parsedRuntimeHeartbeatMinutes()) ||
-              Number.isNaN(parsedColleagueMessageIntervalMinutes()) ||
-              Number.isNaN(parsedHorizonDays()) ||
-              saving() ||
-              busy() !== undefined ||
-              agent() === undefined
-            }
-            onClick={() => void save()}
-          >
-            {saving() ? language.t("agentConfig.saving") : language.t("agentConfig.save")}
-          </button>
         </div>
       </div>
 
@@ -2092,17 +2091,12 @@ export function OfficerSettingsScreen(props: {
                       type="button"
                       data-action="agent-copy-tuning"
                       class="shrink-0 rounded-md bg-v2-background-bg-layer-03 px-2.5 py-1.5 text-xs font-medium disabled:opacity-40"
-                      disabled={copySource() === undefined || dirty() || busy() !== undefined}
+                      disabled={copySource() === undefined || saving() || busy() !== undefined}
                       onClick={() => void copyTuning()}
                     >
                       {busy() === "copy" ? "Copying…" : "Copy"}
                     </button>
                   </div>
-                  <Show when={dirty() && copySource() !== undefined}>
-                    <p class="mt-1 text-[11px] text-v2-state-fg-warning">
-                      Save or cancel your edits first — a copy written now would lose to them.
-                    </p>
-                  </Show>
                 </details>
                 <button
                   type="button"
