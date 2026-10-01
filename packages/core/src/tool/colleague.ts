@@ -228,7 +228,8 @@ export const layer = Layer.effectDiscard(
           description:
             "Your colleagues — the other named agents on this instance, each with its own chat, memory and job. " +
             "`list` shows who works here and what they own. `ask` hands one of them a piece of work; they answer " +
-            "in their own chat, in their own time, and this does not wait for them. Use it instead of doing " +
+            "in their own chat, in their own time, and this does not wait for them. Messages to deeper officers " +
+            "follow the chain of command through your direct report or superior. Use it instead of doing " +
             "someone else's job, and instead of `spawn` when the work belongs to a role that already exists. " +
             "`message_worker` sends a correction or more context to one of your direct spawned workers without waiting. " +
             "`identity` returns a colleague's exact instance-owned portrait so you can recognise who you are " +

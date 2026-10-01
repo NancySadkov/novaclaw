@@ -22,14 +22,11 @@ export const route = (sender: Sender | undefined, requested: string, roster: Rea
     return { kind: "unavailable", reason: "This session has no officer or parent to receive a colleague message." }
   if (self === requested)
     return { kind: "unavailable", reason: `A message to ${requested} would land in your own chat.` }
-  if (self === AgentV2.NOVA_ID || self === AgentV2.OWNER_ID)
-    return { kind: "officer", recipient: requested, redirected: false }
   const selfInfo = roster.find((agent) => String(agent.id) === self)!
   const superior = AgentV2.resolveSuperior(self, selfInfo.superior, roster, { includePaused: true })
-  if (!superior) return { kind: "unavailable", reason: `No superior is available for ${self}.` }
-  const superiorID = String(superior.id)
+  const superiorID = superior === undefined ? undefined : String(superior.id)
   const targetSuperior = AgentV2.resolveSuperior(requested, target.superior, roster, { includePaused: true })
-  const sameTier = targetSuperior !== undefined && String(targetSuperior.id) === superiorID
+  const sameTier = superiorID !== undefined && targetSuperior !== undefined && String(targetSuperior.id) === superiorID
   if (requested === superiorID || sameTier) return { kind: "officer", recipient: requested, redirected: false }
   let branch = target
   const visited = new Set<string>()
@@ -41,5 +38,7 @@ export const route = (sender: Sender | undefined, requested: string, roster: Rea
       return { kind: "officer", recipient: String(branch.id), redirected: requested !== String(branch.id) }
     branch = parent
   }
-  return { kind: "officer", recipient: superiorID, redirected: true }
+  return superiorID === undefined
+    ? { kind: "unavailable", reason: `No direct report can receive a message to ${requested} from ${self}.` }
+    : { kind: "officer", recipient: superiorID, redirected: true }
 }

@@ -13,9 +13,9 @@ const roster = [
 ] as unknown as AgentV2.Info[]
 
 describe("host-owned colleague routing", () => {
-  test("Nova can reach every officer", () => {
+  test("Nova reaches descendants through its direct report", () => {
     expect(ColleagueRoute.route({ agent: "nova" }, "theon", roster)).toEqual({
-      kind: "officer", recipient: "theon", redirected: false,
+      kind: "officer", recipient: "daedalus", redirected: true,
     })
   })
 

@@ -220,6 +220,8 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   spawnDepth: NonNegativeInt.pipe(Schema.optional),
   /** Minutes between unchanged live-worker/shell reminders. Changes are always reported immediately. */
   runtimeHeartbeatMinutes: PositiveInt.pipe(Schema.optional),
+  unansweredMessageNudges: Schema.Boolean.pipe(Schema.optional),
+  colleagueMessageIntervalMinutes: PositiveInt.pipe(Schema.optional),
   description: Schema.String.pipe(Schema.optional),
   mode: Schema.Literals(["subagent", "primary", "all"]).pipe(Schema.optional),
   hidden: Schema.Boolean.pipe(Schema.optional),

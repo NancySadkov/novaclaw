@@ -25,7 +25,7 @@ const officer = (id: string, superior?: string, kind?: "agent" | "chat" | "human
   })
 
 describe("officer team chat membership", () => {
-  test("includes the officer's whole reporting tree, so siblings can be read together", () => {
+  test("includes only the officer, its superior, siblings, and direct reports", () => {
     const roster = [
       officer("nova"),
       officer("theron"),
@@ -34,7 +34,7 @@ describe("officer team chat membership", () => {
       officer("dione", "iris"),
       officer("other"),
     ]
-    expect(memberIDs(roster, "theron")).toEqual(["theron", "iris", "lyra", "dione"])
+    expect(memberIDs(roster, "theron")).toEqual(["theron", "nova", "iris", "lyra", "other"])
   })
 
   test("does not turn chat, human, hidden, or anonymous staff entries into officers", () => {
@@ -52,18 +52,18 @@ describe("officer team chat membership", () => {
         superior: AgentV2.ID.make("theron"),
       }),
     ]
-    expect(memberIDs(roster, "theron")).toEqual(["theron"])
+    expect(memberIDs(roster, "theron")).toEqual(["theron", "nova"])
     expect(memberIDs(roster, "chatty")).toEqual([])
   })
 
-  test("keeps sibling deliveries, removes routing notes, and excludes outsiders", () => {
+  test("keeps exchanges with the officer, removes routing notes, and excludes other conversations", () => {
     const note = ColleagueNote.compose({ message: "The build is green.", from: "iris", turn: "ask" })
     expect(
       project(
         [
           {
             id: "msg_one",
-            recipient: AgentV2.ID.make("lyra"),
+            recipient: AgentV2.ID.make("theron"),
             created: 1,
             data: { sender: "iris", turn: "ask", text: note },
           },
@@ -79,14 +79,21 @@ describe("officer team chat membership", () => {
             created: 3,
             data: { sender: "iris", turn: "ask", text: "ignore" },
           },
+          {
+            id: "msg_siblings",
+            recipient: AgentV2.ID.make("lyra"),
+            created: 4,
+            data: { sender: "iris", turn: "ask", text: "ignore" },
+          },
         ],
         ["theron", "iris", "lyra"],
+        "theron",
       ),
     ).toEqual([
       {
         id: SessionMessage.ID.make("msg_one"),
         sender: AgentV2.ID.make("iris"),
-        recipient: AgentV2.ID.make("lyra"),
+        recipient: AgentV2.ID.make("theron"),
         turn: "ask",
         text: "The build is green.",
         created: 1,
@@ -303,7 +310,6 @@ describe("officer team chat storage", () => {
 
       const page = yield* list(db, roster, "theron")
       expect(page.data.map((message) => message.id)).toEqual([
-        SessionMessage.ID.make("msg_current_sender_equal"),
         SessionMessage.ID.make("msg_current"),
       ])
     }),

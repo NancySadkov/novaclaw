@@ -3,6 +3,7 @@ import { Effect } from "effect"
 import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
 import { stripAutomatedEcho } from "./automated-echo"
+import { isNotice } from "./notice"
 
 export type MemoryState = {
   messages: SessionMessage.Message[]
@@ -208,6 +209,16 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
       // The computer substrate binding is another row-projected control signal.
       "session.next.control-binding.switched": () => Effect.void,
       "session.next.prompted": (event) => {
+        if (isNotice(event.data.messageID))
+          return adapter.appendMessage(
+            SessionMessage.Synthetic.make({
+              sessionID: event.data.sessionID,
+              id: event.data.messageID,
+              type: "synthetic",
+              text: event.data.prompt.text,
+              time: { created: event.data.timestamp },
+            }),
+          )
         const origin = event.data.prompt.origin
         if (origin?.via === "agent" && origin.relation === "peer")
           return adapter.appendMessage(

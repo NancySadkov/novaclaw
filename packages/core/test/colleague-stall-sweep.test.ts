@@ -9,7 +9,10 @@ import { SessionMessage } from "@novaclaw/core/session/message"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionInputTable, SessionTable } from "@novaclaw/core/session/sql"
+import { SessionMessageTable } from "@novaclaw/core/session/sql"
+import { SessionInput } from "@novaclaw/core/session/input"
 import { Database } from "@novaclaw/core/database/database"
+import { AgentConfigTable } from "@novaclaw/core/agent-config/sql"
 import { testEffect } from "./lib/effect"
 
 /**
@@ -92,6 +95,20 @@ const twoChats = Effect.gen(function* () {
 
 describe("the stall sweep", () => {
   it.effect(
+    "the officer can disable unanswered-message reminders without affecting other officers",
+    Effect.gen(function* () {
+      const { db, events } = yield* twoChats
+      yield* db.insert(AgentConfigTable).values({
+        name: "aris",
+        layers: [{ unansweredMessageNudges: false }] as never,
+      }).run().pipe(Effect.orDie)
+      const now = 10 * HOUR
+      yield* landed(db, THERON, "aris", now - 2 * HOUR)
+      expect(yield* ColleagueStall.sweep(db, events, now)).toBe(0)
+      expect(yield* noticesIn(db, ARIS)).toEqual([])
+    }),
+  )
+  it.effect(
     "🔴 an unanswered ask produces EXACTLY ONE notice, however often the sweep runs",
     Effect.gen(function* () {
       const { db, events } = yield* twoChats
@@ -108,6 +125,11 @@ describe("the stall sweep", () => {
       const notices = yield* noticesIn(db, ARIS)
       expect(notices.length).toBe(1)
       expect(JSON.stringify(notices[0]!.prompt)).toContain("theron")
+      expect((notices[0]!.prompt as { text: string }).text).not.toStartWith("[Automated NovaClaw check")
+      expect(yield* SessionInput.promoteNextQueued(db, events, ARIS)).toBe(true)
+      const projected = yield* db.select({ type: SessionMessageTable.type })
+        .from(SessionMessageTable).where(eq(SessionMessageTable.id, notices[0]!.id)).get().pipe(Effect.orDie)
+      expect(projected?.type).toBe("synthetic")
     }),
   )
 

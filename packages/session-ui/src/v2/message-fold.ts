@@ -8,6 +8,7 @@ import type {
   V2Event,
 } from "@novaclaw/sdk/v2"
 import * as Timestamp from "@novaclaw/schema/time"
+import { isNotice } from "@novaclaw/core/session/notice"
 
 /**
  * Client-side fold of the native V2 `session.next.*` event stream into a flat
@@ -169,6 +170,16 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
       })
       break
     case "session.next.prompted":
+      if (isNotice(event.data.messageID)) {
+        appendMessage(messages, {
+          id: event.data.messageID,
+          type: "synthetic",
+          sessionID: event.data.sessionID,
+          text: event.data.prompt.text,
+          time: { created: event.data.timestamp },
+        })
+        break
+      }
       if (event.data.prompt.origin?.via === "agent" && event.data.prompt.origin.relation === "peer") {
         const origin = event.data.prompt.origin
         appendMessage(messages, {

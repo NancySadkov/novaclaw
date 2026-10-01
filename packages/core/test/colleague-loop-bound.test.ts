@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Clock, Effect } from "effect"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
@@ -130,7 +130,12 @@ const handoff = (
     wake: () => Effect.succeed(true),
     store: {} as never,
     chat: chatOpener(db),
-    roster: Effect.succeed([...new Set(["nova", ...Object.values(agents).filter(Boolean)])].map((id) => ({ id, superior: superiors[id] ?? "nova" })) as never),
+    roster: Effect.succeed(
+      [...new Set(["nova", ...Object.values(agents).filter(Boolean)])].map((id) => ({
+        id,
+        superior: superiors[id] ?? "nova",
+      })) as never,
+    ),
     refresh: Effect.void,
     takenNames: Effect.succeed([]),
     forget: () => Effect.void,
@@ -177,9 +182,15 @@ describe("the colleague loop is bounded by a mechanism", () => {
       // One more round trip than the cap allows.
       for (let n = 0; n < ColleagueBound.HOP_CAP + 1; n++) {
         const outcome = yield* deliver.deliver({ from, colleague: to, message: `turn ${n}` })
-        expect(outcome.delivered).toBe(true)
+        expect(outcome.delivered, `hop ${n}: ${outcome.refused ?? "unknown refusal"}`).toBe(true)
         deferred = outcome.deferred
         yield* promote(db, to === "theron" ? THERON : ARIS)
+        const now = yield* Clock.currentTimeMillis
+        yield* db
+          .update(SessionInputTable)
+          .set({ time_created: now - 60 * 60_000 - 1 })
+          .run()
+          .pipe(Effect.orDie)
         ;[from, to] = from === ARIS ? [THERON, "aris"] : [ARIS, "theron"]
       }
 
@@ -236,7 +247,8 @@ describe("the chain of command is a delivery route", () => {
       yield* openChat(db, { id: ARIS, agent: "aris" })
       yield* openChat(db, { id: THERON, agent: "theron" })
       const bridge = ColleagueHandoff.fromParts({
-        db, events,
+        db,
+        events,
         session: (id) => Effect.succeed({ agent: id === ARIS ? "aris" : "theron" }),
         wake: () => Effect.die("executor unavailable"),
         store: {} as never,
@@ -249,7 +261,9 @@ describe("the chain of command is a delivery route", () => {
       const outcome = yield* bridge.deliver({ from: ARIS, colleague: "theron", message: "important" })
       expect(outcome.delivered).toBe(true)
       expect(outcome.started).toBe(false)
-      expect((yield* db.select().from(SessionInputTable).where(eq(SessionInputTable.session_id, THERON)).all()).length).toBe(1)
+      expect(
+        (yield* db.select().from(SessionInputTable).where(eq(SessionInputTable.session_id, THERON)).all()).length,
+      ).toBe(1)
     }),
   )
 
@@ -262,12 +276,18 @@ describe("the chain of command is a delivery route", () => {
       const daedalus = "ses_daedalus" as SessionSchema.ID
       yield* openChat(db, { id: iris, agent: "iris" })
       yield* openChat(db, { id: daedalus, agent: "daedalus" })
-      const outcome = yield* handoff(db, events, { [iris]: "iris", [daedalus]: "daedalus" }, { iris: "daedalus" })
-        .deliver({ from: iris, colleague: "nova", message: "urgent report" })
+      const outcome = yield* handoff(
+        db,
+        events,
+        { [iris]: "iris", [daedalus]: "daedalus" },
+        { iris: "daedalus" },
+      ).deliver({ from: iris, colleague: "nova", message: "urgent report" })
       expect(outcome.delivered).toBe(true)
       expect(outcome.recipient).toBe("daedalus")
       expect(outcome.redirected).toBe(true)
-      expect((yield* db.select().from(SessionInputTable).where(eq(SessionInputTable.session_id, daedalus)).all()).length).toBe(1)
+      expect(
+        (yield* db.select().from(SessionInputTable).where(eq(SessionInputTable.session_id, daedalus)).all()).length,
+      ).toBe(1)
     }),
   )
 
@@ -280,8 +300,13 @@ describe("the chain of command is a delivery route", () => {
       const worker = "ses_worker" as SessionSchema.ID
       yield* openChat(db, { id: parent, agent: "iris" })
       yield* openChat(db, { id: worker, agent: "worker" })
-      const outcome = yield* handoff(db, events, { [parent]: "iris", [worker]: "iris" }, { iris: "nova" }, { [worker]: parent })
-        .deliver({ from: worker, colleague: "nova", message: "worker report" })
+      const outcome = yield* handoff(
+        db,
+        events,
+        { [parent]: "iris", [worker]: "iris" },
+        { iris: "nova" },
+        { [worker]: parent },
+      ).deliver({ from: worker, colleague: "nova", message: "worker report" })
       expect(outcome.delivered).toBe(true)
       expect(outcome.recipient).toBe(String(parent))
       const queued = yield* db.select().from(SessionInputTable).where(eq(SessionInputTable.session_id, parent)).all()

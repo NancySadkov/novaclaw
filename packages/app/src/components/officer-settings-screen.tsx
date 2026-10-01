@@ -182,6 +182,8 @@ export function OfficerSettingsScreen(props: {
   const [maxWorkers, setMaxWorkers] = createSignal<string | undefined>()
   const [spawnDepth, setSpawnDepth] = createSignal<string | undefined>()
   const [runtimeHeartbeatMinutes, setRuntimeHeartbeatMinutes] = createSignal<string | undefined>()
+  const [unansweredMessageNudges, setUnansweredMessageNudges] = createSignal<boolean | undefined>()
+  const [colleagueMessageIntervalMinutes, setColleagueMessageIntervalMinutes] = createSignal<string | undefined>()
   const [needsTaxonomy, setNeedsTaxonomy] = createSignal<string | undefined>()
   const [superior, setSuperior] = createSignal<string | undefined>()
   // `""` is a real value here and means "back to its own scratch" — distinct from `undefined`, which
@@ -643,6 +645,14 @@ export function OfficerSettingsScreen(props: {
   const parsedMaxWorkers = () => parseNonNegative(maxWorkersValue())
   const parsedSpawnDepth = () => parseNonNegative(spawnDepthValue())
   const runtimeHeartbeatMinutesValue = () => integerValue(runtimeHeartbeatMinutes(), "runtimeHeartbeatMinutes", 60)
+  const unansweredMessageNudgesValue = () =>
+    unansweredMessageNudges() ?? agent()?.config?.["unansweredMessageNudges"] !== false
+  const colleagueMessageIntervalMinutesValue = () =>
+    integerValue(colleagueMessageIntervalMinutes(), "colleagueMessageIntervalMinutes", 60)
+  const parsedColleagueMessageIntervalMinutes = () => {
+    const parsed = Number(colleagueMessageIntervalMinutesValue())
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : Number.NaN
+  }
   const parsedRuntimeHeartbeatMinutes = () => {
     const parsed = Number(runtimeHeartbeatMinutesValue())
     return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : Number.NaN
@@ -762,6 +772,8 @@ export function OfficerSettingsScreen(props: {
     maxWorkers() !== undefined ||
     spawnDepth() !== undefined ||
     runtimeHeartbeatMinutes() !== undefined ||
+    unansweredMessageNudges() !== undefined ||
+    colleagueMessageIntervalMinutes() !== undefined ||
     superior() !== undefined ||
     avatarFile() !== undefined ||
     avatarRemoved()
@@ -1169,6 +1181,8 @@ export function OfficerSettingsScreen(props: {
         maxWorkers?: number
         spawnDepth?: number
         runtimeHeartbeatMinutes?: number
+        unansweredMessageNudges?: boolean
+        colleagueMessageIntervalMinutes?: number
         surgicalEdits?: boolean
       } = {
         ...(modelValue() === "" ? {} : { model: modelValue() }),
@@ -1187,6 +1201,12 @@ export function OfficerSettingsScreen(props: {
         ...(runtimeHeartbeatMinutes() === undefined
           ? {}
           : { runtimeHeartbeatMinutes: parsedRuntimeHeartbeatMinutes() }),
+        ...(unansweredMessageNudges() === undefined
+          ? {}
+          : { unansweredMessageNudges: unansweredMessageNudges()! }),
+        ...(colleagueMessageIntervalMinutes() === undefined
+          ? {}
+          : { colleagueMessageIntervalMinutes: parsedColleagueMessageIntervalMinutes() }),
         ...(surgicalEdits() === undefined ? {} : { surgicalEdits: surgicalEdits()! }),
       }
       // The three harness-detail structs, merged over what is STORED rather than sent as the
@@ -1387,6 +1407,8 @@ export function OfficerSettingsScreen(props: {
       setMaxWorkers(undefined)
       setSpawnDepth(undefined)
       setRuntimeHeartbeatMinutes(undefined)
+      setUnansweredMessageNudges(undefined)
+      setColleagueMessageIntervalMinutes(undefined)
       setSuperior(undefined)
       setNeedsTaxonomy(undefined)
       props.onChanged?.()
@@ -1504,6 +1526,7 @@ export function OfficerSettingsScreen(props: {
               Number.isNaN(parsedMaxWorkers()) ||
               Number.isNaN(parsedSpawnDepth()) ||
               Number.isNaN(parsedRuntimeHeartbeatMinutes()) ||
+              Number.isNaN(parsedColleagueMessageIntervalMinutes()) ||
               Number.isNaN(parsedHorizonDays()) ||
               saving() ||
               busy() !== undefined ||
@@ -1995,6 +2018,40 @@ export function OfficerSettingsScreen(props: {
                         onInput={(event) => setRuntimeHeartbeatMinutes(event.currentTarget.value)}
                       />
                       <span>minutes</span>
+                    </span>
+                  </label>
+                </Show>
+                <Show when={postureValue() === "agent"}>
+                  <label class="mt-2 flex items-start gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      class="mt-0.5"
+                      checked={unansweredMessageNudgesValue()}
+                      onChange={(event) => setUnansweredMessageNudges(event.currentTarget.checked)}
+                    />
+                    <span>
+                      <span class="block">Unanswered message reminders</span>
+                      <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                        Remind this officer once when a colleague has not answered for 30 minutes.
+                      </span>
+                    </span>
+                  </label>
+                  <label class="block text-xs text-v2-text-text-muted">
+                    Colleague message interval
+                    <span class="mt-1 flex items-center gap-2">
+                      <input
+                        aria-label="Colleague message interval in minutes"
+                        class="w-24 rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-2 text-sm text-v2-text-text-base"
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={colleagueMessageIntervalMinutesValue()}
+                        onInput={(event) => setColleagueMessageIntervalMinutes(event.currentTarget.value)}
+                      />
+                      <span>minutes</span>
+                    </span>
+                    <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                      One message sent and one received per interval. Direct messages from a superior are exempt.
                     </span>
                   </label>
                 </Show>

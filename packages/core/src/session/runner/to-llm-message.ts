@@ -644,7 +644,18 @@ function toLLMMessage(
       ]
     }
     case "synthetic":
-      // 🔴 A `synthetic` message is ALWAYS harness-authored, and it lowers to the `user` role
+      if (isNotice(message.id)) {
+        const callID = `nudge:${message.id}`
+        return [
+          Message.make({
+            id: `${message.id}:operation`,
+            role: "assistant",
+            content: ToolCallPart.make({ id: callID, name: "nudge", input: { op: "incoming" } }),
+          }),
+          Message.tool(ToolResultPart.make({ id: callID, name: "nudge", result: message.text })),
+        ]
+      }
+      // 🔴 Other `synthetic` messages are harness-authored and lower to the `user` role
       // because there is no other role a provider will accept mid-conversation (AGENTS.md: the system
       // prompt is one immutable monolithic message, so a dynamic fact cannot go there). The role
       // therefore says nothing about authorship, and the text has to — unmarked, the model reads the

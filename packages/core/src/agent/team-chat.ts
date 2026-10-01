@@ -70,22 +70,19 @@ export const memberIDs = (roster: readonly AgentV2.Info[], officerID: string): r
   if (!officer || !AgentV2.isColleague(officer) || AgentV2.kindOf(officer) !== "agent") return []
 
   const members = new Set([officerID])
-  let added = true
-  while (added) {
-    added = false
-    for (const candidate of roster) {
-      const id = String(candidate.id)
-      if (members.has(id) || !AgentV2.isColleague(candidate) || AgentV2.kindOf(candidate) !== "agent") continue
-      const superior = AgentV2.resolveSuperior(id, candidate.superior, roster, { includePaused: true })
-      if (!superior || !members.has(String(superior.id))) continue
-      members.add(id)
-      added = true
-    }
+  const superior = AgentV2.resolveSuperior(officerID, officer.superior, roster, { includePaused: true })
+  const superiorID = superior === undefined ? undefined : String(superior.id)
+  if (superiorID !== undefined) members.add(superiorID)
+  for (const candidate of roster) {
+    const id = String(candidate.id)
+    if (id === officerID || !AgentV2.isColleague(candidate) || AgentV2.kindOf(candidate) !== "agent") continue
+    const parent = AgentV2.resolveSuperior(id, candidate.superior, roster, { includePaused: true })
+    if (parent && (String(parent.id) === officerID || String(parent.id) === superiorID)) members.add(id)
   }
   return [...members]
 }
 
-export const project = (rows: readonly StoredMessage[], members: readonly string[]): readonly Message[] => {
+export const project = (rows: readonly StoredMessage[], members: readonly string[], officerID: string): readonly Message[] => {
   const team = new Set(members)
   return rows.flatMap((row) => {
     if (row.recipient === null) return []
@@ -98,6 +95,7 @@ export const project = (rows: readonly StoredMessage[], members: readonly string
       typeof data.sender !== "string" ||
       !team.has(data.sender) ||
       !team.has(row.recipient) ||
+      (data.sender !== officerID && row.recipient !== officerID) ||
       (data.turn !== "ask" && data.turn !== "answer" && data.turn !== "announce") ||
       typeof data.text !== "string"
     )
@@ -192,6 +190,7 @@ export const list = (
           eq(SessionMessageTable.type, "colleague"),
           inArray(SessionTable.agent, members),
           inArray(sender, members),
+          or(eq(SessionTable.agent, officerID), eq(sender, officerID)),
           recipientIdentity,
           senderIdentity,
           boundary,
@@ -206,7 +205,7 @@ export const list = (
       .pipe(Effect.orDie)
     const hasOlder = !ascending && rows.length > limit
     const selected = rows.slice(0, limit)
-    const data = project(ascending ? selected : selected.toReversed(), members)
+    const data = project(ascending ? selected : selected.toReversed(), members, officerID)
     const oldest = ascending ? undefined : selected.at(-1)
     const latest = ascending ? selected.at(-1) : selected[0]
     return {

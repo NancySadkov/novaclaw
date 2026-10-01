@@ -1,11 +1,13 @@
 export * as ColleagueHandoff from "./colleague-handoff"
 
-import { and, desc, eq, or } from "drizzle-orm"
-import { Clock, Context, Effect, Layer, Schema } from "effect"
+import { and, desc, eq, gte, or, sql } from "drizzle-orm"
+import { Clock, Context, Effect, Layer, Schema, Semaphore } from "effect"
 import { AgentConfigStore } from "../agent-config-store"
+import { AgentConfigTable } from "../agent-config/sql"
 import { ConfigStoreWrite } from "../config-store-write"
 import { AgentRetire } from "../agent/retire"
 import { ColleagueBound } from "./colleague-bound"
+import { ColleagueMessageRate } from "./colleague-message-rate"
 import { ConfigAgent } from "../config/agent"
 import { OfficerName } from "../agent/officer-name"
 import { Database } from "../database/database"
@@ -15,7 +17,7 @@ import { WorldMemory } from "../kb-graph/world-memory"
 import { makeLocationNode } from "../effect/app-node"
 import { ColleagueNote } from "./colleague-note"
 import * as ColleagueRoute from "./colleague-route"
-import { SessionMessageTable } from "./sql"
+import { SessionInputTable, SessionMessageTable, SessionTable } from "./sql"
 import { SessionInput } from "./input"
 import { resolveSessionMode } from "./mode"
 import { SessionMessage } from "./message"
@@ -495,6 +497,67 @@ const openChat = (
   colleague: string,
 ): Effect.Effect<SessionSchema.ID | undefined> => input.chat(colleague)
 
+const messageRateLane = Effect.runSync(Semaphore.make(1))
+
+const messageRateRefusal = (input: {
+  readonly db: Database.Interface["db"]
+  readonly sender: string | undefined
+  readonly recipients: ReadonlyArray<string>
+  readonly roster: ReadonlyArray<AgentV2.Info>
+  readonly now: number
+}): Effect.Effect<string | undefined> =>
+  Effect.gen(function* () {
+    if (
+      !input.sender ||
+      !input.roster.some((agent) => String(agent.id) === input.sender && AgentV2.kindOf(agent) === "agent")
+    )
+      return undefined
+    const configuredRows = yield* input.db
+      .select({ name: AgentConfigTable.name, layers: AgentConfigTable.layers })
+      .from(AgentConfigTable)
+      .all()
+      .pipe(Effect.orDie)
+    const configured = Object.fromEntries(configuredRows.map((row) => [row.name, row.layers]))
+    const intervals = Object.fromEntries(
+      input.roster.map((agent) => {
+        const id = String(agent.id)
+        return [
+          id,
+          AgentConfigStore.fold(configured[id] ?? [])?.colleagueMessageIntervalMinutes ??
+            ColleagueMessageRate.DEFAULT_MINUTES,
+        ]
+      }),
+    )
+    const longest = Math.max(...Object.values(intervals))
+    const rows = yield* input.db
+      .select({
+        sender: sql<string | null>`json_extract(${SessionInputTable.prompt}, '$.origin.label')`,
+        recipient: SessionTable.agent,
+        at: SessionInputTable.time_created,
+      })
+      .from(SessionInputTable)
+      .innerJoin(SessionTable, eq(SessionTable.id, SessionInputTable.session_id))
+      .where(
+        and(
+          gte(SessionInputTable.time_created, input.now - longest * 60_000),
+          sql`json_extract(${SessionInputTable.prompt}, '$.origin.via') = 'agent'`,
+          sql`json_extract(${SessionInputTable.prompt}, '$.origin.relation') = 'peer'`,
+        ),
+      )
+      .all()
+      .pipe(Effect.orDie)
+    return ColleagueMessageRate.refusal({
+      sender: input.sender,
+      recipients: input.recipients,
+      roster: input.roster,
+      intervals,
+      messages: rows.flatMap((row) =>
+        row.sender && row.recipient ? [{ sender: row.sender, recipient: row.recipient, at: row.at }] : [],
+      ),
+      now: input.now,
+    })
+  })
+
 /**
  * Build the delivery from parts the caller already holds.
  *
@@ -629,215 +692,246 @@ export const fromParts = (input: {
     return true
   }),
   deliver: Effect.fn("ColleagueHandoff.deliver")(function* (request) {
-    const sender = yield* input.session(request.from)
-    const route = ColleagueRoute.route(sender, request.colleague, yield* input.roster)
-    if (route.kind === "unavailable") return { delivered: false, started: false, refused: `NOT SENT. ${route.reason}` }
-    const recipient = route.kind === "officer" ? route.recipient : String(route.sessionID)
-    const chatID = route.kind === "officer" ? yield* openChat(input, route.recipient) : route.sessionID
-    if (chatID === undefined)
-      return { delivered: false, started: false, refused: `NOT SENT. ${recipient} has no available chat.` }
-    const label = sender?.parentID === undefined ? sender?.agent : String(request.from)
-    // ANSWER or QUESTION, read from the SENDER'S OWN CHAT rather than from a flag the caller sets or
-    // a side table: if the last peer message that arrived in the sender's stream came from the
-    // colleague it is now writing to, this is the reply to it. One stream is the record (owner,
-    // 2026-08-21: everything goes through the normal chat, never a sideband), so the stream is also
-    // where the question "who spoke last?" is answered.
-    // 🔴 NEVER INTO YOUR OWN CHAT, checked at the DELIVERY layer and not only at the tool.
-    //
-    // `ColleagueTool.addressable` already filters the sender out of the roster it offers, and that is
-    // the layer a model meets. But `deliver` is the SHARED rule — the worker bridge reaches it, a
-    // host-side caller reaches it directly, and anything added later will too. A self-delivery
-    // appends to the conversation the sender is currently having: an infinite regress it cannot see
-    // it is starting, and one the hop counter cannot bound because every lap looks like a fresh ask.
-    //
-    // ⚠️ Found by writing `colleague-concurrency.test.ts`, which admitted one and passed. The rule
-    // existed in exactly one place and read as though it were everywhere.
-    const context = yield* lastPeerContext(input.db, request.from)
-    const askedByRecipient = context.label === recipient
-    const turn = ColleagueNote.turnFor({ askedByRecipient })
-    const conversation =
-      turn === "answer"
-        ? (context.conversation ?? Identifier.ascending("conversation"))
-        : Identifier.ascending("conversation")
-    const hop = ColleagueBound.nextHop(context.hops)
-    const path = ColleagueBound.extendPath(context.path, label)
-    const cycling = ColleagueBound.closesCycle({
-      path,
-      target: recipient,
-      answering: askedByRecipient,
-      room: context.participants,
-    })
-    const now = yield* Clock.currentTimeMillis
-    const paused = route.kind === "officer" && input.paused !== undefined && (yield* input.paused(route.recipient))
-    const overBudget = ColleagueBound.exceedsHopCap(hop) || !ColleagueBound.hasCapacityFor(String(request.from), now, 1)
-    const deferred = paused
-      ? "recipient is paused"
-      : cycling
-        ? "colleague chain would loop"
-        : overBudget
-          ? "colleague activity budget reached"
-          : undefined
-    if (deferred === undefined) ColleagueBound.record(String(request.from), now)
-    const started = yield* landColleagueMessage(input, {
-      chatID,
-      from: request.from,
-      message: request.message,
-      label,
-      fromWorker: route.kind === "worker-parent",
-      turn,
-      hop,
-      path,
-      conversation,
-      wake: deferred === undefined,
-      deferWake: deferred !== undefined && !paused,
-    })
-    return {
-      delivered: true,
-      started,
-      recipient,
-      redirected: route.redirected,
-      deferred,
-      human: (yield* resolveSessionMode(input.db, chatID)) === "human",
-    }
-  }),
-  deliverGroup: Effect.fn("ColleagueHandoff.deliverGroup")(function* (request) {
-    const sender = yield* input.session(request.from)
-    const label = sender?.parentID === undefined ? sender?.agent : String(request.from)
-    // A model listing the whole roster to reach "everyone" may include itself; omit that copy.
-    const named = [...new Set(request.colleagues.map((id) => id.trim()).filter((id) => id !== ""))].filter(
-      (id) => id !== label,
-    )
-    if (named.length === 0)
-      return {
-        delivered: [],
-        missing: [],
-        started: false,
-        refused: "Name at least one colleague other than yourself — call `list` to see who works here.",
-      }
-
-    // Who can actually be reached. `missing` used to mean "a colleague with no open chat", and it
-    // now means exactly one thing: **no such colleague**. A colleague that exists always has a chat
-    // (`openChat`), so the conference can no longer lose a participant to a row that had not been
-    // written yet — which is the difference between a room that reports who it reached and a room
-    // that silently leaves somebody out.
-    const reachable: string[] = []
-    const missing: string[] = []
-    const redirected: Array<{ requested: string; recipient: string }> = []
-    const roster = yield* input.roster
-    // 🔴 RESOLVED ONCE, and the id is KEPT. The landing loop used to call `chatFor` a second time and
-    // `continue` on a miss, so a chat archived between the scan and the land was skipped silently —
-    // while `participants` (stamped from the scan) still named that colleague to everyone else, and
-    // the rate budget was still charged for the copy. That is the file's own invariant inverted: the
-    // recipients would answer someone who never heard the question, and nobody in the room could
-    // tell. One lookup means the two lists cannot disagree, by construction rather than by care.
-    const chats = new Map<string, SessionSchema.ID>()
-    for (const colleague of named) {
-      const route = ColleagueRoute.route(sender, colleague, roster)
-      if (route.kind === "unavailable") {
-        missing.push(colleague)
-        continue
-      }
-      const recipient = route.kind === "officer" ? route.recipient : String(route.sessionID)
-      const chatID = route.kind === "officer" ? yield* openChat(input, route.recipient) : route.sessionID
-      if (chatID === undefined) {
-        missing.push(colleague)
-        continue
-      }
-      if (route.redirected) redirected.push({ requested: colleague, recipient })
-      if (chats.has(recipient)) continue
-      reachable.push(recipient)
-      chats.set(recipient, chatID)
-    }
-    if (reachable.length === 0)
-      return {
-        delivered: [],
-        missing,
-        started: false,
-        // 🔴 A REFUSAL, not an empty delivery. After `openChat`, the only way to reach nobody is to
-        // name nobody who exists — which is a call that did nothing and needs a change of course, and
-        // the model must be told rather than left to read an empty list as a room that heard it.
-        refused:
-          `NOT SENT. Nobody in that list works here (${missing.join(", ")}) — call \`list\` to see who ` +
-          `does. Do NOT tell anyone it was delivered.`,
-      }
-
-    const context = yield* lastPeerContext(input.db, request.from)
-    const hop = ColleagueBound.nextHop(context.hops)
-    const path = ColleagueBound.extendPath(context.path, label)
-    const cycling = reachable.filter((colleague) =>
-      ColleagueBound.closesCycle({
-        path,
-        target: colleague,
-        answering: context.label === colleague,
-        // The room this sender was last addressed as part of — so a bystander taking up the
-        // invitation reaches the originator instead of having them silently dropped.
-        room: context.participants,
+    return yield* messageRateLane.withPermits(1)(
+      Effect.gen(function* () {
+        const sender = yield* input.session(request.from)
+        const roster = yield* input.roster
+        const route = ColleagueRoute.route(sender, request.colleague, roster)
+        if (route.kind === "unavailable")
+          return { delivered: false, started: false, refused: `NOT SENT. ${route.reason}` }
+        const recipient = route.kind === "officer" ? route.recipient : String(route.sessionID)
+        const now = yield* Clock.currentTimeMillis
+        if (route.kind === "officer") {
+          const rate = yield* messageRateRefusal({
+            db: input.db,
+            sender: sender?.agent,
+            recipients: [recipient],
+            roster,
+            now,
+          })
+          if (rate) return { delivered: false, started: false, refused: rate }
+        }
+        const chatID = route.kind === "officer" ? yield* openChat(input, route.recipient) : route.sessionID
+        if (chatID === undefined)
+          return { delivered: false, started: false, refused: `NOT SENT. ${recipient} has no available chat.` }
+        const label = sender?.parentID === undefined ? sender?.agent : String(request.from)
+        // ANSWER or QUESTION, read from the SENDER'S OWN CHAT rather than from a flag the caller sets or
+        // a side table: if the last peer message that arrived in the sender's stream came from the
+        // colleague it is now writing to, this is the reply to it. One stream is the record (owner,
+        // 2026-08-21: everything goes through the normal chat, never a sideband), so the stream is also
+        // where the question "who spoke last?" is answered.
+        // 🔴 NEVER INTO YOUR OWN CHAT, checked at the DELIVERY layer and not only at the tool.
+        //
+        // `ColleagueTool.addressable` already filters the sender out of the roster it offers, and that is
+        // the layer a model meets. But `deliver` is the SHARED rule — the worker bridge reaches it, a
+        // host-side caller reaches it directly, and anything added later will too. A self-delivery
+        // appends to the conversation the sender is currently having: an infinite regress it cannot see
+        // it is starting, and one the hop counter cannot bound because every lap looks like a fresh ask.
+        //
+        // ⚠️ Found by writing `colleague-concurrency.test.ts`, which admitted one and passed. The rule
+        // existed in exactly one place and read as though it were everywhere.
+        const context = yield* lastPeerContext(input.db, request.from)
+        const askedByRecipient = context.label === recipient
+        const turn = ColleagueNote.turnFor({ askedByRecipient })
+        const conversation =
+          turn === "answer"
+            ? (context.conversation ?? Identifier.ascending("conversation"))
+            : Identifier.ascending("conversation")
+        const hop = ColleagueBound.nextHop(context.hops)
+        const path = ColleagueBound.extendPath(context.path, label)
+        const cycling = ColleagueBound.closesCycle({
+          path,
+          target: recipient,
+          answering: askedByRecipient,
+          room: context.participants,
+        })
+        const paused = route.kind === "officer" && input.paused !== undefined && (yield* input.paused(route.recipient))
+        const overBudget =
+          ColleagueBound.exceedsHopCap(hop) || !ColleagueBound.hasCapacityFor(String(request.from), now, 1)
+        const deferred = paused
+          ? "recipient is paused"
+          : cycling
+            ? "colleague chain would loop"
+            : overBudget
+              ? "colleague activity budget reached"
+              : undefined
+        if (deferred === undefined) ColleagueBound.record(String(request.from), now)
+        const started = yield* landColleagueMessage(input, {
+          chatID,
+          from: request.from,
+          message: request.message,
+          label,
+          fromWorker: route.kind === "worker-parent",
+          turn,
+          hop,
+          path,
+          conversation,
+          wake: deferred === undefined,
+          deferWake: deferred !== undefined && !paused,
+        })
+        return {
+          delivered: true,
+          started,
+          recipient,
+          redirected: route.redirected,
+          deferred,
+          human: (yield* resolveSessionMode(input.db, chatID)) === "human",
+        }
       }),
     )
-    const now = yield* Clock.currentTimeMillis
-    const pausedRecipients = new Set<string>()
-    if (input.paused !== undefined)
-      for (const colleague of reachable) if (yield* input.paused(colleague)) pausedRecipients.add(colleague)
-    const paused = pausedRecipients.size > 0
-    const overBudget =
-      ColleagueBound.exceedsHopCap(hop) || !ColleagueBound.hasCapacityFor(String(request.from), now, reachable.length)
-    const deferred = paused
-      ? "a recipient is paused"
-      : cycling.length > 0
-        ? "colleague chain would loop"
-        : overBudget
-          ? "colleague activity budget reached"
-          : undefined
-    if (deferred === undefined) ColleagueBound.recordMany(String(request.from), now, reachable.length)
+  }),
+  deliverGroup: Effect.fn("ColleagueHandoff.deliverGroup")(function* (request) {
+    return yield* messageRateLane.withPermits(1)(
+      Effect.gen(function* () {
+        const sender = yield* input.session(request.from)
+        const label = sender?.parentID === undefined ? sender?.agent : String(request.from)
+        // A model listing the whole roster to reach "everyone" may include itself; omit that copy.
+        const named = [...new Set(request.colleagues.map((id) => id.trim()).filter((id) => id !== ""))].filter(
+          (id) => id !== label,
+        )
+        if (named.length === 0)
+          return {
+            delivered: [],
+            missing: [],
+            started: false,
+            refused: "Name at least one colleague other than yourself — call `list` to see who works here.",
+          }
 
-    const conversation = Identifier.ascending("conversation")
-    // The sender is IN the list: a reply has to reach them too, and rebuilding "the set plus
-    // whoever wrote to me" from two fields is how one of them ends up wrong.
-    const participants = [label ?? String(request.from), ...reachable]
-    // 🔴 A REPLY INFORMS THE ROOM; IT DOES NOT SUMMON IT.
-    //
-    // Waking every recipient makes a four-person room amplify: one question is three wakes, each
-    // reply is three more. Announcements keep bystanders informed without waking every chat.
-    //
-    // ⚠️ No new state. `turnFor` already says, per recipient, whether this delivery answers THEM. If
-    // it answers anybody, this is a reply: wake that one and land it for the others durable but
-    // dormant — `started: false` is an existing, documented outcome, not a new mode.
-    const turns = reachable.map((colleague) => ({
-      colleague,
-      turn: ColleagueNote.turnFor({ askedByRecipient: context.label === colleague }),
-    }))
-    const replying = ColleagueNote.isReply(turns.map((entry) => entry.turn))
-    let started = false
-    for (const entry of turns) {
-      // The id from the scan above — never a second lookup. See the comment there.
-      const chatID = chats.get(entry.colleague)
-      if (chatID === undefined) continue
-      // A bystander to a reply is ANNOUNCED to, and the note changes with the wake: a fixed sentence
-      // under a changed control is the copy defect principle 12 names. The announcement says nobody
-      // is waiting on them AND how to speak up, which is what keeps a room a room.
-      const announced = replying && entry.turn !== "answer"
-      const woke = yield* landColleagueMessage(input, {
-        chatID,
-        from: request.from,
-        message: request.message,
-        label,
-        fromWorker: sender?.parentID !== undefined,
-        turn: announced ? "announce" : entry.turn,
-        hop,
-        path,
-        conversation,
-        participants,
-        recipient: entry.colleague,
-        // Durable but dormant: it is in their chat and they will read it when they next run.
-        wake: !announced && deferred === undefined,
-        deferWake: deferred !== undefined && !pausedRecipients.has(entry.colleague),
-      })
-      started = started || woke
-    }
-    // AFTER the writes, once per recipient — see `hasCapacityFor`.
-    // Reported alongside the unreachable: the sender asked for a room and got a smaller one,
-    // and only it can judge whether that still answers the question.
-    return { conversation, delivered: reachable, missing, started, redirected, deferred }
+        // Who can actually be reached. `missing` used to mean "a colleague with no open chat", and it
+        // now means exactly one thing: **no such colleague**. A colleague that exists always has a chat
+        // (`openChat`), so the conference can no longer lose a participant to a row that had not been
+        // written yet — which is the difference between a room that reports who it reached and a room
+        // that silently leaves somebody out.
+        const reachable: string[] = []
+        const missing: string[] = []
+        const redirected: Array<{ requested: string; recipient: string }> = []
+        const roster = yield* input.roster
+        // 🔴 RESOLVED ONCE, and the id is KEPT. The landing loop used to call `chatFor` a second time and
+        // `continue` on a miss, so a chat archived between the scan and the land was skipped silently —
+        // while `participants` (stamped from the scan) still named that colleague to everyone else, and
+        // the rate budget was still charged for the copy. That is the file's own invariant inverted: the
+        // recipients would answer someone who never heard the question, and nobody in the room could
+        // tell. One lookup means the two lists cannot disagree, by construction rather than by care.
+        const chats = new Map<string, SessionSchema.ID>()
+        for (const colleague of named) {
+          const route = ColleagueRoute.route(sender, colleague, roster)
+          if (route.kind === "unavailable") {
+            missing.push(colleague)
+            continue
+          }
+          const recipient = route.kind === "officer" ? route.recipient : String(route.sessionID)
+          const chatID = route.kind === "officer" ? yield* openChat(input, route.recipient) : route.sessionID
+          if (chatID === undefined) {
+            missing.push(colleague)
+            continue
+          }
+          if (route.redirected) redirected.push({ requested: colleague, recipient })
+          if (chats.has(recipient)) continue
+          reachable.push(recipient)
+          chats.set(recipient, chatID)
+        }
+        if (reachable.length === 0)
+          return {
+            delivered: [],
+            missing,
+            started: false,
+            // 🔴 A REFUSAL, not an empty delivery. After `openChat`, the only way to reach nobody is to
+            // name nobody who exists — which is a call that did nothing and needs a change of course, and
+            // the model must be told rather than left to read an empty list as a room that heard it.
+            refused:
+              `NOT SENT. Nobody in that list works here (${missing.join(", ")}) — call \`list\` to see who ` +
+              `does. Do NOT tell anyone it was delivered.`,
+          }
+
+        const now = yield* Clock.currentTimeMillis
+        const rate = yield* messageRateRefusal({
+          db: input.db,
+          sender: sender?.agent,
+          recipients: reachable,
+          roster,
+          now,
+        })
+        if (rate) return { delivered: [], missing, started: false, refused: rate }
+
+        const context = yield* lastPeerContext(input.db, request.from)
+        const hop = ColleagueBound.nextHop(context.hops)
+        const path = ColleagueBound.extendPath(context.path, label)
+        const cycling = reachable.filter((colleague) =>
+          ColleagueBound.closesCycle({
+            path,
+            target: colleague,
+            answering: context.label === colleague,
+            // The room this sender was last addressed as part of — so a bystander taking up the
+            // invitation reaches the originator instead of having them silently dropped.
+            room: context.participants,
+          }),
+        )
+        const pausedRecipients = new Set<string>()
+        if (input.paused !== undefined)
+          for (const colleague of reachable) if (yield* input.paused(colleague)) pausedRecipients.add(colleague)
+        const paused = pausedRecipients.size > 0
+        const overBudget =
+          ColleagueBound.exceedsHopCap(hop) ||
+          !ColleagueBound.hasCapacityFor(String(request.from), now, reachable.length)
+        const deferred = paused
+          ? "a recipient is paused"
+          : cycling.length > 0
+            ? "colleague chain would loop"
+            : overBudget
+              ? "colleague activity budget reached"
+              : undefined
+        if (deferred === undefined) ColleagueBound.recordMany(String(request.from), now, reachable.length)
+
+        const conversation = Identifier.ascending("conversation")
+        // The sender is IN the list: a reply has to reach them too, and rebuilding "the set plus
+        // whoever wrote to me" from two fields is how one of them ends up wrong.
+        const participants = [label ?? String(request.from), ...reachable]
+        // 🔴 A REPLY INFORMS THE ROOM; IT DOES NOT SUMMON IT.
+        //
+        // Waking every recipient makes a four-person room amplify: one question is three wakes, each
+        // reply is three more. Announcements keep bystanders informed without waking every chat.
+        //
+        // ⚠️ No new state. `turnFor` already says, per recipient, whether this delivery answers THEM. If
+        // it answers anybody, this is a reply: wake that one and land it for the others durable but
+        // dormant — `started: false` is an existing, documented outcome, not a new mode.
+        const turns = reachable.map((colleague) => ({
+          colleague,
+          turn: ColleagueNote.turnFor({ askedByRecipient: context.label === colleague }),
+        }))
+        const replying = ColleagueNote.isReply(turns.map((entry) => entry.turn))
+        let started = false
+        for (const entry of turns) {
+          // The id from the scan above — never a second lookup. See the comment there.
+          const chatID = chats.get(entry.colleague)
+          if (chatID === undefined) continue
+          // A bystander to a reply is ANNOUNCED to, and the note changes with the wake: a fixed sentence
+          // under a changed control is the copy defect principle 12 names. The announcement says nobody
+          // is waiting on them AND how to speak up, which is what keeps a room a room.
+          const announced = replying && entry.turn !== "answer"
+          const woke = yield* landColleagueMessage(input, {
+            chatID,
+            from: request.from,
+            message: request.message,
+            label,
+            fromWorker: sender?.parentID !== undefined,
+            turn: announced ? "announce" : entry.turn,
+            hop,
+            path,
+            conversation,
+            participants,
+            recipient: entry.colleague,
+            // Durable but dormant: it is in their chat and they will read it when they next run.
+            wake: !announced && deferred === undefined,
+            deferWake: deferred !== undefined && !pausedRecipients.has(entry.colleague),
+          })
+          started = started || woke
+        }
+        // AFTER the writes, once per recipient — see `hasCapacityFor`.
+        // Reported alongside the unreachable: the sender asked for a room and got a smaller one,
+        // and only it can judge whether that still answers the question.
+        return { conversation, delivered: reachable, missing, started, redirected, deferred }
+      }),
+    )
   }),
   messageWorker: (request) =>
     input.worker?.message(request) ??

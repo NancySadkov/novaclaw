@@ -361,7 +361,7 @@ export const dict = {
     "For example: the model provider is down and this task is no longer useful",
   "teamChat.open": "Open Team Chat",
   "teamChat.title": "Team Chat",
-  "teamChat.subtitle": "{{officer}} and their reporting team",
+  "teamChat.subtitle": "Conversations with {{officer}}",
   "teamChat.loading": "Gathering the team's conversation…",
   "teamChat.loadOlder": "Load earlier messages",
   "teamChat.reconnecting": "Updates paused — reconnecting…",

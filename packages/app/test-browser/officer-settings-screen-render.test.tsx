@@ -392,6 +392,15 @@ describe("Officer Settings screen renders", () => {
     expect(selectText(mode!)).toBe("agentConfig.mode.interactive")
     expect((work?.querySelector('input[type="radio"]') ?? null) === null).toBe(true)
     expect(work?.textContent).not.toContain("Goal")
+    expect(work?.textContent).toContain("Unanswered message reminders")
+    const reminders = [...(work?.querySelectorAll("label") ?? [])].find((label) =>
+      label.textContent?.includes("Unanswered message reminders"))?.querySelector<HTMLInputElement>('input[type="checkbox"]')
+    expect(reminders?.checked).toBe(true)
+    reminders?.click()
+    const interval = work?.querySelector<HTMLInputElement>('input[aria-label="Colleague message interval in minutes"]')
+    expect(interval?.value).toBe("60")
+    interval!.value = "15"
+    interval!.dispatchEvent(new Event("input", { bubbles: true }))
     const capabilities = document.querySelector('[data-section="workers"][data-settings-tab="capabilities"]')
     expect(capabilities?.textContent).toContain("agentConfig.maxToolTimeout")
     expect(capabilities?.textContent).toContain("Edits instead of overwriting")
@@ -442,6 +451,8 @@ describe("Officer Settings screen renders", () => {
           // The Agent choice reaches the standing operation mode in the save payload.
           operationMode: "unattended",
           goal: "Publish the reviewed manuscript.",
+          unansweredMessageNudges: false,
+          colleagueMessageIntervalMinutes: 15,
           surgicalEdits: true,
         },
       },

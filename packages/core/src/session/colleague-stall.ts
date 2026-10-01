@@ -2,6 +2,8 @@ import { and, eq, gte, isNull, like, sql } from "drizzle-orm"
 import { Effect } from "effect"
 import type { Database } from "../database/database"
 import type { EventV2 } from "../event"
+import { AgentConfigStore } from "../agent-config-store"
+import { AgentConfigTable } from "../agent-config/sql"
 import { SessionInput } from "./input"
 import { resolveSessionMode } from "./mode"
 import { SessionMessage } from "./message"
@@ -336,6 +338,13 @@ export const sweep = (db: Database.Interface["db"], events: EventV2.Interface, n
     for (const stall of stalls) {
       const chat = chatOf[stall.asker]
       if (chat === undefined) continue
+      const configured = yield* db
+        .select({ layers: AgentConfigTable.layers })
+        .from(AgentConfigTable)
+        .where(eq(AgentConfigTable.name, stall.asker))
+        .get()
+        .pipe(Effect.orDie)
+      if (AgentConfigStore.fold(configured?.layers ?? [])?.unansweredMessageNudges === false) continue
       const id = SessionMessage.ID.make(noticeID(stall))
       // 🔴 The id IS the memory of having told them — a second sweep derives the same one. Asking
       // first is only about the COUNT: `SessionInput.admit` is already idempotent (it finds the row
@@ -349,7 +358,7 @@ export const sweep = (db: Database.Interface["db"], events: EventV2.Interface, n
         .get()
         .pipe(Effect.orDie)
       if (already !== undefined) continue
-      const written = yield* SessionInput.automated(db, events, {
+      const written = yield* SessionInput.admit(db, events, {
         id,
         sessionID: chat as SessionSchema.ID,
         prompt: {

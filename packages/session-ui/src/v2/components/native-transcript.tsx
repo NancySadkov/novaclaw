@@ -809,6 +809,7 @@ function NativeMessage(props: { message: SessionMessage; developer?: boolean; li
       <Match when={props.message.type === "synthetic" && props.message}>
         {(m) => {
           const message = m() as SessionMessageSynthetic
+          if (isNotice(message.id)) return <SteerMessage text={message.text} cacheKey={message.id} />
           if (isSteerText(message.text))
             return <SteerMessage text={stripSteerProvenance(message.text)} cacheKey={`${message.id}:steer`} />
           return (

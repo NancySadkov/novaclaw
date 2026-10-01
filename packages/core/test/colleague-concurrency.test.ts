@@ -10,6 +10,7 @@ import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionInputTable, SessionMessageTable, SessionTable } from "@novaclaw/core/session/sql"
 import { Database } from "@novaclaw/core/database/database"
+import { AgentConfigTable } from "@novaclaw/core/agent-config/sql"
 import { desc, eq } from "drizzle-orm"
 import { testEffect } from "./lib/effect"
 
@@ -74,7 +75,9 @@ const handoff = (db: Database.Interface["db"], events: EventV2.Interface, agents
     wake: () => Effect.succeed(true),
     store: {} as never,
     chat: opener(db),
-    roster: Effect.succeed([...new Set(["nova", ...Object.values(agents)])].map((id) => ({ id, superior: "nova" })) as never),
+    roster: Effect.succeed(
+      [...new Set(["nova", ...Object.values(agents)])].map((id) => ({ id, superior: "nova" })) as never,
+    ),
     refresh: Effect.void,
     takenNames: Effect.succeed([]),
     forget: () => Effect.void,
@@ -184,7 +187,46 @@ describe("a RING of officers terminates", () => {
 })
 
 describe("simultaneous hand-offs", () => {
-  it.effect("one sender's concurrent sends cannot exceed its allowance", () =>
+  it.effect("the saved recipient interval governs incoming messages from different officers", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      yield* openAll(db)
+      yield* db
+        .insert(AgentConfigTable)
+        .values({
+          name: "theron",
+          layers: [{ colleagueMessageIntervalMinutes: 15 }] as never,
+        })
+        .run()
+        .pipe(Effect.orDie)
+      const bridge = handoff(db, events, ROSTER)
+
+      expect((yield* bridge.deliver({ from: ARIS, colleague: "theron", message: "first" })).delivered).toBe(true)
+      const second = yield* bridge.deliver({ from: KALLIAS, colleague: "theron", message: "second" })
+      expect(second.delivered).toBe(false)
+      expect(second.refused).toBe("Rate-limit 1 message per 15 minutes - respect everyone's time.")
+      expect(yield* admitted(db)).toBe(1)
+    }).pipe(Effect.timeout(NO_HANG)),
+  )
+
+  it.effect("a direct superior can send repeatedly without spending a subordinate's interval", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      yield* openAll(db)
+      const nova = "ses_nova" as SessionSchema.ID
+      yield* chat(db, { id: nova, agent: "nova" })
+      const bridge = handoff(db, events, { ...ROSTER, [nova]: "nova" })
+
+      expect((yield* bridge.deliver({ from: nova, colleague: "theron", message: "first" })).delivered).toBe(true)
+      expect((yield* bridge.deliver({ from: nova, colleague: "theron", message: "second" })).delivered).toBe(true)
+      expect((yield* bridge.deliver({ from: ARIS, colleague: "theron", message: "peer" })).delivered).toBe(true)
+      expect(yield* admitted(db)).toBe(3)
+    }).pipe(Effect.timeout(NO_HANG)),
+  )
+
+  it.effect("concurrent sends admit only one message within the officer interval", () =>
     Effect.gen(function* () {
       ColleagueBound.reset()
       const { db } = yield* Database.Service
@@ -204,9 +246,9 @@ describe("simultaneous hand-offs", () => {
       )
 
       const delivered = results.filter((r) => r.delivered).length
-      expect(delivered).toBe(attempts)
-      expect(results.filter((r) => r.started).length).toBeLessThanOrEqual(ColleagueBound.RATE_LIMIT)
-      for (const result of results.filter((r) => !r.started)) expect(result.deferred).toBeTruthy()
+      expect(delivered).toBe(1)
+      for (const result of results.filter((r) => !r.delivered))
+        expect(result.refused).toBe("Rate-limit 1 message per 60 minutes - respect everyone's time.")
       // What was admitted matches what was reported. If these disagree the sender is being told one
       // thing while the receiver got another.
       expect(yield* admitted(db)).toBe(delivered)

@@ -3884,6 +3884,8 @@ export type ConfigV2Agent = {
   maxWorkers?: number
   spawnDepth?: number
   runtimeHeartbeatMinutes?: number
+  unansweredMessageNudges?: boolean
+  colleagueMessageIntervalMinutes?: number
   description?: string
   mode?: "subagent" | "primary" | "all"
   hidden?: boolean

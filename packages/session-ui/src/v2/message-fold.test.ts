@@ -68,6 +68,15 @@ describe("appendMessage", () => {
 })
 
 describe("applySessionNextEvent", () => {
+  test("a live unanswered-message reminder is a harness notice", () => {
+    const messages = fold([], prompted("ses_aris", "msg_stall_aris_theron", "Still unanswered."))
+    expect(messages).toMatchObject([{
+      id: "msg_stall_aris_theron",
+      type: "synthetic",
+      sessionID: "ses_aris",
+      text: "Still unanswered.",
+    }])
+  })
   test("exit.accepted marks the exact assistant immediately on the live stream", () => {
     const messages = [assistantMsg("msg_1", 1, { completed: 2 }), assistantMsg("msg_2", 3, { completed: 4 })]
     fold(
