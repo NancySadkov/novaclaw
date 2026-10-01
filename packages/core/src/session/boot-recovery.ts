@@ -294,15 +294,16 @@ export const wakeAbandonedInput = Effect.fn("SessionBootRecovery.wakeAbandonedIn
   readonly store: SessionStore.Interface
   readonly adopt: (sessionID: SessionSchema.ID) => Effect.Effect<void, unknown>
   /** A boot-time snapshot. Omit only for an explicit, immediate recovery sweep. */
-  readonly sessionIDs?: readonly SessionSchema.ID[]
+  readonly candidates?: readonly AbandonedSession[]
 }) {
   const candidates =
-    input.sessionIDs ??
-    (yield* abandonedSessionIDs({
+    input.candidates ??
+    (yield* abandonedSessions({
       db: input.db,
     }))
+  const admittedWork = new Map(candidates.map((candidate) => [candidate.sessionID, candidate.hasWork]))
   const sessions = yield* descendantsFirst({
-    sessionIDs: candidates,
+    sessionIDs: candidates.map((candidate) => candidate.sessionID),
     parentOf: (sessionID) =>
       input.store.get(sessionID).pipe(Effect.map((session) => session?.parentID as SessionSchema.ID | undefined)),
   })
@@ -326,7 +327,7 @@ export const wakeAbandonedInput = Effect.fn("SessionBootRecovery.wakeAbandonedIn
       const pendingQueue = yield* SessionInput.hasPending(input.db, sessionID, "queue")
       const recovery = yield* input.db.select({ recovery: SessionExecutionTable.provider_recovery })
         .from(SessionExecutionTable).where(eq(SessionExecutionTable.session_id, sessionID)).get().pipe(Effect.orDie)
-      if (!pendingQueue && recovery?.recovery == null) continue
+      if (!pendingQueue && recovery?.recovery == null && admittedWork.get(sessionID) !== true) continue
     }
     /**
      * 🔴 **THE OTHER BOOT ARM ASKS THE SAME SEAM.**
@@ -342,7 +343,10 @@ export const wakeAbandonedInput = Effect.fn("SessionBootRecovery.wakeAbandonedIn
      * resumed on purpose. The seam below answers the separate question — may this model be STARTED
      * with nobody asking — and a queued prompt is somebody asking.
      */
-    const authority = yield* Steering.resume(input.db, sessionID, { reason: "boot-queued-input" })
+    const authority = yield* Steering.resume(input.db, sessionID, {
+      reason: "boot-queued-input",
+      ...(admittedWork.get(sessionID) === true ? { hasWork: true } : {}),
+    })
     if (!authority.allowed) {
       const pendingQueue = yield* SessionInput.hasPending(input.db, sessionID, "queue")
       if (!pendingQueue) continue
@@ -367,7 +371,12 @@ export const wakeAbandonedInput = Effect.fn("SessionBootRecovery.wakeAbandonedIn
  * misclassified as crash residue — violating `prompt({ resume: false })` and racing an explicit
  * runner with a second drain.
  */
-export const abandonedSessionIDs = Effect.fn("SessionBootRecovery.abandonedSessionIDs")(function* (input: {
+export interface AbandonedSession {
+  readonly sessionID: SessionSchema.ID
+  readonly hasWork?: true
+}
+
+export const abandonedSessions = Effect.fn("SessionBootRecovery.abandonedSessions")(function* (input: {
   readonly db: Database.Interface["db"]
 }) {
   const pending = yield* SessionInput.sessionsWithPendingQueue(input.db)
@@ -407,14 +416,15 @@ export const abandonedSessionIDs = Effect.fn("SessionBootRecovery.abandonedSessi
     ))
     .all()
     .pipe(Effect.orDie)
-  return [
-    ...new Set([
-      ...pending,
-      ...strandedRecovery.map((row) => SessionSchema.ID.make(row.sessionID)),
-      ...strandedInterrupted.map((row) => SessionSchema.ID.make(row.sessionID)),
-      ...strandedUnfinished.map((row) => SessionSchema.ID.make(row.sessionID)),
-    ]),
-  ]
+  const candidates = new Map<SessionSchema.ID, true | undefined>()
+  for (const sessionID of pending) candidates.set(sessionID, true)
+  for (const row of strandedRecovery) candidates.set(row.sessionID, true)
+  for (const row of strandedInterrupted) candidates.set(row.sessionID, true)
+  for (const row of strandedUnfinished)
+    if (!candidates.has(row.sessionID)) candidates.set(row.sessionID, undefined)
+  return [...candidates].map(([sessionID, hasWork]) =>
+    hasWork === true ? { sessionID, hasWork } : { sessionID },
+  )
 })
 
 /**
@@ -437,10 +447,10 @@ export const start = (input: {
     const adopt = holdStopped({ db: input.db, adopt: input.execution.adopt })
     // Snapshot before either detached arm can yield. A delayed query would see prompts admitted
     // after boot and steal `resume: false` work as though the previous process had abandoned it.
-    const abandoned = yield* abandonedSessionIDs({ db: input.db }).pipe(
+    const abandoned = yield* abandonedSessions({ db: input.db }).pipe(
       // Both recovery arms are independently non-fatal. Moving the read out of the fork must not
       // turn an unavailable recovery table into an instance boot failure.
-      Effect.catchCause(() => Effect.succeed([] as readonly SessionSchema.ID[])),
+      Effect.catchCause(() => Effect.succeed([] as readonly AbandonedSession[])),
     )
     yield* Effect.forkScoped(
       recoverStaleLeases(input.attempts, (recovered) =>
@@ -461,7 +471,7 @@ export const start = (input: {
     )
     yield* Effect.forkScoped(
       recoveryLane
-        .withPermits(1)(wakeAbandonedInput({ db: input.db, store: input.store, adopt, sessionIDs: abandoned }))
+        .withPermits(1)(wakeAbandonedInput({ db: input.db, store: input.store, adopt, candidates: abandoned }))
         .pipe(Effect.ignore),
     )
   })

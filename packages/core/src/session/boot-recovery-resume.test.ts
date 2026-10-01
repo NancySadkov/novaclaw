@@ -4,11 +4,17 @@ import { AgentV2 } from "../agent"
 import { AgentConfigStore } from "../agent-config-store"
 import { AgentConfigTable } from "../agent-config/sql"
 import { Database } from "../database/database"
+import { EventV2 } from "../event"
+import { ModelV2 } from "../model"
+import { ProviderV2 } from "../provider"
 import { SessionBootRecovery } from "./boot-recovery"
 import { SessionRecoveryDecision } from "./recovery-decision"
 import type { SessionExecutionAttempt } from "./execution-attempt"
+import { SessionMessage } from "./message"
+import { SessionRead } from "./read"
 import { SessionSchema } from "./schema"
-import { SessionTable } from "./sql"
+import { SessionExecutionTable, SessionTable } from "./sql"
+import type { SessionStore } from "./store"
 import { Steering } from "./steering"
 import { testEffect } from "../../test/lib/effect"
 
@@ -239,6 +245,58 @@ describe("adoptRecovered asks the seam before it adopts anyone", () => {
         adopt: (sessionID) => Effect.sync(() => void order.push(`adopt:${sessionID}`)),
       })
       expect(order).toEqual(["adopt:ses_a", "adopt:ses_b"])
+    }))
+})
+
+describe("abandoned work keeps its admission reason", () => {
+  dbIt.effect("resumes interrupted interactive turns and provider recovery while leaving idle peers asleep", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* db.insert(SessionTable).values([
+        { ...root("ses_interrupted", "sopitis"), type: "interactive" },
+        { ...root("ses_provider", "zelos"), type: "interactive" },
+        { ...root("ses_idle", "ariadne"), type: "interactive" },
+        { ...root("ses_stopped", "geryon"), type: "interactive" },
+      ])
+      for (const name of ["sopitis", "zelos", "ariadne", "geryon"])
+        yield* putAgent(db, name, { kind: "agent", operationMode: "interactive" })
+      yield* db.insert(SessionExecutionTable).values([
+        {
+          session_id: id("ses_interrupted"), attempt_id: "old-interrupted", generation: 1,
+          owner_id: "old-host", state: "interrupted", phase: "tool", failure_class: "before-side-effect",
+          failure_count: 1, heartbeat_at: 1, started_at: 1, time_updated: 1,
+        },
+        {
+          session_id: id("ses_provider"), attempt_id: "old-provider", generation: 1,
+          owner_id: "old-host", state: "settled", phase: "provider", failure_count: 0,
+          heartbeat_at: 1, started_at: 1, time_updated: 1,
+          provider_recovery: {
+            attemptID: EventV2.ID.create(), assistantMessageID: SessionMessage.ID.create(),
+            model: { id: ModelV2.ID.make("model"), providerID: ProviderV2.ID.make("provider") },
+            startedAt: 1, toolProtocol: true,
+          },
+        },
+        {
+          session_id: id("ses_idle"), attempt_id: "old-idle", generation: 1,
+          owner_id: "old-host", state: "settled", phase: "drain", failure_count: 0,
+          heartbeat_at: 1, started_at: 1, time_updated: 1,
+        },
+        {
+          session_id: id("ses_stopped"), attempt_id: "old-stopped", generation: 1,
+          owner_id: "old-host", state: "interrupted", phase: "tool", failure_class: "interrupt",
+          failure_count: 0, heartbeat_at: 1, started_at: 1, time_updated: 1,
+        },
+      ])
+      const candidates = yield* SessionBootRecovery.abandonedSessions({ db })
+      expect(Object.fromEntries(candidates.map(({ sessionID, hasWork }) => [sessionID, hasWork]))).toEqual({
+        ses_interrupted: true, ses_provider: true, ses_idle: undefined,
+      })
+      const resumed: SessionSchema.ID[] = []
+      const store = { get: (sessionID: SessionSchema.ID) => SessionRead.get(db, sessionID) } as SessionStore.Interface
+      yield* SessionBootRecovery.wakeAbandonedInput({
+        db, store, candidates, adopt: (sessionID) => Effect.sync(() => void resumed.push(sessionID)),
+      })
+      expect(new Set(resumed)).toEqual(new Set([id("ses_interrupted"), id("ses_provider")]))
     }))
 })
 

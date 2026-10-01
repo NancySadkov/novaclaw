@@ -252,7 +252,7 @@ describe("which sessions the sweep hands back", () => {
       const store = yield* SessionStoreService.Service
 
       const created = yield* session.create({ location, agent: rootAgent })
-      const atBoot = yield* SessionBootRecovery.abandonedSessionIDs({ db })
+      const atBoot = yield* SessionBootRecovery.abandonedSessions({ db })
       yield* queue(created.id)
 
       const snapshotted = record()
@@ -260,7 +260,7 @@ describe("which sessions the sweep hands back", () => {
         db,
         store,
         adopt: snapshotted.wake,
-        sessionIDs: atBoot,
+        candidates: atBoot,
       })
       expect(snapshotted.woken).toEqual([])
 
