@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import { RECONNECT_BASE_MS, RECONNECT_CAP_MS, START_POLL_MS, reconnectDelayMs, streamRetryDelayMs } from "./reconnect-schedule"
+import {
+  RECONNECT_BASE_MS,
+  RECONNECT_CAP_MS,
+  START_POLL_MS,
+  STREAM_HEARTBEAT_MS,
+  STREAM_START_HEARTBEAT_MS,
+  reconnectDelayMs,
+  streamHeartbeatMs,
+  streamRetryDelayMs,
+} from "./reconnect-schedule"
 
 /**
  * ⚠️ The schedule is asserted, never slept through. A test that waits on the real clock measures the
@@ -101,5 +110,22 @@ describe("streamRetryDelayMs", () => {
     expect(total(1)).toBeGreaterThan(27_000)
     // And the flat start poll beats the fastest end of that band by an order of magnitude.
     expect(START_POLL_MS).toBeLessThan(total(0) / 10)
+  })
+})
+
+describe("streamHeartbeatMs", () => {
+  test("🔴 a start bounds each half-open ATTEMPT, and only a start does", () => {
+    // The retry cadence bounds the wait BETWEEN attempts; this bounds ONE attempt. Packaged 0.1.83
+    // measured server-health at 6.6 s and client-connected at 38.4 s — a ~32 s stall whose shape is
+    // two 15 s half-open attempts plus the waits between them.
+    expect(streamHeartbeatMs(true)).toBe(STREAM_START_HEARTBEAT_MS)
+    expect(streamHeartbeatMs(false)).toBe(STREAM_HEARTBEAT_MS)
+  })
+
+  test("the start bound is short against the idle heartbeat, and the idle heartbeat is untouched", () => {
+    // A healthy quiet stream relies on the long idle bound, so the start bound must not leak into it.
+    expect(STREAM_START_HEARTBEAT_MS).toBeLessThan(STREAM_HEARTBEAT_MS / 4)
+    // Two bounded attempts fit inside the measured stall with room to spare, instead of consuming it.
+    expect(STREAM_START_HEARTBEAT_MS * 2).toBeLessThan(32_000 / 2)
   })
 })

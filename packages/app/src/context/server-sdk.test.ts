@@ -74,6 +74,27 @@ describe("the stream ladder is told when the instance is still starting", () => 
     // And it is reachable ONLY from the `starting` branch, never on a phase check alone.
     expect(code).not.toMatch(/if \(current === "running"\) startWindow/)
   })
+
+  test("🔴 a half-open ATTEMPT during a start is bounded by the short establishment heartbeat", () => {
+    // The cadence ratchets above bound the wait BETWEEN attempts. They say nothing about ONE attempt
+    // that the server accepted and never answered, which the idle heartbeat ends at 15 s — so the
+    // start-aware ladder could still park for the full idle window twice. The establishment heartbeat
+    // must therefore be phase-aware at the ATTEMPT-START seam, not only in the delay.
+    const code = source()
+    expect(code).toContain("streamHeartbeatMs")
+    expect(code).toMatch(/resetHeartbeat\(streamHeartbeatMs\(supervisorPhase\(\)\?\.phase === "starting"\)\)/)
+    // The long idle bound must remain the default the connected stream re-arms with.
+    expect(code).toMatch(/resetHeartbeat = \(timeoutMs: number = HEARTBEAT_TIMEOUT_MS\)/)
+  })
+
+  test("🔴 the running edge abandons the in-flight attempt, not only the sleep", () => {
+    // Cutting only the sleep leaves a half-open `open()` to run out its full idle heartbeat after the
+    // server is already healthy. Measured 0.1.83: healthy at 6.6 s, connected at 38.4 s. The attempt
+    // that crossed the `starting` → `running` edge must be retried, not waited out.
+    const code = source()
+    const running = code.slice(code.indexOf('if (current === "running"'))
+    expect(running).toMatch(/startWindow\?\.abort\(\)[\s\S]*attempt\?\.abort\(\)/)
+  })
 })
 
 describe("event backlog", () => {
@@ -137,7 +158,7 @@ describe("reconnect recovery is a connection barrier", () => {
       .filter((line) => !line.trim().startsWith("//"))
       .join("\n")
 
-    expect(code).toContain("resetHeartbeat()")
+    expect(code).toContain("resetHeartbeat(streamHeartbeatMs(")
   })
 
   test("does not settle before every registered recovery settles", async () => {

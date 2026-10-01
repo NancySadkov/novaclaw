@@ -74,3 +74,32 @@ export function streamRetryDelayMs(
   if (input.starting) return START_POLL_MS
   return reconnectDelayMs(input.attempt, random)
 }
+
+/** How long a settled stream may go quiet before the client treats it as dead. */
+export const STREAM_HEARTBEAT_MS = 15_000
+
+/**
+ * How long a connection ATTEMPT may sit half-open while the instance is still STARTING.
+ *
+ * 🔴 **The retry cadence was not the whole stall.** `streamRetryDelayMs` bounds the wait BETWEEN
+ * attempts; it says nothing about how long ONE attempt may hang. A port that is bound but not yet
+ * answering (the server's graph still building, or its event loop starved by resumed officers)
+ * accepts the TCP connection and then sends no headers. Only the idle heartbeat ends that attempt,
+ * and the idle heartbeat must stay long — the server's own heartbeat cadence and a healthy quiet
+ * stream are measured against it. So each half-open attempt cost the FULL 15 s, and the measured
+ * boot paid it twice.
+ *
+ * Measured on packaged 0.1.83 (`%APPDATA%` log `20261001T223918`): the supervisor reported the
+ * server healthy at 6.6 s, the renderer connected at 38.4 s, and the server answered `/api/agent`
+ * in 0.28 s once reached — a ~32 s client stall, the shape of two 15 s attempts plus the waits
+ * between them. The same 6.6 s → 38.4 s pair is on record across the 2026-09-28 boots.
+ *
+ * ⚠️ Short ONLY while `starting`. An instance that is DOWN has no supervisor saying so, and a
+ * healthy-but-quiet stream must keep the long idle heartbeat; both keep `STREAM_HEARTBEAT_MS`.
+ * A start is a countdown the shell is keeping, so re-probing it early costs one cheap request.
+ */
+export const STREAM_START_HEARTBEAT_MS = 3_000
+
+export function streamHeartbeatMs(starting: boolean): number {
+  return starting ? STREAM_START_HEARTBEAT_MS : STREAM_HEARTBEAT_MS
+}

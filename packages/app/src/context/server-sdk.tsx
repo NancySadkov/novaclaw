@@ -10,7 +10,7 @@ import { ServerConnection, useServer } from "./server"
 import { createRefCountMap } from "@/utils/refcount"
 import { useGlobal } from "./global"
 import { ServerScope } from "@/utils/server-scope"
-import { streamRetryDelayMs } from "@/utils/reconnect-schedule"
+import { streamHeartbeatMs, streamRetryDelayMs, STREAM_HEARTBEAT_MS } from "@/utils/reconnect-schedule"
 import { useSupervisorPhase } from "@/hooks/use-supervisor-phase"
 import { runReconnectingStream, waitForStreamRetry } from "./reconnect-stream"
 import { enqueueEvent, EventBacklogOverflowError } from "./global-sync/event-backlog"
@@ -105,7 +105,18 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
     // mint a second window for one start and strand the loop waiting on a signal nobody will ever
     // abort. A second start, and only a second start, mints a new one.
     if (current === "starting" && previous !== "starting") startWindow = new AbortController()
-    if (current === "running" && previous !== "running") startWindow?.abort()
+    if (current === "running" && previous !== "running") {
+      startWindow?.abort()
+      // 🔴 Abandon the ATTEMPT that was made while the instance was still coming up. Cutting only the
+      // sleep leaves a half-open `open()` to run out its full idle heartbeat (15 s), so a server that
+      // became healthy a moment after the attempt began is still connected ~15 s late. Measured on
+      // packaged 0.1.83 (`%APPDATA%` log `20261001T223918`): supervisor healthy at 6.6 s, renderer
+      // connected at 38.4 s, and the reachable server answered `/api/agent` in 0.28 s — the shape of a
+      // half-open attempt crossing the `starting` → `running` edge. The abort surfaces as a normal
+      // stream failure; the window we just spent makes the following wait immediate, so the retry lands
+      // on the server that is now answering.
+      attempt?.abort()
+    }
   })
 
   const eventFetch = (() => {
@@ -176,15 +187,15 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
   let run: Promise<void> | undefined
   let started = false
   let generation = 0
-  const HEARTBEAT_TIMEOUT_MS = 15_000
+  const HEARTBEAT_TIMEOUT_MS = STREAM_HEARTBEAT_MS
   let lastEventAt = Date.now()
   let heartbeat: ReturnType<typeof setTimeout> | undefined
-  const resetHeartbeat = () => {
+  const resetHeartbeat = (timeoutMs: number = HEARTBEAT_TIMEOUT_MS) => {
     lastEventAt = Date.now()
     if (heartbeat) clearTimeout(heartbeat)
     heartbeat = setTimeout(() => {
       attempt?.abort()
-    }, HEARTBEAT_TIMEOUT_MS)
+    }, timeoutMs)
   }
   const clearHeartbeat = () => {
     if (!heartbeat) return
@@ -222,6 +233,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
               console.error("[global-sdk] event stream error", {
                 url: server.http.url,
                 fetch: eventFetch ? "platform" : "webview",
+                starting: supervisorPhase()?.phase === "starting",
                 error,
               })
             },
@@ -273,7 +285,11 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
           // 11:00:37.777Z — 2h53m48s of a dead stream that never once retried or raised a banner.
           // Same shape on 09-06 (3h13m), 09-07 (6h22m), 09-09 (4h05m), 09-10 (3h27m).
           // `resetHeartbeat()` also stamps `lastEventAt`, so this replaces that assignment.
-          resetHeartbeat()
+          // ⚠️ While the instance is STARTING, the attempt gets the short establishment bound
+          // (`streamHeartbeatMs`), not the 15 s idle heartbeat: a half-open attempt against a
+          // still-booting server must not park the loop for the full idle window. The moment the
+          // response headers arrive, `open()` re-arms the normal heartbeat above.
+          resetHeartbeat(streamHeartbeatMs(supervisorPhase()?.phase === "starting"))
           const onAbort = () => controller.abort()
           abortListeners.set(controller, onAbort)
           abort.signal.addEventListener("abort", onAbort)
@@ -292,6 +308,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
             console.error("[global-sdk] event stream failed", {
               url: server.http.url,
               fetch: eventFetch ? "platform" : "webview",
+              starting: supervisorPhase()?.phase === "starting",
               error,
             })
           }
