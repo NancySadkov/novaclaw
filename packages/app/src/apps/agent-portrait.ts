@@ -31,6 +31,19 @@ export const fetchAgentPortrait = (
 const portraitCache = new Map<string, Promise<Blob>>()
 const PORTRAIT_CACHE_LIMIT = 16
 
+/**
+ * How long to wait before re-reading a portrait that failed.
+ *
+ * 🔴 A refusal during the instance's first seconds is not a verdict on the avatar. The route string
+ * is unchanged when the same portrait later succeeds, so a component that gives up keeps the
+ * colleague's initials for the life of the window. Bounded, like the reconnect ladder: an instance
+ * that is genuinely gone is asked once every 30 s rather than continuously.
+ */
+export const PORTRAIT_RETRY_BASE_MS = 1_000
+export const PORTRAIT_RETRY_CAP_MS = 30_000
+export const portraitRetryDelayMs = (attempt: number): number =>
+  Math.min(PORTRAIT_RETRY_CAP_MS, PORTRAIT_RETRY_BASE_MS * 2 ** Math.min(Math.max(0, attempt), 20))
+
 export const loadAgentPortrait = (server: ServerConnection.HttpBase, avatar: string, fetch?: InstanceSend): Promise<Blob> => {
   if (!/[?&]v=[^&]+/.test(avatar)) return fetchAgentPortrait(server, avatar, fetch)
   const key = JSON.stringify([server.url, server.username, server.password, avatar])

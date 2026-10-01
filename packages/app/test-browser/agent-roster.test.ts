@@ -140,3 +140,55 @@ test("disposing a server cancels its request and queued refresh", async () => {
   expect(signal.aborted).toBe(true)
   expect(reads).toBe(1)
 })
+
+test("🔴 a transient roster failure heals itself without a manual refetch", async () => {
+  let reads = 0
+  const { roster, dispose } = createRoot((dispose) => ({
+    dispose,
+    roster: createAgentRoster(
+      async () => {
+        reads++
+        if (reads === 1) throw new Error("Connection lost")
+        return [agent]
+      },
+      10_000,
+      { baseMs: 1, capMs: 2 },
+    ),
+  }))
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(reads).toBeGreaterThanOrEqual(2)
+    expect(roster.error()).toBeUndefined()
+    expect(roster.list()[0]?.id).toBe("nova")
+    expect(roster.loading()).toBe(false)
+  } finally {
+    dispose()
+  }
+})
+
+test("🔴 a roster that stays unreachable is retried at a bounded rate and stops on dispose", async () => {
+  let reads = 0
+  const { roster, dispose } = createRoot((dispose) => ({
+    dispose,
+    roster: createAgentRoster(
+      async () => {
+        reads++
+        throw new Error("Connection lost")
+      },
+      10_000,
+      { baseMs: 1, capMs: 2 },
+    ),
+  }))
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    const observed = reads
+    expect(observed).toBeGreaterThanOrEqual(2)
+    expect(roster.error()).toBeInstanceOf(Error)
+    dispose()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(reads).toBe(observed)
+  } finally {
+    dispose()
+  }
+})
+

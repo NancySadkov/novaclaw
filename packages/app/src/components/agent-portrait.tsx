@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js"
-import { agentInitials, loadAgentPortrait, isAgentPortraitURL } from "@/apps/agent-portrait"
+import { agentInitials, loadAgentPortrait, isAgentPortraitURL, portraitRetryDelayMs } from "@/apps/agent-portrait"
 import { type ServerConnection, useServer } from "@/context/server"
 
 export function AgentPortrait(props: {
@@ -9,6 +9,8 @@ export function AgentPortrait(props: {
   connection?: ServerConnection.Any | undefined
   background?: string | undefined
   class?: string | undefined
+  /** Test seam for the recovery cadence. Production uses the shared default below. */
+  retryDelayMs?: (attempt: number) => number
 }) {
   const server = useServer()
   const [failed, setFailed] = createSignal<string>()
@@ -37,21 +39,35 @@ export function AgentPortrait(props: {
     if (!current) return
     const { route } = current
 
+    // 🔴 A FAILED PORTRAIT IS A TRANSIENT READ, NOT A VERDICT. The roster (and this route with it)
+    // is read while the instance may still be answering its first requests; a refused or held fetch
+    // used to leave the colleague's initials in place for the life of the window, because the route
+    // string does not change when the same avatar later loads. Retry at a bounded rate until it does.
+    const delayFor = props.retryDelayMs ?? portraitRetryDelayMs
     let disposed = false
     let source: string | undefined
-    void loadAgentPortrait(current.http, route).then(
-      (blob) => {
-        if (disposed) return
-        source = URL.createObjectURL(blob)
-        setFailed(undefined)
-        setLoaded({ route, source })
-      },
-      () => {
-        if (!disposed) setFailed(route)
-      },
-    )
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let attempt = 0
+    const load = () => {
+      void loadAgentPortrait(current.http, route).then(
+        (blob) => {
+          if (disposed) return
+          source = URL.createObjectURL(blob)
+          setFailed(undefined)
+          setLoaded({ route, source })
+        },
+        () => {
+          if (disposed) return
+          setFailed(route)
+          timer = setTimeout(load, delayFor(attempt))
+          attempt++
+        },
+      )
+    }
+    load()
     onCleanup(() => {
       disposed = true
+      if (timer !== undefined) clearTimeout(timer)
       if (source !== undefined) URL.revokeObjectURL(source)
     })
   })

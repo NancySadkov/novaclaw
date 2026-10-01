@@ -1,8 +1,16 @@
 import { describe, expect, test } from "bun:test"
-import { agentInitials, fetchAgentPortrait, isAgentPortraitURL, loadAgentPortrait } from "./agent-portrait"
+import { agentInitials, fetchAgentPortrait, isAgentPortraitURL, loadAgentPortrait, portraitRetryDelayMs } from "./agent-portrait"
 import { instanceUrl } from "@/utils/instance-fetch"
 
 describe("instance-owned agent portraits", () => {
+  test("the portrait retry ladder is bounded, never a hot loop", () => {
+    expect(portraitRetryDelayMs(0)).toBe(1_000)
+    expect(portraitRetryDelayMs(1)).toBe(2_000)
+    expect(portraitRetryDelayMs(5)).toBe(30_000)
+    expect(portraitRetryDelayMs(99)).toBe(30_000)
+    expect(portraitRetryDelayMs(-3)).toBe(1_000)
+  })
+
   test("compact identities keep two initials and never split a Unicode character", () => {
     expect(agentInitials("  Iris   Vale ")).toBe("IV")
     expect(agentInitials("Nova")).toBe("N")
