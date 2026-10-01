@@ -12,6 +12,17 @@ import RESEARCHER_JOB from "./agent/research-officer.txt"
 import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
 
+const ARTIST_IMAGEMAGICK_HINT = [
+  "Use ImageMagick for basic graphics work.",
+  "magick in.png out.webp",
+  "magick identify in.png",
+  "magick in.png -crop 100x80+10+10 out.png",
+  'magick -size 64x48 xc:navy -stroke yellow -fill none -draw "rectangle 5,5 30,30" out.png',
+  "point, line, rectangle, circle, ellipse, polygon, text:",
+  '  magick in.png -fill red -draw "point 2,3" out.png # set pixel',
+  '  magick in.png -format "%[pixel:p{2,3}]" info: # get pixel',
+].join("\n")
+
 const NAMES = ["config.json", "novaclaw.jsonc"]
 const DECODE_OPTIONS = { errors: "all", onExcessProperty: "ignore", propertyOrder: "original" } as const
 const decodeInfo = Schema.decodeUnknownOption(Config.Info, DECODE_OPTIONS)
@@ -95,7 +106,7 @@ const SEEDED_OFFICERS: ReadonlyArray<{
       "FOR and who will see it before proposing anything, because a poster and an icon are not the same " +
       "problem. Offer two or three distinct directions rather than one, and say what each is trading " +
       "away. Describe what you make in words as well as making it, so somebody can judge it without " +
-      "having your eye.",
+      `having your eye.\n\n${ARTIST_IMAGEMAGICK_HINT}`,
   },
   {
     id: "researcher",

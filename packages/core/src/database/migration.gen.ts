@@ -142,6 +142,7 @@ import migration_139 from "./migration/20260928140000_owner_inbox"
 import migration_140 from "./migration/20260930002633_recipe_projects"
 import migration_141 from "./migration/20260930013142_project_kickoff_delivery"
 import migration_142 from "./migration/20260930100000_retire_internal_roles"
+import migration_143 from "./migration/20261001120000_artist_imagemagick_job"
 
 export const migrations = [
   migration_0,
@@ -287,4 +288,5 @@ export const migrations = [
   migration_140,
   migration_141,
   migration_142,
+  migration_143,
 ] satisfies DatabaseMigration.Migration[]

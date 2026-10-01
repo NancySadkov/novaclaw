@@ -39,6 +39,7 @@ describe("PromptManager — the one system prompt", () => {
     )
     // The personality block is gone (owner, 2026-09-17).
     expect(text).not.toContain("personality and standing instructions")
+    expect(text).not.toContain("Use ImageMagick for basic graphics work.")
   })
 
   test("a pure chat is its job instructions and nothing else", () => {

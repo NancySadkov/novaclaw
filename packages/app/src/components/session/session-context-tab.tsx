@@ -33,6 +33,7 @@ import { tabHref, useTabs } from "@/context/tabs"
 import { forgetGoneSession } from "@/context/session-gone"
 import { useSessionScope } from "@/context/session-scope"
 import { clearOfficerChat } from "./session-clear-chat"
+import { promptSourceKey } from "./session-prompt-source-key"
 
 const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
   system: "var(--syntax-info)",
@@ -123,7 +124,7 @@ export function SessionContextTab() {
   // The LIVE prompt, server-side runtime state: the context-epoch baseline. Read-only, no filesystem.
   // The captured wire bodies (for Export Prompt) come from `session.promptCapture` on demand.
   const promptSource = createQuery(() => ({
-    queryKey: ["session-prompt-source", server.key, sdk().directory, params.id],
+    queryKey: promptSourceKey(server.key, sdk().directory, params.id, info()?.time.created, info()?.time.updated),
     queryFn: async ({ signal }) => {
       const id = params.id
       if (!id) return {}

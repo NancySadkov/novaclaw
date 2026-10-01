@@ -17,7 +17,7 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
-import { SessionTable } from "@novaclaw/core/session/sql"
+import { SessionComponentTable, SessionTable } from "@novaclaw/core/session/sql"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { testEffect } from "./lib/effect"
 
@@ -62,6 +62,40 @@ const ledgerHas = (devices: readonly SessionScheduler.DeviceSnapshot[], sessionI
   devices.some((device) => device.ledger.some((entry) => entry.id === sessionID))
 
 describe("removeSessionRecord — scheduler eviction", () => {
+  it.effect("clearing a chat removes both its memo shadow and materialised prompt", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+      const created = yield* session.create({ location, agent: rootAgent })
+      yield* db.insert(SessionComponentTable).values([
+        {
+          session_id: created.id,
+          kind: "durable",
+          component_id: "project",
+          schema_version: 1,
+          lifetime: "entity",
+          value: { name: "Project", value: "/old" },
+          time_created: 1,
+          time_updated: 1,
+        },
+        {
+          session_id: created.id,
+          kind: "durable_prompt",
+          component_id: "singleton",
+          schema_version: 1,
+          lifetime: "entity",
+          value: { text: "Project: /old" },
+          time_created: 1,
+          time_updated: 1,
+        },
+      ]).run()
+
+      yield* session.remove(created.id)
+
+      expect(yield* db.select().from(SessionComponentTable).where(eq(SessionComponentTable.session_id, created.id)).all()).toEqual([])
+    }),
+  )
+
   it.effect("SessionV2.remove drops the session from the EEVDF ledger", () =>
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
@@ -125,7 +159,7 @@ describe("removeSessionRecord — scheduler eviction", () => {
       const session = yield* SessionV2.Service
       const { db } = yield* Database.Service
       const created = yield* session.create({ location, agent: rootAgent })
-      const other = yield* session.create({ location, agent: rootAgent })
+      const other = yield* session.create({ location, agent: AgentV2.ID.make("other") })
       const state: JhEngine.State = {
         tree: JhTree.create({ goal: "g", size: "atomic", success: "ok" }),
         artifacts: [{ id: "a.c", type: "file", hash: "h", content: "int main(){}" }],

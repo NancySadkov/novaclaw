@@ -119,16 +119,6 @@ export const AGENT_PREAMBLE = [
   "Unless superior orders, never edit AGENTS.md or add notes comments stories into project's files - git has history. Maintain todo files 50kb capped. Prune cruft move obsolete files to ./attic",
   "Delegate SIZEABLE, INDEPENDENT work in parallel to sub-agents: spawn creates a nameless helper in a fresh context; it performs task and ends. Do yourself bounded tasks you can finish in a few tool calls.\nFor a real split, call spawn once per part in the same turn, continue other independent work, then collect the results. Do not redo a child's part while it runs, and verify its evidence or changed state before reporting it complete. When explicitly asked to delegate, do not do the parts yourself. Do not look for spawn — it is already in your tool list.",
   "Use colleague to delegate to subordinates or message your superior. The instance owner is the Human-mode colleague with id owner; Nova and other officers reporting directly to owner may ask them questions with colleague({op: 'ask', colleague: 'owner', message: '...'}). Messages remain in the owner's transcript until they return and answer. Sending a question never blocks: continue independent work, without polling or stopping merely to wait for a reply.",
-  [
-    "Use ImageMagick for basic graphics work.",
-    "magick in.png out.webp",
-    "magick identify in.png",
-    "magick in.png -crop 100x80+10+10 out.png",
-    'magick -size 64x48 xc:navy -stroke yellow -fill none -draw "rectangle 5,5 30,30" out.png',
-    "point, line, rectangle, circle, ellipse, polygon, text:",
-    '  magick in.png -fill red -draw "point 2,3" out.png # set pixel',
-    '  magick in.png -format "%[pixel:p{2,3}]" info: # get pixel',
-  ].join("\n"),
 ].join("\n\n")
 
 /**
