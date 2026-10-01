@@ -74,18 +74,22 @@ export const layer = Layer.effect(
       configured: Effect.fn("AgentConfigStore.configured")(function* () {
         const stored = yield* agents.all()
         const configured: Record<string, ConfigAgent.Info[]> = {}
+        const defaults = Nudge.defaults()
         for (const [name, layers] of Object.entries(stored)) {
           const folded = fold(layers)
-          if (!folded || folded.nudges !== undefined || folded.kind === "human" || folded.kind === "chat" || folded.shortChat)
+          if (!folded || folded.kind === "human" || folded.kind === "chat" || folded.shortChat)
             configured[name] = layers
           else
             configured[name] = [
               ...layers.slice(0, -1),
-              Schema.decodeUnknownSync(ConfigAgent.Info)({ ...layers.at(-1)!, nudges: Nudge.defaults() }),
+              Schema.decodeUnknownSync(ConfigAgent.Info)({
+                ...layers.at(-1)!,
+                nudges: (folded.nudges ?? defaults).map(Nudge.refreshStoredDefault),
+              }),
             ]
         }
         if (configured.nova === undefined)
-          configured.nova = [Schema.decodeUnknownSync(ConfigAgent.Info)({ nudges: Nudge.defaults() })]
+          configured.nova = [Schema.decodeUnknownSync(ConfigAgent.Info)({ nudges: defaults })]
         return configured
       }),
       setLayers: Effect.fn("AgentConfigStore.setLayers")(function* (name, layers) {

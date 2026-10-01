@@ -45,7 +45,7 @@ export const defaults = (): ReadonlyArray<ConfigNudge.Info> => [
       type: "javascript",
       code: 'file.sizeBytes > 50 * 1024 && (file.path.toLowerCase().includes("todo") || file.path.toLowerCase().endsWith(".md"))',
     },
-    text: "The $(absolute_file_path) got bloated - reduce to 30kb, remove completed items and cruft, use simple direct concise language.",
+    text: "Bloated - reduce $(absolute_file_path) to 40kb, remove completed items and cruft, use simple direct concise language.",
     spammable: true,
   },
   {
@@ -56,6 +56,22 @@ export const defaults = (): ReadonlyArray<ConfigNudge.Info> => [
     text: "Today is $(date '+%Y-%m-%d %A').",
   },
 ]
+
+export const refreshStoredDefault = (nudge: ConfigNudge.Info): ConfigNudge.Info => {
+  if (nudge.id !== BLOATED_TODO_ID || nudge.text !== "The $(absolute_file_path) got bloated - reduce to 30kb, remove completed items and cruft, use simple direct concise language.")
+    return nudge
+  const current = defaults().find((item) => item.id === BLOATED_TODO_ID)!
+  if (
+    nudge.name !== current.name ||
+    nudge.hook.type !== "javascript" ||
+    current.hook.type !== "javascript" ||
+    nudge.hook.code !== current.hook.code ||
+    nudge.script !== undefined ||
+    nudge.spammable !== current.spammable
+  )
+    return nudge
+  return { ...current, ...(nudge.enabled === undefined ? {} : { enabled: nudge.enabled }) }
+}
 
 export const validPattern = (pattern: string): boolean => {
   try {

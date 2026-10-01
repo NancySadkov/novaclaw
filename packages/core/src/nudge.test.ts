@@ -42,6 +42,7 @@ describe("Nudge", () => {
     expect(edited("write", { path: "todo.md" }, { type: "error" })).toEqual([])
     expect(edited("read", { path: "todo.md" }, { type: "content" })).toEqual([])
     expect(edited("write-hex", { path: "todo.md" }, { type: "content" })).toEqual([])
+    expect(edited("bash", { command: "printf x > todo.md" }, { type: "content" })).toEqual([])
     expect(
       edited("apply_patch", { patchText: "*** Update File: todo.md\n*** Add File: notes.txt" }, { type: "content" }),
     ).toHaveLength(2)
@@ -63,6 +64,9 @@ describe("Nudge", () => {
       expect(edited).toEqual([{ type: "file-edit", id: `write-1:${target}`, path: target, sizeBytes: 50 * 1024 + 1 }])
       const item = Nudge.defaults().find((entry) => entry.id === Nudge.BLOATED_TODO_ID)!
       expect(Nudge.matches(item, edited[0]!)).toBe(true)
+      expect(await Nudge.fileEditEvents(["todo.md"], directory, "snapshot-1")).toEqual([
+        { type: "file-edit", id: `snapshot-1:${target}`, path: target, sizeBytes: 50 * 1024 + 1 },
+      ])
       expect(await Nudge.editedFileEvents({ ...event, output: { type: "error" } }, directory)).toEqual([])
     } finally {
       await fs.rm(directory, { recursive: true, force: true })

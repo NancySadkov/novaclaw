@@ -2937,6 +2937,9 @@ export const layer = Layer.effect(
             yield* timingEnd("snapshot-before")
             return captured
           })
+      const deliveredFileSizes = new Map<string, number>()
+      const fileKey = (filePath: string) =>
+        process.platform === "win32" ? path.normalize(filePath).toLowerCase() : path.normalize(filePath)
       yield* timingStart("provider-setup")
       const assistantMessageID = SessionMessage.ID.create()
       const publisher = createLLMEventPublisher(events, {
@@ -3365,7 +3368,10 @@ export const layer = Layer.effect(
                           location.directory,
                         ),
                       )
-                      for (const editedFile of edited) yield* deliverNudges(session.id, String(agent.id), editedFile)
+                      for (const editedFile of edited) {
+                        if (yield* deliverNudges(session.id, String(agent.id), editedFile))
+                          deliveredFileSizes.set(fileKey(editedFile.path), editedFile.sizeBytes)
+                      }
                     }
                     // A missing file is authoritative negative evidence. If recalled memory led this
                     // exact step to that path, invalidate the claim before the next step recalls again.
@@ -3978,6 +3984,14 @@ export const layer = Layer.effect(
                     .files({ from: startSnapshot, to: endSnapshot })
                     .pipe(Effect.catch(() => Effect.succeed(undefined)))
                 : undefined
+            if (files?.length) {
+              const changed = yield* Effect.promise(() =>
+                Nudge.fileEditEvents(files, location.root, `snapshot:${assistantMessageID}`),
+              )
+              for (const editedFile of changed)
+                if (deliveredFileSizes.get(fileKey(editedFile.path)) !== editedFile.sizeBytes)
+                  yield* deliverNudges(session.id, String(agent.id), editedFile)
+            }
             yield* withPublication(
               events.publish(SessionEvent.Step.Ended, {
                 sessionID: session.id,

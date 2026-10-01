@@ -20,5 +20,6 @@ test("the runner dispatches every Nudge event family and pressure is absent from
   expect(runner).toContain('type: "clock"')
   expect(runner).toContain('type: "resource"')
   expect(runner).toContain("resourcePressure.level()")
+  expect(runner).toContain("Nudge.fileEditEvents(files, location.root,")
   expect(builtins).not.toContain("ResourcePressureContext")
 })

@@ -12,6 +12,7 @@ export {
   LOW_RESOURCE_ID,
   NEW_DAY_ID,
   BLOATED_TODO_ID,
+  refreshStoredDefault,
   validPattern,
 } from "./nudge-definition"
 
@@ -91,23 +92,27 @@ export const editedPaths = (event: Event, directory: string): ReadonlyArray<stri
   return [...new Set(pathsIn(event.input).map((candidate) => path.resolve(directory, candidate)))]
 }
 
-export const editedFileEvents = async (
-  event: Event,
+export const fileEditEvents = async (
+  paths: ReadonlyArray<string>,
   directory: string,
+  occurrenceID: string,
 ): Promise<ReadonlyArray<Extract<Event, { type: "file-edit" }>>> => {
   const result: Array<Extract<Event, { type: "file-edit" }>> = []
-  for (const editedPath of editedPaths(event, directory)) {
+  for (const editedPath of new Set(paths.map((candidate) => path.resolve(directory, candidate)))) {
     const file = await fs.stat(editedPath).catch(() => undefined)
     if (file?.isFile())
       result.push({
         type: "file-edit",
-        id: `${event.type === "tool" ? event.id : ""}:${editedPath}`,
+        id: `${occurrenceID}:${editedPath}`,
         path: editedPath,
         sizeBytes: file.size,
       })
   }
   return result
 }
+
+export const editedFileEvents = (event: Event, directory: string) =>
+  fileEditEvents(editedPaths(event, directory), directory, event.type === "tool" ? event.id : "")
 
 const minutes = (value: string): number | undefined => {
   const match = /^(\d{2}):(\d{2})$/.exec(value.trim())

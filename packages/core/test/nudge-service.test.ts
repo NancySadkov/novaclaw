@@ -1,5 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
+import fs from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
@@ -292,9 +294,9 @@ describe("NudgeService", () => {
         event,
       })
       expect(claimed.map((item) => item.text)).toEqual([
-        `The ${absoluteFilePath} got bloated - reduce to 30kb, remove completed items and cruft, use simple direct concise language.`,
+        `Bloated - reduce ${absoluteFilePath} to 40kb, remove completed items and cruft, use simple direct concise language.`,
       ])
-      expect(Nudge.prompt(claimed[0]!, event)).toContain(`The ${absoluteFilePath} got bloated`)
+      expect(Nudge.prompt(claimed[0]!, event)).toContain(`Bloated - reduce ${absoluteFilePath} to 40kb`)
       expect(
         (yield* service.claim({
           sessionID: "ses_bloated",
@@ -303,8 +305,32 @@ describe("NudgeService", () => {
           event: { type: "file-edit", id: "call-2", path: "C:/work/notes.md", sizeBytes: 50 * 1024 + 1 },
         })).map((item) => item.text),
       ).toEqual([
-        "The C:/work/notes.md got bloated - reduce to 30kb, remove completed items and cruft, use simple direct concise language.",
+        "Bloated - reduce C:/work/notes.md to 40kb, remove completed items and cruft, use simple direct concise language.",
       ])
+    }),
+  )
+
+  it.effect("claims a snapshot-observed bloated file with its real absolute path", () =>
+    Effect.gen(function* () {
+      const service = yield* NudgeService.Service
+      const directory = yield* Effect.promise(() => fs.mkdtemp(path.join(os.tmpdir(), "novaclaw-nudge-shell-")))
+      try {
+        const target = path.join(directory, "ghidra_todo.md")
+        yield* Effect.promise(() => fs.writeFile(target, "x".repeat(50 * 1024 + 1)))
+        const edited = yield* Effect.promise(() => Nudge.fileEditEvents(["ghidra_todo.md"], directory, "snapshot-write"))
+        expect(edited).toEqual([{ type: "file-edit", id: `snapshot-write:${target}`, path: target, sizeBytes: 50 * 1024 + 1 }])
+        const claimed = yield* service.claim({
+          sessionID: "ses_shell_bloated",
+          agentID: "nova",
+          directory,
+          event: edited[0]!,
+        })
+        expect(claimed.map((item) => item.text)).toEqual([
+          `Bloated - reduce ${target} to 40kb, remove completed items and cruft, use simple direct concise language.`,
+        ])
+      } finally {
+        yield* Effect.promise(() => fs.rm(directory, { recursive: true, force: true }))
+      }
     }),
   )
 

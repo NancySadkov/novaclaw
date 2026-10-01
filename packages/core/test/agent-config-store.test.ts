@@ -57,6 +57,28 @@ describe("AgentConfigStore", () => {
     }),
   )
 
+  it.effect("uses current shipped definitions for stored builtins and keeps officer choices", () =>
+    Effect.gen(function* () {
+      const store = yield* AgentConfigStore.Service
+      const old = Nudge.defaults().find((item) => item.id === Nudge.BLOATED_TODO_ID)!
+      yield* store.setLayers("postal", [
+        decodeAgent({
+          nudges: [
+            { ...old, text: "The $(absolute_file_path) got bloated - reduce to 30kb, remove completed items and cruft, use simple direct concise language.", enabled: false },
+            { id: "personal", name: "Personal", hook: { type: "after-compaction" }, text: "Keep me." },
+          ],
+        }),
+      ])
+      const resolved = AgentConfigStore.fold((yield* store.configured()).postal ?? [])?.nudges ?? []
+      expect(resolved[0]).toEqual({ ...old, enabled: false })
+      expect(resolved[1]?.text).toBe("Keep me.")
+      expect(AgentConfigStore.fold((yield* store.agents()).postal ?? [])?.nudges?.[0]?.text).toContain("30kb")
+
+      yield* store.setLayers("tailored", [decodeAgent({ nudges: [{ ...old, text: "My own wording." }] })])
+      expect(AgentConfigStore.fold((yield* store.configured()).tailored ?? [])?.nudges?.[0]?.text).toBe("My own wording.")
+    }),
+  )
+
   it.effect("round-trips ordered layers, replaces on set, removes, and reports emptiness", () =>
     Effect.gen(function* () {
       const store = yield* AgentConfigStore.Service
