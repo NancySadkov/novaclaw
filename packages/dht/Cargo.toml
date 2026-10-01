@@ -24,6 +24,6 @@ sha2 = { version = "0.10", registry = "official-sparse" }
 
 [profile.release]
 opt-level = "z"
-lto = true
-codegen-units = 1
+lto = false
+codegen-units = 16
 strip = true
