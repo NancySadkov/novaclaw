@@ -120,6 +120,15 @@ const MIN_RESTART_GAP_MS: u64 = BACKOFF_MS[0];
 /// same way. What matters is whether the last start achieved anything.
 const HEALTHY_AFTER_MS: u128 = 60_000;
 
+/// How long a child may run before the watchdog rotates it UNCONDITIONALLY.
+///
+/// 🔴 **A LEAK WITH NO SYMPTOM STILL GROWS, so the only bound that always fires is a clock.** The
+/// crash ladder reacts to exits and the liveness probe reacts to a wedged child; neither notices a
+/// process that is simply a little larger every hour. This is that missing bound, and it is
+/// deliberately coarse: it returns committed memory to the OS on a known cadence rather than
+/// trusting a fix that may not exist. Overridden by `--max-uptime-ms`; `0` disables it.
+const DEFAULT_MAX_UPTIME_MS: u128 = 24 * 60 * 60 * 1_000;
+
 /// How often the dormant sleep wakes to re-check.
 ///
 /// ⚠️ A poll rather than a timed condvar or a signal handler, deliberately. The wake needs to be
@@ -365,12 +374,18 @@ fn sleep_until(wake_at_ms: u128, wake_now: &Path) {
 struct Args {
     state_dir: PathBuf,
     command: Vec<String>,
+    max_uptime_ms: u128,
 }
 
-/// `novaclaw-watchdog --state <dir> -- <command> [args…]`
+/// `novaclaw-watchdog --state <dir> [--max-uptime-ms <n>] -- <command> [args…]`
 fn parse_args() -> Result<Args, String> {
-    let argv: Vec<String> = std::env::args().skip(1).collect();
+    parse_argv(std::env::args().skip(1).collect())
+}
+
+/// The pure half of `parse_args`, so the grammar is testable without a process.
+fn parse_argv(argv: Vec<String>) -> Result<Args, String> {
     let mut state_dir: Option<PathBuf> = None;
+    let mut max_uptime_ms: Option<u128> = None;
     let mut index = 0;
     while index < argv.len() {
         match argv[index].as_str() {
@@ -378,6 +393,16 @@ fn parse_args() -> Result<Args, String> {
                 state_dir = Some(PathBuf::from(
                     argv.get(index + 1).ok_or("--state needs a directory")?,
                 ));
+                index += 2;
+            }
+            "--max-uptime-ms" => {
+                let raw = argv
+                    .get(index + 1)
+                    .ok_or("--max-uptime-ms needs a whole number of milliseconds")?;
+                max_uptime_ms = Some(
+                    raw.parse::<u128>()
+                        .map_err(|_| format!("--max-uptime-ms must be a whole number of milliseconds (got {raw})"))?,
+                );
                 index += 2;
             }
             "--" => {
@@ -388,12 +413,18 @@ fn parse_args() -> Result<Args, String> {
                 return Ok(Args {
                     state_dir: state_dir.ok_or("--state is required")?,
                     command,
+                    max_uptime_ms: max_uptime_ms.unwrap_or(DEFAULT_MAX_UPTIME_MS),
                 });
             }
             other => return Err(format!("unexpected argument {other}")),
         }
     }
-    Err("expected: --state <dir> -- <command> [args…]".into())
+    Err("expected: --state <dir> [--max-uptime-ms <n>] -- <command> [args…]".into())
+}
+
+/// Whether the child has outlived its rotation bound. `0` disables rotation.
+fn should_rotate(started: u128, now: u128, max_uptime_ms: u128) -> bool {
+    max_uptime_ms > 0 && now.saturating_sub(started) >= max_uptime_ms
 }
 
 fn main() -> ExitCode {
@@ -453,14 +484,49 @@ fn main() -> ExitCode {
         };
         eprintln!("[watchdog] started pid {}", child.id());
 
-        let status = match child.wait() {
-            Ok(status) => status,
-            Err(error) => {
-                eprintln!("[watchdog] cannot wait on child: {error}");
-                return ExitCode::from(2);
+        // 🔴 Wait in TICKS, not `wait()`, so the unconditional max-uptime rotation has a clock. A
+        // blocking `wait()` knows nothing but exit; a one-second poll is free against a process that
+        // runs for hours, and it is the same tick the dormant sleep already pays.
+        let mut rotated = false;
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) => {
+                    if should_rotate(started, now_ms(), args.max_uptime_ms) {
+                        eprintln!(
+                            "[watchdog] max uptime reached ({}h) — rotating the server",
+                            args.max_uptime_ms / 3_600_000
+                        );
+                        let _ = child.kill();
+                        match child.wait() {
+                            Ok(status) => {
+                                rotated = true;
+                                break status;
+                            }
+                            Err(error) => {
+                                eprintln!("[watchdog] cannot reap rotated child: {error}");
+                                return ExitCode::from(2);
+                            }
+                        }
+                    }
+                    std::thread::sleep(DORMANCY_TICK);
+                }
+                Err(error) => {
+                    eprintln!("[watchdog] cannot wait on child: {error}");
+                    return ExitCode::from(2);
+                }
             }
         };
         let alive_ms = now_ms().saturating_sub(started);
+        // 🔴 A rotation is INTENTIONAL and must not be charged to the crash ladder — otherwise the
+        // 24-hour restart would climb it forever on a long-lived instance and eventually stop
+        // supervising for a fault that never happened. Reset, then restart; the rate floor at the top
+        // of the loop still applies.
+        if rotated {
+            eprintln!("[watchdog] rotated cleanly — restarting");
+            attempt = 0;
+            continue;
+        }
         let decision = classify(status.code(), take_intent(&intent_path));
 
         // A start that lasted counts as successful, whatever ended it — see HEALTHY_AFTER_MS.
@@ -719,5 +785,72 @@ mod tests {
             assert!(delay <= 30_000);
         }
         assert_eq!(BACKOFF_MS[99usize.min(BACKOFF_MS.len() - 1)], 30_000);
+    }
+
+    // 🔴 THE UNCONDITIONAL HALF. A leak with no symptom still grows, so the clock is the only bound
+    // that always fires; these pin that it fires exactly at the deadline and that `0` disables it.
+    #[test]
+    fn rotation_fires_at_the_bound_and_never_before() {
+        let started = 1_000u128;
+        assert!(!should_rotate(started, started + 999, 1_000));
+        assert!(should_rotate(started, started + 1_000, 1_000));
+        assert!(should_rotate(started, started + 5_000, 1_000));
+    }
+
+    #[test]
+    fn a_zero_bound_disables_rotation() {
+        let started = 1_000u128;
+        assert!(!should_rotate(started, started + 10_000_000, 0));
+    }
+
+    #[test]
+    fn a_backwards_clock_does_not_trigger_rotation() {
+        // Same clamp the rate floor relies on: an unsigned subtraction would wrap and rotate forever.
+        assert!(!should_rotate(5_000, 1_000, 1_000));
+    }
+
+    #[test]
+    fn the_uptime_flag_defaults_to_a_day_and_is_overridable() {
+        let default = parse_argv(vec![
+            "--state".into(),
+            "s".into(),
+            "--".into(),
+            "cmd".into(),
+        ])
+        .unwrap();
+        assert_eq!(default.max_uptime_ms, DEFAULT_MAX_UPTIME_MS);
+        assert_eq!(default.max_uptime_ms, 86_400_000);
+
+        let overridden = parse_argv(vec![
+            "--state".into(),
+            "s".into(),
+            "--max-uptime-ms".into(),
+            "3600000".into(),
+            "--".into(),
+            "cmd".into(),
+        ])
+        .unwrap();
+        assert_eq!(overridden.max_uptime_ms, 3_600_000);
+
+        let disabled = parse_argv(vec![
+            "--state".into(),
+            "s".into(),
+            "--max-uptime-ms".into(),
+            "0".into(),
+            "--".into(),
+            "cmd".into(),
+        ])
+        .unwrap();
+        assert_eq!(disabled.max_uptime_ms, 0);
+
+        assert!(parse_argv(vec![
+            "--state".into(),
+            "s".into(),
+            "--max-uptime-ms".into(),
+            "soon".into(),
+            "--".into(),
+            "cmd".into(),
+        ])
+        .is_err());
     }
 }

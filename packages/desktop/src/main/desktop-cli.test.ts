@@ -43,6 +43,7 @@ describe("desktop command line", () => {
       "--mdns",
       "--mdns-domain=DOMAIN",
       "--[no-]supervise",
+      "--max-uptime=DURATION",
     ])
       expect(help, option).toContain(option)
   })
@@ -133,6 +134,27 @@ describe("desktop command line", () => {
     })
   })
 
+  test("carries the rotation bound through to the server launch", () => {
+    expect(parseDesktopInvocation(["NovaClaw.exe", "--server-only", "--max-uptime=90m"])).toMatchObject({
+      action: "launch",
+      options: { server: { maxUptime: "90m" } },
+    })
+    expect(parseDesktopInvocation(["NovaClaw.exe", "--max-uptime", "7d"])).toMatchObject({
+      action: "launch",
+      options: { server: { maxUptime: "7d" } },
+    })
+    // `off` is a real answer — it disables the guard — not a missing value.
+    expect(parseDesktopInvocation(["NovaClaw.exe", "--server-only", "--max-uptime=off"])).toMatchObject({
+      action: "launch",
+      options: { server: { maxUptime: "off" } },
+    })
+    // Absent means the server's own default (24h); nothing is invented here.
+    expect(parseDesktopInvocation(["NovaClaw.exe", "--server-only"])).toMatchObject({
+      action: "launch",
+      options: { server: {} },
+    })
+  })
+
   test("headless server refuses a recipe package argument", () => {
     expect(parseDesktopInvocation(["NovaClaw.exe", "--server-only", "sample.nova"])).toEqual({
       action: "error",
@@ -154,6 +176,10 @@ describe("desktop command line", () => {
       ],
       [["NovaClaw.exe", "--server-only", "--connect=http://host"], "client option '--connect' cannot be used with '--server-only'"],
       [["NovaClaw.exe", "--port=70000"], "option '--port' must be a whole number from 0 to 65535"],
+      [
+        ["NovaClaw.exe", "--server-only", "--max-uptime=soon"],
+        '--max-uptime must look like 24h, 90m, 30s, 7d or 1500ms (got "soon")',
+      ],
       [["NovaClaw.exe", "--client-only", "--connect=file:///tmp/nova"], "option '--connect' requires an http:// or https:// URL"],
     ] as const)
       expect(parseDesktopInvocation(argv)).toEqual({ action: "error", message })

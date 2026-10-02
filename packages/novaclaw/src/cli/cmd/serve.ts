@@ -9,6 +9,7 @@ import { Flag } from "@novaclaw/core/flag/flag"
 import { killTreeSync } from "@novaclaw/core/util/kill-tree"
 import { CommandSpec } from "../command-spec"
 import { ServeChildCommand } from "../serve-child-command"
+import { MaxUptime } from "@novaclaw/core/util/max-uptime"
 
 import { ServeLiveness } from "../serve-liveness"
 
@@ -37,12 +38,14 @@ const treeKill = (proc: ReturnType<typeof Bun.spawn> | undefined) => {
   killTreeSync(proc.pid)
 }
 
-const superviseLoop = async (): Promise<"clean" | "giveup"> => {
+const superviseLoop = async (maxUptimeMs: number): Promise<"clean" | "giveup"> => {
   let current: ReturnType<typeof Bun.spawn> | undefined
   let stopping = false
   let state = initialSuperviseState
   let monitorAbort: AbortController | undefined
   let unresponsive = false
+  /** How long to wait before respawning after a deliberate rotation. Enough to release the port. */
+  const ROTATION_GAP_MS = 1_000
   /**
    * The child's loopback URL, hoisted OUT of the stdout closure that discovers it.
    *
@@ -107,6 +110,32 @@ const superviseLoop = async (): Promise<"clean" | "giveup"> => {
     const startedAt = Date.now()
     unresponsive = false
     monitorAbort = undefined
+    /**
+     * 🔴 **THE ROTATION TIMER IS THE UNCONDITIONAL HALF.** It does not wait for a crash, a missed
+     * health check or a memory breach — a leak with no observable symptom still grows, so the only
+     * bound that always fires is a clock. `shouldRotate` re-checks the deadline when the timer
+     * lands (so a suspended machine that fires late still rotates, and a disabled bound never does).
+     */
+    let rotating = false
+    const rotate = async () => {
+      if (stopping || child !== current) return
+      if (!MaxUptime.shouldRotate({ startedAt, now: Date.now(), maxUptimeMs })) return
+      rotating = true
+      unresponsive = false
+      // Stop probing something we are deliberately taking down; a miss here is not a fault.
+      stopMonitor()
+      console.log(`[supervise] max uptime reached (${Math.round(maxUptimeMs / 3_600_000)}h) — rotating the server`)
+      // ⚠️ Ask BEFORE killing, exactly as an operator stop does: on Windows the kill is
+      // `TerminateProcess` and the child's own `Shutdown.settleAll` never runs, so anything mid-flush
+      // would be lost. `requestStop` posts `/global/dispose` (bounded, never throws), and the kill
+      // still follows unconditionally.
+      if (childURL && child === current && !child.killed) {
+        const released = await ServeLiveness.requestStop(childURL, Flag.NOVACLAW_SERVER_PASSWORD)
+        if (!released) console.error("[supervise] rotation: child did not confirm release before the deadline")
+      }
+      if (!stopping && child === current) treeKill(child)
+    }
+    const rotationTimer = maxUptimeMs > 0 ? setTimeout(() => void rotate(), maxUptimeMs) : undefined
     const child = Bun.spawn(cmd, {
       stdin: "inherit",
       // Pipe only to discover the ACTUAL address when `--port 0` is used; every byte is immediately
@@ -137,6 +166,7 @@ const superviseLoop = async (): Promise<"clean" | "giveup"> => {
     }).catch((error) => console.error(`[supervise] failed to read server stdout: ${String(error)}`))
     console.log(`[supervise] server child started (pid ${current.pid})`)
     const code = await current.exited
+    if (rotationTimer) clearTimeout(rotationTimer)
     stopMonitor()
     current = undefined
     // Clear the address with the child that owned it. A restart re-announces its own listen line —
@@ -144,6 +174,15 @@ const superviseLoop = async (): Promise<"clean" | "giveup"> => {
     // whatever now holds the old one.
     childURL = undefined
     if (stopping) return "clean"
+    // 🔴 A ROTATION IS NOT A CRASH. The child was killed on purpose, so it must not be charged to the
+    // crash ladder — otherwise the 24-hour restart would look like the first of `SLOW_CRASH_GIVEUP`
+    // and, on a long-lived instance, eventually stop supervision for a fault that never happened.
+    if (rotating) {
+      console.log("[supervise] rotated cleanly — restarting the server")
+      state = initialSuperviseState
+      await new Promise((resolve) => setTimeout(resolve, ROTATION_GAP_MS))
+      continue
+    }
     // A child that held the port through TIME_WAIT or a foreign holder exits fast — the backoff
     // ladder IS the bind-retry (≈1+2+4+8+16s across 5 attempts) and the giveup IS the "refuse to
     // fight a foreign process" stop.
@@ -195,11 +234,19 @@ async function forwardStdout(stream: ReadableStream<Uint8Array>, onLine: (line: 
 export const ServeCommand = cmd({
   ...CommandSpec.serve,
   builder: (yargs) =>
-    withServerOptions(yargs).option("supervise", {
-      type: "boolean",
-      default: true,
-      describe: "restart the server automatically if it crashes (--no-supervise runs it bare)",
-    }),
+    withServerOptions(yargs)
+      .option("supervise", {
+        type: "boolean",
+        default: true,
+        describe: "restart the server automatically if it crashes (--no-supervise runs it bare)",
+      })
+      .option("max-uptime", {
+        type: "string",
+        default: "24h",
+        describe:
+          "restart the server after this long regardless of health, to bound an unfound leak " +
+          "(e.g. 24h, 90m, 7d; a bare number is milliseconds; 'off' disables)",
+      }),
 
   async handler(args) {
     // 🔴 FIRST, before the server graph assembles: the auth `Config` reads this holder lazily, so a
@@ -209,7 +256,15 @@ export const ServeCommand = cmd({
     applyCredentialOptions(args)
     warnOnIgnoredEnv()
     if (args.supervise) {
-      const outcome = await superviseLoop()
+      let maxUptimeMs: number
+      try {
+        maxUptimeMs = MaxUptime.parseMaxUptime((args as { maxUptime?: string }).maxUptime)
+      } catch (error) {
+        throw new CliError({ message: error instanceof Error ? error.message : String(error), exitCode: 1 })
+      }
+      if (maxUptimeMs > 0)
+        console.log(`[supervise] restarting the server every ${Math.round(maxUptimeMs / 3_600_000)}h regardless of health`)
+      const outcome = await superviseLoop(maxUptimeMs)
       if (outcome === "giveup") throw new CliError({ message: "server crash loop — supervision gave up", exitCode: 1 })
       return
     }

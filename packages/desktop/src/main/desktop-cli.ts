@@ -1,4 +1,5 @@
 import { basename } from "node:path"
+import { parseMaxUptime } from "@novaclaw/core/util/max-uptime"
 
 export type DesktopMode = "both" | "client" | "server"
 
@@ -19,6 +20,8 @@ export type DesktopLaunchOptions = {
     readonly mdns: boolean
     readonly mdnsDomain: string
     readonly supervise: boolean
+    /** Restart the server after this long regardless of health. Duration (e.g. `24h`), or `off`. */
+    readonly maxUptime?: string
   }
 }
 
@@ -41,6 +44,7 @@ const SERVER_OPTIONS = new Set([
   "--mdns-domain",
   "--supervise",
   "--no-supervise",
+  "--max-uptime",
 ])
 
 /** Parse NovaClaw's public options while leaving Electron/Chromium switches untouched. */
@@ -102,6 +106,15 @@ export function parseDesktopInvocation(argv: readonly string[]): DesktopInvocati
   if (port !== undefined && (!Number.isInteger(port) || port < 0 || port > 65535))
     return error("option '--port' must be a whole number from 0 to 65535")
 
+  const maxUptime = value(values, "--max-uptime")
+  if (maxUptime !== undefined) {
+    try {
+      parseMaxUptime(maxUptime)
+    } catch (failure) {
+      return error(failure instanceof Error ? failure.message : String(failure))
+    }
+  }
+
   const mdns = booleanValue(argv, "--mdns", false)
   return {
     action: "launch",
@@ -126,6 +139,7 @@ export function parseDesktopInvocation(argv: readonly string[]): DesktopInvocati
         mdns,
         mdnsDomain: value(values, "--mdns-domain") ?? "novaclaw.local",
         supervise: booleanValue(argv, "--supervise", true),
+        ...(value(values, "--max-uptime") ? { maxUptime: value(values, "--max-uptime") } : {}),
       },
     },
   }
@@ -191,6 +205,8 @@ Server options:
   --mdns                     Advertise the server using mDNS.
   --mdns-domain=DOMAIN       mDNS name (default: novaclaw.local).
   --[no-]supervise           Restart a crashed server (default: enabled).
+  --max-uptime=DURATION      Restart the server after DURATION regardless of health, to bound an
+                             unfound leak (e.g. 24h, 90m, 7d; default: 24h; 'off' disables).
 
 Arguments:
   novaclaw://URL             Open a NovaClaw link in the client.

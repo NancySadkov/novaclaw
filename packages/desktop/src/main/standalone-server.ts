@@ -165,6 +165,7 @@ export function createStandaloneServer(
     `--hostname=${options.hostname}`,
     `--username=${options.username}`,
     `--password=${password}`,
+    ...(options.maxUptime ? [`--max-uptime=${options.maxUptime}`] : []),
     ...(options.mdns ? ["--mdns", `--mdns-domain=${options.mdnsDomain}`] : []),
     ...serviceHomeArgs(instance),
   ]

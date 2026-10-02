@@ -145,7 +145,10 @@ Options:
                      server.password, else an open server                                   [string]
       --username     HTTP Basic username to require alongside --password                    [string]
       --supervise    restart the server automatically if it crashes (--no-supervise runs it bare)
-                                                                           [boolean] [default: true]"
+                                                                           [boolean] [default: true]
+      --max-uptime   restart the server after this long regardless of health, to bound an unfound
+                     leak (e.g. 24h, 90m, 7d; a bare number is milliseconds; 'off' disables)
+                                                                           [string] [default: "24h"]"
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw web --help 1`] = `

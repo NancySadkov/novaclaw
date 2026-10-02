@@ -6,6 +6,7 @@ import { join, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { app } from "electron"
 import { ServerToken } from "@novaclaw/core/server-token"
+import { parseMaxUptime } from "@novaclaw/core/util/max-uptime"
 import { Presence } from "@novaclaw/core/presence"
 import type { SuperviseStatus } from "@novaclaw/script/supervise"
 import type { ServerReadyData } from "../preload/types"
@@ -283,7 +284,8 @@ export function createDesktopService(instance: ServiceInstancePaths, options: De
         }
         writeService(home, descriptor)
         const executableArgs = app.isPackaged ? [] : [app.getAppPath()]
-        const args = ["--state", watchdogStatePath(home), "--", process.execPath, ...executableArgs,
+        const maxUptimeMs = parseMaxUptime(options.maxUptime)
+        const args = ["--state", watchdogStatePath(home), "--max-uptime-ms", String(maxUptimeMs), "--", process.execPath, ...executableArgs,
           "--server-only", "--desktop-service", ...serviceHomeArgs(instance),
           ...(options.supervise ? [] : ["--no-supervise"]),
           ...(options.mdns ? ["--mdns"] : []),
