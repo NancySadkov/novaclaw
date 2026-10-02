@@ -49,6 +49,8 @@ const HOOK_KEY: Record<HookType, TranslationKey> = {
   "empty-turn": "settings.nudges.hook.empty-turn",
   "announced-tool": "settings.nudges.hook.announced-tool",
   "finish-audit": "settings.nudges.hook.finish-audit",
+  ask: "settings.nudges.hook.ask",
+  prompt: "settings.nudges.hook.prompt",
 }
 
 const RESOURCE_KEY = {
@@ -97,6 +99,10 @@ const hookFor = (type: HookType): ConfigNudge.Hook => {
       return { type }
     case "finish-audit":
       return { type }
+    case "ask":
+      return { type, question: "" }
+    case "prompt":
+      return { type, request: "" }
   }
 }
 
@@ -165,6 +171,8 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
         "empty-turn",
         "announced-tool",
         "finish-audit",
+        "ask",
+        "prompt",
       ] as const
     ).map((value) => ({ value, label: language.t(HOOK_KEY[value]) })),
   )
@@ -261,7 +269,13 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
                         {item.name}
                       </Switch>
                     </div>
-                    <p class="nudge-card-prompt">{item.text}</p>
+                    <p class="nudge-card-prompt">
+                      {item.hook.type === "ask"
+                        ? (item.hook as { question: string }).question
+                        : item.hook.type === "prompt"
+                          ? (item.hook as { request: string }).request
+                          : item.text}
+                    </p>
                     <div class="nudge-card-foot">
                       <span>
                         {item.spammable ? "Every matching event" : "Quiet delivery"}
@@ -502,14 +516,36 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
                 />
               </label>
             </Show>
-            <TextareaV2
-              class="settings-v2-textarea"
-              rows={5}
-              value={draft().text}
-              placeholder={language.t("settings.nudges.field.text")}
-              onInput={(event) => setDraft((item) => ({ ...item, text: event.currentTarget.value }))}
-            />
-            <p class="settings-v2-field-description">{language.t("settings.nudges.text.description")}</p>
+            <Show when={draft().hook.type === "ask"}>
+              <TextareaV2
+                class="settings-v2-textarea"
+                rows={3}
+                value={(draft().hook as { question: string }).question}
+                placeholder={language.t("settings.nudges.field.question")}
+                onInput={(event) => patchHook({ question: event.currentTarget.value })}
+              />
+              <p class="settings-v2-field-description">{language.t("settings.nudges.ask.description")}</p>
+            </Show>
+            <Show when={draft().hook.type === "prompt"}>
+              <TextareaV2
+                class="settings-v2-textarea"
+                rows={3}
+                value={(draft().hook as { request: string }).request}
+                placeholder={language.t("settings.nudges.field.request")}
+                onInput={(event) => patchHook({ request: event.currentTarget.value })}
+              />
+              <p class="settings-v2-field-description">{language.t("settings.nudges.prompt.description")}</p>
+            </Show>
+            <Show when={draft().hook.type !== "prompt"}>
+              <TextareaV2
+                class="settings-v2-textarea"
+                rows={5}
+                value={draft().text}
+                placeholder={language.t("settings.nudges.field.text")}
+                onInput={(event) => setDraft((item) => ({ ...item, text: event.currentTarget.value }))}
+              />
+              <p class="settings-v2-field-description">{language.t("settings.nudges.text.description")}</p>
+            </Show>
             <TextInputV2
               appearance="base"
               value={draft().script ?? ""}

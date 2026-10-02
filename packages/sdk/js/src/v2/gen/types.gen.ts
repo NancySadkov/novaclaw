@@ -3812,6 +3812,14 @@ export type ConfigV2Nudge = {
     | {
         type: "finish-audit"
       }
+    | {
+        type: "ask"
+        question: string
+      }
+    | {
+        type: "prompt"
+        request: string
+      }
   text: string
   script?: string
   spammable?: boolean

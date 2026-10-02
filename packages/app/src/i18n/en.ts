@@ -1133,6 +1133,14 @@ export const dict = {
   "settings.nudges.hook.empty-turn": "A turn ends with no reply and no tool call",
   "settings.nudges.hook.announced-tool": "A turn promised a tool call and never made one",
   "settings.nudges.hook.finish-audit": "The finish audit finds work unfinished",
+  "settings.nudges.hook.ask": "A model answers a yes/no question about the chat",
+  "settings.nudges.hook.prompt": "A model writes the instruction from a request",
+  "settings.nudges.field.question": "Yes/no question about the chat",
+  "settings.nudges.field.request": "Request for the instruction the model should write",
+  "settings.nudges.ask.description":
+    "A model reads the current chat and answers the question with yes or no. The instruction below is delivered only when the answer is yes.",
+  "settings.nudges.prompt.description":
+    "A model reads the current chat and writes the instruction from your request. Only the text it returns in a fenced block is delivered, so the instruction box above is unused.",
   "settings.nudges.field.repeatCount": "Repetitions before firing",
   "settings.nudges.repeatKind.identical": "Identical calls",
   "settings.nudges.repeatKind.failure": "Failing calls to the same target",

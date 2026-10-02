@@ -53,4 +53,21 @@ describe("planNudgeSave", () => {
       next: [{ ...draft(), name: "Time safety", text: "Check the transport shape.", hook: { type: "interval", minutes: 15 }, spammable: true }],
     })
   })
+
+  test("a prompt-bodied nudge needs a request but not a static instruction", () => {
+    const base = { ...draft(), text: "" }
+    expect(planNudgeSave({ nudges: [], draft: { ...base, hook: { type: "prompt", request: "Write it." } } }).ok).toBe(true)
+    expect(planNudgeSave({ nudges: [], draft: { ...base, hook: { type: "prompt", request: "   " } } })).toEqual({
+      ok: false,
+      reason: "hook",
+    })
+    // An ask hook still needs the instruction it delivers when the answer is yes.
+    expect(planNudgeSave({ nudges: [], draft: { ...base, hook: { type: "ask", question: "Is it done?" } } })).toEqual({
+      ok: false,
+      reason: "text",
+    })
+    expect(
+      planNudgeSave({ nudges: [], draft: { ...draft(), hook: { type: "ask", question: "   " } } }),
+    ).toEqual({ ok: false, reason: "hook" })
+  })
 })

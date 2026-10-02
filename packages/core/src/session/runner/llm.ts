@@ -526,6 +526,7 @@ export const layer = Layer.effect(
         directory: location.directory,
         event,
         roster: yield* agents.all(),
+        judge: (input) => judgeNudge(sessionID, input.hook),
       })
       for (const nudge of claimed) {
         // Pre-delivery actions, in the order a person reads them: reset the context, compress it,
@@ -744,6 +745,66 @@ export const layer = Layer.effect(
 
     const getContext = Effect.fn("SessionRunner.getContext")(function* (sessionID: SessionSchema.ID) {
       return yield* store.context(sessionID)
+    })
+
+    const NUDGE_JUDGE_SYSTEM =
+      "You answer a short question about the conversation above. Follow the user's formatting instruction exactly."
+    const NUDGE_JUDGE_MAX_TOKENS = 512
+    /**
+     * Tail-fit the serialized context into the judge's window.
+     *
+     * `Token.estimate` is the one shared heuristic, so the fit is approximate but never optimistic
+     * about a context the provider would reject. The tail is kept, not the head: what the session is
+     * doing now is what an ask/prompt nudge judges.
+     */
+    const fitContext = (text: string, budgetTokens: number): string => {
+      const total = Token.estimate(text)
+      if (total <= budgetTokens) return text
+      let cut = text.slice(-Math.max(1, Math.floor(text.length * (budgetTokens / total))))
+      while (cut.length > 1 && Token.estimate(cut) > budgetTokens) cut = cut.slice(Math.floor(cut.length / 2))
+      return cut
+    }
+    /**
+     * The model reader behind the `ask` and `prompt` Nudge hooks.
+     *
+     * It runs through `ShortAnswer.generate` (AGENTS.md: never a tight `max_tokens` for a short
+     * answer), so thinking is bounded from our side and an empty completion is a preemption or a
+     * fault rather than a verdict. A failure travels back as an empty reply and `claim` treats it
+     * as "not this time" — the judge must never break the session it watches.
+     */
+    const judgeNudge = Effect.fn("SessionRunner.nudgeJudge")(function* (
+      sessionID: SessionSchema.ID,
+      hook: Nudge.ModelHook,
+    ) {
+      const session = yield* getSession(sessionID)
+      const { model, device, ran } = yield* models.resolveWithDevice(session)
+      const contextLimit = model.route.defaults.limits?.context ?? 8_192
+      const serialized = (yield* getContext(sessionID))
+        .map((message) => SessionCompaction.serializeMessage(message))
+        .filter(Boolean)
+        .join("\n\n")
+      const bounded = fitContext(serialized, Math.max(512, contextLimit - NUDGE_JUDGE_MAX_TOKENS - 512))
+      return yield* ShortAnswer.generate({
+        model,
+        guard: SessionRunnerModel.dispatchGuard(models, ran),
+        llm,
+        system: NUDGE_JUDGE_SYSTEM,
+        text:
+          hook.type === "ask"
+            ? Nudge.askPrompt(hook.question, bounded)
+            : Nudge.bodyPrompt(hook.request, bounded),
+        // A yes/no verdict wants no deliberation; body writing gets the titler's brief budget.
+        reasoningBudget: hook.type === "ask" ? 0 : 128,
+        maxTokens: NUDGE_JUDGE_MAX_TOKENS,
+        scheduler,
+        maintenance: {
+          ownerID: sessionID,
+          task: "nudge-judge",
+          deviceKey: device.key,
+          ...(device.concurrency === undefined ? {} : { concurrency: device.concurrency }),
+          ...(device.locality === undefined ? {} : { locality: device.locality }),
+        },
+      })
     })
 
     // P3: per-session mood state for the affective engine (in-memory per location; bounded). The

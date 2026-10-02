@@ -37460,6 +37460,36 @@
                 "required": ["type"],
                 "additionalProperties": false,
                 "description": "Fires when the finish audit finds the goal not fully achieved and the agent must continue."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["ask"]
+                  },
+                  "question": {
+                    "type": "string"
+                  }
+                },
+                "required": ["type", "question"],
+                "additionalProperties": false,
+                "description": "Ask a model a single yes/no question with the conversation's current context as prefix. The nudge fires when the answer contains yes."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["prompt"]
+                  },
+                  "request": {
+                    "type": "string"
+                  }
+                },
+                "required": ["type", "request"],
+                "additionalProperties": false,
+                "description": "Ask a model to write this nudge's body for the conversation's current context, quoting it in a fenced block. The fenced body becomes the delivered text."
               }
             ],
             "description": "A harness-owned event selector. Script hooks fire when their command exits successfully."

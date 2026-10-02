@@ -720,3 +720,91 @@ describe("NudgeService gates and cooldown", () => {
     }),
   )
 })
+
+describe("NudgeService model-judged hooks", () => {
+  const tick = (minute: number) => ({ type: "clock" as const, at: new Date(`2026-10-02T12:${String(minute).padStart(2, "0")}:00Z`) })
+
+  it.effect("ask fires only on a yes answer and delivers its own text", () =>
+    Effect.gen(function* () {
+      const service = yield* NudgeService.Service
+      const agents = yield* AgentConfigStore.Service
+      yield* agents.setLayers("judgy", [
+        {
+          nudges: [
+            { id: "ask-it", name: "Ask", hook: { type: "ask", question: "Is work unfinished?" }, text: "Wrap it up." },
+          ],
+        },
+      ])
+      const judge = (reply: string) => (_input: { hook: Nudge.ModelHook }) => Effect.succeed(reply)
+      const claim = (judgeFn: (input: { hook: Nudge.ModelHook }) => Effect.Effect<string, unknown>, at = tick(0)) =>
+        service.claim({ sessionID: "ses_ask", agentID: "judgy", directory: process.cwd(), event: at, judge: judgeFn })
+
+      expect(yield* claim(judge("No"))).toEqual([])
+      expect((yield* claim(judge("Yes — it is unfinished"))).map((n) => n.text)).toEqual(["Wrap it up."])
+    }),
+  )
+
+  it.effect("prompt delivers the fenced body, and an unfenced reply is not a trigger", () =>
+    Effect.gen(function* () {
+      const service = yield* NudgeService.Service
+      const agents = yield* AgentConfigStore.Service
+      yield* agents.setLayers("writer", [
+        {
+          nudges: [
+            { id: "write-it", name: "Write", hook: { type: "prompt", request: "Write the next step." }, text: "" },
+          ],
+        },
+      ])
+      const judge = (reply: string) => () => Effect.succeed(reply)
+      const claim = (reply: string, at = tick(0)) =>
+        service.claim({
+          sessionID: "ses_prompt",
+          agentID: "writer",
+          directory: process.cwd(),
+          event: at,
+          judge: judge(reply),
+        })
+
+      expect(yield* claim("Here is a thought, but no fence.")).toEqual([])
+      expect((yield* claim("```\nReview the diff, then land it.\n```")).map((n) => n.text)).toEqual([
+        "Review the diff, then land it.",
+      ])
+    }),
+  )
+
+  it.effect("a silenced model nudge never spends a model call", () =>
+    Effect.gen(function* () {
+      const service = yield* NudgeService.Service
+      const agents = yield* AgentConfigStore.Service
+      yield* agents.setLayers("quiett", [
+        {
+          nudges: [
+            { id: "ask-quiet", name: "Ask", hook: { type: "ask", question: "Anything?" }, text: "Look again." },
+          ],
+        },
+      ])
+      let calls = 0
+      const judge = () => Effect.sync(() => {
+        calls++
+        return "yes"
+      })
+      const at = tick(0)
+      expect(yield* service.claim({ sessionID: "ses_quiet_model", agentID: "quiett", directory: process.cwd(), event: at, judge })).toHaveLength(1)
+      expect(yield* service.claim({ sessionID: "ses_quiet_model", agentID: "quiett", directory: process.cwd(), event: at, judge })).toEqual([])
+      expect(calls).toBe(1)
+    }),
+  )
+
+  it.effect("a nudge with no judge is inert rather than broken", () =>
+    Effect.gen(function* () {
+      const service = yield* NudgeService.Service
+      const agents = yield* AgentConfigStore.Service
+      yield* agents.setLayers("nojudge", [
+        { nudges: [{ id: "ask-nobody", name: "Ask", hook: { type: "ask", question: "?" }, text: "Hello." }] },
+      ])
+      expect(
+        yield* service.claim({ sessionID: "ses_no_judge", agentID: "nojudge", directory: process.cwd(), event: tick(0) }),
+      ).toEqual([])
+    }),
+  )
+})

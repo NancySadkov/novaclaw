@@ -50,13 +50,18 @@ export interface Interface {
   }) => Effect.Effect<void, unknown>
   /** Select applicable definitions (shipped defaults plus the owning officer's own list),
    *  and atomically claim each new occurrence for this session. A claimed match is safe to
-   *  lower through SessionInput.steer once. */
+   *  lower through SessionInput.steer once.
+   *
+   *  `judge` is supplied by the caller that owns the conversation and the model; it answers an
+   *  `ask` hook with the model's reply and a `prompt` hook with the model's fenced body. It is
+   *  consulted only after the quiet rule has passed, so a silenced nudge never spends a model call. */
   readonly claim: (input: {
     readonly sessionID: string
     readonly agentID?: string
     readonly directory: string
     readonly event: Nudge.Event
     readonly roster?: ReadonlyArray<AgentV2.Info>
+    readonly judge?: (input: { readonly hook: Nudge.ModelHook }) => Effect.Effect<string, unknown>
   }) => Effect.Effect<ReadonlyArray<ConfigNudge.Info>>
 }
 
@@ -324,6 +329,23 @@ export const layer = Layer.effect(
             suppressed++
             continue
           }
+          // Model-judged hooks are consulted LAST, after every cheap gate has passed, so a nudge
+          // the quiet rule would silence never spends a decode-shaped call. A failure or an empty
+          // reply is "not this time", never a delivered nudge built from nothing.
+          let generatedBody: string | undefined
+          const modelHook = scoped.nudge.hook
+          if (Nudge.isModelHook(modelHook)) {
+            if (!input.judge) continue
+            const reply = yield* input
+              .judge({ hook: modelHook })
+              .pipe(Effect.catchCause(() => Effect.succeed("")))
+            if (modelHook.type === "ask") {
+              if (!Nudge.answeredYes(reply)) continue
+            } else {
+              generatedBody = Nudge.fencedBody(reply)
+              if (generatedBody === undefined) continue
+            }
+          }
           if (scoped.nudge.hook.type === "new-day") {
             const seeded = yield* db
               .insert(NudgeDeliveryTable)
@@ -355,7 +377,10 @@ export const layer = Layer.effect(
               : path.isAbsolute(input.event.path)
                 ? input.event.path
                 : path.resolve(input.directory, input.event.path)
-          const interpolated = yield* renderInline(scoped.nudge.text, input.directory, absoluteFilePath)
+          // A model-written body is used verbatim: interpolating `$(...)` inside generated text
+          // would run shell commands the model wrote, which is not a boundary we cross.
+          const interpolated =
+            generatedBody ?? (yield* renderInline(scoped.nudge.text, input.directory, absoluteFilePath))
           const text = [
             interpolated,
             hookOutput ? SessionOrigin.externalContentFrame("configured nudge hook output") + hookOutput : "",

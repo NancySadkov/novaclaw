@@ -275,6 +275,49 @@ describe("Nudge", () => {
     expect(Nudge.prompt(item)).toContain('nudge({"op":"disable","id":"test"})')
   })
 
+  test("model-judged hooks match the clock tick and take a fresh occurrence", () => {
+    const at = new Date("2026-10-02T10:00:00Z")
+    const ask = definition({ type: "ask", question: "Is work unfinished?" })
+    const prompt = definition({ type: "prompt", request: "Write the next instruction." })
+    expect(Nudge.isModelHook(ask.hook)).toBe(true)
+    expect(Nudge.isModelHook(prompt.hook)).toBe(true)
+    expect(Nudge.isModelHook({ type: "new-day" })).toBe(false)
+    expect(Nudge.matches(ask, { type: "clock", at })).toBe(true)
+    expect(Nudge.matches(prompt, { type: "clock", at })).toBe(true)
+    expect(Nudge.matches(ask, { type: "tool", id: "t", name: "bash", input: {} })).toBe(false)
+    expect(Nudge.matches(prompt, { type: "file-edit", id: "f", path: "a.ts", sizeBytes: 1 })).toBe(false)
+    // A judged nudge is an EVENT, not a calendar period: two ticks in one day are two occurrences,
+    // so the ordinary quiet rule (30 minutes and one epoch) is what bounds repeats.
+    expect(Nudge.occurrenceFor(ask, { type: "clock", at })).toBe(`model:${at.getTime()}`)
+    expect(Nudge.periodic(Nudge.occurrenceFor(ask, { type: "clock", at }))).toBe(false)
+    expect(Nudge.occurrenceFor(ask, { type: "clock", at: new Date(at.getTime() + 1) })).not.toBe(
+      Nudge.occurrenceFor(ask, { type: "clock", at }),
+    )
+  })
+
+  test("a prompt-bodied nudge needs no static text, but an ask hook still does", () => {
+    const empty = (hook: ConfigNudge.Hook): ConfigNudge.Info => ({ ...definition(hook), text: "" })
+    expect(Nudge.matches(empty({ type: "prompt", request: "Write it." }), { type: "clock", at: new Date() })).toBe(true)
+    expect(Nudge.matches(empty({ type: "ask", question: "Anything?" }), { type: "clock", at: new Date() })).toBe(false)
+  })
+
+  test("the judge wording is the owner's template, verbatim", () => {
+    expect(Nudge.askPrompt("Is it done?", "CTX")).toBe(
+      'CTX\n\n---\n\nGiven the above, answer exactly "yes" or "no", if the below holds: Is it done?',
+    )
+    expect(Nudge.bodyPrompt("Write a nudge", "CTX")).toBe(
+      'CTX\n\n---\n\nGiven the above, generate a prompt fulfilling the below ```-quoted request\n```\nWrite a nudge\n```\n\nQuote result in "```"',
+    )
+    expect(Nudge.answeredYes("Yes.")).toBe(true)
+    expect(Nudge.answeredYes("**yes** — it is done")).toBe(true)
+    expect(Nudge.answeredYes("No")).toBe(false)
+    expect(Nudge.answeredYes("not yet")).toBe(false)
+    expect(Nudge.fencedBody("Here you go:\n```\nDo the thing.\n```")).toBe("Do the thing.")
+    expect(Nudge.fencedBody("```output\nDo the thing.\n```")).toBe("Do the thing.")
+    expect(Nudge.fencedBody("no fence here")).toBeUndefined()
+    expect(Nudge.fencedBody("```\n```")).toBeUndefined()
+  })
+
 })
 
 describe("withDefaults", () => {

@@ -22,7 +22,7 @@ export function planNudgeSave(input: {
     script: input.draft.script?.trim() || undefined,
   }
   if (!draft.name) return { ok: false, reason: "name" }
-  if (!draft.text && !draft.script) return { ok: false, reason: "text" }
+  if (!draft.text && !draft.script && draft.hook.type !== "prompt") return { ok: false, reason: "text" }
   if (input.nudges.some((item) => item.id === draft.id && item.id !== input.editingID))
     return { ok: false, reason: "duplicate" }
   if (
@@ -35,6 +35,8 @@ export function planNudgeSave(input: {
     (draft.hook.type === "mcp-call" && !draft.hook.server.trim()) ||
     (draft.hook.type === "script" && !draft.hook.command.trim()) ||
     (draft.hook.type === "javascript" && !draft.hook.code.trim()) ||
+    (draft.hook.type === "ask" && !draft.hook.question.trim()) ||
+    (draft.hook.type === "prompt" && !draft.hook.request.trim()) ||
     (draft.hook.type === "interval" && (!Number.isInteger(draft.hook.minutes) || draft.hook.minutes < 1 || draft.hook.minutes > 10080)) ||
     ((draft.hook.type === "file-read" || draft.hook.type === "file-write") && !draft.hook.extension.trim()) ||
     (draft.hook.type === "time-of-day" && (!validTime(draft.hook.after) || !validTime(draft.hook.before)))

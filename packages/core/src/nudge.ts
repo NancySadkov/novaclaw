@@ -144,8 +144,48 @@ const minutes = (value: string): number | undefined => {
   return hour <= 23 && minute <= 59 ? hour * 60 + minute : undefined
 }
 
+/**
+ * The hooks whose trigger is a model reading the session's current context.
+ *
+ * `ask` gates a static instruction on a yes/no answer; `prompt` carries no body of its own and
+ * takes the body the model writes in a fenced block. Both are evaluated on the clock tick, the
+ * ambient moment a session already has work in front of it, and only their READER differs.
+ */
+export type ModelHook = Extract<ConfigNudge.Hook, { type: "ask" } | { type: "prompt" }>
+
+export const isModelHook = (hook: ConfigNudge.Hook): hook is ModelHook =>
+  hook.type === "ask" || hook.type === "prompt"
+
+/** The user wording asks for the word yes anywhere in the reply; case-insensitive. */
+export const answeredYes = (reply: string): boolean => /\byes\b/i.test(reply)
+
+/**
+ * The model's generated body, or nothing.
+ *
+ * "Triggers when the response contains ```BODY```": a fenced segment is the trigger, and its
+ * contents are the body. Both the fenced-with-language-tag shape and an inline fence are accepted,
+ * because a model told to "quote result in ```" does not reliably add the newline.
+ */
+export const fencedBody = (reply: string): string | undefined => {
+  const match = /```[^\n`]*\n([\s\S]*?)```/.exec(reply) ?? /```([\s\S]*?)```/.exec(reply)
+  const body = match?.[1]?.trim()
+  return body ? body : undefined
+}
+
+/** The exact rendered question the user specified, with the session context as prefix. */
+export const askPrompt = (question: string, context: string): string =>
+  `${context}\n\n---\n\nGiven the above, answer exactly "yes" or "no", if the below holds: ${question.trim()}`
+
+/** The exact rendered body request the user specified, with the session context as prefix. */
+export const bodyPrompt = (request: string, context: string): string =>
+  `${context}\n\n---\n\nGiven the above, generate a prompt fulfilling the below \`\`\`-quoted request\n\`\`\`\n${request.trim()}\n\`\`\`\n\nQuote result in "\`\`\`"`
+
 export function matches(nudge: ConfigNudge.Info, event: Event): boolean {
-  if (nudge.enabled === false || (nudge.text.trim() === "" && !nudge.script?.trim())) return false
+  if (
+    nudge.enabled === false ||
+    (nudge.text.trim() === "" && !nudge.script?.trim() && nudge.hook.type !== "prompt")
+  )
+    return false
   const hook = nudge.hook
   switch (hook.type) {
     case "text-match":
@@ -224,6 +264,11 @@ export function matches(nudge: ConfigNudge.Info, event: Event): boolean {
       return event.type === "announced-tool"
     case "finish-audit":
       return event.type === "finish-audit"
+    case "ask":
+    case "prompt":
+      // A model reads the current context; the clock tick is the ambient moment that context is
+      // judged, and the quiet rule bounds how often a yes or a written body is delivered.
+      return event.type === "clock"
   }
 }
 
@@ -249,7 +294,13 @@ export const occurrence = (event: Event): string => {
 export const occurrenceFor = (nudge: ConfigNudge.Info, event: Event): string =>
   event.type === "clock" && nudge.hook.type === "interval"
     ? `interval:${Math.floor(event.at.getTime() / (nudge.hook.minutes * 60_000))}`
-    : occurrence(event)
+    : event.type === "clock" && isModelHook(nudge.hook)
+      ? // A fresh occurrence per tick: a model-judged nudge is not a calendar period, it is an
+        // EVENT ("the model said yes this time"), so the ordinary quiet rule — 30 minutes and one
+        // context epoch — is the bound on repeats. A clock-day occurrence would also swallow the
+        // second yes of a busy day, which is not what a judged trigger means.
+        `model:${event.at.getTime()}`
+      : occurrence(event)
 
 /**
  * Whether an occurrence names a **period** rather than an **event**.

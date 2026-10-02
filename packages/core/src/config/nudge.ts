@@ -44,6 +44,14 @@ export const Hook = Schema.Union([
   Schema.Struct({ type: Schema.Literal("finish-audit") }).annotate({
     description: "Fires when the finish audit finds the goal not fully achieved and the agent must continue.",
   }),
+  Schema.Struct({ type: Schema.Literal("ask"), question: Schema.String }).annotate({
+    description:
+      "Ask a model a single yes/no question with the conversation's current context as prefix. The nudge fires when the answer contains yes.",
+  }),
+  Schema.Struct({ type: Schema.Literal("prompt"), request: Schema.String }).annotate({
+    description:
+      "Ask a model to write this nudge's body for the conversation's current context, quoting it in a fenced block. The fenced body becomes the delivered text.",
+  }),
 ]).annotate({ description: "A harness-owned event selector. Script hooks fire when their command exits successfully." })
 export type Hook = typeof Hook.Type
 
