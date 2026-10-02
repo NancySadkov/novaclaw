@@ -6,7 +6,6 @@ import { Database } from "@novaclaw/core/database/database"
 import { EventV2 } from "@novaclaw/core/event"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionEvent } from "@novaclaw/core/session/event"
-import { SessionStore } from "@novaclaw/core/session/store"
 import { SessionInput } from "@novaclaw/core/session/input"
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { Prompt } from "@novaclaw/core/session/prompt"
@@ -37,7 +36,6 @@ import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, messageRoles }
 const stopAfterText = <A, E>(run: Effect.Effect<A, E, never>, marker: string) =>
   Effect.gen(function* () {
     const session = yield* SessionV2.Service
-    const store = yield* SessionStore.Service
     const events = yield* EventV2.Service
     const seen = yield* events.subscribe(SessionEvent.Text.Ended).pipe(
       Stream.filter((event) => event.data.sessionID === HARNESS_SESSION && event.data.text.includes(marker)),
@@ -50,7 +48,7 @@ const stopAfterText = <A, E>(run: Effect.Effect<A, E, never>, marker: string) =>
     yield* Fiber.join(seen)
     // Let the step settle (`finish` is projected on `Step.Ended`, after the text) before stopping.
     for (;;) {
-      const messages = yield* store.context(HARNESS_SESSION).pipe(Effect.orDie)
+      const messages = yield* session.context(HARNESS_SESSION)
       const assistant = messages.findLast((message) => message.type === "assistant")
       if (assistant !== undefined && assistant.type === "assistant" && assistant.finish !== undefined) break
       yield* Effect.yieldNow
