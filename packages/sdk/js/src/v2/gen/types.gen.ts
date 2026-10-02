@@ -11534,7 +11534,9 @@ export type InstanceSchedulerResponses = {
     locality?: "local" | "lan" | "remote"
     inFlightInteractive: Array<string>
     inFlightBatch: Array<string>
+    inFlightMaintenance: Array<string>
     waiting: Array<string>
+    waitingMaintenance: Array<string>
     ledger: Array<{
       id: string
       weight: number

@@ -6753,7 +6753,19 @@
                           "type": "string"
                         }
                       },
+                      "inFlightMaintenance": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
                       "waiting": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "waitingMaintenance": {
                         "type": "array",
                         "items": {
                           "type": "string"
@@ -6791,7 +6803,9 @@
                       "minRunMs",
                       "inFlightInteractive",
                       "inFlightBatch",
+                      "inFlightMaintenance",
                       "waiting",
+                      "waitingMaintenance",
                       "ledger"
                     ],
                     "additionalProperties": false

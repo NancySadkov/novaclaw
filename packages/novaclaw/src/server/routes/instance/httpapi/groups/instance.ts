@@ -87,7 +87,14 @@ const SchedulerDevice = Schema.Struct({
   locality: Schema.Literals(["local", "lan", "remote"]).pipe(Schema.optional),
   inFlightInteractive: Schema.Array(Schema.String),
   inFlightBatch: Schema.Array(Schema.String),
+  /**
+   * Background passes (summaries, titles, nudges) hold a maintenance lease, NOT a device slot.
+   * They are part of the live picture — a maintenance pass still costs the provider — so the
+   * snapshot carries them separately from the interactive/batch queues the fair-share ledger owns.
+   */
+  inFlightMaintenance: Schema.Array(Schema.String),
   waiting: Schema.Array(Schema.String),
+  waitingMaintenance: Schema.Array(Schema.String),
   ledger: Schema.Array(SchedulerLedgerEntry),
 })
 

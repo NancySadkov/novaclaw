@@ -14,6 +14,7 @@ import { sessionHref } from "@/utils/session-route"
 import { clearErrorLog, errorLogEntries } from "@/utils/error-log"
 import { showToast } from "@/utils/toast"
 import { schedulerSnapshot } from "@/utils/scheduler-api"
+import { groupSchedulerByModel } from "@/utils/scheduler-grouping"
 import { capabilities, retryCapability } from "@/utils/capability-api"
 import { loadedPlugins } from "@/utils/plugin-api"
 import { createSettledResource } from "@/utils/settled-resource"
@@ -299,6 +300,21 @@ function DebugAppPage() {
       return conn && dir !== undefined ? { conn, dir, t: schedTick() } : undefined
     },
     ({ conn, dir }) => schedulerSnapshot(conn.http, { directory: dir }).catch(() => undefined),
+  )
+
+  // The panel speaks in MODELS, not endpoints. A device key is an ingress — an API provider — and
+  // one provider can serve several models, so the raw snapshot answers "who is on this box" but
+  // never "which model is packing onto it". The join lives in `scheduler-grouping.ts` (pure, tested);
+  // here we only supply the roster's per-session model label.
+  const schedulerModelLabel = createMemo(() => {
+    const labels = new Map<string, string>()
+    for (const row of sessions()) {
+      if (row.model !== undefined) labels.set(row.id, `${row.model.providerID}/${row.model.id}`)
+    }
+    return labels
+  })
+  const schedulerModelGroups = createMemo(() =>
+    groupSchedulerByModel(scheduler() ?? [], (id) => schedulerModelLabel().get(id)),
   )
 
   // The process fleet behind the Memory tab. Another SERVER read (the worker registry lives in the
@@ -815,7 +831,9 @@ function DebugAppPage() {
         <div class={section} id="debug-scheduler" data-panel="scheduler" data-debug-tab="scheduler">
           <div class={heading}>
             <span class={title}>{language.t("debug.page.scheduler")}</span>
-            <span class={hint}>live EEVDF state per device — in-flight, waiting, and the fair-share ledger</span>
+            <span class={hint}>
+              live EEVDF state grouped by model — in flight, queued, and the fair-share ledger
+            </span>
             <button class={`${btn} ml-auto`} onClick={() => setSchedTick((t) => t + 1)}>
               {language.t("debug.page.refresh")}
             </button>
@@ -829,41 +847,47 @@ function DebugAppPage() {
                 </div>
               }
             >
-              {(devices) => (
-                <Show
-                  when={devices().length > 0}
-                  fallback={<div class={hint}>idle — no device has run a turn yet this process</div>}
-                >
-                  <For each={devices()}>
-                    {(device) => (
-                      <div class="py-1.5">
-                        <div class="flex items-center gap-2 text-[12px]">
-                          <span class="font-mono font-medium text-v2-text-text-base">{device.deviceKey}</span>
-                          <span class={hint}>
-                            {device.inFlightInteractive.length + device.inFlightBatch.length} in flight ·{" "}
-                            {device.waiting.length} waiting
-                          </span>
-                        </div>
-                        <Show when={device.waiting.length > 0}>
-                          {/* Queued sessions reflect scheduler policy or configured capacity, not a hardware limit. */}
-                          <div class="text-[11px] text-v2-state-fg-warning">queued: {device.waiting.join(", ")}</div>
-                        </Show>
-                        <For each={device.ledger}>
-                          {(entry) => (
-                            <div class="flex gap-3 py-0.5 font-mono text-[11px] text-v2-text-text-muted">
-                              <span class="truncate">{entry.id}</span>
-                              <span class="ml-auto shrink-0">w{entry.weight}</span>
-                              <span class="shrink-0">{entry.sliceTokens} tok</span>
-                              <span class="shrink-0">lag {entry.lag.toFixed(1)}</span>
-                              <span class="shrink-0">vd {entry.vdeadline.toFixed(1)}</span>
-                            </div>
-                          )}
-                        </For>
+              <Show
+                when={schedulerModelGroups().length > 0}
+                fallback={<div class={hint}>idle — no device has run a turn yet this process</div>}
+              >
+                <For each={schedulerModelGroups()}>
+                  {(group) => (
+                    <div class="py-1.5" data-slot="debug-scheduler-model" data-model={group.key}>
+                      <div class="flex flex-wrap items-center gap-2 text-[12px]">
+                        <span class="font-mono font-medium text-v2-text-text-base">{group.key}</span>
+                        <span class={hint}>
+                          {group.entries.filter((entry) => entry.state !== "waiting" && entry.state !== "recent").length} in
+                          flight · {group.waiting.length} waiting · concurrency {group.concurrency} ·{" "}
+                          {group.deviceKeys.join(", ")}
+                        </span>
                       </div>
-                    )}
-                  </For>
-                </Show>
-              )}
+                      <Show when={group.waiting.length > 0}>
+                        {/* Queued sessions reflect scheduler policy or configured capacity, not a hardware limit. */}
+                        <div class="text-[11px] text-v2-state-fg-warning">queued: {group.waiting.join(", ")}</div>
+                      </Show>
+                      <For each={group.entries}>
+                        {(entry) => (
+                          <div class="flex gap-3 py-0.5 font-mono text-[11px] text-v2-text-text-muted">
+                            <span class="truncate">{entry.id}</span>
+                            <span class="shrink-0 text-v2-text-text-faint">{entry.state}</span>
+                            <Show when={entry.ledger}>
+                              {(ledger) => (
+                                <>
+                                  <span class="ml-auto shrink-0">w{ledger().weight}</span>
+                                  <span class="shrink-0">{ledger().sliceTokens} tok</span>
+                                  <span class="shrink-0">lag {ledger().lag.toFixed(1)}</span>
+                                  <span class="shrink-0">vd {ledger().vdeadline.toFixed(1)}</span>
+                                </>
+                              )}
+                            </Show>
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                  )}
+                </For>
+              </Show>
             </Show>
           </div>
         </div>
