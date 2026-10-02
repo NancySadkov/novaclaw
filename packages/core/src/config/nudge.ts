@@ -23,6 +23,27 @@ export const Hook = Schema.Union([
   Schema.Struct({ type: Schema.Literal("new-day") }),
   Schema.Struct({ type: Schema.Literal("interval"), minutes: Schema.Number }),
   Schema.Struct({ type: Schema.Literal("script"), command: Schema.String }),
+  Schema.Struct({
+    type: Schema.Literal("repeated-tool"),
+    tool: Schema.String.pipe(Schema.optional),
+    count: Schema.Number.pipe(Schema.optional),
+    kind: Schema.Literals(["identical", "failure"]).pipe(Schema.optional),
+  }).annotate({
+    description:
+      "Fires when the agent calls the same tool with the same arguments (or to the same failing target) N times in a row. The harness detects the loop; this hook only selects which loops a nudge answers.",
+  }),
+  Schema.Struct({ type: Schema.Literal("session-restarted") }).annotate({
+    description: "Fires once when a provider recovery restarts the session. Replaces the hardcoded restart notice.",
+  }),
+  Schema.Struct({ type: Schema.Literal("empty-turn"), count: Schema.Number.pipe(Schema.optional) }).annotate({
+    description: "Fires when a turn ends with no reply and no tool call. count 1 is the first recovery, 2 the diagnostic.",
+  }),
+  Schema.Struct({ type: Schema.Literal("announced-tool") }).annotate({
+    description: "Fires when a turn promised a tool call and never made one.",
+  }),
+  Schema.Struct({ type: Schema.Literal("finish-audit") }).annotate({
+    description: "Fires when the finish audit finds the goal not fully achieved and the agent must continue.",
+  }),
 ]).annotate({ description: "A harness-owned event selector. Script hooks fire when their command exits successfully." })
 export type Hook = typeof Hook.Type
 
@@ -48,6 +69,56 @@ export class Info extends Schema.Class<Info>("ConfigV2.Nudge")({
   spammable: Schema.Boolean.pipe(Schema.optional).annotate({
     description:
       "Repeat as often as the trigger fires. Off by default: a nudge is delivered at most once per 30 minutes and at most once per context epoch.",
+  }),
+  /**
+   * **Opt-in delivery gates.** All absent means "always deliver when the hook fires".
+   * Each is a condition the harness checks at claim time; a nudge whose gate fails is
+   * suppressed exactly as if it had not matched.
+   */
+  minSubordinates: Schema.Number.pipe(Schema.optional).annotate({
+    description: "Deliver only when the officer has at least this many direct subordinates.",
+  }),
+  requireNoSubordinates: Schema.Boolean.pipe(Schema.optional).annotate({
+    description: "Deliver only when the officer has no direct subordinates.",
+  }),
+  tokenRate: Schema.Struct({ tokens: Schema.Number, windowSeconds: Schema.Number })
+    .pipe(Schema.optional)
+    .annotate({
+      description: "Deliver only when the agent generated at least this many tokens in the last windowSeconds.",
+    }),
+  requireTmpFolder: Schema.Boolean.pipe(Schema.optional).annotate({
+    description: "Deliver only when the project folder contains a ./tmp directory.",
+  }),
+  /**
+   * **Pre-delivery actions.** Run before the nudge text is inserted into the chat.
+   * Each is opt-in; an absent action does nothing.
+   */
+  clearChat: Schema.Boolean.pipe(Schema.optional).annotate({
+    description: "Clear the officer's chat before inserting the nudge.",
+  }),
+  forceCompaction: Schema.Boolean.pipe(Schema.optional).annotate({
+    description: "Force a context compaction before inserting the nudge.",
+  }),
+  stopOfficer: Schema.Boolean.pipe(Schema.optional).annotate({
+    description: "Stop the officer (interrupt its current work).",
+  }),
+  sleepSeconds: Schema.Number.pipe(Schema.optional).annotate({
+    description: "Put the officer to sleep for this many seconds before inserting the nudge.",
+  }),
+  /**
+   * **Cooldown.** Once this nudge fires, it will not fire again until this many seconds
+   * have passed, regardless of the quiet rule. Absent means the quiet rule alone applies.
+   */
+  cooldownSeconds: Schema.Number.pipe(Schema.optional).annotate({
+    description: "Seconds this nudge stays silent after firing, independent of the quiet rule.",
+  }),
+  /**
+   * **Vanilla marker.** True for the nudges NovaClaw ships with; absent for user-created ones.
+   * The settings UI uses this to badge default nudges and to offer a filter that shows only
+   * the custom nudges an officer actually wrote.
+   */
+  default: Schema.Boolean.pipe(Schema.optional).annotate({
+    description: "True for shipped default nudges. The UI badges these and can hide them.",
   }),
 }) {}
 

@@ -10,6 +10,8 @@ import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { NudgeService } from "@novaclaw/core/nudge-service"
 import { Nudge } from "@novaclaw/core/nudge"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import { AgentV2 } from "@novaclaw/core/agent"
+import { AgentUsage } from "@novaclaw/core/agent/usage"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { testEffect } from "./lib/effect"
@@ -570,6 +572,151 @@ describe("NudgeService", () => {
       ).toBe(true)
       expect(yield* call("three")).toBeUndefined()
       expect(yield* call("four")).toContain("First")
+    }),
+  )
+})
+
+/**
+ * The opt-in delivery gates and the cooldown, end to end against the real service.
+ *
+ * Each gate is a condition the owner asked for by name; a gate that is declared but never consulted
+ * is the exact failure this block exists to make impossible. `tool-call` is used as the hook so the
+ * shipped interval defaults do not also match the event and muddy the assertion.
+ */
+describe("NudgeService gates and cooldown", () => {
+  const rosterAgent = (id: string, superior?: string) =>
+    ({ id, name: id, kind: "agent", ...(superior === undefined ? {} : { superior }) }) as unknown as AgentV2.Info
+  const bashEvent = (id: string) => ({ type: "tool" as const, id, name: "bash", input: {} })
+
+  it.effect("minSubordinates and requireNoSubordinates read the live roster", () =>
+    Effect.gen(function* () {
+      const service = yield* NudgeService.Service
+      const agents = yield* AgentConfigStore.Service
+      yield* agents.setLayers("gated", [
+        {
+          nudges: [
+            {
+              id: "needs-two",
+              name: "Needs two",
+              hook: { type: "tool-call", tool: "bash" },
+              text: "Delegate it.",
+              minSubordinates: 2,
+            },
+          ],
+        },
+      ])
+      yield* agents.setLayers("solo", [
+        {
+          nudges: [
+            {
+              id: "no-reports",
+              name: "No reports",
+              hook: { type: "tool-call", tool: "bash" },
+              text: "Alone.",
+              requireNoSubordinates: true,
+            },
+          ],
+        },
+      ])
+      const claim = (sessionID: string, agentID: string, roster: AgentV2.Info[]) =>
+        service.claim({ sessionID, agentID, directory: process.cwd(), event: bashEvent("bash-1"), roster })
+
+      // The chain root (nova) is in the roster, as it is in every live roster; without it the
+      // reporting line falls back to an absent nova and counts as no reports.
+      const gatedSolo = [rosterAgent("nova"), rosterAgent("gated")]
+      const gatedOne = [...gatedSolo, rosterAgent("sub", "gated")]
+      const gatedTwo = [...gatedOne, rosterAgent("sub2", "gated")]
+      expect(yield* claim("ses_gated", "gated", gatedSolo)).toEqual([])
+      expect(yield* claim("ses_gated", "gated", gatedOne)).toEqual([])
+      expect((yield* claim("ses_gated", "gated", gatedTwo)).map((n) => n.id)).toEqual(["needs-two"])
+
+      const soloSolo = [rosterAgent("nova"), rosterAgent("solo")]
+      expect((yield* claim("ses_solo", "solo", soloSolo)).map((n) => n.id)).toEqual(["no-reports"])
+      expect(yield* claim("ses_solo", "solo", [...soloSolo, rosterAgent("kid", "solo")])).toEqual([])
+    }),
+  )
+
+  it.effect("requireTmpFolder delivers only when the project directory has a ./tmp", () =>
+    Effect.gen(function* () {
+      const service = yield* NudgeService.Service
+      const agents = yield* AgentConfigStore.Service
+      const directory = yield* Effect.promise(() => fs.mkdtemp(path.join(os.tmpdir(), "novaclaw-nudge-tmp-")))
+      try {
+        yield* agents.setLayers("tmpy", [
+          {
+            nudges: [
+              {
+                id: "needs-tmp",
+                name: "Needs tmp",
+                hook: { type: "tool-call", tool: "bash" },
+                text: "Clean ./tmp.",
+                requireTmpFolder: true,
+              },
+            ],
+          },
+        ])
+        const claim = () =>
+          service.claim({ sessionID: "ses_tmpy", agentID: "tmpy", directory, event: bashEvent("bash-1") })
+        expect(yield* claim()).toEqual([])
+        yield* Effect.promise(() => fs.mkdir(path.join(directory, "tmp")))
+        expect((yield* claim()).map((n) => n.id)).toEqual(["needs-tmp"])
+      } finally {
+        yield* Effect.promise(() => fs.rm(directory, { recursive: true, force: true }))
+      }
+    }),
+  )
+
+  it.effect("tokenRate delivers only after the window holds enough generated tokens", () =>
+    Effect.gen(function* () {
+      const service = yield* NudgeService.Service
+      const agents = yield* AgentConfigStore.Service
+      const { db } = yield* Database.Service
+      yield* agents.setLayers("busy", [
+        {
+          nudges: [
+            {
+              id: "rate",
+              name: "Rate",
+              hook: { type: "tool-call", tool: "bash" },
+              text: "Is this substantial?",
+              tokenRate: { tokens: 100, windowSeconds: 3_600 },
+            },
+          ],
+        },
+      ])
+      const claim = () =>
+        service.claim({ sessionID: "ses_busy", agentID: "busy", directory: process.cwd(), event: bashEvent("bash-1") })
+      expect(yield* claim()).toEqual([])
+      yield* AgentUsage.record(db, { agent: "busy", generated: 250, at: Date.now() })
+      expect((yield* claim()).map((n) => n.id)).toEqual(["rate"])
+    }),
+  )
+
+  it.effect("cooldown holds a spammable nudge silent after it fires", () =>
+    Effect.gen(function* () {
+      const service = yield* NudgeService.Service
+      const agents = yield* AgentConfigStore.Service
+      const { db } = yield* Database.Service
+      yield* agents.setLayers("cool", [
+        {
+          nudges: [
+            {
+              id: "slow",
+              name: "Slow",
+              hook: { type: "tool-call", tool: "bash" },
+              text: "Once in a while.",
+              spammable: true,
+              cooldownSeconds: 600,
+            },
+          ],
+        },
+      ])
+      const claim = (id: string) =>
+        service.claim({ sessionID: "ses_cool", agentID: "cool", directory: process.cwd(), event: bashEvent(id) })
+      expect(yield* claim("c-1")).toHaveLength(1)
+      expect(yield* claim("c-2")).toEqual([])
+      yield* db.run(`UPDATE session_nudge_delivery SET fired_at = fired_at - 601000 WHERE session_id = 'ses_cool'`)
+      expect(yield* claim("c-3")).toHaveLength(1)
     }),
   )
 })

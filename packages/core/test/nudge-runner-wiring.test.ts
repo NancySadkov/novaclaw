@@ -12,7 +12,7 @@ test("the runner dispatches every Nudge event family and pressure is absent from
   const builtins = readFileSync(new URL("../src/system-context/builtins.ts", import.meta.url), "utf8")
 
   expect(runner, "the dispatcher moved — re-point this test rather than deleting the reachability check").toContain(
-    'const deliverNudges = Effect.fn("SessionRunner.deliverNudges")',
+    'Effect.fn("SessionRunner.deliverNudges")',
   )
   expect(runner.match(/type: "compaction"/g)?.length).toBe(1)
   expect(runner.match(/attemptCompaction\(\s*prepared,/g)?.length).toBe(3)

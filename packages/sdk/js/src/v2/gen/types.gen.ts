@@ -3793,9 +3793,50 @@ export type ConfigV2Nudge = {
         type: "script"
         command: string
       }
+    | {
+        type: "repeated-tool"
+        tool?: string
+        count?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        kind?: "identical" | "failure"
+      }
+    | {
+        type: "session-restarted"
+      }
+    | {
+        type: "empty-turn"
+        count?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }
+    | {
+        type: "announced-tool"
+      }
+    | {
+        type: "finish-audit"
+      }
   text: string
   script?: string
   spammable?: boolean
+  /**
+   * Deliver only when the officer has at least this many direct subordinates.
+   */
+  minSubordinates?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  requireNoSubordinates?: boolean
+  tokenRate?: {
+    tokens: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    windowSeconds: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  requireTmpFolder?: boolean
+  clearChat?: boolean
+  forceCompaction?: boolean
+  stopOfficer?: boolean
+  /**
+   * Put the officer to sleep for this many seconds before inserting the nudge.
+   */
+  sleepSeconds?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  /**
+   * Seconds this nudge stays silent after firing, independent of the quiet rule.
+   */
+  cooldownSeconds?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  default?: boolean
 }
 
 export type ConfigV2Agent = {

@@ -8,10 +8,20 @@ import { validPattern } from "./nudge-definition"
 
 export {
   defaults,
+  withDefaults,
   JAVASCRIPT_TIME_ID,
   LOW_RESOURCE_ID,
   NEW_DAY_ID,
   BLOATED_TODO_ID,
+  DOOM_LOOP_ID,
+  FAILURE_STREAK_ID,
+  SESSION_RESTART_ID,
+  EMPTY_TURN_ID,
+  ANNOUNCED_TOOL_ID,
+  FINISH_AUDIT_ID,
+  DELEGATE_CHECK_ID,
+  PROJECT_OPTIMIZATION_ID,
+  PROJECT_CLEANUP_ID,
   refreshStoredDefault,
   validPattern,
 } from "./nudge-definition"
@@ -34,6 +44,18 @@ export type Event =
       readonly detail?: ReadonlyArray<string>
     }
   | { readonly type: "clock"; readonly at: Date }
+  | {
+      readonly type: "repeated-tool"
+      readonly id: string
+      readonly name: string
+      readonly input: string
+      readonly count: number
+      readonly kind: "identical" | "failure"
+    }
+  | { readonly type: "session-restarted"; readonly id: string }
+  | { readonly type: "empty-turn"; readonly id: string; readonly count: number }
+  | { readonly type: "announced-tool"; readonly id: string }
+  | { readonly type: "finish-audit"; readonly id: string }
 
 export interface Match {
   readonly nudge: ConfigNudge.Info
@@ -187,11 +209,35 @@ export function matches(nudge: ConfigNudge.Info, event: Event): boolean {
       return event.type === "clock" && Number.isFinite(hook.minutes) && hook.minutes >= 1
     case "script":
       return event.type === "clock" && hook.command.trim() !== ""
+    case "repeated-tool":
+      return (
+        event.type === "repeated-tool" &&
+        (hook.tool === undefined || hook.tool.trim() === "" || hook.tool === event.name) &&
+        (hook.count === undefined || event.count >= hook.count) &&
+        (hook.kind === undefined || hook.kind === event.kind)
+      )
+    case "session-restarted":
+      return event.type === "session-restarted"
+    case "empty-turn":
+      return event.type === "empty-turn" && (hook.count === undefined || event.count === hook.count)
+    case "announced-tool":
+      return event.type === "announced-tool"
+    case "finish-audit":
+      return event.type === "finish-audit"
   }
 }
 
 export const occurrence = (event: Event): string => {
-  if (event.type === "tool" || event.type === "compaction" || event.type === "file-edit")
+  if (
+    event.type === "tool" ||
+    event.type === "compaction" ||
+    event.type === "file-edit" ||
+    event.type === "repeated-tool" ||
+    event.type === "session-restarted" ||
+    event.type === "empty-turn" ||
+    event.type === "announced-tool" ||
+    event.type === "finish-audit"
+  )
     return `${event.type}:${event.id}`
   if (event.type === "resource") return `resource:${event.level}:${event.bucket}`
   const year = event.at.getFullYear()

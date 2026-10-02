@@ -3,10 +3,12 @@ export * as NudgeService from "./nudge-service"
 import { and, desc, eq, ne } from "drizzle-orm"
 import { Context, Effect, Layer } from "effect"
 import { createHash } from "node:crypto"
+import fs from "node:fs/promises"
 import path from "node:path"
 import { Log } from "@novaclaw/schema/log"
 import { AgentConfigStore } from "./agent-config-store"
 import { AgentV2 } from "./agent"
+import { AgentUsage } from "./agent/usage"
 import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
 import { HostExec } from "./host-exec"
@@ -54,6 +56,7 @@ export interface Interface {
     readonly agentID?: string
     readonly directory: string
     readonly event: Nudge.Event
+    readonly roster?: ReadonlyArray<AgentV2.Info>
   }) => Effect.Effect<ReadonlyArray<ConfigNudge.Info>>
 }
 
@@ -106,7 +109,7 @@ export const layer = Layer.effect(
           continue
         }
         const output = result.output.trim().slice(0, 1_024)
-        const trustedDate = /^date(?:\s|$)/.test(match[1]!.trim()) && /^\d{4}-\d{2}-\d{2} [A-Za-z]+$/.test(output)
+        const trustedDate = /^date(?:\s|$)/.test(match[1]!.trim()) && /^\d{4}-\d{2}-\d{2} [A-Za-z]+( \d{2}:\d{2}(:\d{2})?)?$/.test(output)
         text = text.replace(
           match[0],
           trustedDate
@@ -126,6 +129,46 @@ export const layer = Layer.effect(
         .where(and(eq(NudgeDeliveryTable.session_id, sessionID), eq(NudgeDeliveryTable.nudge_id, deliveryID)))
         .get()
         .pipe(Effect.orDie)
+    /**
+     * Evaluate a nudge's opt-in delivery gates against live state.
+     *
+     * Each gate is independent and opt-in: an absent gate always passes. The roster gates read the
+     * live roster (subordinates are a fact about the org, not the session); the token-rate gate
+     * reads the per-minute usage table; the tmp-folder gate stats the project directory. A nudge
+     * whose gate fails is suppressed exactly as if it had not matched — the quiet-rule counters
+     * and the delivery row are untouched, so a later claim with the gate satisfied can still fire.
+     */
+    const conditionsPass = Effect.fn("NudgeService.conditionsPass")(function* (input: {
+      readonly nudge: ConfigNudge.Info
+      readonly agentID: string
+      readonly directory: string
+      readonly now: number
+      readonly roster: ReadonlyArray<AgentV2.Info>
+    }) {
+      const nudge = input.nudge
+      if (nudge.minSubordinates !== undefined || nudge.requireNoSubordinates === true) {
+        const count = AgentV2.directReports(input.agentID, input.roster).length
+        if (nudge.minSubordinates !== undefined && count < nudge.minSubordinates) return false
+        if (nudge.requireNoSubordinates === true && count > 0) return false
+      }
+      if (nudge.tokenRate !== undefined) {
+        const { tokens, windowSeconds } = nudge.tokenRate
+        const since = AgentUsage.minuteOf(input.now - windowSeconds * 1_000)
+        const minutes = yield* AgentUsage.since(db, { agent: input.agentID, minute: since })
+        const generated = minutes.reduce((sum, minute) => sum + minute.generated, 0)
+        if (generated < tokens) return false
+      }
+      if (nudge.requireTmpFolder === true) {
+        const exists = yield* Effect.promise(() =>
+          fs.stat(path.join(input.directory, "tmp")).then(
+            (stat) => stat.isDirectory(),
+            () => false,
+          ),
+        )
+        if (!exists) return false
+      }
+      return true
+    })
     return Service.of({
       beforeTool: Effect.fn("NudgeService.beforeTool")(function* (input) {
         if ((yield* resolveSessionMode(db, SessionSchema.ID.make(input.sessionID))) !== "agent") return undefined
@@ -222,6 +265,21 @@ export const layer = Layer.effect(
         const claimed: ConfigNudge.Info[] = []
         for (const scoped of definitions) {
           if (!Nudge.matches(scoped.nudge, input.event)) continue
+          // Opt-in delivery gates, evaluated before any quiet-rule bookkeeping so a suppressed
+          // nudge leaves no trace in the delivery row.
+          const now = Date.now()
+          if (
+            !(yield* conditionsPass({
+              nudge: scoped.nudge,
+              agentID: input.agentID!,
+              directory: input.directory,
+              now,
+              roster: input.roster ?? [],
+            }))
+          ) {
+            suppressed++
+            continue
+          }
           let occurrence = Nudge.occurrenceFor(scoped.nudge, input.event)
           // The interval cap is tested BEFORE any hook runs: saying "quiet" must not itself cost a
           // command execution on the way to the answer.
@@ -235,6 +293,16 @@ export const layer = Layer.effect(
             suppressed++
             continue
           }
+          // Cooldown: an independent floor that outlasts the quiet rule. Checked after the prior
+          // read so it can use the same row, and before the deliverable check so a cooldown-blocked
+          // nudge never reaches the full rule.
+          if (scoped.nudge.cooldownSeconds !== undefined && prior) {
+            const cooldownMs = scoped.nudge.cooldownSeconds * 1_000
+            if (now - prior.firedAt < cooldownMs) {
+              suppressed++
+              continue
+            }
+          }
           let hookOutput = ""
           if (scoped.nudge.hook.type === "script") {
             const result = yield* runScript(scoped.nudge.hook.command, input.directory)
@@ -242,7 +310,6 @@ export const layer = Layer.effect(
             hookOutput = result.output.trim()
             occurrence = `script:${createHash("sha256").update(hookOutput).digest("hex")}`
           }
-          const now = Date.now()
           // The occurrence is final now (a script hook rewrote it), so the full rule can be answered.
           if (
             prior &&

@@ -84,7 +84,7 @@ export const layer = Layer.effect(
               ...layers.slice(0, -1),
               Schema.decodeUnknownSync(ConfigAgent.Info)({
                 ...layers.at(-1)!,
-                nudges: (folded.nudges ?? defaults).map(Nudge.refreshStoredDefault),
+                nudges: Nudge.withDefaults(folded.nudges),
               }),
             ]
         }

@@ -9,10 +9,12 @@ import { Location } from "@novaclaw/core/location"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionHistory } from "@novaclaw/core/session/history"
+import { SessionMessage } from "@novaclaw/core/session/message"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionStore } from "@novaclaw/core/session/store"
-import { SessionTable } from "@novaclaw/core/session/sql"
+import { SessionMessageTable, SessionTable } from "@novaclaw/core/session/sql"
 import { testEffect } from "./lib/effect"
 
 /**
@@ -65,6 +67,37 @@ describe("SessionV2.history", () => {
       const first = yield* session.history({ sessionID, limit: 10 })
 
       expect(first).toEqual({ events: [], hasMore: false })
+    }),
+  )
+
+  it.effect("clearMessages drops the whole transcript and keeps the session row", () =>
+    Effect.gen(function* () {
+      // The nudge "clear chat" action's core: the next prepared turn then sees only what the harness
+      // admits after the clear. It must NOT remove the session itself — a nudge cannot delete the
+      // chat it is being delivered into.
+      const db = (yield* Database.Service).db
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location, agent: rootAgent })
+      const now = Date.now()
+      yield* db
+        .insert(SessionMessageTable)
+        .values({
+          id: SessionMessage.ID.make("msg_clear_1"),
+          session_id: created.id,
+          type: "user",
+          seq: 1,
+          time_created: now,
+          time_updated: now,
+          data: { text: "keep me" },
+        } as never)
+        .run()
+        .pipe(Effect.orDie)
+      expect(yield* db.select().from(SessionMessageTable).all()).toHaveLength(1)
+
+      yield* SessionHistory.clearMessages(db, created.id)
+
+      expect(yield* db.select().from(SessionMessageTable).all()).toEqual([])
+      expect(yield* session.get(created.id)).toBeDefined()
     }),
   )
 

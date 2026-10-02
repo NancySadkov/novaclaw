@@ -349,6 +349,12 @@ export const CORRELATION_ATTRIBUTES = {
    * the company that wrote it. It stays on the data plane.
    */
   "plugin.id": "correlate",
+  /**
+   * A configured nudge — one of the shipped defaults or one an officer wrote. Like `plugin.id`, a
+   * stable key naming something the user configured, and a stream of them is their nudge set; it
+   * stays on the data plane.
+   */
+  "nudge.id": "correlate",
 
   // ── the two arguable exceptions, argued ────────────────────────────────────────────────────
   /**
@@ -2558,6 +2564,20 @@ export const EVENTS = {
    * without this line "the rule is protecting the context" and "the nudge stopped matching" are the
    * same observation. The owner asked for the quiet rule; this is what makes it debuggable.
    */
+  "session.nudge.actions": {
+    level: "info",
+    message: "applied a nudge's pre-delivery actions",
+    attributes: {
+      "session.id": "correlate",
+      "nudge.id": "correlate",
+      "nudge.clear": "flag",
+      "nudge.compact": "flag",
+      "nudge.stop": "flag",
+      "nudge.sleep.seconds": "count",
+    },
+    content: "correlated",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.nudge.quiet": {
     level: "debug",
     message: "withheld a repeated nudge from this session",

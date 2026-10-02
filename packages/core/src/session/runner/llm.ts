@@ -138,6 +138,7 @@ import {
   ANNOUNCED_TOOL_RECOVERY,
   EMPTY_TURN_RECOVERY,
   EMPTY_TURN_DIAGNOSTIC,
+  DOOM_LOOP_THRESHOLD,
 } from "./doom-loop"
 import { TextualCall } from "./textual-call"
 import { Introspection } from "./introspection"
@@ -499,21 +500,62 @@ export const layer = Layer.effect(
     const nudges = yield* NudgeService.Service
     const resourcePressure = yield* ResourcePressureContext.Service
     const db = (yield* Database.Service).db
-    const deliverNudges = Effect.fn("SessionRunner.deliverNudges")(function* (
+    // A nudge whose `stopOfficer` fired. Keyed by session: a location drains several sessions at once
+    // and a shared flag would let one officer's nudge stop an unrelated one.
+    const nudgeStops = new Set<SessionSchema.ID>()
+    // Explicit type: `deliverNudges` and `runManualCompaction` are mutually recursive (compaction
+    // delivers the after-compaction nudge) and the inferred type would otherwise be `any`.
+    const deliverNudges: (
+      sessionID: SessionSchema.ID,
+      agentID: string | undefined,
+      event: Nudge.Event,
+      enabled?: boolean,
+    ) => Effect.Effect<number> = Effect.fn("SessionRunner.deliverNudges")(function* (
       sessionID: SessionSchema.ID,
       agentID: string | undefined,
       event: Nudge.Event,
       enabled = true,
     ) {
       if (!enabled) return 0
+      // A session that declares no officer still HAS one — `effective-config.ts` falls back to nova —
+      // so nudge delivery resolves the same default the prompt and mode readers do rather than
+      // dropping every system nudge for an unattributed chat.
+      const officer = String(agentID ?? AgentV2.DEFAULT_COLLEAGUE_ID)
       const claimed = yield* nudges.claim({
         sessionID,
-        ...(agentID === undefined ? {} : { agentID }),
+        agentID: officer,
         directory: location.directory,
         event,
+        roster: yield* agents.all(),
       })
-      for (const nudge of claimed)
-      yield* Steering.inject(db, events, { sessionID, reason: "nudge", text: Nudge.prompt(nudge, event) })
+      for (const nudge of claimed) {
+        // Pre-delivery actions, in the order a person reads them: reset the context, compress it,
+        // wait, then hand the officer the instruction. Each is opt-in and inert when absent.
+        const cleared = nudge.clearChat === true
+        if (cleared) yield* SessionHistory.clearMessages(db, sessionID)
+        const compact = nudge.forceCompaction === true
+        if (compact) {
+          const harness = yield* harnessConfig(officer as AgentV2.ID)
+          // Best-effort, like every other nudge side effect: a compaction that cannot run must not
+          // swallow the instruction the nudge exists to deliver. `runManualCompaction` publishes its
+          // own calm Synthetic notice on the failures it recognises.
+          yield* runManualCompaction(sessionID, harness.compaction).pipe(Effect.catchCause(() => Effect.void))
+        }
+        const sleepSeconds = nudge.sleepSeconds ?? 0
+        if (sleepSeconds > 0) yield* Effect.sleep(Duration.seconds(sleepSeconds))
+        const stop = nudge.stopOfficer === true
+        if (stop) nudgeStops.add(sessionID)
+        if (cleared || compact || sleepSeconds > 0 || stop)
+          yield* Log.event("session.nudge.actions", {
+            "session.id": sessionID,
+            "nudge.id": nudge.id,
+            "nudge.clear": cleared,
+            "nudge.compact": compact,
+            "nudge.stop": stop,
+            "nudge.sleep.seconds": sleepSeconds,
+          })
+        yield* Steering.inject(db, events, { sessionID, reason: "nudge", text: Nudge.prompt(nudge, event) })
+      }
       return claimed.length
     })
     /**
@@ -4438,6 +4480,7 @@ export const layer = Layer.effect(
       readonly sessionID: SessionSchema.ID
       readonly force: boolean
     }) {
+      nudgeStops.delete(input.sessionID)
       if ((yield* SessionInput.settlePassiveInputs(db, events, input.sessionID)) === "human") return
       // The drives' cross-drain facts, from the store that outlives this drain (`drive-state.ts`).
       yield* hydrateDriveState(input.sessionID)
@@ -4565,15 +4608,14 @@ export const layer = Layer.effect(
         // stopped behind a reassuring banner. Admit the continuation DURABLY before clearing the
         // latch. `SessionInput.steer` prepends the 1N provenance prefix, so a small model reads the
         // nudge as an automated check rather than an empty user turn.
-        const restart = yield* Steering.inject(db, events, {
-          sessionID: input.sessionID,
-          reason: "restart",
-          text: "Session restarted. Recover and proceed.",
+        const restartNudges = yield* deliverNudges(input.sessionID, handoff.agent, {
+          type: "session-restarted",
+          id: `restart-${input.sessionID}-${now}`,
         })
         // `promotion` and `shouldRun` below are derived from this snapshot. The recovery branch has
         // just changed the durable queue, so leaving the old `false` here passes the first no-work
         // gate only to stop at the second one.
-        hasSteer = restart !== undefined || hasSteer
+        hasSteer = restartNudges > 0 || hasSteer
       } else {
         yield* failInterruptedTools(input.sessionID)
       }
@@ -4695,6 +4737,11 @@ export const layer = Layer.effect(
         let step = 1
         let brokenResponseAttempts = 0
         while (needsContinuation) {
+          if (nudgeStops.has(input.sessionID)) {
+            needsContinuation = false
+            shouldRun = false
+            break
+          }
           if ((yield* SessionInput.settlePassiveInputs(db, events, input.sessionID)) === "human") return
           if (yield* WorkProjects.held(db, input.sessionID)) return
           if (completedTurn) {
@@ -4901,7 +4948,10 @@ export const layer = Layer.effect(
               break
             }
             if (audit === "no") {
-              yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "finish-audit", text: FinishAudit.CONTINUE_NUDGE })
+              yield* deliverNudges(input.sessionID, handoff.agent, {
+                type: "finish-audit",
+                id: `finish-audit-${input.sessionID}-${step}`,
+              })
               needsContinuation = true
               continue
             }
@@ -4945,7 +4995,14 @@ export const layer = Layer.effect(
             const key = looping ? `${looping.name}\x00${looping.input}` : undefined
             if (looping && key !== undefined && !nudged.has(key)) {
               nudged.add(key)
-              yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "doom-loop", text: redirectMessage(looping) })
+              yield* deliverNudges(input.sessionID, handoff.agent, {
+                type: "repeated-tool",
+                id: `doom-${input.sessionID}-${key}`,
+                name: looping.name,
+                input: looping.input,
+                count: DOOM_LOOP_THRESHOLD,
+                kind: "identical",
+              })
             }
             // 1N/A2: target-keyed failure streak over the tool calls made since the last user
             // message. Catches failed loops the byte-identical detector misses when a small model
@@ -4959,7 +5016,14 @@ export const layer = Layer.effect(
                 "session.target": streak.target,
                 count: streak.count,
               })
-              yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "failure-streak", text: failureStreakMessage(streak) })
+              yield* deliverNudges(input.sessionID, handoff.agent, {
+                type: "repeated-tool",
+                id: `streak-${input.sessionID}-${streak.target}`,
+                name: streak.name,
+                input: streak.target,
+                count: streak.count,
+                kind: "failure",
+              })
             }
             // P2 (2A): cadence-gated introspection judge — an out-of-band model call that
             // asks "is this agent stuck?"; a YES steers the interjection (2B). Best-effort:
@@ -5037,7 +5101,12 @@ export const layer = Layer.effect(
               if (consecutiveEmpty === 1) {
                 yield* Log.event("session.turn.empty.recovered", { "session.id": input.sessionID })
                 if (ShortChat.enabled((yield* effective.resolve(input.sessionID)).shortChat)) needsContinuation = true
-                else yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "empty-turn", text: EMPTY_TURN_RECOVERY })
+                else
+                  yield* deliverNudges(input.sessionID, handoff.agent, {
+                    type: "empty-turn",
+                    id: `empty-${input.sessionID}-${consecutiveEmpty}`,
+                    count: 1,
+                  })
               } else {
                 yield* Log.event("session.turn.empty.paused", { "session.id": input.sessionID })
                 // T4 (1N residue): the user must see WHY the chat went quiet — surface the calm
@@ -5062,7 +5131,10 @@ export const layer = Layer.effect(
               announcedRecovered = true
               consecutiveEmpty = 0
               yield* Log.event("session.turn.announced.recovered", { "session.id": input.sessionID })
-              yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "announced-tool-recovery", text: ANNOUNCED_TOOL_RECOVERY })
+              yield* deliverNudges(input.sessionID, handoff.agent, {
+                type: "announced-tool",
+                id: `announced-${input.sessionID}`,
+              })
             } else {
               consecutiveEmpty = 0
               const finalText = lastAssistantText(context)
@@ -5402,7 +5474,8 @@ export const layer = Layer.effect(
         // queue promotion or the self-drive continuation below would immediately steer the same
         // starved model straight back into the same wall, and the two-strike bound would be
         // decorative. Pending input is safe for the same reason it is safe on the exit path.
-        if (exitedMidDrain || truncationHalted || policyHalted || providerHalted) break
+        const nudgeStop = nudgeStops.delete(input.sessionID)
+        if (exitedMidDrain || truncationHalted || policyHalted || providerHalted || nudgeStop) break
         shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
         promotion = shouldRun ? "queue" : undefined
         if (!shouldRun) {

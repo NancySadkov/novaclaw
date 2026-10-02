@@ -28,6 +28,39 @@ const decodeMessageRow = (row: MessageRow) =>
     ),
   )
 
+/** Bounded batches, yielding between them, so clearing a large transcript cannot block the loop. */
+const CLEAR_BATCH = 500
+
+/**
+ * Drop a chat's whole transcript but KEEP the session row.
+ *
+ * This is the nudge "clear chat" action's context reset: the next prepared turn then sees only what
+ * the harness admits after the clear. It is deliberately NOT `SessionV2.remove` (which deletes the
+ * session and cascade) and NOT `setArchived` (which files the chat) — a nudge cannot remove the very
+ * session it is being delivered into.
+ */
+export const clearMessages = (db: DatabaseService, sessionID: SessionSchema.ID): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    for (;;) {
+      const batch = yield* db
+        .select({ seq: SessionMessageTable.seq })
+        .from(SessionMessageTable)
+        .where(eq(SessionMessageTable.session_id, sessionID))
+        .orderBy(asc(SessionMessageTable.seq))
+        .limit(CLEAR_BATCH)
+        .all()
+        .pipe(Effect.orDie)
+      if (batch.length === 0) break
+      const last = batch[batch.length - 1]!.seq
+      yield* db
+        .delete(SessionMessageTable)
+        .where(and(eq(SessionMessageTable.session_id, sessionID), lte(SessionMessageTable.seq, last)))
+        .run()
+        .pipe(Effect.orDie)
+      yield* Effect.yieldNow
+    }
+  }).pipe(Effect.orDie)
+
 const canonical = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(canonical)
   if (value === null || typeof value !== "object") return value

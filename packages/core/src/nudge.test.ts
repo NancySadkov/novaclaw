@@ -14,13 +14,74 @@ const definition = (hook: ConfigNudge.Hook): ConfigNudge.Info => ({
 })
 
 describe("Nudge", () => {
-  test("ships resource, JavaScript time, bloated todo, and new-day guards enabled", () => {
-    expect(Nudge.defaults().map((item) => [item.id, item.enabled])).toEqual([
-      [Nudge.LOW_RESOURCE_ID, true],
-      [Nudge.JAVASCRIPT_TIME_ID, true],
-      [Nudge.BLOATED_TODO_ID, true],
-      [Nudge.NEW_DAY_ID, true],
+  test("ships every built-in guard enabled and marked as a default", () => {
+    expect(Nudge.defaults().map((item) => [item.id, item.enabled, item.default])).toEqual([
+      [Nudge.LOW_RESOURCE_ID, true, true],
+      [Nudge.JAVASCRIPT_TIME_ID, true, true],
+      [Nudge.BLOATED_TODO_ID, true, true],
+      [Nudge.NEW_DAY_ID, true, true],
+      [Nudge.DOOM_LOOP_ID, true, true],
+      [Nudge.FAILURE_STREAK_ID, true, true],
+      [Nudge.SESSION_RESTART_ID, true, true],
+      [Nudge.EMPTY_TURN_ID, true, true],
+      [Nudge.ANNOUNCED_TOOL_ID, true, true],
+      [Nudge.FINISH_AUDIT_ID, true, true],
+      [Nudge.DELEGATE_CHECK_ID, true, true],
+      [Nudge.PROJECT_OPTIMIZATION_ID, true, true],
+      [Nudge.PROJECT_CLEANUP_ID, true, true],
     ])
+  })
+
+  test("the former hardcoded system nudges are now explicit hooks, each selecting its own event", () => {
+    const restart = definition({ type: "session-restarted" })
+    expect(Nudge.matches(restart, { type: "session-restarted", id: "r1" })).toBe(true)
+    expect(Nudge.matches(restart, { type: "empty-turn", id: "e1", count: 1 })).toBe(false)
+
+    const repeated = definition({ type: "repeated-tool", tool: "bash", count: 3, kind: "identical" })
+    const call = (over: Partial<{ name: string; count: number; kind: "identical" | "failure" }> = {}) => ({
+      type: "repeated-tool" as const,
+      id: "d",
+      name: over.name ?? "bash",
+      input: "x",
+      count: over.count ?? 3,
+      kind: over.kind ?? ("identical" as const),
+    })
+    expect(Nudge.matches(repeated, call())).toBe(true)
+    expect(Nudge.matches(repeated, call({ name: "read" }))).toBe(false)
+    expect(Nudge.matches(repeated, call({ count: 2 }))).toBe(false)
+    expect(Nudge.matches(repeated, call({ count: 5 }))).toBe(true)
+    expect(Nudge.matches(repeated, call({ kind: "failure" }))).toBe(false)
+
+    const empty = definition({ type: "empty-turn", count: 1 })
+    expect(Nudge.matches(empty, { type: "empty-turn", id: "e1", count: 1 })).toBe(true)
+    expect(Nudge.matches(empty, { type: "empty-turn", id: "e2", count: 2 })).toBe(false)
+
+    expect(Nudge.matches(definition({ type: "announced-tool" }), { type: "announced-tool", id: "a" })).toBe(true)
+    expect(Nudge.matches(definition({ type: "finish-audit" }), { type: "finish-audit", id: "f" })).toBe(true)
+    expect(Nudge.matches(definition({ type: "session-restarted" }), { type: "finish-audit", id: "f" })).toBe(false)
+  })
+
+  test("the doom-loop default names the bash loop and grounds its body in the clock", () => {
+    const item = Nudge.defaults().find((entry) => entry.id === Nudge.DOOM_LOOP_ID)!
+    expect(item.hook).toEqual({ type: "repeated-tool", tool: "bash", count: 3, kind: "identical" })
+    expect(item.text).toBe(
+      "Last 3 bash calls got same result. Don't loop - do better. Now is $(date '+%Y-%m-%d %A %H:%M:%S').",
+    )
+  })
+
+  test("the cadence defaults carry the gates the owner asked for", () => {
+    const byId = new Map(Nudge.defaults().map((item) => [item.id, item]))
+    const delegate = byId.get(Nudge.DELEGATE_CHECK_ID)!
+    expect(delegate.hook).toEqual({ type: "interval", minutes: 60 })
+    expect(delegate.minSubordinates).toBe(1)
+    expect(delegate.tokenRate).toEqual({ tokens: 20_000, windowSeconds: 3_600 })
+    const optimization = byId.get(Nudge.PROJECT_OPTIMIZATION_ID)!
+    expect(optimization.hook).toEqual({ type: "interval", minutes: 1_440 })
+    expect(optimization.minSubordinates).toBe(1)
+    const cleanup = byId.get(Nudge.PROJECT_CLEANUP_ID)!
+    expect(cleanup.hook).toEqual({ type: "interval", minutes: 4_320 })
+    expect(cleanup.minSubordinates).toBe(1)
+    expect(cleanup.requireTmpFolder).toBe(true)
   })
 
   test("the bloated-file JavaScript hook checks the edited path and byte size", () => {
@@ -214,6 +275,33 @@ describe("Nudge", () => {
     expect(Nudge.prompt(item)).toContain('nudge({"op":"disable","id":"test"})')
   })
 
+})
+
+describe("withDefaults", () => {
+  test("a fresh agent gets every shipped default", () => {
+    expect(Nudge.withDefaults(undefined).map((item) => item.id)).toEqual(Nudge.defaults().map((item) => item.id))
+  })
+
+  test("an explicit empty list is honored — an officer that wants no nudges keeps none", () => {
+    expect(Nudge.withDefaults([])).toEqual([])
+  })
+
+  test("a stored built-in gains the default marker, keeps its choices, and new defaults are merged in", () => {
+    const low = Nudge.defaults().find((item) => item.id === Nudge.LOW_RESOURCE_ID)!
+    const stored = [
+      { ...low, default: undefined, enabled: false },
+      { id: "personal", name: "Personal", hook: { type: "after-compaction" }, text: "Keep me." },
+    ] as ConfigNudge.Info[]
+    const merged = Nudge.withDefaults(stored)
+    const first = merged.find((item) => item.id === Nudge.LOW_RESOURCE_ID)!
+    expect(first.default).toBe(true)
+    expect(first.enabled).toBe(false)
+    expect(merged.find((item) => item.id === "personal")?.text).toBe("Keep me.")
+    // The cadence defaults shipped after this officer existed must reach it.
+    expect(merged.some((item) => item.id === Nudge.DELEGATE_CHECK_ID)).toBe(true)
+    // …but an id it already holds is not duplicated.
+    expect(merged.filter((item) => item.id === Nudge.LOW_RESOURCE_ID)).toHaveLength(1)
+  })
 })
 
 /**

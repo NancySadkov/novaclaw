@@ -44,6 +44,11 @@ const HOOK_KEY: Record<HookType, TranslationKey> = {
   "new-day": "settings.nudges.hook.new-day",
   interval: "settings.nudges.hook.interval",
   script: "settings.nudges.hook.script",
+  "repeated-tool": "settings.nudges.hook.repeated-tool",
+  "session-restarted": "settings.nudges.hook.session-restarted",
+  "empty-turn": "settings.nudges.hook.empty-turn",
+  "announced-tool": "settings.nudges.hook.announced-tool",
+  "finish-audit": "settings.nudges.hook.finish-audit",
 }
 
 const RESOURCE_KEY = {
@@ -82,6 +87,16 @@ const hookFor = (type: HookType): ConfigNudge.Hook => {
       return { type, minutes: 60 }
     case "script":
       return { type, command: "" }
+    case "repeated-tool":
+      return { type, tool: "", count: 3, kind: "identical" }
+    case "session-restarted":
+      return { type }
+    case "empty-turn":
+      return { type, count: 1 }
+    case "announced-tool":
+      return { type }
+    case "finish-audit":
+      return { type }
   }
 }
 
@@ -111,6 +126,7 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
   const selectedAgent = () => agentRows().find((agent) => agent.id === scope())
   const selectedAgentConfig = () => sync().data.config?.agents?.[scope()] ?? selectedAgent()?.config
   const nudges = () => [...((selectedAgentConfig()?.nudges as ConfigNudge.Info[] | undefined) ?? [])]
+  const visibleNudges = () => (showDefaults() ? nudges() : nudges().filter((n) => n.default !== true))
   const toolChoices = createMemo(() => {
     // No instance recipe library anymore (per-agent tuning owns recipes): the choices are the
     // built-ins plus whatever this instance happens to have declared explicitly.
@@ -124,6 +140,7 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
   const [editingID, setEditingID] = createSignal<string | undefined>()
   const [draft, setDraft] = createSignal<ConfigNudge.Info>(blank())
   const [error, setError] = createSignal<string>()
+  const [showDefaults, setShowDefaults] = createSignal(true)
   let editor: HTMLDivElement | undefined
 
   const hookOptions = createMemo(() =>
@@ -143,6 +160,11 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
         "new-day",
         "interval",
         "script",
+        "repeated-tool",
+        "session-restarted",
+        "empty-turn",
+        "announced-tool",
+        "finish-audit",
       ] as const
     ).map((value) => ({ value, label: language.t(HOOK_KEY[value]) })),
   )
@@ -204,12 +226,27 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
             <Show when={nudges().length === 0}>
               <p class="schedule-empty">This officer has no nudges yet. Add one to guide it at a useful moment.</p>
             </Show>
+            <Show when={nudges().some((n) => n.default === true)}>
+              <div class="nudge-filter-row">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={showDefaults()}
+                    onChange={(event) => setShowDefaults(event.currentTarget.checked)}
+                  />
+                  <span>{language.t("settings.nudges.showDefaults")}</span>
+                </label>
+              </div>
+            </Show>
             <div class="nudge-cards">
-              <For each={nudges()}>
+              <For each={visibleNudges()}>
                 {(item) => (
                   <article class="nudge-card" data-disabled={item.enabled === false}>
                     <div class="nudge-card-top">
                       <span class="nudge-status-dot" data-state={item.enabled === false ? "off" : "on"} />
+                      <Show when={item.default === true}>
+                        <span class="nudge-default-badge">{language.t("settings.nudges.default")}</span>
+                      </Show>
                       <div class="nudge-card-title">
                         <h4>{item.name}</h4>
                         <p>{language.t(HOOK_KEY[item.hook.type])}{"phase" in item.hook ? ` · ${item.hook.phase ?? "after"}` : ""}{item.hook.type === "interval" ? ` · ${item.hook.minutes} min` : ""}</p>
@@ -421,6 +458,50 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
                 onInput={(event) => patchHook({ command: event.currentTarget.value })}
               />
             </Show>
+            <Show when={draft().hook.type === "repeated-tool"}>
+              <TextInputV2
+                appearance="base"
+                value={(draft().hook as { tool: string }).tool}
+                placeholder={language.t("settings.nudges.field.tool")}
+                spellcheck={false}
+                onInput={(event) => patchHook({ tool: event.currentTarget.value })}
+              />
+              <label class="nudge-interval-field">
+                <span>{language.t("settings.nudges.field.repeatCount")}</span>
+                <SettingsNumberFieldV2
+                  value={() => (draft().hook as { count?: number }).count ?? 3}
+                  onCommit={(count) => setDraft((item) => ({ ...item, hook: { ...item.hook, count } as ConfigNudge.Hook }))}
+                  min={2}
+                  max={20}
+                  ariaLabel={language.t("settings.nudges.field.repeatCount")}
+                />
+              </label>
+              <SelectV2
+                appearance="inline"
+                options={(["identical", "failure"] as const).map((value) => ({
+                  value,
+                  label: language.t(`settings.nudges.repeatKind.${value}`),
+                }))}
+                current={(["identical", "failure"] as const)
+                  .map((value) => ({ value, label: language.t(`settings.nudges.repeatKind.${value}`) }))
+                  .find((option) => option.value === (draft().hook as { kind?: string }).kind)}
+                value={(option) => option.value}
+                label={(option) => option.label}
+                onSelect={(option) => option && patchHook({ kind: option.value })}
+              />
+            </Show>
+            <Show when={draft().hook.type === "empty-turn"}>
+              <label class="nudge-interval-field">
+                <span>{language.t("settings.nudges.field.emptyTurnCount")}</span>
+                <SettingsNumberFieldV2
+                  value={() => (draft().hook as { count?: number }).count ?? 1}
+                  onCommit={(count) => setDraft((item) => ({ ...item, hook: { ...item.hook, count } as ConfigNudge.Hook }))}
+                  min={1}
+                  max={5}
+                  ariaLabel={language.t("settings.nudges.field.emptyTurnCount")}
+                />
+              </label>
+            </Show>
             <TextareaV2
               class="settings-v2-textarea"
               rows={5}
@@ -447,6 +528,128 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
               >
                 {language.t("settings.nudges.field.spammable")}
               </Switch>
+            </SettingsRowV2>
+            <Show when={draft().default === true}>
+              <p class="settings-v2-field-description" style={{ color: "var(--v2-state-gold-text, #d4a017)" }}>
+                {language.t("settings.nudges.defaultBadge")}
+              </p>
+            </Show>
+            <SettingsRowV2
+              title={language.t("settings.nudges.field.minSubordinates")}
+              description={language.t("settings.nudges.minSubordinates.description")}
+            >
+              <SettingsNumberFieldV2
+                value={() => draft().minSubordinates ?? 0}
+                onCommit={(minSubordinates) => setDraft((item) => ({ ...item, minSubordinates: minSubordinates || undefined }))}
+                min={0}
+                max={50}
+                ariaLabel={language.t("settings.nudges.field.minSubordinates")}
+              />
+            </SettingsRowV2>
+            <SettingsRowV2
+              title={language.t("settings.nudges.field.requireNoSubordinates")}
+              description={language.t("settings.nudges.requireNoSubordinates.description")}
+            >
+              <Switch
+                checked={draft().requireNoSubordinates === true}
+                onChange={(requireNoSubordinates) => setDraft((item) => ({ ...item, requireNoSubordinates }))}
+                hideLabel
+              >
+                {language.t("settings.nudges.field.requireNoSubordinates")}
+              </Switch>
+            </SettingsRowV2>
+            <SettingsRowV2
+              title={language.t("settings.nudges.field.tokenRate")}
+              description={language.t("settings.nudges.tokenRate.description")}
+            >
+              <div class="settings-v2-models-row-actions">
+                <SettingsNumberFieldV2
+                  value={() => draft().tokenRate?.tokens ?? 0}
+                  onCommit={(tokens) => setDraft((item) => ({ ...item, tokenRate: { tokens, windowSeconds: item.tokenRate?.windowSeconds ?? 3_600 } }))}
+                  min={0}
+                  max={1_000_000}
+                  ariaLabel={language.t("settings.nudges.field.tokenRateTokens")}
+                />
+                <SettingsNumberFieldV2
+                  value={() => draft().tokenRate?.windowSeconds ?? 3_600}
+                  onCommit={(windowSeconds) => setDraft((item) => ({ ...item, tokenRate: { tokens: item.tokenRate?.tokens ?? 0, windowSeconds } }))}
+                  min={60}
+                  max={86_400}
+                  ariaLabel={language.t("settings.nudges.field.tokenRateWindow")}
+                />
+              </div>
+            </SettingsRowV2>
+            <SettingsRowV2
+              title={language.t("settings.nudges.field.requireTmpFolder")}
+              description={language.t("settings.nudges.requireTmpFolder.description")}
+            >
+              <Switch
+                checked={draft().requireTmpFolder === true}
+                onChange={(requireTmpFolder) => setDraft((item) => ({ ...item, requireTmpFolder }))}
+                hideLabel
+              >
+                {language.t("settings.nudges.field.requireTmpFolder")}
+              </Switch>
+            </SettingsRowV2>
+            <SettingsRowV2
+              title={language.t("settings.nudges.field.clearChat")}
+              description={language.t("settings.nudges.clearChat.description")}
+            >
+              <Switch
+                checked={draft().clearChat === true}
+                onChange={(clearChat) => setDraft((item) => ({ ...item, clearChat }))}
+                hideLabel
+              >
+                {language.t("settings.nudges.field.clearChat")}
+              </Switch>
+            </SettingsRowV2>
+            <SettingsRowV2
+              title={language.t("settings.nudges.field.forceCompaction")}
+              description={language.t("settings.nudges.forceCompaction.description")}
+            >
+              <Switch
+                checked={draft().forceCompaction === true}
+                onChange={(forceCompaction) => setDraft((item) => ({ ...item, forceCompaction }))}
+                hideLabel
+              >
+                {language.t("settings.nudges.field.forceCompaction")}
+              </Switch>
+            </SettingsRowV2>
+            <SettingsRowV2
+              title={language.t("settings.nudges.field.stopOfficer")}
+              description={language.t("settings.nudges.stopOfficer.description")}
+            >
+              <Switch
+                checked={draft().stopOfficer === true}
+                onChange={(stopOfficer) => setDraft((item) => ({ ...item, stopOfficer }))}
+                hideLabel
+              >
+                {language.t("settings.nudges.field.stopOfficer")}
+              </Switch>
+            </SettingsRowV2>
+            <SettingsRowV2
+              title={language.t("settings.nudges.field.sleepSeconds")}
+              description={language.t("settings.nudges.sleepSeconds.description")}
+            >
+              <SettingsNumberFieldV2
+                value={() => draft().sleepSeconds ?? 0}
+                onCommit={(sleepSeconds) => setDraft((item) => ({ ...item, sleepSeconds: sleepSeconds || undefined }))}
+                min={0}
+                max={86_400}
+                ariaLabel={language.t("settings.nudges.field.sleepSeconds")}
+              />
+            </SettingsRowV2>
+            <SettingsRowV2
+              title={language.t("settings.nudges.field.cooldownSeconds")}
+              description={language.t("settings.nudges.cooldownSeconds.description")}
+            >
+              <SettingsNumberFieldV2
+                value={() => draft().cooldownSeconds ?? 0}
+                onCommit={(cooldownSeconds) => setDraft((item) => ({ ...item, cooldownSeconds: cooldownSeconds || undefined }))}
+                min={0}
+                max={86_400}
+                ariaLabel={language.t("settings.nudges.field.cooldownSeconds")}
+              />
             </SettingsRowV2>
             <Show when={error()}>
               {(message) => (
