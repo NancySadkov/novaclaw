@@ -26,7 +26,18 @@ export const route = (sender: Sender | undefined, requested: string, roster: Rea
   const superior = AgentV2.resolveSuperior(self, selfInfo.superior, roster, { includePaused: true })
   const superiorID = superior === undefined ? undefined : String(superior.id)
   const targetSuperior = AgentV2.resolveSuperior(requested, target.superior, roster, { includePaused: true })
-  const sameTier = superiorID !== undefined && targetSuperior !== undefined && String(targetSuperior.id) === superiorID
+  // 🔴 A SHARED SUPERIOR IS ONLY A TIER WHEN THAT SUPERIOR IS AN OFFICER. Owners of agents that
+  // both report to the human owner are not peers: the CEO and the owner's personal staff are not a
+  // messaging guild, and treating them as one let Nova address an owner's officer directly instead
+  // of being redirected to that officer's real superior. Measured 2026-10-02 on the live instance:
+  // `lacedaemon` (superior `owner`) received a direct `colleague ask` from Nova because
+  // `resolveSuperior` answers the owner for both and the ids compared equal. The human tier is not
+  // a conference (AGENTS.md: authority narrows DOWNWARD from the CEO; the owner is above it).
+  const sameTier =
+    superiorID !== undefined &&
+    targetSuperior !== undefined &&
+    String(targetSuperior.id) === superiorID &&
+    AgentV2.kindOf(superior) === "agent"
   if (requested === superiorID || sameTier) return { kind: "officer", recipient: requested, redirected: false }
   let branch = target
   const visited = new Set<string>()

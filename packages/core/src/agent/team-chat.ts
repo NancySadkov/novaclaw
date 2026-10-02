@@ -71,13 +71,18 @@ export const memberIDs = (roster: readonly AgentV2.Info[], officerID: string): r
 
   const members = new Set([officerID])
   const superior = AgentV2.resolveSuperior(officerID, officer.superior, roster, { includePaused: true })
-  const superiorID = superior === undefined ? undefined : String(superior.id)
-  if (superiorID !== undefined) members.add(superiorID)
+  // 🔴 A SHARED SUPERIOR IS ONLY A TEAM WHEN THAT SUPERIOR IS AN OFFICER. The human owner is not a
+  // team: two officers that both report to the owner are not peers, and seating the owner's personal
+  // staff at Nova's table reads an org chart the routing layer does not honour (see
+  // `session/colleague-route.ts`, which refuses the same fabricated tier). Same defect, same fix.
+  const tierSuperiorID =
+    superior !== undefined && AgentV2.kindOf(superior) === "agent" ? String(superior.id) : undefined
+  if (tierSuperiorID !== undefined) members.add(tierSuperiorID)
   for (const candidate of roster) {
     const id = String(candidate.id)
     if (id === officerID || !AgentV2.isColleague(candidate) || AgentV2.kindOf(candidate) !== "agent") continue
     const parent = AgentV2.resolveSuperior(id, candidate.superior, roster, { includePaused: true })
-    if (parent && (String(parent.id) === officerID || String(parent.id) === superiorID)) members.add(id)
+    if (parent && (String(parent.id) === officerID || String(parent.id) === tierSuperiorID)) members.add(id)
   }
   return [...members]
 }

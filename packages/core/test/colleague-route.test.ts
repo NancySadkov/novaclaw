@@ -57,4 +57,35 @@ describe("host-owned colleague routing", () => {
     expect(ColleagueRoute.route({ agent: "iris" }, "ghost", roster).kind).toBe("unavailable")
     expect(ColleagueRoute.route({ agent: "iris" }, "iris", roster).kind).toBe("unavailable")
   })
+
+  // 🔴 Regression, measured on the owner's live instance 2026-10-02: `lacedaemon` reported to the
+  // human `owner`, Nova also resolves its superior to `owner`, and the equal ids made them a
+  // "same tier" — so Nova's `colleague ask` landed in the officer's chat instead of being redirected
+  // to its real superior. Sharing the human owner is not a messaging tier.
+  const withOwner = [
+    ...roster,
+    { id: "owner", kind: "human", superior: "owner" },
+    { id: "personal", superior: "owner" },
+  ] as unknown as AgentV2.Info[]
+
+  test("officers sharing the HUMAN owner are not a same-tier messaging set", () => {
+    for (const [agent, requested] of [
+      ["nova", "personal"],
+      ["personal", "nova"],
+    ] as const)
+      expect(ColleagueRoute.route({ agent }, requested, withOwner)).toEqual({
+        kind: "officer",
+        recipient: "owner",
+        redirected: true,
+      })
+  })
+
+  test("a direct report of the owner still reaches the owner directly", () => {
+    for (const agent of ["nova", "personal"])
+      expect(ColleagueRoute.route({ agent }, "owner", withOwner)).toEqual({
+        kind: "officer",
+        recipient: "owner",
+        redirected: false,
+      })
+  })
 })

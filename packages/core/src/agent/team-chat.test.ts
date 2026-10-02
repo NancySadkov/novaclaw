@@ -56,6 +56,19 @@ describe("officer team chat membership", () => {
     expect(memberIDs(roster, "chatty")).toEqual([])
   })
 
+  // 🔴 The human owner is not a team. An officer that reports to the owner and the CEO are not peers,
+  // and seating the owner's personal staff at the CEO's table mirrors the routing defect fixed in
+  // `session/colleague-route.ts` (measured live 2026-10-02: Nova addressed `lacedaemon` directly).
+  test("the human owner's other reports are not teammates", () => {
+    const roster = [
+      officer("owner", "owner", "human"),
+      officer("nova", "owner"),
+      officer("personal", "owner"),
+      officer("aide", "nova"),
+    ]
+    expect(memberIDs(roster, "nova")).toEqual(["nova", "aide"])
+  })
+
   test("keeps exchanges with the officer, removes routing notes, and excludes other conversations", () => {
     const note = ColleagueNote.compose({ message: "The build is green.", from: "iris", turn: "ask" })
     expect(
