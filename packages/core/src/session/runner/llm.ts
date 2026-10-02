@@ -128,15 +128,14 @@ import { ContextBudget } from "./context-budget"
 import { ShortChat } from "./short-chat"
 import {
   detectDoomLoop,
-  redirectMessage,
   detectFailureStreak,
-  failureStreakMessage,
   toolCallsSinceLastUser,
   announcedToolButCalledNone,
   isEmptyAssistantTurn,
   lastAssistantText,
-  ANNOUNCED_TOOL_RECOVERY,
-  EMPTY_TURN_RECOVERY,
+  // The old hardcoded recovery TEXTS (`ANNOUNCED_TOOL_RECOVERY`, `EMPTY_TURN_RECOVERY`,
+  // `redirectMessage`, `failureStreakMessage`) are no longer injected here: each is a shipped,
+  // editable Nudge now. Only the diagnostic and the detector threshold remain runner-owned.
   EMPTY_TURN_DIAGNOSTIC,
   DOOM_LOOP_THRESHOLD,
 } from "./doom-loop"
