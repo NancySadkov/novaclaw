@@ -22,6 +22,28 @@ const stallError = (timeoutMs: number, hasOutput: () => boolean) =>
   })
 
 /**
+ * The hard ceiling an attempt that never SETTLES crosses — distinct from `stallError`, which only
+ * fires when the provider goes SILENT.
+ *
+ * 🔴 **`kind: "Stalled"` is the taxonomy's own name for this, and it is what the recovery circuit
+ * acts on.** `stallError`'s partial-output arm is `InvalidProviderOutput`, which the runner treats
+ * as a *broken reply* (keep the text, reconnect on the SAME model). A generation that keeps streaming
+ * but never emits a terminal is not a broken reply — the endpoint is unusable for this turn — so it
+ * carries `Transport`/`Stalled`, which reroutes and substitutes instead of replaying.
+ */
+const attemptStallError = (timeoutMs: number) =>
+  new LLMError({
+    module: "SessionRunner",
+    method: "stream",
+    reason: new TransportReason({
+      kind: "Stalled",
+      message:
+        `The model server kept streaming but never finished replying within ${Math.round(timeoutMs / 1000)} seconds. ` +
+        "NovaClaw stopped waiting so this turn would not hang indefinitely; the model is treated as unreachable and a substitute will serve instead.",
+    }),
+  })
+
+/**
  * Bound provider INACTIVITY without bounding a long, healthy generation. `Stream.timeoutOrElse`
  * restarts its timer after every element, so reasoning/text events are heartbeats as well as data.
  */
@@ -52,8 +74,14 @@ export function runForEach<A, E, R, E2, R2>(
   timeoutMs: number,
   hasOutput: () => boolean,
   consume: (value: A) => Effect.Effect<void, E2, R2>,
+  /**
+   * Absolute wall-clock ceiling for the WHOLE attempt. `timeoutMs` above is inactivity and every
+   * streamed event restarts it, so an endless-but-active generation would otherwise never end.
+   * Zero disables it (seams and tests that never want a ceiling).
+   */
+  attemptTimeoutMs = 0,
 ) {
-  return withStallTimeout(source, timeoutMs, hasOutput).pipe(
+  const consumed = withStallTimeout(source, timeoutMs, hasOutput).pipe(
     Stream.runForEach((value) =>
       consume(value).pipe(
         Effect.timeoutOrElse({
@@ -63,4 +91,12 @@ export function runForEach<A, E, R, E2, R2>(
       ),
     ),
   )
+  return attemptTimeoutMs > 0
+    ? consumed.pipe(
+        Effect.timeoutOrElse({
+          duration: Duration.millis(attemptTimeoutMs),
+          orElse: () => Effect.fail(attemptStallError(attemptTimeoutMs)),
+        }),
+      )
+    : consumed
 }

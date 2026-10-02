@@ -20,6 +20,42 @@ describe("provider stream liveness", () => {
     }),
   )
 
+  it.effect("fails an attempt that never settles within the absolute ceiling, independent of inactivity", () =>
+    Effect.gen(function* () {
+      // Inactivity is an hour away, so only the absolute attempt ceiling can end this.
+      const fiber = yield* runForEach(Stream.never, 3_600_000, () => false, () => Effect.void, 5_000).pipe(
+        Effect.forkScoped,
+      )
+      yield* TestClock.adjust(Duration.seconds(5))
+      const exit = yield* Fiber.await(fiber)
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isSuccess(exit)) return
+      const error = Option.getOrUndefined(Cause.findErrorOption(exit.cause))
+      expect(error).toBeInstanceOf(LLMError)
+      expect((error as LLMError).reason).toMatchObject({ _tag: "Transport", kind: "Stalled" })
+      expect((error as LLMError).reason.message).toContain("kept streaming")
+    }),
+  )
+
+  it.effect("ends a stream that keeps emitting without ever settling — the case inactivity cannot see", () =>
+    Effect.gen(function* () {
+      // Every tick restarts the inactivity timer, so `withStallTimeout` alone never fires. Only the
+      // absolute ceiling ends the attempt, which is the live runaway (`ses_lacedaemon`, 2026-10-02).
+      const source = Stream.tick(Duration.seconds(1)).pipe(Stream.map(() => "tick"))
+      const fiber = yield* runForEach(source, 3_600_000, () => true, () => Effect.void, 5_000).pipe(
+        Effect.forkScoped,
+      )
+      yield* TestClock.adjust(Duration.seconds(5))
+      const exit = yield* Fiber.await(fiber)
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isSuccess(exit)) return
+      const error = Option.getOrUndefined(Cause.findErrorOption(exit.cause))
+      expect(error).toBeInstanceOf(LLMError)
+      expect((error as LLMError).reason).toMatchObject({ _tag: "Transport", kind: "Stalled" })
+      expect((error as LLMError).reason.message).toContain("kept streaming")
+    }),
+  )
+
   it.effect("passes through a healthy stream unchanged", () =>
     Effect.gen(function* () {
       const values = yield* withStallTimeout(Stream.fromIterable([1, 2, 3]), 5_000).pipe(Stream.runCollect)

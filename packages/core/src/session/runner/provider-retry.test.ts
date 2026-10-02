@@ -33,6 +33,10 @@ describe("isTransientProviderFailure (1D taxonomy)", () => {
     expect(
       isTransientProviderFailure(llmError(new TransportReason({ message: "fetch failed", kind: "connection" }))),
     ).toBe(true))
+  test("an attempt that never settled (Transport/Stalled) is NOT replayed on the same route", () =>
+    expect(
+      isTransientProviderFailure(llmError(new TransportReason({ message: "kept streaming", kind: "Stalled" }))),
+    ).toBe(false))
   test("ProviderInternal 5xx is transient", () =>
     expect(isTransientProviderFailure(llmError(new ProviderInternalReason({ message: "boom", status: 503 })))).toBe(
       true,

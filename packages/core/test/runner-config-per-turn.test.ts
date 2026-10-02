@@ -67,6 +67,7 @@ describe("HarnessConfig.derive", () => {
     expect(derived.introspection.enabled).toBe(false)
     expect(derived.introspection.cadence).toBe(3)
     expect(derived.providerStallTimeoutMs).toBe(ConfigProviderConnection.DEFAULT_STALL_TIMEOUT_MS)
+    expect(derived.providerAttemptTimeoutMs).toBe(ConfigProviderConnection.DEFAULT_ATTEMPT_TIMEOUT_MS)
   })
 
   test("every key is picked up, and later documents win (the `latest` fold)", () => {
@@ -78,7 +79,10 @@ describe("HarnessConfig.derive", () => {
           tool_routing: new ConfigToolRouting.Info({
             rules: [new ConfigToolRouting.Rule({ model: "qwen", tools: { write: false } })],
           }),
-          provider_connection: new ConfigProviderConnection.Info({ stall_timeout_ms: 420_000 }),
+          provider_connection: new ConfigProviderConnection.Info({
+            stall_timeout_ms: 420_000,
+            attempt_timeout_ms: 600_000,
+          }),
         }),
       ],
       { shell: "/bin/supplied" },
@@ -95,6 +99,7 @@ describe("HarnessConfig.derive", () => {
     expect(derived.context).toBeUndefined()
     expect(derived.toolRouting?.rules[0]?.tools).toEqual({ write: false })
     expect(derived.providerStallTimeoutMs).toBe(420_000)
+    expect(derived.providerAttemptTimeoutMs).toBe(600_000)
   })
 
   test("the supplied shell wins over the pure-test default", () => {

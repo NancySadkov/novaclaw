@@ -2686,6 +2686,17 @@ export const EVENTS = {
     content: "correlated",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  "session.provider.stalled": {
+    level: "warn",
+    message: "provider attempt kept streaming but never settled - model treated as unreachable",
+    attributes: {
+      "session.id": "correlate",
+      "session.provider.reason": "id",
+      "session.provider.message": "text",
+    },
+    content: "user",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   "session.provider.halted": {
     level: "warn",
     message: "provider rejected a non-retryable request — autonomous drive halted",

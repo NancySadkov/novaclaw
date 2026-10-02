@@ -3428,6 +3428,7 @@ export const layer = Layer.effect(
               // would make a dead fiber quietly withhold the next call's images.
               .pipe(Effect.ensuring(Effect.sync(imageBudget.release)), FiberSet.run(toolFibers))
           }),
+        harness.providerAttemptTimeoutMs,
       ).pipe(Effect.ensuring(withPublication(publisher.flush())))
 
       // A session worker may outlive the host process's in-memory catalog reload. Gate EVERY
@@ -3732,6 +3733,15 @@ export const layer = Layer.effect(
             })
             yield* withPublication(publisher.breakAssistant())
           } else if (llmFailure && !publisher.hasProviderError()) {
+            // The attempt never SETTLED: the endpoint kept streaming and crossed its wall-clock
+            // ceiling. Named as its own outcome so an operator can tell a silent endpoint from a
+            // live runaway, and so the recovery circuit's substitution is visibly accounted for.
+            if (llmFailure.reason._tag === "Transport" && llmFailure.reason.kind === "Stalled")
+              yield* Log.event("session.provider.stalled", {
+                "session.id": session.id,
+                "session.provider.reason": llmFailure.reason._tag,
+                "session.provider.message": llmFailure.reason.message,
+              })
             yield* withPublication(
               publisher.failUnsettledTools(
                 { message: "Provider did not return a tool result", _tag: "ToolFailure" },

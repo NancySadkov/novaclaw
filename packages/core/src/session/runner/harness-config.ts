@@ -82,6 +82,7 @@ export interface Derived {
   readonly context: ConfigAgent.Info["context"]
   readonly toolRouting: Config.Info["tool_routing"]
   readonly providerStallTimeoutMs: number
+  readonly providerAttemptTimeoutMs: number
 }
 
 /**
@@ -170,5 +171,8 @@ export const derive = (entries: readonly Config.Entry[], options: Options = {}):
     context: undefined,
     toolRouting: Config.latest(entries, "tool_routing"),
     providerStallTimeoutMs: ConfigProviderConnection.stallTimeoutMs(Config.latest(entries, "provider_connection")),
+    providerAttemptTimeoutMs: ConfigProviderConnection.attemptTimeoutMs(
+      Config.latest(entries, "provider_connection"),
+    ),
   }
 }

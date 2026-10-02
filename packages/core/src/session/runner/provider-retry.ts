@@ -45,6 +45,11 @@ export function isTransientProviderFailure(error: unknown): error is LLMError {
     // than from this string. What still reaches this line is the platform's own malformed-URL
     // `InvalidUrlError`, which is equally deterministic — so the check stays, with a narrower job.
     if ((error.reason as { kind?: string }).kind === "InvalidUrlError") return false
+    // A route that accepted the request and never settled (`provider-stream-liveness`) is not
+    // replayed on itself: another identical wait would only spend the same ceiling again. The
+    // failure is recorded durably, the drain resolves a substitute, and this route returns on its
+    // own recovery probe.
+    if ((error.reason as { kind?: string }).kind === "Stalled") return false
     return true
   }
   return error.retryable

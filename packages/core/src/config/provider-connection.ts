@@ -10,6 +10,22 @@ export const DEFAULT_STALL_TIMEOUT_MS = 800_000
 const StallTimeout = Schema.Int.check(Schema.isBetween({ minimum: 30_000, maximum: 1_800_000 }))
 
 /**
+ * A single provider attempt must SETTLE within this wall-clock budget, even while it keeps streaming.
+ *
+ * `stall_timeout_ms` bounds SILENCE. A model that dribbles an endless answer — or a degraded endpoint
+ * that streams keep-alive tokens forever — resets that timer on every event, so a live worker can sit
+ * on one attempt for hours with no failure for the recovery circuit to route around. Measured live
+ * 2026-10-02 (`ses_lacedaemon`): one turn streamed answer text for over 27 minutes, offset past
+ * 324,000 characters, with `provider_recovery` empty and the assigned endpoint answering throughout.
+ * Crossing this ceiling fails the attempt as an unreachable route, which is what lets the existing
+ * durable recovery substitute a capability-compatible model and probe this route later.
+ */
+export const DEFAULT_ATTEMPT_TIMEOUT_MS = 1_800_000
+
+/** A ceiling tighter than a minute would guillotine honest work; two hours is the silent-hang repair limit. */
+const AttemptTimeout = Schema.Int.check(Schema.isBetween({ minimum: 60_000, maximum: 7_200_000 }))
+
+/**
  * How long ONE capability-probe rung may take.
  *
  * Measured: a 4B thinking model on a laptop's Vulkan build needs **26.8 s** to think and then emit the
@@ -67,6 +83,13 @@ export class Info extends Schema.Class<Info>("ConfigV2.ProviderConnection")({
     }),
     { value: DEFAULT_STALL_TIMEOUT_MS, source: "config/provider-connection.ts DEFAULT_STALL_TIMEOUT_MS" },
   ),
+  attempt_timeout_ms: ConfigAnnotation.withDefault(
+    AttemptTimeout.pipe(Schema.optional).annotate({
+      description:
+        "Maximum wall-clock time one provider attempt may keep streaming before NovaClaw stops it and routes around the model (default 1800000 ms; 60000-7200000). Raise it for a model whose healthy turns legitimately run longer.",
+    }),
+    { value: DEFAULT_ATTEMPT_TIMEOUT_MS, source: "config/provider-connection.ts DEFAULT_ATTEMPT_TIMEOUT_MS" },
+  ),
   discovery_timeout_ms: ConfigAnnotation.withDefault(
     DiscoveryTimeout.pipe(Schema.optional).annotate({
       description: "Maximum time an endpoint has to list its models during a probe (default 5000 ms; 1000-120000).",
@@ -108,6 +131,10 @@ export class Info extends Schema.Class<Info>("ConfigV2.ProviderConnection")({
 
 export function stallTimeoutMs(info: Info | undefined): number {
   return info?.stall_timeout_ms ?? DEFAULT_STALL_TIMEOUT_MS
+}
+
+export function attemptTimeoutMs(info: Info | undefined): number {
+  return info?.attempt_timeout_ms ?? DEFAULT_ATTEMPT_TIMEOUT_MS
 }
 
 export function discoveryTimeoutMs(info: Info | undefined): number {

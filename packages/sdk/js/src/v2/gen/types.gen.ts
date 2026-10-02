@@ -4029,6 +4029,7 @@ export type ConfigV2Mcp = {
 
 export type ConfigV2ProviderConnection = {
   stall_timeout_ms?: number
+  attempt_timeout_ms?: number
   discovery_timeout_ms?: number
   completion_timeout_ms?: number
   capability_probe_timeout_ms?: number

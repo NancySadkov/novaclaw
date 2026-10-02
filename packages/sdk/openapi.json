@@ -38081,6 +38081,11 @@
             "minimum": 30000,
             "maximum": 1800000
           },
+          "attempt_timeout_ms": {
+            "type": "integer",
+            "minimum": 60000,
+            "maximum": 7200000
+          },
           "discovery_timeout_ms": {
             "type": "integer",
             "minimum": 1000,
