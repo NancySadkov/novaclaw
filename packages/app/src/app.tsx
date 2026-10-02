@@ -322,13 +322,25 @@ function ResolvedTargetSessionRoute() {
   createEffect(() => {
     const session = current()
     if (!session) return
+    /**
+     * 🔴 **A worker route opens the WORKER's own tab, marked `worker: true`.**
+     *
+     * This used to open `session.root.id` and ask whether `session.root.parentID` was set — and the
+     * root of a lineage never has a parent, so `worker` was ALWAYS false. Opening a worker from the
+     * Running workers list therefore opened the officer's tab while `titlebar.tsx` separately created
+     * an anonymous parent-session tab; the strip's one-tab-per-colleague reconciliation then folded
+     * one into the other via `removeTab`, which NAVIGATES, and the router refused the chain
+     * ("Too many redirects"). The worker is the session the ROUTE names; its own id is the tab.
+     */
+    const worker = session.session.type === "sub-agent"
+    const sessionId = worker ? session.session.id : session.root.id
     const opened = tabs.addSessionTab({
       server: serverKey(),
-      sessionId: session.root.id,
-      ...(session.root.agent === undefined ? {} : { agent: session.root.agent }),
-      ...(session.root.parentID === undefined ? {} : { worker: true }),
+      sessionId,
+      ...(worker || session.root.agent === undefined ? {} : { agent: session.root.agent }),
+      ...(worker ? { worker: true } : {}),
     })
-    if (opened.type === "session" && opened.sessionId !== session.root.id) tabs.select(opened)
+    if (opened.type === "session" && opened.sessionId !== sessionId) tabs.select(opened)
   })
 
   return (

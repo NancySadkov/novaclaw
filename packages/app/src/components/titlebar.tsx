@@ -300,15 +300,32 @@ export function Titlebar() {
           if (route.type === "session") {
             const s = session()
             if (!s) return
-            const sessionId = collapsesIntoParent(s) ? (s.parentID ?? s.id) : s.id
             /**
-             * ⚠️ The colleague only when this session IS the tab. A child session maps onto its
-             * PARENT's tab, and the child's own agent is not necessarily the parent's — stamping it
-             * here would file the parent's tab under the wrong colleague and collapse it into a tab
-             * that has nothing to do with it. The strip fills the parent in from its own session.
+             * 🔴 **A WORKER GETS ITS OWN TAB, marked `worker: true`; it must NOT collapse into its
+             * officer's.**
+             *
+             * Collapsing is what produced "Too many redirects". Opening a worker from the Running
+             * workers list navigated to `/session/<workerID>`; this branch then created a SECOND,
+             * anonymous tab for the worker's PARENT session (`sessionId = parentID`, `agent:
+             * undefined`). The strip's `noteSessionAgent` saw that tab race the officer's own agent
+             * tab, called `removeTab`, and `removeTab` NAVIGATES to the neighbouring tab. Each
+             * cascade re-entered the same fold, and the router refused the chain at 20.
+             *
+             * A worker tab is invisible to `findAgentTab` and `noteSessionAgent` (both skip
+             * `worker === true`), so it neither collides with nor folds into the officer that spawned
+             * it — which is exactly the "Running workers" destination. A non-worker keeps the
+             * colleague identity it always had; a fork or branch session has its own id and type.
              */
-            const agent = s.parentID ? undefined : s.agent
-            const next = { server: route.server ?? server.key, sessionId, agent }
+            const worker = collapsesIntoParent(s)
+            const sessionId = s.id
+            // A worker has no durable colleague to address — its own session is the identity.
+            const agent = worker ? undefined : s.agent
+            const next = {
+              server: route.server ?? server.key,
+              sessionId,
+              agent,
+              ...(worker ? { worker: true } : {}),
+            }
             /**
              * 🔴 **Follow what the store hands back** (owner, 2026-08-28). This effect is the choke
              * point every door funnels through — Contacts, the launcher, a deep link, a restored
