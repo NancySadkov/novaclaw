@@ -3,12 +3,10 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import {
-  DEFAULT_MAX_BYTES,
   DIR,
   HISTORY_NAME,
   append,
   file,
-  halveToFit,
   render,
   sizeOf,
   tombstone,
@@ -41,8 +39,19 @@ afterAll(async () => {
   await Promise.all(dirs.map((dir) => fs.rm(dir, { recursive: true, force: true })))
 })
 
-const readEntries = async (target: string): Promise<{ at: string; text: string }[]> =>
-  JSON.parse(await fs.readFile(target, "utf8")).entries
+const readEntries = async (target: string): Promise<{ at: string; text: string }[]> => {
+  const raw = await fs.readFile(target, "utf8")
+  const entries: { at: string; text: string }[] = []
+  for (const line of raw.split("\n")) {
+    if (!line.startsWith("{")) continue
+    try {
+      const parsed = JSON.parse(line) as { at?: unknown; text?: unknown }
+      if (typeof parsed.at === "string" && typeof parsed.text === "string")
+        entries.push({ at: parsed.at, text: parsed.text })
+    } catch {}
+  }
+  return entries
+}
 
 describe("the work-log has one name, and it never changes", () => {
   test("the name is fixed, so the tombstone is byte-identical at every compaction", () => {
@@ -103,9 +112,10 @@ describe("compaction appends to the log instead of creating a new file", () => {
     ])
   })
 
-  test("a corrupt log is replaced, never refused", async () => {
+  test("a corrupt log never blocks a later fold", async () => {
     // Refusing to append would leave every future compaction's text named in a prompt with nowhere to
-    // go — a tombstone pointing at a file that cannot be written, silently, forever.
+    // go — a tombstone pointing at a file that cannot be written, silently, forever. The corrupt bytes
+    // stay on disk for a grep; the reader simply skips what it cannot parse.
     const root = await tempRoot("corrupt")
     const scratch = path.join(root, "geryon")
     await fs.mkdir(path.join(scratch, DIR), { recursive: true })
@@ -116,19 +126,52 @@ describe("compaction appends to the log instead of creating a new file", () => {
     expect((await readEntries(written)).map((entry) => entry.text)).toEqual(["the next fold"])
   })
 
-  test("one malformed entry does not cost the agent the rest of its log", async () => {
+  test("one malformed line does not cost the agent the rest of its log", async () => {
     const root = await tempRoot("partial")
     const scratch = path.join(root, "geryon")
     await fs.mkdir(path.join(scratch, DIR), { recursive: true })
     await fs.writeFile(
       file({ scratchFolder: scratch }),
-      JSON.stringify({ version: 1, entries: [{ at: "a", text: "kept" }, { at: 5 }, null] }),
+      `${JSON.stringify({ at: "a", text: "kept" })}\n{"at":5}\nnot json at all\n`,
       "utf8",
     )
 
     const written = await append({ scratchFolder: scratch, at: new Date(0), text: "appended" })
 
     expect((await readEntries(written)).map((entry) => entry.text)).toEqual(["kept", "appended"])
+  })
+
+  test("an append leaves the earlier bytes untouched — the log is appended, never rewritten", async () => {
+    // The regression this pins: the whole file used to be read, parsed, re-stringified and written on
+    // every fold. At Lamprias's 186 MB that blocked the server past its health checks and the watchdog
+    // killed it mid-fold. If a future change reintroduces a rewrite on the common path, the prefix
+    // this compares is no longer byte-identical.
+    const root = await tempRoot("inplace")
+    const scratch = path.join(root, "geryon")
+    await append({ scratchFolder: scratch, at: new Date(0), text: "first fold" })
+    const before = await fs.readFile(file({ scratchFolder: scratch }))
+
+    await append({ scratchFolder: scratch, at: new Date(1), text: "second fold" })
+    const after = await fs.readFile(file({ scratchFolder: scratch }))
+
+    expect(after.subarray(0, before.length).equals(before)).toBe(true)
+  })
+
+  test("the log is one JSON object per line, so a fold is O(the fold)", async () => {
+    const root = await tempRoot("jsonl")
+    const scratch = path.join(root, "geryon")
+    await append({ scratchFolder: scratch, at: new Date(0), text: "first" })
+    await append({ scratchFolder: scratch, at: new Date(1), text: "second" })
+
+    const lines = (await fs.readFile(file({ scratchFolder: scratch }), "utf8")).trimEnd().split("\n")
+    expect(lines).toHaveLength(2)
+    for (const line of lines) {
+      const parsed = JSON.parse(line) as { at?: unknown; text?: unknown }
+      expect(typeof parsed.at).toBe("string")
+      expect(typeof parsed.text).toBe("string")
+      // No wrapping array or object: adding an entry cannot require rewriting a closing bracket.
+      expect(Array.isArray(parsed)).toBe(false)
+    }
   })
 
   test("the write is atomic, so a crash cannot leave a half-parsed log", async () => {
@@ -142,30 +185,6 @@ describe("compaction appends to the log instead of creating a new file", () => {
 })
 
 describe("the cap keeps the log bounded and keeps the NEWEST history", () => {
-  const entry = (text: string) => ({ at: new Date(0).toISOString(), text })
-
-  test("halving drops the oldest half, never the newest", () => {
-    const entries = [entry("1"), entry("2"), entry("3"), entry("4")]
-    // A cap that fits exactly two entries: the survivors must be the two the agent has not read yet.
-    const kept = halveToFit(entries, 1)
-
-    expect(kept.length).toBeLessThan(entries.length)
-    expect(kept.at(-1)).toEqual(entry("4"))
-    expect(kept.map((item) => item.text)).not.toContain("1")
-  })
-
-  test("a log under the cap is left completely alone", () => {
-    const entries = [entry("a"), entry("b")]
-    expect(halveToFit(entries, DEFAULT_MAX_BYTES)).toEqual(entries)
-  })
-
-  test("a SINGLE oversized entry is still written — the cap is retention, not correctness", () => {
-    // Refusing would leave the tombstone pointing at a file that does not exist, which is the exact
-    // lie this whole mechanism exists to avoid.
-    const entries = [entry("enormous")]
-    expect(halveToFit(entries, 1)).toEqual(entries)
-  })
-
   test("appending past the cap shrinks the file rather than growing it without bound", async () => {
     const root = await tempRoot("cap")
     const scratch = path.join(root, "geryon")

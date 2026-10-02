@@ -347,26 +347,52 @@ export const backfillCompactionTranscript = Effect.fn("SessionProjector.backfill
   }
 })
 
-/** A process restart cannot leave an operational row claiming work is still running. */
-export const settleInterruptedCompactions = Effect.fn("SessionProjector.settleInterruptedCompactions")(function* (
+type SettleScope = {
+  readonly at: DateTime.Utc
+  readonly failure: string
+  /** Only rows for this session; every session when omitted. */
+  readonly sessionID?: SessionSchema.ID
+  /** The row this settlement must never touch — the compaction that is starting now. */
+  readonly keep?: SessionMessage.ID
+}
+
+/**
+ * Fail every running compaction audit row in scope.
+ *
+ * The one owner of the "a `started` claim is settled exactly once" rule is the row's own
+ * lifecycle, but a hard process death (SIGKILL, a watchdog timeout, power loss) runs no
+ * finalizer and durable writes land without it. So the repair is a sweep at a seam that is
+ * guaranteed to run — the boot adoption of a dead host's work — plus, at the other end, the
+ * moment a NEW compaction for the session starts: that new `started` is itself the proof that
+ * whatever wrote the old row is gone. Both are needed: boot catches a row whose session never
+ * compacts again, the start catches one on a process that has not rebooted.
+ */
+const settleRunningCompactions = Effect.fn("SessionProjector.settleRunningCompactions")(function* (
   db: DatabaseService,
-  completedAt?: DateTime.Utc,
+  scope: SettleScope,
 ) {
-  const completed = completedAt ?? (yield* DateTime.now)
   const rows = yield* db
     .select()
     .from(SessionMessageTable)
-    .where(eq(SessionMessageTable.type, "compaction-status"))
+    .where(
+      scope.sessionID === undefined
+        ? eq(SessionMessageTable.type, "compaction-status")
+        : and(
+            eq(SessionMessageTable.type, "compaction-status"),
+            eq(SessionMessageTable.session_id, scope.sessionID),
+          ),
+    )
     .all()
     .pipe(Effect.orDie)
   for (const row of rows) {
+    if (scope.keep !== undefined && row.id === scope.keep) continue
     const message = decodeMessage({ ...row.data, id: row.id, type: row.type })
     if (message.type !== "compaction-status" || message.status !== "running") continue
     const encoded = encodeMessage({
       ...message,
       status: "failed",
-      failure: "process-restarted",
-      time: { ...message.time, completed },
+      failure: scope.failure,
+      time: { ...message.time, completed: scope.at },
     })
     const { id: _id, type, seq: _seq, ...data } = encoded
     yield* db
@@ -377,6 +403,27 @@ export const settleInterruptedCompactions = Effect.fn("SessionProjector.settleIn
       .pipe(Effect.orDie)
   }
 })
+
+/** A process restart cannot leave an operational row claiming work is still running. */
+export const settleInterruptedCompactions = Effect.fn("SessionProjector.settleInterruptedCompactions")(function* (
+  db: DatabaseService,
+  completedAt?: DateTime.Utc,
+) {
+  const completed = completedAt ?? (yield* DateTime.now)
+  yield* settleRunningCompactions(db, { at: completed, failure: "process-restarted" })
+})
+
+/** A newer compaction for the session proves the older running row is dead; settle it in the same pass. */
+export const settleSupersededCompactions = (
+  db: DatabaseService,
+  event: EventV2.Data<typeof SessionEvent.Compaction.Started>,
+) =>
+  settleRunningCompactions(db, {
+    at: event.timestamp,
+    sessionID: event.sessionID,
+    keep: event.messageID,
+    failure: "superseded",
+  })
 
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -717,7 +764,9 @@ export const layer = Layer.effectDiscard(
     yield* events.project(SessionEvent.Reasoning.Started, (event) => run(db, event))
     yield* events.project(SessionEvent.Reasoning.Progress, (event) => run(db, event))
     yield* events.project(SessionEvent.Reasoning.Ended, (event) => run(db, event))
-    yield* events.project(SessionEvent.Compaction.Started, (event) => run(db, event))
+    yield* events.project(SessionEvent.Compaction.Started, (event) =>
+      settleSupersededCompactions(db, event.data).pipe(Effect.andThen(run(db, event))),
+    )
     yield* events.project(SessionEvent.Compaction.Progress, (event) => run(db, event))
     yield* events.project(SessionEvent.Compaction.Ended, (event) => {
       if (event.durable === undefined) return Effect.die("Durable Session event is missing aggregate sequence")

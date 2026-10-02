@@ -127,52 +127,82 @@ export interface HistoryEntry {
 /** Per-log write chain, so a fixed filename is still written by one writer at a time. See `append`. */
 const writes = new Map<string, Promise<void>>()
 
-interface HistoryFile {
-  readonly version: 1
-  readonly entries: HistoryEntry[]
-}
-
-const readHistory = async (target: string): Promise<HistoryEntry[]> => {
-  try {
-    const parsed = JSON.parse(await fs.readFile(target, "utf8")) as Partial<HistoryFile>
-    if (parsed.version !== 1 || !Array.isArray(parsed.entries)) return []
-    // One malformed entry must not cost the agent the rest of its log.
-    return parsed.entries.filter(
-      (entry): entry is HistoryEntry => typeof entry?.at === "string" && typeof entry?.text === "string",
-    )
-  } catch {
-    // A missing file is the normal first run. A corrupt one is replaced rather than refused, because
-    // refusing to append leaves every future compaction's text named in a prompt with nowhere to go.
-    return []
-  }
-}
+/**
+ * 🔴 **ONE JSON OBJECT PER LINE, SO A FOLD COSTS O(THE FOLD) RATHER THAN O(THE WHOLE LOG).**
+ *
+ * The file used to be a single `{version, entries:[...]}` object rewritten in full on every fold. That
+ * is a read + `JSON.parse` + `JSON.stringify` + write of the ENTIRE log per compaction, and the log is
+ * the accumulated history of a long unattended agent — measured on the owner's instance, Lamprias's
+ * `history.json` reached **186 MB / 195,801,865 bytes**. The parse and the two stringifies are
+ * synchronous on the thread that serves the server's health endpoint, so a fold blocked it past three
+ * missed health checks, the watchdog declared the process hung and killed it mid-write (leaving
+ * orphaned ~190 MB `.tmp` files behind), and the session had to fold again from scratch on the
+ * restarted host. The rebuild was the outage.
+ *
+ * Line-delimited JSON makes the common path an `appendFile` of the one new entry. The cap is checked
+ * from the file's size and, only when it is actually crossed, reclaimed by keeping the newest half at
+ * a byte boundary — once per cap's worth of growth instead of once per fold.
+ */
+const serializeEntry = (entry: HistoryEntry): string => JSON.stringify(entry)
 
 /**
- * Drop the OLDEST half until the payload fits `maxBytes`.
+ * Keep the newest half of the log, snapped forward to a line boundary, and write it atomically.
  *
- * ⚠️ Halving rather than trimming to exactly the limit is deliberate. A log cut to fit exactly
- * re-triggers on the very next compaction, so the agent watches its own history evaporate one entry
- * at a time. Halving bounds how often history is lost and leaves headroom to grow back into.
+ * BYTE-level on purpose. The previous rewrite read the log into a JS string, `JSON.parse`d it and
+ * re-`JSON.stringify`'d it — once pretty-printed for the write and once more for the size probe. On an
+ * agent whose log had grown to 162–187 MB that is several live copies of the file plus the parsed
+ * object graph, inside a session worker with a HARD ~2012 MiB commit ceiling. That is exactly what
+ * killed the worker mid-fold and produced the `unfinished-settlement` / "before a side effect" retry
+ * loop. This holds one Buffer plus a subarray view, and writes the view without an intermediate string.
  *
- * ⚠️ The loop stops at ONE entry even if that entry alone is over the cap. A single compaction's text
- * is the newest thing the agent has, and the cap is a retention policy rather than a correctness
- * bound — refusing to write it would leave the tombstone pointing at a file that does not exist.
+ * Snapping forward to a newline keeps whole entries: a JSONL entry is always ONE physical line because
+ * `JSON.stringify` escapes newlines inside `text`. A final line longer than the whole cap is left in
+ * place rather than truncated — the newest fold is the one thing that must never be lost.
  */
-export const halveToFit = (entries: ReadonlyArray<HistoryEntry>, maxBytes: number): HistoryEntry[] => {
-  let kept = [...entries]
-  const size = () => Buffer.byteLength(JSON.stringify({ version: 1, entries: kept } satisfies HistoryFile), "utf8")
-  while (kept.length > 1 && size() > maxBytes) kept = kept.slice(Math.ceil(kept.length / 2))
-  return kept
+const trimToNewestHalf = async (target: string, maxBytes: number): Promise<void> => {
+  if ((await fs.stat(target)).size <= maxBytes) return
+  const data = await fs.readFile(target)
+  const keep = Math.min(maxBytes, Math.floor(data.length / 2))
+  let start = Math.max(0, data.length - keep)
+  while (start < data.length && data[start] !== 0x0a) start += 1
+  if (start < data.length) start += 1
+  if (start >= data.length) return
+  // The temp name is per-CALL: the per-log chain already serialises writers, but a shared temp path is
+  // one stray `rm`, one antivirus handle or one crash-kill away from a second failure mode.
+  const temporary = `${target}.${randomUUID()}.tmp`
+  await fs.writeFile(temporary, data.subarray(start))
+  await fs.rename(temporary, target)
 }
 
 /** How many entries the cap discarded, so the caller can say so rather than let history vanish quietly. */
 export const trimmed = (before: number, after: number): number => before - after
 
+/** True when the log is absent, empty, or already ends on a line boundary. */
+const endsOnLineBoundary = async (target: string): Promise<boolean> => {
+  try {
+    const handle = await fs.open(target, "r")
+    try {
+      const { size } = await handle.stat()
+      if (size === 0) return true
+      const last = Buffer.allocUnsafe(1)
+      await handle.read(last, 0, 1, size - 1)
+      return last[0] === 0x0a
+    } finally {
+      await handle.close()
+    }
+  } catch {
+    return true
+  }
+}
+
 /**
  * Append one compaction's folded text to the agent's work-log, and enforce the cap.
  *
- * Atomic: written to a sibling temp file and renamed, so a crash mid-write cannot leave a half-parsed
- * log — which `readHistory` reads as empty, silently losing real history.
+ * The common path is a single `appendFile` of one line — O(the fold), not O(the log). The cap is a
+ * follow-up size check: only a log that actually crossed it is reclaimed, by `trimToNewestHalf`, and
+ * that reclaim is atomic (a sibling temp file renamed into place). A crash during the reclaim
+ * therefore still cannot leave a half-parsed log; a crash during an append can only leave a torn final
+ * line, which a later reclaim drops with the rest of the oldest half.
  *
  * Returns the path, which is the same path every time. That is the point: the tombstone can name it
  * once and the agent can grep it forever.
@@ -189,24 +219,15 @@ export const append = async (input: {
   // owner can bound an agent's history without a rebuild. `maxBytes` stays for tests and for a caller
   // that has a reason to name its own.
   const maxBytes = input.maxBytes ?? LogSettings.workLogMaxBytes()
-  // Read-modify-write is a critical section ONCE the log has a fixed name: before, every fold had its
-  // own file and no two writers could collide. Two concurrent folds would each read the same entries
-  // and the second rename would silently discard the first fold's text — a lost compaction, with the
-  // tombstone still pointing at the file as though nothing went. A per-log chain makes the window
-  // single-writer without a lock file, which is another file to leak.
+  const line = serializeEntry({ at: input.at.toISOString(), text: input.text })
+  // The append and the cap rewrite must not race another fold on the same fixed name: two writers that
+  // each read before the other wrote would each keep the same half and the second rename would discard
+  // the first's text. The per-log chain serialises the whole append-then-compact window.
   const previous = writes.get(target) ?? Promise.resolve()
   const mine = previous.then(async () => {
-    const entries = halveToFit(
-      [...(await readHistory(target)), { at: input.at.toISOString(), text: input.text }],
-      maxBytes,
-    )
-    const body = JSON.stringify({ version: 1, entries } satisfies HistoryFile, undefined, 2)
-    // The temp name is per-CALL too. The chain above already serialises writers, but a temp path that
-    // is shared is one stray `rm`, one antivirus handle or one crash-kill away from a second failure
-    // mode, and uniqueness costs nothing.
-    const temporary = `${target}.${randomUUID()}.tmp`
-    await fs.writeFile(temporary, body, { encoding: "utf8" })
-    await fs.rename(temporary, target)
+    const separator = (await endsOnLineBoundary(target)) ? "" : "\n"
+    await fs.appendFile(target, `${separator}${line}\n`, "utf8")
+    await trimToNewestHalf(target, maxBytes)
   })
   // The chain must survive a rejected link, or one failed fold would wedge every later one.
   writes.set(

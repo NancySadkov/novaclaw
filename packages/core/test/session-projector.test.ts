@@ -731,6 +731,67 @@ describe("SessionProjector", () => {
     }),
   )
 
+  it.effect("a newer compaction start settles the running audit row its session left behind", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const events = yield* EventV2.Service
+      const otherID = SessionV2.ID.make("ses_projector_other")
+      yield* db
+        .insert(SessionTable)
+        .values([
+          { id: sessionID, slug: "test", directory: "/project", title: "test", version: "test" },
+          { id: otherID, slug: "other", directory: "/project", title: "other", version: "test" },
+        ])
+        .run()
+
+      const stale = SessionMessage.ID.make("msg_compaction_stale")
+      const elsewhere = SessionMessage.ID.make("msg_compaction_elsewhere")
+      yield* events.publish(SessionEvent.Compaction.Started, {
+        sessionID,
+        messageID: stale,
+        timestamp: DateTime.makeUnsafe(1_000),
+        reason: "auto",
+      })
+      yield* events.publish(SessionEvent.Compaction.Started, {
+        sessionID: otherID,
+        messageID: elsewhere,
+        timestamp: DateTime.makeUnsafe(1_000),
+        reason: "auto",
+      })
+      const fresh = SessionMessage.ID.make("msg_compaction_fresh")
+      yield* events.publish(SessionEvent.Compaction.Started, {
+        sessionID,
+        messageID: fresh,
+        timestamp: DateTime.makeUnsafe(2_000),
+        reason: "auto",
+      })
+
+      const read = (id: SessionMessage.ID) =>
+        db
+          .select()
+          .from(SessionMessageTable)
+          .where(eq(SessionMessageTable.id, id))
+          .get()
+          .pipe(Effect.orDie)
+          .pipe(
+            Effect.map((row) =>
+              Schema.decodeUnknownSync(SessionMessage.Message)({ ...row!.data, id: row!.id, type: row!.type }),
+            ),
+          )
+
+      // A new START for the session is proof the old row's writer is gone: it may not keep claiming
+      // work in progress. A row in another session is another execution's business, not this one's.
+      expect(yield* read(stale)).toMatchObject({
+        type: "compaction-status",
+        status: "failed",
+        failure: "superseded",
+        time: { created: DateTime.makeUnsafe(1_000), completed: DateTime.makeUnsafe(2_000) },
+      })
+      expect(yield* read(fresh)).toMatchObject({ type: "compaction-status", status: "running" })
+      expect(yield* read(elsewhere)).toMatchObject({ type: "compaction-status", status: "running" })
+    }),
+  )
+
   it.effect("does not revive a stale incomplete in-memory assistant projection", () =>
     Effect.gen(function* () {
       const stale = SessionMessage.Assistant.make({

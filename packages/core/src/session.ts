@@ -1139,6 +1139,16 @@ export const layer = Layer.effect(
       execution,
     })
     /**
+     * …and settle compaction audit rows the previous process left claiming work.
+     *
+     * The projector's own boot sweep runs when ITS layer builds, which is not guaranteed to happen
+     * before the first session resumes — measured on the owner's instance: a watchdog killed the
+     * server twice mid-compaction, and the two `compaction-status` rows stayed `running` across the
+     * 05:29, 07:14 and 07:16 restarts while this seam's own sweep ran every time. This is the door
+     * that is guaranteed to open at boot, so a hard death that ran no finalizer is repaired here.
+     */
+    yield* SessionProjector.settleInterruptedCompactions(db)
+    /**
      * 🔴 **…and DISCHARGE the memory tombstones the previous process could not.**
      *
      * `removeSessionRecord` writes a durable `session_memory_cleanup` row and then sweeps it
