@@ -398,6 +398,33 @@ const applyToStores = (patch: Config.Info, writer: AgentV2.ConfigWriter) =>
         }),
       )
     }
+    // 🔴 THE OWNER'S OFFICERS ARE THE OWNER'S — an in-instance writer (the `configure` tool, a plugin)
+    // may not change the reporting line of an officer that reports to the human owner, nor hand an
+    // officer TO the owner. That is the owner's own surface, and without this an agent could take an
+    // owner's officer by writing `agents.<id>.superior` — the same takeover the `colleague` tool
+    // refuses, through a second door. The operator's arm is untouched: the owner organizes their own.
+    if (writer !== "operator" && patch.agents !== undefined) {
+      const stored = yield* (yield* AgentConfigStore.Service).agents()
+      const owner = String(AgentV2.OWNER_ID)
+      const held = Object.entries(patch.agents).filter(([name, fragment]) => {
+        const next = (fragment ?? {}) as { readonly superior?: string }
+        if (next.superior === undefined) return false
+        if (next.superior === owner) return true
+        return AgentConfigStore.fold(stored[name] ?? [])?.superior === owner
+      })
+      if (held.length > 0) {
+        const named = held.map(([name]) => `"${name}"`).join(", ")
+        return yield* Effect.fail(
+          new ConfigWriteRefused({
+            keys: held.map(([name]) => name),
+            message:
+              `config: NOTHING was written - ${named} report${held.length === 1 ? "s" : ""} to the instance ` +
+              `owner. Only the owner may change an owner's officer's reporting line, and only the owner ` +
+              `may hand an officer to themselves. Ask the owner to make that change from their own surface.`,
+          }),
+        )
+      }
+    }
     const consumed = new Set<string>()
     const plain = encodeInfo(patch)
 

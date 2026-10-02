@@ -652,6 +652,12 @@ export const fromParts = (input: {
     const target = roster.find((agent) => String(agent.id) === request.colleague)
     const resolved = AgentV2.resolveSuperior(request.colleague, request.superior, roster)
     if (target === undefined || resolved === undefined || String(resolved.id) !== request.superior) return false
+    // 🔴 THE OWNER'S OFFICERS ARE NOT THE ORG'S TO REASSIGN. An officer that currently reports to the
+    // human owner may not be moved by an agent, and no agent may hand an officer TO the owner: that is
+    // the owner's own surface. Without this, Nova could `set_superior lacedaemon nova` and then address
+    // an owner's officer directly — the takeover measured on the live instance 2026-10-02.
+    if (AgentV2.reportsToOwner(request.colleague, roster) || request.superior === String(AgentV2.OWNER_ID))
+      return false
     const layers = (yield* input.store.agents())[request.colleague] ?? []
     const current = AgentConfigStore.fold(layers)
     if (current === undefined) return false
@@ -675,6 +681,10 @@ export const fromParts = (input: {
     // maps a non-success onto its refusal, and the tool door — which is where a model actually meets
     // this — still produces the sentence explaining why.
     if (AgentV2.isProtected(colleague)) return false
+    // 🔴 An owner's officer is not an agent's to retire — the same rule as `setSuperior`. A retire is a
+    // takeover by deletion: it removes the owner's staff and frees the name for reuse. Only the owner
+    // retires their own officer.
+    if (AgentV2.reportsToOwner(colleague, yield* input.roster)) return false
     // A reporting line may not dangle. Reassign direct reports to the default root before the
     // superior disappears; runtime fallback is a safety net, not a substitute for clean config.
     const configured = yield* input.store.agents()

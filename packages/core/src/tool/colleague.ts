@@ -360,6 +360,10 @@ export const layer = Layer.effectDiscard(
                     message: `"${target}" is this instance's governing agent and cannot be retired.`,
                   })
                 const roster = yield* agents.all()
+                if (AgentV2.reportsToOwner(target, roster))
+                  return yield* new ToolFailure({
+                    message: `"${target}" reports to the instance owner. Only the owner may retire their officer.`,
+                  })
                 if (!addressable(roster, selfID).some((agent) => String(agent.id) === target))
                   return yield* new ToolFailure({
                     message: `No colleague called "${target}" — call \`list\` before retiring anyone.`,
@@ -379,8 +383,19 @@ export const layer = Layer.effectDiscard(
               }
 
               if (input.op === "set_superior") {
+                const roster = yield* agents.all()
+                const colleague = input.colleague.trim()
+                if (
+                  AgentV2.reportsToOwner(colleague, roster) ||
+                  input.superior.trim() === String(AgentV2.OWNER_ID)
+                )
+                  return yield* new ToolFailure({
+                    message:
+                      `"${colleague}" reports to the instance owner. Only the owner may change an owner's ` +
+                      `officer's reporting line, and only the owner may hand an officer to themselves.`,
+                  })
                 const changed = yield* handoff.setSuperior({
-                  colleague: input.colleague.trim(),
+                  colleague,
                   superior: input.superior.trim(),
                   bySession: context.sessionID,
                 })

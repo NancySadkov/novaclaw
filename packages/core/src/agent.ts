@@ -269,6 +269,31 @@ export const directReports = (id: string, roster: readonly Info[]): Info[] =>
   )
 
 /**
+ * Does this officer report DIRECTLY to the human owner?
+ *
+ * 🔴 The owner's officers are the owner's. Authority narrows DOWNWARD from the CEO (AGENTS.md); the
+ * owner is above it, so an officer the owner holds is not any agent's to move, retire, or take as a
+ * report. Measured on the live instance 2026-10-02: `lacedaemon` (superior `owner`) was reassigned to
+ * `nova`, which then addressed it directly because it was now the immediate superior. This predicate
+ * is the shared answer to "is this the owner's officer", used by the reassignment guard, the retire
+ * guard and the config-write guard — one rule, not three that can drift.
+ *
+ * ⚠️ `resolveSuperior` answers the owner for `nova` too (Nova reports to the human), so `nova` reads as
+ * owner-held; that is correct and already covered by `isProtected`, which refuses changing Nova's own
+ * line.
+ */
+export const reportsToOwner = (
+  id: string,
+  roster: readonly Info[],
+  options: { readonly includePaused?: boolean } = {},
+): boolean => {
+  const info = roster.find((agent) => String(agent.id) === id)
+  if (info === undefined) return false
+  const superior = resolveSuperior(id, info.superior, roster, options)
+  return superior !== undefined && String(superior.id) === String(OWNER_ID)
+}
+
+/**
  * THE THREE ROSTER KINDS (owner, 2026-09-17): a full officer `agent`, a pure `chat`, or the instance
  * owner as a first-class `human`.
  *
