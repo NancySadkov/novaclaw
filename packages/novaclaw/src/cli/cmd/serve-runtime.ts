@@ -7,6 +7,7 @@ import { Shutdown } from "@novaclaw/core/shutdown"
 import { OwnedProcesses } from "@novaclaw/core/util/owned-processes"
 import { disposeAllInstances } from "@/project/instance-runtime"
 import { AppRuntime } from "@/effect/app-runtime"
+import { InstanceJob } from "@/util/instance-job"
 import { ExitIntent } from "../exit-intent"
 
 const SHUTDOWN_DEADLINE = "5 seconds"
@@ -14,6 +15,18 @@ const SHUTDOWN_DEADLINE = "5 seconds"
 export const run = (args: NetworkOptions) =>
   AppRuntime.runPromise(
     Effect.gen(function* () {
+      /**
+       * Adopt the OS-level process containment FIRST, before this process can spawn anything.
+       * `OwnedProcesses.killAll` below is cooperative and cannot run when Windows stops the server
+       * with `TerminateProcess`; the Job Object is the guarantee that outlives every exit path. A
+       * degraded answer is reported, never fatal — see `util/instance-job.ts`.
+       */
+      const containment = yield* Effect.promise(() => InstanceJob.adopt())
+      if (containment !== "adopted")
+        console.error(
+          `[instance-job] OS process containment is ${containment}: ancestors will still be reaped, ` +
+            `but a hard stop relies on cooperative teardown. See util/instance-job.ts.`,
+        )
       const { Server } = yield* Effect.promise(() => import("../../server/server"))
       // Phrased as the choice it is. The old sentence named an environment variable nobody is asked to
       // set, which read as an instruction to go export one — the opposite of the fix.

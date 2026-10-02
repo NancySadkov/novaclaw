@@ -803,3 +803,77 @@ describe("the hostility tri-state has exactly ONE collapse point", () => {
     expect(shapesIn(stripComments(`// it used to be hostileInput === true\nconst x = 1`))).toEqual([])
   })
 })
+
+// ────────────────────────────────────────────────────────────────────────────────────────────────
+// OS persistence is refused at the ONE gate (2026-10-03).
+//
+// The instance kills officer process trees cooperatively and, on Windows, through a kill-on-close Job
+// Object. Neither can reach an OS REGISTRATION — a scheduled task is spawned later by the Task
+// Scheduler service, not by the instance — so an officer's `schtasks` survived both an agent stop and
+// a server restart. The gate is where the door closes. These tests pin the surfaces AND the benign
+// lookalikes, because refusing honest inspection (`grep schtasks`) would be its own defect.
+// ────────────────────────────────────────────────────────────────────────────────────────────────
+describe("HostExec — OS persistence is refused at the gate", () => {
+  const shell = (command: string, platform: NodeJS.Platform = "win32") =>
+    HostExec.persistenceRegistration({ kind: "shell-command", shell: "bash", command }, platform)
+
+  test("a Windows scheduled task / service / Run key / WMI subscription each name their surface", () => {
+    expect(shell(`schtasks /create /tn TreeWatchdog /sc minute /mo 5 /tr "C:\\x\\w.cmd"`)).toBe("scheduled task")
+    expect(shell(`"C:\\Windows\\System32\\schtasks.exe" /create /tn X /tr y`)).toBe("scheduled task")
+    expect(shell("sc create Evil binPath= C:\\x\\evil.exe")).toBe("service")
+    expect(shell("reg add HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run /v x /d y")).toBe("registry run key")
+    expect(shell("wmic /namespace:\\\\root\\subscription path __EventFilter call create")).toBe("WMI event subscription")
+    expect(shell(`powershell -Command "Register-ScheduledTask -TaskName X -Action $a"`)).toBe("scheduled task")
+    expect(shell(`pwsh -c "New-Service -Name evil -BinaryPathName C:\\x.exe"`)).toBe("service")
+  })
+
+  test("a wrapper, a path prefix or a chained segment does not hide it", () => {
+    expect(shell("cd /d C:\\x && schtasks /create /tn X /tr y")).toBe("scheduled task")
+    expect(shell("sudo schtasks /create /tn X /tr y")).toBe("scheduled task")
+    expect(shell("FOO=bar sc create x binPath= y")).toBe("service")
+  })
+
+  test("benign lookalikes are NOT refused — inspection and prose stay allowed", () => {
+    expect(shell("grep -rn schtasks src/")).toBeUndefined()
+    expect(shell(`git log --grep schtasks --oneline`)).toBeUndefined()
+    expect(shell(`echo "schtasks /create is blocked"`)).toBeUndefined()
+    expect(shell("git commit -m 'add scheduled task docs'")).toBeUndefined()
+    expect(shell("cat doc/notes.md | grep -i 'sc create'")).toBeUndefined()
+    expect(shell("schtasks /query")).toBe("scheduled task") // the TOOL is the surface, not one verb
+  })
+
+  test("the POSIX arm is gated on its own platform and leaves Windows commands alone", () => {
+    expect(shell("crontab -", "linux")).toBe("POSIX timer or job")
+    expect(shell("crontab -l", "linux")).toBeUndefined()
+    expect(shell("systemctl enable backup.timer", "linux")).toBe("POSIX timer or job")
+    expect(shell("systemctl enable nginx", "linux")).toBeUndefined()
+    expect(shell("systemd-run --on-calendar='daily' /usr/bin/backup", "linux")).toBe("POSIX timer or job")
+    expect(shell("schtasks /create /tn X", "linux")).toBeUndefined()
+  })
+
+  test("the PLAN denies the registration — no process is described — and the message teaches the route", () => {
+    const plan = HostExec.plan({
+      ...base,
+      platform: "win32",
+      shape: shellShape("schtasks /create /tn TreeWatchdog /sc minute /mo 5 /tr x.cmd"),
+      consent: "per-command",
+      rootType: "interactive",
+      backend: NONE,
+    })
+    expect(plan.via).toBe("none")
+    if (plan.via !== "none") throw new Error("unreachable")
+    expect(plan.message).toContain("scheduled task")
+    expect(plan.message).toContain("not a child of this instance")
+    expect(plan.message).toContain("session or goal")
+    // The healthy control still describes the raw command it always did.
+    const allowed = HostExec.plan({
+      ...base,
+      platform: "win32",
+      shape: shellShape("make build"),
+      consent: "per-command",
+      rootType: "interactive",
+      backend: NONE,
+    })
+    expect(allowed.via).toBe("shell")
+  })
+})

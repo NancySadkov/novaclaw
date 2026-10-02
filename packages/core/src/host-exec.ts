@@ -531,7 +531,139 @@ export type Plan =
       readonly env: Env
     }
 
+// ── operating-system persistence: the door a spawned command must not walk through ───────────────
+//
+// An officer's process tree is killed by `util/kill-tree.ts` and, on Windows, by the instance's Job
+// Object. Neither reaches an OS *registration*: a scheduled task is not a child of the instance —
+// the Task Scheduler service spawns it later — so stopping the session and the server cannot reap
+// it, and it becomes an orphan that fires forever (measured 2026-10-03: an officer registered
+// `TreeWatchdog` via `schtasks`, which kept spawning `cmd.exe` every 5 minutes across an agent stop
+// AND a server restart). The confinement decision cannot close this door either: an attended chain
+// runs raw by design, so the command would simply execute.
+//
+// ⚠️ This is the CAUGHT rung, honestly labelled. It refuses the registration at the ONE gate every
+// agent command passes through, and a test pins the surfaces. It is NOT a sandbox: an obfuscated
+// invocation, a command that writes a script and runs it, or a runtime-eval program can still reach
+// the same APIs. The IMPOSSIBLE rung is a Windows agent-jail backend (the bwrap analog, which this
+// host does not have — `agent-jail.ts`); that is filed, not claimed here.
+//
+// Detection is by COMMAND POSITION, not substring, so `grep schtasks`, `git log --grep schtasks`
+// and a commit message that merely says "scheduled task" stay allowed. A false refusal of honest
+// inspection work would be its own defect.
+
+export type PersistenceSurface = "scheduled task" | "service" | "registry run key" | "WMI event subscription" | "POSIX timer or job"
+
+/** Split on shell control operators. `|` inside quotes is a rare false split; the cost is one extra
+ *  segment whose first word will not be a persistence tool, so it cannot manufacture a refusal. */
+const SHELL_SEPARATORS = /\n|&&|\|\||;|\|/
+
+/** Leading words that wrap the real command (`sudo schtasks …`). Skipped when finding the head. */
+const COMMAND_WRAPPERS: ReadonlySet<string> = new Set([
+  "sudo",
+  "doas",
+  "env",
+  "command",
+  "nohup",
+  "exec",
+  "nice",
+  "time",
+])
+
+/** The basename of a shell word, quotes and both path separators removed, lower-cased. */
+function wordBasename(token: string): string {
+  const unquoted = token.replace(/^["']+|["']+$/g, "")
+  const parts = unquoted.split(/[\\/]/)
+  return (parts[parts.length - 1] ?? unquoted).toLowerCase()
+}
+
+/** The head word of a simple command, skipping `VAR=value` assignments and known wrappers. */
+function headWord(segment: string): { head: string; rest: string } | undefined {
+  const tokens = segment.trim().split(/\s+/).filter(Boolean)
+  let index = 0
+  while (index < tokens.length) {
+    const token = tokens[index]!
+    if (COMMAND_WRAPPERS.has(wordBasename(token)) || /^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) {
+      index += 1
+      continue
+    }
+    break
+  }
+  const head = tokens[index]
+  if (head === undefined) return undefined
+  return { head: wordBasename(head), rest: tokens.slice(index + 1).join(" ").toLowerCase() }
+}
+
+/**
+ * The OS-persistence surface a shape would register, or `undefined` for everything else.
+ *
+ * Pure and injectable so both platform arms are testable on one host. Returns the surface NAME so
+ * the refusal can say what it refused.
+ */
+export function persistenceRegistration(
+  shape: Shape,
+  platform: NodeJS.Platform = process.platform,
+): PersistenceSurface | undefined {
+  const segments =
+    shape.kind === "shell-command"
+      ? shape.command.split(SHELL_SEPARATORS)
+      : shape.kind === "runtime-eval"
+        ? shape.program.split(SHELL_SEPARATORS)
+        : [shape.argv.join(" ")]
+
+  for (const segment of segments) {
+    const words = headWord(segment)
+    if (words === undefined) continue
+    const { head, rest } = words
+    const lower = segment.toLowerCase()
+
+    if (platform === "win32") {
+      if (head === "schtasks" || head === "schtasks.exe" || head === "at" || head === "at.exe")
+        return "scheduled task"
+      if ((head === "sc" || head === "sc.exe") && /^(create|config)\b/.test(rest)) return "service"
+      if (
+        (head === "reg" || head === "reg.exe") &&
+        /\badd\b/.test(rest) &&
+        /(\\run\b|runonce|winlogon|image file execution)/.test(rest)
+      )
+        return "registry run key"
+      if (head === "wmic" && /(eventfilter|eventconsumer|call\s+create)/.test(rest)) return "WMI event subscription"
+      if (head === "powershell" || head === "powershell.exe" || head === "pwsh" || head === "pwsh.exe") {
+        if (/register-scheduledtask|new-scheduledtask|set-scheduledtask|\bschtasks\b/.test(lower))
+          return "scheduled task"
+        if (/new-service|set-service|sc\.exe\s+create/.test(lower)) return "service"
+        if (/new-itemproperty/.test(lower) && /(\\run\b|runonce)/.test(lower)) return "registry run key"
+        if (/register-cimindicationevent|commandlineeventconsumer/.test(lower)) return "WMI event subscription"
+      }
+      continue
+    }
+
+    if (head === "crontab" && !/^(-l|--list)(\s|$)/.test(rest)) return "POSIX timer or job"
+    if ((head === "at" || head === "atd") && rest.length > 0) return "POSIX timer or job"
+    if (head === "systemctl" && /(enable|link|start)\b/.test(rest) && /\.timer\b/.test(rest)) return "POSIX timer or job"
+    if (head === "systemd-run" && /--on-(calendar|active)/.test(rest)) return "POSIX timer or job"
+    if (head === "launchctl" && /^(load|bootstrap)\b/.test(rest)) return "POSIX timer or job"
+  }
+  return undefined
+}
+
+/**
+ * The model-facing refusal. 1P house style: name what was refused and the route that replaces it —
+ * a recurring/long-lived job is a session or goal the INSTANCE owns, never an OS entry it cannot.
+ */
+export function persistenceDenyMessage(surface: PersistenceSurface): string {
+  return (
+    `I will not register operating-system persistence (${surface}). Such an entry is not a child of ` +
+    `this instance — the operating system spawns it later, outside the only process tree the instance ` +
+    `can stop — so it would outlive this session and the server as an orphan that fires on its own. ` +
+    `Recurring or long-lived work belongs to a NovaClaw session or goal, which the instance owns and ` +
+    `reaps; do not retry this command.`
+  )
+}
+
 export function plan(request: Request): Plan {
+  const persistence = persistenceRegistration(request.shape, request.platform ?? process.platform)
+  if (persistence !== undefined)
+    return { via: "none", decision: "deny", message: persistenceDenyMessage(persistence) }
   const backend = request.backend ?? AgentJail.probe()
   const decision = decide({
     ...(request.rootType === undefined ? {} : { rootType: request.rootType }),
