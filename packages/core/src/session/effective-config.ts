@@ -14,6 +14,7 @@ import {
 import { AgentConfigStore } from "../agent-config-store"
 import { AgentV2 } from "../agent"
 import { AgentDefaults } from "./agent-defaults"
+import { OfficerHarness } from "./officer-harness"
 import type { ConfigAgent } from "../config/agent"
 import type { SessionSchema } from "./schema"
 import { SessionStore } from "./store"
@@ -232,10 +233,18 @@ export const layer = Layer.effect(
       // fault: what remains is the colleague's fold under the chain, which is what the shipped
       // defaults plus one officer always were.
       const inherited = resolveConfig(defaults, chain)
+      // 🔴 The CEO's direct-work ceiling is a CODE fact folded AFTER resolution, not an officer
+      // declaration: `tools` is not a session-row field, so no chain override can drop it, and
+      // `Resolution.defaults` must keep reporting only what the officer actually chose.
+      const ceoTools = OfficerHarness.withCeoDirectWorkDenials({
+        isCeo: agentID === AgentV2.NOVA_ID,
+        tools: inherited.tools,
+      })
+      const withCeiling = ceoTools === inherited.tools ? inherited : { ...inherited, tools: ceoTools }
       const resolved = clampToCeilings(
         agentID === AgentV2.OWNER_ID || AgentV2.kindOf(colleague) !== "agent"
-          ? { ...inherited, shortChat: true }
-          : inherited,
+          ? { ...withCeiling, shortChat: true }
+          : withCeiling,
         currentCeilings(),
       )
       return {

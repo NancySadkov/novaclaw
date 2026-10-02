@@ -32,6 +32,14 @@ export const description =
 export const metadata = { description, input: Input, output: Output, sideEffect: "idempotent-write" } as const
 const failure = (message: string) => new ToolFailure({ message })
 
+/**
+ * Does this nudge carry host execution? Both the free `script` field and a `script` hook are run by
+ * the HOST at delivery (`nudge-service.ts` → `runScript`), so the CEO is refused them — a withheld
+ * `bash`/`js` tool would otherwise leave this second execution door open.
+ */
+export const carriesHostScript = (nudge: ConfigNudge.Info): boolean =>
+  nudge.script !== undefined || nudge.hook.type === "script"
+
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
@@ -48,6 +56,14 @@ export const layer = Layer.effectDiscard(
             execute: (input, context) =>
               Effect.gen(function* () {
                 const self = String(context.agent)
+                // 🔴 The CEO does not attach shell scripts to nudges. `script` (and the `script` hook)
+                // is executed by the HOST at delivery (`nudge-service.ts` → `runScript`), a second
+                // execution channel the withheld `bash`/`js` tools do not close. Work that needs a
+                // command belongs to the officer who owns it.
+                if (self === AgentV2.NOVA_ID && "nudge" in input && carriesHostScript(input.nudge))
+                  return yield* failure(
+                    "The CEO does not attach shell scripts to nudges — a script runs on the host. Ask the officer who owns that command, or drop the script.",
+                  )
                 if (input.op === "confirm") {
                   const accepted = yield* nudges.confirmBefore({ sessionID: context.sessionID, agentID: self, id: input.id, callID: input.callId })
                   if (!accepted) return yield* failure("That blocked call is unavailable or expired. Retry the intended call to receive a fresh nudge.")

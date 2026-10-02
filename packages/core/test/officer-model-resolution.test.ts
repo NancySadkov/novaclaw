@@ -13,6 +13,7 @@ import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { ConfigAgent } from "@novaclaw/core/config/agent"
 import { Location } from "@novaclaw/core/location"
 import { SessionEffectiveConfig } from "@novaclaw/core/session/effective-config"
+import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionV2 } from "@novaclaw/core/session"
@@ -78,6 +79,50 @@ describe("an officer's configured model", () => {
       const effective = yield* SessionEffectiveConfig.Service
       const resolved = yield* effective.resolve(SessionV2.ID.make("ses_marshal"))
       expect(resolved.model).toEqual({ providerID: "chosen-provider", id: "chosen-model" })
+    }),
+  )
+})
+
+describe("the CEO's direct-work ceiling (AGENTS.md: Nova manages, does not do project work)", () => {
+  it.effect("withholds execution and mutation tools, and it is inherited by spawned workers", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const novaRoot = SessionSchema.ID.make("ses_nova_root")
+      yield* db
+        .insert(SessionTable)
+        .values([
+          {
+            id: novaRoot,
+            slug: "nova",
+            directory: root,
+            title: "Nova",
+            version: "test",
+            agent: "nova",
+          },
+          {
+            id: SessionSchema.ID.make("ses_nova_worker"),
+            parent_id: novaRoot,
+            slug: "nova-worker",
+            directory: root,
+            title: "worker",
+            version: "test",
+          },
+        ])
+        .onConflictDoNothing()
+        .run()
+        .pipe(Effect.orDie)
+
+      const effective = yield* SessionEffectiveConfig.Service
+      const own = yield* effective.resolve(novaRoot)
+      expect(own.tools?.["bash"]).toBe(false)
+      expect(own.tools?.["edit"]).toBe(false)
+      expect(own.tools?.["read"]).toBeUndefined()
+
+      // A worker stores no agent of its own and inherits Nova through the chain; the ceiling is the
+      // CHAIN agent's, so the worker must not be able to do the work the CEO may not do either.
+      const worker = yield* effective.resolve(SessionSchema.ID.make("ses_nova_worker"))
+      expect(worker.tools?.["bash"]).toBe(false)
+      expect(worker.tools?.["edit"]).toBe(false)
     }),
   )
 })

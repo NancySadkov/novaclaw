@@ -148,3 +148,38 @@ describe("applyOfficerHorizon", () => {
     expect(offered("configure")).toBe(true)
   })
 })
+
+describe("withCeoDirectWorkDenials", () => {
+  const directWork = [
+    "bash",
+    "js",
+    "edit",
+    "write",
+    "apply_patch",
+    "write-hex",
+    "computer",
+    "trash",
+    "revert",
+    "quality_provision",
+    "define_tool",
+  ]
+
+  test("withholds execution and host mutation from the CEO, keeping the management surface", () => {
+    const tools = OfficerHarness.withCeoDirectWorkDenials({ isCeo: true, tools: undefined })
+    for (const name of directWork) expect(tools?.[name]).toBe(false)
+    expect(tools?.["colleague"]).toBeUndefined()
+    expect(tools?.["read"]).toBeUndefined()
+    expect(tools?.["configure"]).toBeUndefined()
+  })
+
+  test("leaves a non-CEO officer untouched", () => {
+    expect(OfficerHarness.withCeoDirectWorkDenials({ isCeo: false, tools: { bash: true } })).toEqual({ bash: true })
+    expect(OfficerHarness.withCeoDirectWorkDenials({ isCeo: false, tools: undefined })).toBeUndefined()
+  })
+
+  test("an operator declaration can restore one tool without reopening the rest", () => {
+    const tools = OfficerHarness.withCeoDirectWorkDenials({ isCeo: true, tools: { bash: true } })
+    expect(tools?.["bash"]).toBe(true)
+    expect(tools?.["write"]).toBe(false)
+  })
+})

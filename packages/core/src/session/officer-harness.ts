@@ -178,3 +178,46 @@ export const applyOfficerHorizon = (
     return routingOffered(name)
   }
 }
+
+/**
+ * The DIRECT-WORK tools the CEO never holds — execution and host mutation, not management.
+ *
+ * 🔴 **A permission rule cannot do this job for Nova.** `AgentV2.hasFullAuthority(nova)` makes
+ * `permission.ts` answer `allow` BEFORE the configured rules and the mode overlay, so every deny —
+ * including a folder-scoped write deny — is bypassed. The one seam that narrows Nova is the officer
+ * TOOL HORIZON, applied after the permission filter (see `applyOfficerHorizon` above), and it is what
+ * this map feeds. Withdrawing the tool is also the honest containment: `bash`'s permission resource is
+ * the raw COMMAND STRING, so no path rule can stop `cd /project && ...`, and a model cannot call a
+ * tool it was never offered.
+ *
+ * ⚠️ It is deliberately a DENY map merged UNDER the officer's declared tools
+ * ({@link withCeoDirectWorkDenials}), so the operator can restore one in Nova's settings and Nova
+ * cannot: in-instance writes to Nova's own `agents` row are refused (`protectedRefusedKeys`).
+ *
+ * ⚠️ `configure` is not here and must not be — it is the repair tool (`ESSENTIAL_TOOLS`) and stays.
+ * The management surface stays too: `colleague`, `spawn`, `kill`, `nudge`, `memo_*`, `projects`,
+ * `read`, `grep`, `glob`, `websearch`, `webfetch`, `resource_status`.
+ */
+export const CEO_DIRECT_WORK_DENIALS: Readonly<Record<string, boolean>> = {
+  bash: false,
+  js: false,
+  edit: false,
+  write: false,
+  apply_patch: false,
+  "write-hex": false,
+  computer: false,
+  trash: false,
+  revert: false,
+  quality_provision: false,
+  define_tool: false,
+}
+
+/**
+ * Fold the CEO's direct-work ceiling into an officer's tool map. A declared `true` restores a tool
+ * (the operator is above the CEO); anything else leaves the denial in force.
+ */
+export const withCeoDirectWorkDenials = (input: {
+  readonly isCeo: boolean
+  readonly tools: Record<string, boolean> | undefined
+}): Record<string, boolean> | undefined =>
+  input.isCeo ? { ...CEO_DIRECT_WORK_DENIALS, ...(input.tools ?? {}) } : input.tools
