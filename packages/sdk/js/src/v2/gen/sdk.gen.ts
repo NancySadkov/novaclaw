@@ -394,6 +394,31 @@ class ApiV2Instance extends NovaClawApiClient {
   }
 }
 
+class ApiV2ProcessMemory extends NovaClawApiClient {
+  /**
+   * Get the process memory layout
+   *
+   * Per-process memory for the instance server and its live session workers, plus the server runtime's heap breakdown. Read from outside each process; commit on Windows, RSS on Linux.
+   */
+  public get<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      T.V2ProcessMemoryGetResponses,
+      T.V2ProcessMemoryGetErrors,
+      ThrowOnError
+    >({
+      url: "/api/memory-layout",
+      ...options,
+    })
+  }
+}
+
+class ApiV2Process extends NovaClawApiClient {
+  private _memory?: ApiV2ProcessMemory
+  get memory(): ApiV2ProcessMemory {
+    return (this._memory ??= new ApiV2ProcessMemory({ client: this.client }))
+  }
+}
+
 class ApiV2Health extends NovaClawApiClient {
   /**
    * Check server health
@@ -4906,6 +4931,11 @@ class ApiV2 extends NovaClawApiClient {
   private _instance?: ApiV2Instance
   get instance(): ApiV2Instance {
     return (this._instance ??= new ApiV2Instance({ client: this.client }))
+  }
+
+  private _process?: ApiV2Process
+  get process(): ApiV2Process {
+    return (this._process ??= new ApiV2Process({ client: this.client }))
   }
 
   private _health?: ApiV2Health

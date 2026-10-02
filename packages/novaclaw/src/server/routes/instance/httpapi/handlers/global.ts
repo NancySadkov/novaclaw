@@ -13,6 +13,8 @@ import type { ConfigLocalModelCatalog } from "@novaclaw/core/config/local-model-
 import { HostPressure } from "@/storage/host-pressure"
 import { Pressure } from "@/storage/pressure"
 import { ResourceUsage } from "@/storage/resource-usage"
+import { WorkerRegistry } from "@/storage/worker-registry"
+import { ProcessCommit } from "@novaclaw/core/util/process-commit"
 import { Effect, Queue, Schema } from "effect"
 import * as Stream from "effect/Stream"
 import { HttpServerResponse } from "effect/unstable/http"
@@ -195,6 +197,49 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       }
     })
 
+    /**
+     * The LIVE PROCESS FLEET. See {@link ProcessMemoryEndpoint} for why this is a route at all.
+     *
+     * ⚠️ The server's own pid is sampled beside the workers on purpose: `process.memoryUsage().rss`
+     * is self-reported and, measured on this product, can understate a process by more than 30×
+     * against the host's commit charge. The outer reading is the one a bound is written against, so
+     * both travel and the reader can see them disagree.
+     */
+    const memoryLayout = Effect.fn("GlobalHttpApi.memoryLayout")(function* () {
+      const report = yield* storage.pressure()
+      const usage = process.memoryUsage()
+      const targets = [
+        { pid: process.pid, role: "server", label: "instance server", startedAt: null as number | null },
+        ...WorkerRegistry.entries().map((entry) => ({
+          pid: entry.pid,
+          role: "session-worker",
+          label: entry.sessionID,
+          startedAt: entry.startedAt as number | null,
+        })),
+      ]
+      const sample = yield* Effect.promise(() => ProcessCommit.sample(targets.map((target) => target.pid)))
+      const byPid = new Map(sample.readings.map((reading) => [reading.pid, reading.bytes]))
+      const processes = targets.map((target) => ({ ...target, bytes: byPid.get(target.pid) ?? null }))
+      return {
+        measuredAt: Date.now(),
+        metric: sample.metric,
+        host: report.memory,
+        server: {
+          pid: process.pid,
+          rssBytes: usage.rss,
+          heapTotalBytes: usage.heapTotal,
+          heapUsedBytes: usage.heapUsed,
+          externalBytes: usage.external,
+          arrayBuffersBytes: usage.arrayBuffers ?? 0,
+          bytes: processes[0]?.bytes ?? null,
+        },
+        processes,
+        note:
+          sample.unavailable ??
+          "Session workers are measured from outside the process (commit on Windows, RSS on Linux); a listed pid that could not be read shows a null, never a zero.",
+      }
+    })
+
     const resources = Effect.fn("GlobalHttpApi.resources")(function* () {
       const base = (yield* config.getGlobal()) as Record<string, unknown>
       const merged = (yield* ConfigStoreWrite.overlay(base)) as { local_model_catalog?: ConfigLocalModelCatalog.Info }
@@ -235,6 +280,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       .handle("dispose", dispose)
       .handle("discovery", discovery)
       .handle("instance.pressure.get", pressure)
+      .handle("process.memory.get", memoryLayout)
       .handle("resources", resources)
       .handle("identityBackup", identityBackup)
       .handle("identityRestore", identityRestore)

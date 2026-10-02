@@ -1,4 +1,4 @@
-import { InstancePressureEndpoint, MemoryReading } from "@novaclaw/protocol/groups/instance-pressure"
+import { InstancePressureEndpoint, ProcessMemoryEndpoint, MemoryReading } from "@novaclaw/protocol/groups/instance-pressure"
 import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { EventV2 } from "@novaclaw/core/event"
 import { EventManifest } from "@/event-manifest"
@@ -245,6 +245,7 @@ export const GlobalApi = HttpApi.make("global").add(
         }),
       ),
       InstancePressureEndpoint,
+      ProcessMemoryEndpoint,
       // POST rather than GET, deliberately: a secret does not belong in a URL that proxies, browser
       // history and access logs will happily record, and the method makes taking a copy an act
       // rather than a page load.

@@ -371,7 +371,15 @@ const GENERATE_TIMEOUT_MS = 60_000
 // chat" must take, since the transcript a user is reading is often a filed one. Measured against the
 // previous commit: ONE schema ADDED (`AgentChatSummary -> AgentChatSummary`), nothing REMOVED, no
 // existing name changed. Pure addition, same as `AgentChat` the day before.
-const SCHEMA_NAME_FINGERPRINT = "d60e5bf5a95247f8e57a59cfa4b83b54e874a381636f33f90e0bf0e7cc4cfc68"
+// 2026-10-02 - RE-PINNED AFTER A STALE TABLE, plus one deliberate route. The pin named
+// `d60e5bf5…`, which was the table at `a8a9b881e`; a LATER commit removed the `RecipeRunResult`
+// schema from the protocol and never re-pinned, so `sdk-js` was already red at HEAD. Measured at
+// HEAD before this session's change: 505 schemas, table `bfe2239e…` (one REMOVED, `RecipeRunResult`,
+// zero added). This session adds `GET /api/memory-layout` (the Debug Memory tab): its request and
+// response are inline, so the public schema naming table is UNCHANGED — confirmed by comparing the
+// HEAD table against the regenerated one (identical 505 entries). So this re-pin records the
+// already-missing removal and nothing else.
+const SCHEMA_NAME_FINGERPRINT = "bfe2239e70ba715525692eb38d4fd3ec9558af6a66c9f208100119710831cdd0"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

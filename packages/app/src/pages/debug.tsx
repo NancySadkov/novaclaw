@@ -1,4 +1,6 @@
 import { A, useNavigate } from "@solidjs/router"
+import { Tabs as KobalteTabs } from "@kobalte/core/tabs"
+import { createMediaQuery } from "@solid-primitives/media"
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js"
 import type { LogReadResult } from "@novaclaw/sdk/v2/types"
 import type { SessionPresenceSnapshot } from "@novaclaw/sdk/v2/client"
@@ -27,6 +29,7 @@ import { RequiresLevel } from "@/context/expertise"
 import { useLanguage } from "@/context/language"
 import { instanceGlobalDirectory } from "@/utils/routing-directory"
 import { listDebugActiveSessions, listDebugSessions } from "./debug-process"
+import { processMemory, type ProcessMemoryLayout } from "@/utils/process-memory-api"
 
 // The Debug app (dependability P5) — the Developer-mode diagnostic surface. Most panels are
 // observational; the capability panel has one explicit recovery action that retries a cached startup
@@ -39,6 +42,29 @@ const STATUS_TONE: Record<ServerStreamStatus, string> = {
   connecting: "text-v2-text-text-muted",
   reconnecting: "text-v2-state-fg-warning",
   idle: "text-v2-text-text-faint",
+}
+
+/** A byte count as a person reads it. `null`/undefined is UNKNOWN, and says so — never "0 B". */
+const formatBytes = (value: number | null | undefined): string => {
+  if (value === null || value === undefined) return "unknown"
+  if (value < 1024) return `${value} B`
+  const units = ["KB", "MB", "GB", "TB"]
+  let amount = value / 1024
+  let unit = 0
+  while (amount >= 1024 && unit < units.length - 1) {
+    amount /= 1024
+    unit += 1
+  }
+  return `${amount.toFixed(amount >= 100 ? 0 : 1)} ${units[unit]}`
+}
+
+const formatAge = (startedAt: number | null): string => {
+  if (startedAt === null) return "—"
+  const seconds = Math.max(0, Math.round((Date.now() - startedAt) / 1000))
+  if (seconds < 90) return `${seconds}s`
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 90) return `${minutes}m`
+  return `${(minutes / 60).toFixed(1)}h`
 }
 
 // ── the ROUTE gate ────────────────────────────────────────────────────────────────────────────────
@@ -88,6 +114,33 @@ function DebugAppPage() {
 
   const servers = createMemo(() => global.servers.list())
   const focused = createMemo(() => server.current ?? servers()[0])
+
+  // ── tabs (the Agent Settings rail, reused) ─────────────────────────────────────────────────────
+  // The Debug app used to be one long scroll with a jump bar of `#anchor` links. Every panel is now a
+  // tab selected by SIGNAL, so opening a section is a view change, never a navigation — which is also
+  // what closes the class of click that could land on the `/:dir` legacy route.
+  type DebugTab = "overview" | "capabilities" | "scheduler" | "context" | "memory" | "logs" | "sessions" | "config"
+  const [activeTab, setActiveTab] = createSignal<DebugTab>("overview")
+  const desktopTabs = createMediaQuery("(min-width: 768px)")
+  const debugTabs = [
+    { id: "overview" as const, label: "Overview", icon: "server" as const },
+    { id: "capabilities" as const, label: "Capabilities", icon: "shield" as const },
+    { id: "scheduler" as const, label: "Scheduler", icon: "cpu" as const },
+    { id: "context" as const, label: "Context", icon: "archive" as const },
+    { id: "memory" as const, label: "Memory", icon: "brain" as const },
+    { id: "logs" as const, label: "Logs", icon: "console" as const },
+    { id: "sessions" as const, label: "Sessions", icon: "task" as const },
+    { id: "config" as const, label: "Config", icon: "settings-gear" as const },
+  ]
+  let tabList: HTMLElement | undefined
+  createEffect(() => {
+    activeTab()
+    if (desktopTabs() || !tabList) return
+    tabList.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+    })
+  })
 
   const [processRosterRefresh, setProcessRosterRefresh] = createSignal(0)
   const [processRoster] = createSettledResource(
@@ -246,6 +299,17 @@ function DebugAppPage() {
       return conn && dir !== undefined ? { conn, dir, t: schedTick() } : undefined
     },
     ({ conn, dir }) => schedulerSnapshot(conn.http, { directory: dir }).catch(() => undefined),
+  )
+
+  // The process fleet behind the Memory tab. Another SERVER read (the worker registry lives in the
+  // instance, not the client store), refreshed on demand like the scheduler snapshot.
+  const [memoryTick, setMemoryTick] = createSignal(0)
+  const [memoryLayout] = createSettledResource(
+    () => {
+      const conn = focused()
+      return conn ? { conn, t: memoryTick() } : undefined
+    },
+    ({ conn }) => processMemory(conn.http).catch(() => undefined as ProcessMemoryLayout | undefined),
   )
 
   const [capabilityTick, setCapabilityTick] = createSignal(0)
@@ -525,30 +589,73 @@ function DebugAppPage() {
 
   return (
     <AppPage class="debug-page flex flex-col overflow-hidden select-text">
-      <div class="debug-scroll min-h-0 flex-1 overflow-y-auto">
-        <div class="debug-intro">
-          <div>
-            <span class="debug-eyebrow">INSTANCE INSTRUMENTS</span>
-            <h1>System overview</h1>
-            <p>Live state, recent faults, and recovery controls for this instance.</p>
-          </div>
-          <div class="debug-readouts" aria-label="Instance overview">
-            <div><strong>{servers().length}</strong><span>servers</span></div>
-            <div><strong>{sessions().length}</strong><span>sessions</span></div>
-            <div><strong>{errorLogEntries().length}</strong><span>client events</span></div>
-          </div>
+      <div class="debug-intro">
+        <div>
+          <span class="debug-eyebrow">INSTANCE INSTRUMENTS</span>
+          <h1>System overview</h1>
+          <p>Live state, recent faults, and recovery controls for this instance.</p>
         </div>
-        <nav class="debug-jump" aria-label="Debug sections">
-          <A href="/debug/registry">Registry</A>
-          <a href="#debug-connections">Connection</a>
-          <a href="#debug-capabilities">Capabilities</a>
-          <a href="#debug-scheduler">Scheduler</a>
-          <a href="#debug-logs">Logs</a>
-          <a href="#debug-sessions">Sessions</a>
-        </nav>
-        <div class="debug-grid">
+        <div class="debug-readouts" aria-label="Instance overview">
+          <div><strong>{servers().length}</strong><span>servers</span></div>
+          <div><strong>{sessions().length}</strong><span>sessions</span></div>
+          <div><strong>{errorLogEntries().length}</strong><span>client events</span></div>
+        </div>
+      </div>
+      <KobalteTabs
+        value={activeTab()}
+        onChange={(value) => setActiveTab(value as DebugTab)}
+        orientation={desktopTabs() ? "vertical" : "horizontal"}
+        class="min-h-0 min-w-0 flex flex-1 flex-col overflow-hidden md:flex-row"
+      >
+        <KobalteTabs.List
+          as="nav"
+          data-slot="debug-settings-nav"
+          aria-label="Debug sections"
+          ref={(element: HTMLElement) => {
+            tabList = element
+          }}
+          onWheel={(event: WheelEvent) => {
+            const list = event.currentTarget as HTMLElement
+            if (desktopTabs() || list.scrollWidth <= list.clientWidth) return
+            if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
+            list.scrollLeft += event.deltaY
+            event.preventDefault()
+          }}
+          class="flex min-w-0 shrink-0 gap-1 overflow-x-auto border-b border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1 md:w-44 md:flex-col md:overflow-y-auto md:border-b-0 md:border-r md:px-2 md:py-3"
+        >
+          <For each={debugTabs}>
+            {(tab) => (
+              <KobalteTabs.Trigger
+                type="button"
+                value={tab.id}
+                data-active={activeTab() === tab.id}
+                class={`flex min-h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border border-transparent px-2.5 text-left text-xs transition-colors md:min-h-9 ${
+                  activeTab() === tab.id
+                    ? "bg-v2-background-bg-layer-03 font-medium text-v2-text-text-base shadow-sm"
+                    : "text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 hover:text-v2-text-text-base"
+                }`}
+              >
+                <Icon name={tab.icon} class="hidden size-4 shrink-0 sm:block" />
+                <span>{tab.label}</span>
+              </KobalteTabs.Trigger>
+            )}
+          </For>
+          {/* Registry is its own ROUTE and its own page, so it stays a link rather than a tab. */}
+          <A
+            href="/debug/registry"
+            class="mt-1 flex min-h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-md border border-transparent px-2.5 text-left text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 hover:text-v2-text-text-base md:min-h-9"
+          >
+            <Icon name="archive" class="hidden size-4 shrink-0 sm:block" />
+            <span>Registry</span>
+          </A>
+        </KobalteTabs.List>
+        <KobalteTabs.Content
+          value={activeTab()}
+          data-active-tab={activeTab()}
+          class="debug-panels min-h-0 min-w-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4 md:px-5 md:py-4"
+        >
         {/* ── Connection ─────────────────────────────────────────────────────────────── */}
-        <div class={section} id="debug-connections">
+        <div class={section} id="debug-connections" data-debug-tab="overview">
           <div class={heading}>
             <span class={title}>{language.t("debug.page.connection")}</span>
             <span class={hint}>{language.t("debug.page.sseStreamStatusPerConfiguredServer")}</span>
@@ -576,7 +683,7 @@ function DebugAppPage() {
         </div>
 
         {/* ── Optional capabilities ─────────────────────────────────────────────────── */}
-        <div class={section} id="debug-capabilities" data-panel="capabilities">
+        <div class={section} id="debug-capabilities" data-panel="capabilities" data-debug-tab="capabilities">
           <div class={heading}>
             <span class={title}>{language.t("debug.page.optionalCapabilities")}</span>
             <span class={hint}>live state — looking here does not start anything</span>
@@ -651,7 +758,7 @@ function DebugAppPage() {
         </div>
 
         {/* ── Scheduler ──────────────────────────────────────────────────────────────── */}
-        <div class={section} data-panel="plugins">
+        <div class={section} data-panel="plugins" data-debug-tab="capabilities">
           <div class={heading}>
             <span class={title}>Loaded plugins</span>
             <span class={hint}>what each one DECLARES it needs — a claim, not a granted permission</span>
@@ -705,7 +812,7 @@ function DebugAppPage() {
           </div>
         </div>
 
-        <div class={section} id="debug-scheduler" data-panel="scheduler">
+        <div class={section} id="debug-scheduler" data-panel="scheduler" data-debug-tab="scheduler">
           <div class={heading}>
             <span class={title}>{language.t("debug.page.scheduler")}</span>
             <span class={hint}>live EEVDF state per device — in-flight, waiting, and the fair-share ledger</span>
@@ -762,7 +869,7 @@ function DebugAppPage() {
         </div>
 
         {/* ── Context findings ──────────────────────────────────────────────────────── */}
-        <div class={section} data-panel="context-findings">
+        <div class={section} data-panel="context-findings" data-debug-tab="context">
           <div class={heading}>
             <span class={title}>{language.t("debug.page.contextFindings")}</span>
             <span class={hint}>what shaped recent turns — concrete findings, never a mystery score</span>
@@ -837,7 +944,7 @@ function DebugAppPage() {
         </div>
 
         {/* ── Error log ──────────────────────────────────────────────────────────────── */}
-        <div class={section} id="debug-logs" data-panel="error-log">
+        <div class={section} id="debug-logs" data-panel="error-log" data-debug-tab="logs">
           <div class={heading}>
             <span class={title}>{language.t("debug.page.errorLog")}</span>
             <span class={hint}>
@@ -940,7 +1047,7 @@ function DebugAppPage() {
         </div>
 
         {/* ── Instance log (the server half) ─────────────────────────────────────────── */}
-        <div class={section} data-panel="server-log">
+        <div class={section} data-panel="server-log" data-debug-tab="logs">
           <div class={heading}>
             <span class={title}>{language.t("debug.page.instanceLog")}</span>
             <span class={hint}>
@@ -1081,7 +1188,7 @@ function DebugAppPage() {
         </div>
 
         {/* ── Sessions (ps) ───────────────────────────────────────────────────────────── */}
-        <div class={section} id="debug-sessions" data-panel="sessions">
+        <div class={section} id="debug-sessions" data-panel="sessions" data-debug-tab="sessions">
           <div class={heading}>
             <span class={title}>{language.t("debug.page.sessions")}</span>
             {/* Naming the scope is the honest move, the same way the log panel says whose ring it
@@ -1242,8 +1349,127 @@ function DebugAppPage() {
           </div>
         </div>
 
+        {/* ── Memory ─────────────────────────────────────────────────────────────────── */}
+        <div class={section} data-debug-tab="memory">
+          <div class={heading}>
+            <span class={title}>Memory</span>
+            <span class={hint}>per process, measured from outside — commit on Windows, RSS on Linux</span>
+            <button class={`${btn} ml-auto`} onClick={() => setMemoryTick((value) => value + 1)}>
+              {language.t("debug.page.refresh")}
+            </button>
+          </div>
+          <div class="px-4 pb-3">
+            <Show
+              when={memoryLayout()}
+              fallback={
+                <div class={hint}>
+                  {memoryLayout.loading ? "reading…" : "unavailable (older server, or no instance connected)"}
+                </div>
+              }
+            >
+              {(layout) => (
+                <>
+                  {/* The host bar is the boundary every per-process number sits inside. */}
+                  <div class="border-t border-v2-border-border-base py-2 first:border-t-0 first:pt-0">
+                    <div class="mb-1 text-[11px] font-medium text-v2-text-text-base">Host memory</div>
+                    <Show
+                      when={layout().host.known}
+                      fallback={<div class={hint}>unknown — {(layout().host as { reason: string }).reason}</div>}
+                    >
+                      <div class="flex items-center gap-3 text-[12px]">
+                        <span class="font-mono">
+                          {formatBytes((layout().host as { usedBytes: number }).usedBytes)} /{" "}
+                          {formatBytes((layout().host as { limitBytes: number }).limitBytes)}
+                        </span>
+                        <span class={hint}>
+                          {(
+                            ((layout().host as { usedBytes: number }).usedBytes /
+                              Math.max(1, (layout().host as { limitBytes: number }).limitBytes)) *
+                            100
+                          ).toFixed(0)}
+                          % used · {(layout().host as { source: string }).source}
+                        </span>
+                      </div>
+                    </Show>
+                  </div>
+
+                  {/* The server's own process, split where the JS runtime can honestly split it. */}
+                  <div class="border-t border-v2-border-border-base py-2">
+                    <div class="mb-1 text-[11px] font-medium text-v2-text-text-base">
+                      Instance server <span class={hint}>pid {layout().server.pid}</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-x-6 gap-y-0.5 font-mono text-[11px] text-v2-text-text-muted sm:grid-cols-3">
+                      <div class="flex justify-between gap-2">
+                        <span class={hint}>RSS (self)</span>
+                        <span>{formatBytes(layout().server.rssBytes)}</span>
+                      </div>
+                      <div class="flex justify-between gap-2">
+                        <span class={hint}>heap used</span>
+                        <span>{formatBytes(layout().server.heapUsedBytes)}</span>
+                      </div>
+                      <div class="flex justify-between gap-2">
+                        <span class={hint}>heap total</span>
+                        <span>{formatBytes(layout().server.heapTotalBytes)}</span>
+                      </div>
+                      <div class="flex justify-between gap-2">
+                        <span class={hint}>external</span>
+                        <span>{formatBytes(layout().server.externalBytes)}</span>
+                      </div>
+                      <div class="flex justify-between gap-2">
+                        <span class={hint}>array buffers</span>
+                        <span>{formatBytes(layout().server.arrayBuffersBytes)}</span>
+                      </div>
+                      <div class="flex justify-between gap-2">
+                        <span class={hint}>{layout().metric} (outer)</span>
+                        <span>{formatBytes(layout().server.bytes)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Every live session worker, with the chat it is running. */}
+                  <div class="border-t border-v2-border-border-base py-2">
+                    <div class="mb-1 text-[11px] font-medium text-v2-text-text-base">
+                      Workers <span class={hint}>{layout().processes.length - 1} live</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                      <table class="w-full border-collapse text-[11px]">
+                        <thead>
+                          <tr class="text-left text-v2-text-text-faint">
+                            <th class="py-1 pr-2 font-medium">pid</th>
+                            <th class="py-1 pr-2 font-medium">role</th>
+                            <th class="py-1 pr-2 font-medium">age</th>
+                            <th class="py-1 pr-2 font-medium">session</th>
+                            <th class="py-1 font-medium">{layout().metric}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <For each={layout().processes}>
+                            {(row) => (
+                              <tr class="align-top">
+                                <td class="py-0.5 pr-2 font-mono">{row.pid}</td>
+                                <td class="py-0.5 pr-2 text-v2-text-text-muted">{row.role}</td>
+                                <td class="py-0.5 pr-2 font-mono text-v2-text-text-faint">{formatAge(row.startedAt)}</td>
+                                <td class="py-0.5 pr-2 truncate font-mono text-v2-text-text-muted">{row.label}</td>
+                                <td class="py-0.5 font-mono">{formatBytes(row.bytes)}</td>
+                              </tr>
+                            )}
+                          </For>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div class={`${hint} pt-1`} data-slot="debug-memory-note">
+                    {layout().note}
+                  </div>
+                </>
+              )}
+            </Show>
+          </div>
+        </div>
+
         {/* ── Config snapshot ────────────────────────────────────────────────────────── */}
-        <div class={section} data-panel="config">
+        <div class={section} data-panel="config" data-debug-tab="config">
           <div class={heading}>
             <span class={title}>{language.t("debug.page.configSnapshot")}</span>
             <span class={hint}>the active server's resolved config (read-only — edit in Settings)</span>
@@ -1252,8 +1478,8 @@ function DebugAppPage() {
             {config()}
           </pre>
         </div>
-        </div>
-      </div>
+        </KobalteTabs.Content>
+      </KobalteTabs>
     </AppPage>
   )
 }

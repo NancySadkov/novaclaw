@@ -672,6 +672,183 @@
         ]
       }
     },
+    "/api/memory-layout": {
+      "get": {
+        "tags": ["global"],
+        "operationId": "v2.process.memory.get",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "measuredAt": {
+                      "type": "number"
+                    },
+                    "metric": {
+                      "type": "string"
+                    },
+                    "host": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "known": {
+                              "type": "boolean",
+                              "enum": [true]
+                            },
+                            "source": {
+                              "type": "string"
+                            },
+                            "crosscheck": {
+                              "type": "string"
+                            },
+                            "usedBytes": {
+                              "type": "number"
+                            },
+                            "limitBytes": {
+                              "type": "number"
+                            }
+                          },
+                          "required": ["known", "source", "crosscheck", "usedBytes", "limitBytes"],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "known": {
+                              "type": "boolean",
+                              "enum": [false]
+                            },
+                            "reason": {
+                              "type": "string"
+                            }
+                          },
+                          "required": ["known", "reason"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "server": {
+                      "type": "object",
+                      "properties": {
+                        "pid": {
+                          "type": "number"
+                        },
+                        "rssBytes": {
+                          "type": "number"
+                        },
+                        "heapTotalBytes": {
+                          "type": "number"
+                        },
+                        "heapUsedBytes": {
+                          "type": "number"
+                        },
+                        "externalBytes": {
+                          "type": "number"
+                        },
+                        "arrayBuffersBytes": {
+                          "type": "number"
+                        },
+                        "bytes": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "pid",
+                        "rssBytes",
+                        "heapTotalBytes",
+                        "heapUsedBytes",
+                        "externalBytes",
+                        "arrayBuffersBytes",
+                        "bytes"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "processes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "pid": {
+                            "type": "number"
+                          },
+                          "role": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "startedAt": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "bytes": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": ["pid", "role", "label", "startedAt", "bytes"],
+                        "additionalProperties": false
+                      }
+                    },
+                    "note": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["measuredAt", "metric", "host", "server", "processes", "note"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        },
+        "description": "Per-process memory for the instance server and its live session workers, plus the server runtime's heap breakdown. Read from outside each process; commit on Windows, RSS on Linux.",
+        "summary": "Get the process memory layout",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.process.memory.get({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/identity/backup": {
       "post": {
         "tags": ["global"],

@@ -8757,6 +8757,67 @@ export type V2InstancePressureGetResponses = {
 
 export type V2InstancePressureGetResponse = V2InstancePressureGetResponses[keyof V2InstancePressureGetResponses]
 
+export type V2ProcessMemoryGetData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/memory-layout"
+}
+
+export type V2ProcessMemoryGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * Unauthorized
+   */
+  401: void
+}
+
+export type V2ProcessMemoryGetError = V2ProcessMemoryGetErrors[keyof V2ProcessMemoryGetErrors]
+
+export type V2ProcessMemoryGetResponses = {
+  /**
+   * Success
+   */
+  200: {
+    measuredAt: number
+    metric: string
+    host:
+      | {
+          known: true
+          source: string
+          crosscheck: string
+          usedBytes: number
+          limitBytes: number
+        }
+      | {
+          known: false
+          reason: string
+        }
+    server: {
+      pid: number
+      rssBytes: number
+      heapTotalBytes: number
+      heapUsedBytes: number
+      externalBytes: number
+      arrayBuffersBytes: number
+      bytes: number | null
+    }
+    processes: Array<{
+      pid: number
+      role: string
+      label: string
+      startedAt: number | null
+      bytes: number | null
+    }>
+    note: string
+  }
+}
+
+export type V2ProcessMemoryGetResponse = V2ProcessMemoryGetResponses[keyof V2ProcessMemoryGetResponses]
+
 export type GlobalIdentityBackupData = {
   body?: never
   path?: never

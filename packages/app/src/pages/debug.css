@@ -81,52 +81,45 @@
   white-space: nowrap;
 }
 
-.debug-jump {
-  position: sticky;
-  z-index: 4;
-  top: 0;
-  display: flex;
-  gap: 5px;
-  overflow-x: auto;
-  padding: 8px clamp(12px, 2.5vw, 32px) 10px;
-  border-bottom: 1px solid #c9a86d20;
-  background: color-mix(in srgb, var(--v2-background-bg-base) 92%, #352045);
-  scrollbar-width: none;
-  backdrop-filter: blur(16px);
+/* The tab rail mirrors the Agent Settings screen (Kobalte Tabs), and the reveal below is page-local
+   on purpose: `agent-settings-tabs.test.ts` reads index.css literally and would fail if these
+   `data-active-tab` values appeared there. */
+[data-slot="debug-settings-nav"] {
+  scrollbar-width: thin;
+  scrollbar-color: #bd945b88 transparent;
 }
 
-.debug-jump::-webkit-scrollbar {
+[data-slot="debug-settings-nav"] [data-active="true"] {
+  border-color: color-mix(in srgb, #d7b36d 58%, transparent);
+  background: linear-gradient(
+    105deg,
+    color-mix(in srgb, #806394 24%, var(--v2-background-bg-layer-03)),
+    var(--v2-background-bg-layer-02)
+  );
+  box-shadow: inset 2px 0 #d7b36d;
+}
+
+@media (max-width: 767px) {
+  [data-slot="debug-settings-nav"] [data-active="true"] {
+    box-shadow: inset 0 -2px #d7b36d;
+  }
+}
+
+/* ONE panel is visible at a time. All are mounted, so opening a tab is a view change, never a
+   remount — the same choice the Agent Settings screen makes. */
+.debug-panels [data-debug-tab] {
   display: none;
 }
 
-.debug-jump a {
-  flex: none;
-  padding: 6px 11px;
-  border: 1px solid transparent;
-  border-radius: 7px;
-  color: var(--v2-text-text-muted);
-  font-size: 11px;
-  font-weight: 580;
-  white-space: nowrap;
-}
-
-.debug-jump a:hover,
-.debug-jump a:focus-visible {
-  border-color: #c9a86d55;
-  color: #f0d491;
-  background: #c9a86d15;
-  outline: none;
-}
-
-.debug-grid {
-  display: grid;
-  width: 100%;
-  max-width: 1520px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-content: start;
-  gap: 12px;
-  margin: 0 auto;
-  padding: 16px clamp(12px, 2.5vw, 32px) 32px;
+.debug-panels[data-active-tab="overview"] [data-debug-tab="overview"],
+.debug-panels[data-active-tab="capabilities"] [data-debug-tab="capabilities"],
+.debug-panels[data-active-tab="scheduler"] [data-debug-tab="scheduler"],
+.debug-panels[data-active-tab="context"] [data-debug-tab="context"],
+.debug-panels[data-active-tab="memory"] [data-debug-tab="memory"],
+.debug-panels[data-active-tab="logs"] [data-debug-tab="logs"],
+.debug-panels[data-active-tab="sessions"] [data-debug-tab="sessions"],
+.debug-panels[data-active-tab="config"] [data-debug-tab="config"] {
+  display: block;
 }
 
 .debug-panel {
