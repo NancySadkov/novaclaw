@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Fiber, Stream } from "effect"
 import { ModelV2 } from "@novaclaw/core/model"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { Database } from "@novaclaw/core/database/database"
 import { EventV2 } from "@novaclaw/core/event"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionEvent } from "@novaclaw/core/session/event"
+import { SessionStore } from "@novaclaw/core/session/store"
 import { SessionInput } from "@novaclaw/core/session/input"
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { Prompt } from "@novaclaw/core/session/prompt"
@@ -25,6 +26,38 @@ import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, messageRoles }
  * durably instead of waiting on a tool nobody is running, or worse, re-sending it to the model as
  * though it were still in flight.
  */
+
+/**
+ * Run one drain, stop it once an assistant turn's text contains `marker`, and await the stop.
+ *
+ * These claims assert an EXACT request set (one recovery turn), so they cannot script the terminal
+ * `exit` the drive now requires — that would be a request they measure. The marker turn settles first,
+ * then the drain is stopped before it can continue.
+ */
+const stopAfterText = <A, E>(run: Effect.Effect<A, E, never>, marker: string) =>
+  Effect.gen(function* () {
+    const session = yield* SessionV2.Service
+    const store = yield* SessionStore.Service
+    const events = yield* EventV2.Service
+    const seen = yield* events.subscribe(SessionEvent.Text.Ended).pipe(
+      Stream.filter((event) => event.data.sessionID === HARNESS_SESSION && event.data.text.includes(marker)),
+      Stream.take(1),
+      Stream.runHead,
+      Effect.forkScoped,
+    )
+    yield* Effect.yieldNow
+    const running = yield* run.pipe(Effect.forkChild)
+    yield* Fiber.join(seen)
+    // Let the step settle (`finish` is projected on `Step.Ended`, after the text) before stopping.
+    for (;;) {
+      const messages = yield* store.context(HARNESS_SESSION).pipe(Effect.orDie)
+      const assistant = messages.findLast((message) => message.type === "assistant")
+      if (assistant !== undefined && assistant.type === "assistant" && assistant.finish !== undefined) break
+      yield* Effect.yieldNow
+    }
+    yield* session.interrupt(HARNESS_SESSION)
+    yield* Fiber.await(running)
+  })
 
 /** Replay the events a process would have left behind after dying mid-tool-call. */
 const orphanToolCall = (input: {
@@ -106,7 +139,18 @@ describe("SessionRunnerLLM — recovery from a prior process", () => {
         // return that abandoned the live Geryon chat.
         expect(yield* SessionInput.hasPending((yield* Database.Service).db, HARNESS_SESSION, "steer")).toBe(false)
         expect(yield* SessionInput.hasPending((yield* Database.Service).db, HARNESS_SESSION, "queue")).toBe(false)
-        yield* SessionRunner.Service.use((runner) => runner.run({ sessionID: HARNESS_SESSION, force: false }))
+        // The run is forked directly, so the coordinator's interrupt door cannot stop it — the fiber is
+        // what is stopped. Wait only for the recovery steer to reach a provider request.
+        const run = yield* SessionRunner.Service.use((runner) =>
+          runner.run({ sessionID: HARNESS_SESSION, force: false }),
+        ).pipe(Effect.forkChild)
+        while (
+          !harness.requests.some((request) =>
+            JSON.stringify(request.messages).includes("Session restarted. Recover and proceed."),
+          )
+        )
+          yield* Effect.yieldNow
+        yield* Fiber.interrupt(run)
       }),
       "claim — provider process loss resumes the task",
     )
@@ -139,7 +183,7 @@ describe("SessionRunnerLLM — recovery from a prior process", () => {
         yield* orphanToolCall({ callID: "call-interrupted", assistantMessageID, providerExecuted: false })
 
         harness.requests.length = 0
-        yield* session.resume(HARNESS_SESSION)
+        yield* stopAfterText(session.resume(HARNESS_SESSION), "One")
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — orphaned local tool closed before continuing",
@@ -194,7 +238,7 @@ describe("SessionRunnerLLM — recovery from a prior process", () => {
         })
 
         harness.requests.length = 0
-        yield* session.resume(HARNESS_SESSION)
+        yield* stopAfterText(session.resume(HARNESS_SESSION), "One")
       }),
       "claim — orphaned hosted tool closed inline",
     )
@@ -241,7 +285,7 @@ describe("SessionRunnerLLM — recovery from a prior process", () => {
         })
 
         harness.requests.length = 0
-        yield* session.resume(HARNESS_SESSION)
+        yield* stopAfterText(session.resume(HARNESS_SESSION), "One")
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — orphaned pending tool input closed",

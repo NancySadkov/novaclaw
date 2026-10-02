@@ -1,12 +1,21 @@
 import { describe, expect, test } from "bun:test"
 import { Effect, Fiber, Schema, Stream } from "effect"
 import { LLMEvent } from "@novaclaw/llm"
+import { EventV2 } from "@novaclaw/core/event"
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionEvent } from "@novaclaw/core/session/event"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { ApplicationTools } from "@novaclaw/core/tool/application-tools"
 import { Tool } from "@novaclaw/core/tool/tool"
-import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness } from "./fixture/runner-harness"
+import {
+  HARNESS_SESSION,
+  completeTurn,
+  drive,
+  makeLatch,
+  makeRunnerHarness,
+  resumeUntil,
+} from "./fixture/runner-harness"
 import { tmpdir } from "./fixture/tmpdir"
 
 /**
@@ -70,12 +79,24 @@ describe("the per-turn image budget under PARALLEL tool calls", () => {
           prompt: Prompt.make({ text: "Look at both" }),
           resume: false,
         })
+        // Subscribe BEFORE the turn can reach its final text: the drive self-drives until `exit`, so
+        // the marker is what stops it, and the request must already be in the transcript when we do.
+        const events = yield* EventV2.Service
+        const done = yield* events.subscribe(SessionEvent.Text.Ended).pipe(
+          Stream.filter((event) => event.data.sessionID === HARNESS_SESSION && event.data.text.includes("Done")),
+          Stream.take(1),
+          Stream.runHead,
+          Effect.forkScoped,
+        )
+        yield* Effect.yieldNow
         const run = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
         // Both are executing. Neither has settled, so neither has counted anything.
         yield* Effect.promise(() => toolsStarted.promise)
         toolGate.open()
         providerGate.open()
-        yield* Fiber.join(run)
+        yield* Fiber.join(done)
+        yield* session.interrupt(HARNESS_SESSION)
+        yield* Fiber.await(run)
       }),
       "claim — one turn, one image budget",
     )
@@ -122,7 +143,7 @@ describe("the per-turn image budget under PARALLEL tool calls", () => {
           prompt: Prompt.make({ text: "Echo twice" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Done")
       }),
       "claim — a text result costs the image budget nothing",
     )
@@ -181,7 +202,7 @@ describe("the device's fairness ledger, and the moment the next waiter is let in
           prompt: Prompt.make({ text: "Use a tool" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Done")
       }),
       "claim — charge, then release",
     )
@@ -253,7 +274,7 @@ describe("the tool-output summarizer against a model that ignores `enable_thinki
           prompt: Prompt.make({ text: "Inspect the report" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Done")
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — a thinking summarizer still summarizes",

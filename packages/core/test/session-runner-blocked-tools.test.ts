@@ -33,6 +33,22 @@ const waitForExecution = (harness: ReturnType<typeof makeRunnerHarness>) =>
     while (harness.executions.length === 0) yield* Effect.yieldNow
   })
 
+/**
+ * Resume and stop as soon as the first provider request is made.
+ *
+ * These claims assert an EXACT request set (one turn), so they cannot script the terminal `exit` the
+ * drive now requires — that would be a request they measure. The turn's request is built before its
+ * stream runs, so observing it and interrupting keeps the set exact without needing a text marker.
+ */
+const stopAfterFirstRequest = (harness: ReturnType<typeof makeRunnerHarness>) =>
+  Effect.gen(function* () {
+    const session = yield* SessionV2.Service
+    const running = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+    while (harness.requests.length === 0) yield* Effect.yieldNow
+    yield* session.interrupt(HARNESS_SESSION)
+    yield* Fiber.await(running)
+  })
+
 describe("SessionRunnerLLM — tools blocked when the turn ends", () => {
   test("awaits started local tools before surfacing provider stream failure", async () => {
     // The stream dies while the tool is mid-flight. The failure must still reach the caller — but only
@@ -125,7 +141,7 @@ describe("SessionRunnerLLM — tools blocked when the turn ends", () => {
         const afterReplay = yield* session.context(HARNESS_SESSION)
 
         harness.requests.length = 0
-        yield* session.resume(HARNESS_SESSION)
+        yield* stopAfterFirstRequest(harness)
         return { afterInterrupt, afterReplay }
       }),
       "claim — blocked tools fail durably on interruption",
@@ -150,13 +166,16 @@ describe("SessionRunnerLLM — tools blocked when the turn ends", () => {
     expect(harness.requests[0]?.messages.map((message) => message.role)).toEqual(["user", "assistant", "tool"])
   })
 
-  test("does not continue automatically after a provider error follows a local tool call", async () => {
-    // A tool ran, then the provider failed. The tool's result exists and is durable — but the runner
-    // must NOT auto-continue into a second turn to deliver it.
+  test("keeps a local tool result that ran before a provider error", async () => {
+    // A tool ran, then the provider failed. The tool's result must exist and be durable.
     //
-    // ⭐ Why that restraint is the claim: continuing would re-enter the provider that just failed,
-    // usually failing again, and on a local model each attempt is expensive. The work is preserved;
-    // the decision to retry belongs to whoever resumes the session, not to the failure path.
+    // 🗑️ The former second half of this claim — *"the runner must NOT auto-continue into a second
+    // turn"* — no longer holds, and that is a deliberate product change, not a regression to hide: a
+    // non-Chat officer self-drives until an accepted `exit` (`drive.ts` INTERACTIVE_CONTINUE), so a
+    // provider-error turn that has not exited is continued exactly like any other. The restraint the
+    // claim described belongs to `ProviderDispatch`'s bounded retry, which still does not replay a
+    // failed turn on the same route. What stays here is the half that is still a promise: the work that
+    // ran is recorded, not abandoned.
     const harness = makeRunnerHarness({
       turns: [
         [
@@ -176,14 +195,19 @@ describe("SessionRunnerLLM — tools blocked when the turn ends", () => {
           prompt: Prompt.make({ text: "Do not continue failed provider" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        const running = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+        // Let the local tool that ran before the provider error settle, then stop the drain this claim
+        // no longer measures (it continues to demand an `exit`).
+        while (harness.executions.length === 0) yield* Effect.yieldNow
+        yield* session.interrupt(HARNESS_SESSION)
+        yield* Fiber.await(running)
       }),
-      "claim — no auto-continue after a provider error",
+      "claim — a provider error does not lose the tool result",
     )
 
-    expect(harness.requests, "exactly one turn — the failure must not trigger a continuation").toHaveLength(1)
-    // …and the tool still ran, so the restraint is about CONTINUING, not about abandoning work.
+    // …the tool still ran, so the failure path did not abandon work that actually executed.
     expect(harness.executions).toEqual(["settled"])
+    expect(harness.requests.length, "the failed turn reached the provider").toBeGreaterThanOrEqual(1)
   })
 
   test("interrupts a blocked provider turn without local tool execution", async () => {
