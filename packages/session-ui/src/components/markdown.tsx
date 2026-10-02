@@ -18,7 +18,7 @@ import {
 } from "solid-js"
 import { isServer } from "solid-js/web"
 import { bundledLanguages } from "shiki/langs"
-import { canReusePendingBlock, project, type Block, type Projection } from "./markdown-stream"
+import { canReusePendingBlock, overMarkdownBudget, project, type Block, type Projection } from "./markdown-stream"
 import {
   disposeStreamingCode,
   highlightStreamingCode,
@@ -514,6 +514,13 @@ export function Markdown(
               touchCachedMarkdown(key, cached)
               return { key: blockKey, mode: block.mode, ...cached }
             }
+          }
+
+          if (overMarkdownBudget(block.src)) {
+            // Too many lines for marked to parse in bounded time (see `MAX_MARKDOWN_LINES`). The
+            // escaped plain text keeps every line the reader would have seen, without the parse.
+            const hash = checksum(block.src)
+            return { key: blockKey, mode: block.mode, raw: block.raw, hash: hash ?? "", html: fallback(block.src) }
           }
 
           const hash = checksum(block.raw)

@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { canReusePendingBlock, project, stream } from "./markdown-stream"
+import {
+  MAX_MARKDOWN_LINES,
+  canReusePendingBlock,
+  overMarkdownBudget,
+  project,
+  stream,
+} from "./markdown-stream"
 
 describe("markdown stream", () => {
   test("heals incomplete emphasis while streaming", () => {
@@ -240,5 +246,28 @@ describe("markdown stream", () => {
       language: "ts",
       complete: true,
     })
+  })
+
+  /**
+   * 🔴 The freeze this pins: `marked` is superlinear in LINE count. A completed 98 KB reasoning block
+   * with 14,235 lines took 15.6 s to parse (measured 2026-10-02 against the owner's instance), and
+   * three of them blocked the renderer for ~50 s when a chat was opened. Above the budget the text is
+   * handed on as ONE plain block so the renderer can escape it instead of parsing it.
+   */
+  test("a block over the line budget is handed on unlexed, live or static", () => {
+    const text = Array.from({ length: MAX_MARKDOWN_LINES + 500 }, (_, index) => `line ${index}`).join("\n")
+    expect(stream(text, true)).toEqual([{ raw: text, src: text, mode: "full" }])
+    expect(stream(text, false)).toEqual([{ raw: text, src: text, mode: "full" }])
+  })
+
+  test("the budget counts lines, not bytes — one huge paragraph still parses as markdown", () => {
+    const paragraph = `one paragraph ${"word ".repeat(100_000)}`.trim()
+    expect(overMarkdownBudget(paragraph)).toBe(false)
+    expect(stream(paragraph, false)).toEqual([{ raw: paragraph, src: paragraph, mode: "full" }])
+  })
+
+  test("the boundary is exact and counted without allocating line arrays", () => {
+    expect(overMarkdownBudget("a\n".repeat(MAX_MARKDOWN_LINES - 1))).toBe(false)
+    expect(overMarkdownBudget("a\n".repeat(MAX_MARKDOWN_LINES))).toBe(true)
   })
 })

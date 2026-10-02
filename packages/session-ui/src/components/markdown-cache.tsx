@@ -1,6 +1,6 @@
 import { checksum } from "@novaclaw/core/util/encode"
 import DOMPurify from "dompurify"
-import { project } from "./markdown-stream"
+import { project, overMarkdownBudget } from "./markdown-stream"
 
 export type MarkdownCacheEntry = {
   raw: string
@@ -60,6 +60,10 @@ export async function preloadMarkdown(
   await Promise.all(
     project(undefined, text, false).blocks.map(async (block, index) => {
       if (block.mode === "code") return
+      // A block over the line budget is rendered as plain text by `Markdown`, so there is no parsed
+      // HTML to warm — and parsing it here would pay the same superlinear `marked` cost this budget
+      // exists to avoid (see `MAX_MARKDOWN_LINES`).
+      if (overMarkdownBudget(block.src)) return
       const key = `${cacheKey}:${index}:${block.mode}`
       const cached = getCachedMarkdown(key)
       if (cached?.raw === block.raw) {

@@ -15,6 +15,29 @@ export type Projection = {
   blocks: Block[]
 }
 
+/**
+ * The line count above which this renderer stops paying for `marked`.
+ *
+ * 🔴 **`marked` is superlinear in the number of lines/blocks, and one live transcript made it a
+ * 30-second freeze.** Measured 2026-10-02 against the owner's running instance: a completed 98 KB
+ * reasoning block held 14,235 lines, and a single `parse` took **15.6 s** (12 KB → 0.12 s,
+ * 49 KB → 2.9 s — each doubling ~4× the time). `ses_lamprias`'s newest page carried THREE of them,
+ * so clicking its tab blocked the renderer for ~50 s while nothing painted. Above this budget the
+ * block is shown as escaped plain text with its line breaks preserved — a degradation the reader can
+ * still read, never a hang. The line count is what matters, not the byte size: the same 98 KB as a
+ * single paragraph costs 36 ms.
+ */
+export const MAX_MARKDOWN_LINES = 1_500
+
+/** Cheap, allocation-free count — returns as soon as the budget is crossed. */
+export const overMarkdownBudget = (text: string): boolean => {
+  let lines = 1
+  for (let index = 0; index < text.length; index++) {
+    if (text.charCodeAt(index) === 0x0a && ++lines > MAX_MARKDOWN_LINES) return true
+  }
+  return false
+}
+
 function refs(text: string) {
   if (!text.includes("]:")) return false
   return /^[ \t]{0,3}\[[^\]]+\]:[ \t]*(?:\S+|\r?\n[ \t]+\S+)/m.test(text)
@@ -87,6 +110,7 @@ function splitHtmlFences(text: string): Block[] {
 }
 
 export function stream(text: string, live: boolean): Block[] {
+  if (overMarkdownBudget(text)) return [{ raw: text, src: text, mode: "full" }] satisfies Block[]
   if (!live) {
     // Reference definitions must stay in one document for links to resolve, so those
     // messages keep the single-block behavior (html fences degrade to highlighted code).
