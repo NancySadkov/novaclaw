@@ -4459,6 +4459,50 @@ export const layer = Layer.effect(
         })
     })
 
+    /**
+     * Consume a pending `Compact Now` marker, if there is one, and run the compact-only cycle.
+     *
+     * ⚠️ **It is consumed at EVERY turn boundary, not only at drain start.** The request is a durable
+     * one-shot marker (`session/compaction-request.ts`); a drain already in flight — a long turn, or
+     * an unattended officer whose drive keeps continuing — would otherwise hold the button's request
+     * until it settled, which reads to the user as a button that did nothing. A turn boundary is the
+     * same point the granularity rule gives every other user action, and the next `runTurn` re-reads
+     * the (now compacted) history, so acting there is safe.
+     *
+     * Best-effort, like every nudge side effect: a fold that cannot run must not break the drain it
+     * guards, and `runManualCompaction` publishes its own calm Synthetic notice on the failures it
+     * recognises.
+     */
+    const consumeManualCompaction = Effect.fn("SessionRunner.consumeManualCompaction")(function* (
+      sessionID: SessionSchema.ID,
+    ) {
+      if (!(yield* compactionRequests.consume(sessionID))) return false
+      // B7 tier-1: derived HERE rather than at the top of `run`, because a wake with nothing to do
+      // returns a few lines below and must not pay for a settings read it never uses.
+      const resolution = yield* effective.resolution(sessionID)
+      const manual = yield* harnessConfig(resolution.config.agent as AgentV2.ID)
+      yield* runManualCompaction(sessionID, manual.compaction).pipe(
+        Effect.catchCause((cause: Cause.Cause<unknown>) =>
+          Log.event("session.compaction.manual.failed", {
+            "session.id": sessionID,
+            "session.cause": Log.fault(cause),
+          }).pipe(
+            Effect.andThen(
+              Effect.gen(function* () {
+                yield* events.publish(SessionEvent.Synthetic, {
+                  sessionID,
+                  messageID: SessionMessage.ID.create(),
+                  timestamp: yield* DateTime.now,
+                  text: "⚠️ Compaction couldn't run — see the server log for details.",
+                })
+              }).pipe(Effect.ignore),
+            ),
+          ),
+        ),
+      )
+      return true
+    })
+
     const runStrictDrain = StrictDrain.make({
       events,
       llm,
@@ -4490,31 +4534,7 @@ export const layer = Layer.effect(
       // A manual compaction request is consumed FIRST: it may ride a wake with no pending input
       // (the early return below must not skip it), it must not force a model turn itself, and
       // when input IS pending the drain proceeds over the freshly compacted history.
-      if (yield* compactionRequests.consume(input.sessionID)) {
-        // B7 tier-1: derived HERE rather than at the top of `run`, because a wake with nothing to do
-        // returns a few lines below and must not pay for a settings read it never uses.
-        const manualResolution = yield* effective.resolution(input.sessionID)
-        const manual = yield* harnessConfig(manualResolution.config.agent as AgentV2.ID)
-        yield* runManualCompaction(input.sessionID, manual.compaction).pipe(
-          Effect.catchCause((cause: Cause.Cause<unknown>) =>
-            Log.event("session.compaction.manual.failed", {
-              "session.id": input.sessionID,
-              "session.cause": Log.fault(cause),
-            }).pipe(
-              Effect.andThen(
-                Effect.gen(function* () {
-                  yield* events.publish(SessionEvent.Synthetic, {
-                    sessionID: input.sessionID,
-                    messageID: SessionMessage.ID.create(),
-                    timestamp: yield* DateTime.now,
-                    text: "⚠️ Compaction couldn't run — see the server log for details.",
-                  })
-                }).pipe(Effect.ignore),
-              ),
-            ),
-          ),
-        )
-      }
+      yield* consumeManualCompaction(input.sessionID)
       // A provider recovery latch IS pending work even though it is not a `session_input` row. The
       // automatic boot/supervisor path wakes with `force=false`; checking only the two input queues
       // here made that replacement worker return successfully before it reached the recovery block
@@ -4748,13 +4768,26 @@ export const layer = Layer.effect(
             yield* SessionExecutionAttempt.advanceCurrent("drain", "mark")
             yield* SessionExecutionAttempt.cooperateCurrent()
           }
+          // A `Compact Now` that arrived while this drain was already running takes effect at the next
+          // settled turn boundary (see `consumeManualCompaction`). The drain-start consume covers an
+          // idle session; this one covers a busy or self-driving one, whose drain may not settle for
+          // a long time — the button must not read as dead until then.
+          yield* consumeManualCompaction(input.sessionID)
           // ⚠️ THE per-turn read (B7 tier-1 / ruling 3). One `config.entries()` per turn, threaded
           // through everything this turn does — the system prompt, the compactor, the sampling
           // overlay, the introspection judge, the quality gate. Deriving per USE instead would let a
           // single turn observe two different settings snapshots; deriving per DRAIN (or, as before,
           // per location boot) is what made "restart to apply" the honest answer. The T1 per-session
           // stances ride along: an explicit true/false on the config chain wins, no stance = global.
-          const harness = yield* harnessConfig(handoff.agent as AgentV2.ID)
+          //
+          // ⚠️ The officer's introspection DETAIL is folded HERE, not left to `runTurnAttempt`. This
+          // drain-level record is what gates and runs the judge (below), while `runTurnAttempt`
+          // re-folds its own copy for the turn itself. Without this the gate read the officer's
+          // stance (via `handoff.introspection`) but the judge always ran on the SHIPPED defaults —
+          // the configured cadence, judge model, question and interjection were silently ignored.
+          const harness = HarnessConfig.withOfficer(yield* harnessConfig(handoff.agent as AgentV2.ID), {
+            introspection: handoff.introspectionDetail,
+          })
           const qualityOn = !ShortChat.enabled(handoff.shortChat) && (handoff.quality ?? harness.quality.enabled)
           const introspectionOn =
             !ShortChat.enabled(handoff.shortChat) && (handoff.introspection ?? harness.introspection.enabled)
