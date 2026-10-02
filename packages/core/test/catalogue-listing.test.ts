@@ -27,9 +27,13 @@ const it = testEffect(AppNodeBuilder.build(LayerNode.group([AgentV2.node])))
  * predicate test proves the filter is applied, and a listing is what a human reads.
  *
  * ⚠️ **Read as `plan`, because this harness builds the agent PLUGIN alone.** The shipped colleagues are
- * config rows (`agent-config-seed.ts`, so retiring one sticks), which is why the plugin roster's only
- * colleague is Nova. Asked as Nova the catalogue is legitimately empty and prints the "no colleagues"
- * line, which is correct and asserts nothing about the ghosts.
+ * config rows (`agent-config-seed.ts`, so retiring one sticks), which is why the plugin roster holds
+ * only the human owner and Nova. Asked as Nova the catalogue is legitimately empty and prints the "no
+ * colleagues" line, which is correct and asserts nothing about the ghosts.
+ *
+ * 🔴 **The owner is on the roster ON PURPOSE** (`a8a9b881e`): a direct report leaves a question in the
+ * owner's transcript with `colleague` and carries on, rather than blocking on a human. So the owner
+ * appears beside Nova here, and `addressable` keeps every non-Chat kind — human included.
  */
 describe("the catalogue as a model reads it", () => {
   it.effect("lists colleagues plainly, and lists no machinery", () =>
@@ -48,7 +52,7 @@ describe("the catalogue as a model reads it", () => {
       )
       console.log(`CATALOGUE:\n${listing}`)
 
-      expect(listing).toBe("nova - Chief Executive")
+      expect(listing).toBe("owner - Instance owner\nnova - Chief Executive")
       // The three shapes the owner pasted, absent as SHAPES — not as ids, because the ids vary.
       expect(listing).not.toContain("The default agent")
       expect(listing).not.toContain("Plan mode")
@@ -79,10 +83,10 @@ describe("the catalogue as a model reads it", () => {
       })
       console.log(`AGENTS:\n${rows.join("\n")}`)
 
-      // Nova is the one the catalogue carries, and she is a colleague.
+      // The human owner and Nova are the catalogue's addressable rows; both are deliberately reachable.
       expect(
         ColleagueTool.addressable(yield* agent.all(), AgentV2.ID.make("plan")).map((a) => String(a.id)),
-      ).toEqual([AgentV2.NOVA_ID])
+      ).toEqual(["owner", AgentV2.NOVA_ID])
     }),
   )
 })

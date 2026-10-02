@@ -79,6 +79,11 @@ const residentTools = [
   // unnoticed, because the change was verified by its own changed-area suites: exactly the failure
   // `changed-area suites are not the TREE` names.
   "read",
+  // Resident, and the decision was made when the tool landed (`0eb2e271f`): reading the project one
+  // is assigned to is a standing fact an officer must reach without a discovery round trip. The
+  // runner withdraws it per session for anyone who manages no project (`runner/llm.ts`), so it is on
+  // the prefix only where it applies.
+  "projects",
   // RESIDENT, and the ratchet's question was answered before it was added: introspection is REACTIVE
   // — the user asks "why did you forget that?" and the colleague must be able to answer NOW. Deferred
   // disclosure works for tools a session reaches for after something happens (`log` after a failure);
@@ -350,7 +355,19 @@ describe("LocationServiceMap", () => {
           // *Could it be deferred?* It was, and the prompt made that a contradiction: the old
           // `#DURABLE` block named both tools, so a session that had an area had been told how to
           // maintain it while being unable to reach either without a discovery round trip.
-          expect(residentBytes).toBeLessThan(38_500) // observed 37,918 on 2026-09-17 (98.5% of 38,500)
+          // ── Raised 2026-10-02 for the `projects` tool (37,918 → 43,384) ───────────────────────
+          //
+          // *Who pays?* An officer's turn prefix — but only one that manages a project: the runner
+          // withdraws `projects` per session for everyone else (`runner/llm.ts`). This ledger is
+          // registry-wide, so it counts the schema once regardless of who receives it.
+          //
+          // *What buys the 5,466 bytes?* One schema: the assigned-project reader. Reading the project
+          // one is assigned to is a standing fact reached at any moment, so a `tool_search` detour is
+          // exactly the friction the resident set exists to remove.
+          //
+          // *Could it be deferred?* It could, but then every manager paid a discovery round trip to
+          // read a fact the instance already holds. Deferred stays for tools reached AFTER an event.
+          expect(residentBytes).toBeLessThan(44_000) // observed 43,384 on 2026-10-02
           const chatTools = blockedState.tools.filter((tool) => ShortChat.offered(true, tool.name))
           expect(chatTools).toEqual([])
           // The second location boots AFTER the policy is gone — its boot snapshot allows the

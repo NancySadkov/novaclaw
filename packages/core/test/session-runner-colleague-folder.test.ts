@@ -12,7 +12,14 @@ import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionTable } from "@novaclaw/core/session/sql"
-import { HARNESS_SESSION, completeTurn, drive, isHarnessInjected, makeRunnerHarness } from "./fixture/runner-harness"
+import {
+  HARNESS_SESSION,
+  completeTurn,
+  drive,
+  isHarnessInjected,
+  makeRunnerHarness,
+  resumeUntil,
+} from "./fixture/runner-harness"
 
 /**
  * DOES A COLLEAGUE WITH A STORED FOLDER GET TOLD WHERE IT IS?
@@ -97,6 +104,12 @@ const groundingFor = async (input: {
   readonly strict?: boolean
   /** What the user typed. Defaults to an ordinary opener; the Strict cases below vary it. */
   readonly prompt?: string
+  /**
+   * The turn is an ordinary CHAT turn, which self-drives until an accepted `exit` and therefore never
+   * returns from `resume`. Observe the turn and stop it instead. The Strict step-engine path and the
+   * Fast Chat path both settle on their own, so they leave this unset.
+   */
+  readonly chatResume?: boolean
 }) => {
   const harness = makeRunnerHarness({
     turns: [completeTurn("t1", "One")],
@@ -135,7 +148,7 @@ const groundingFor = async (input: {
         prompt: Prompt.make({ text: input.prompt ?? "First" }),
         resume: false,
       })
-      yield* session.resume(HARNESS_SESSION)
+      yield* input.chatResume === true ? resumeUntil("One") : session.resume(HARNESS_SESSION)
     }),
     `colleague folder — ${input.agentID}`,
   )
@@ -163,8 +176,8 @@ const groundingFor = async (input: {
 
 describe("the folder a colleague was assigned is the folder its turn is grounded in", () => {
   test("🔴 the assigned project is named AND enumerated — and the unassigned colleague gets its own scratch instead", async () => {
-    const assigned = await groundingFor({ agentID: ASSIGNED, directory: ASSIGNED_PROJECT })
-    const unassigned = await groundingFor({ agentID: UNASSIGNED, directory: undefined })
+    const assigned = await groundingFor({ agentID: ASSIGNED, directory: ASSIGNED_PROJECT, chatResume: true })
+    const unassigned = await groundingFor({ agentID: UNASSIGNED, directory: undefined, chatResume: true })
 
     expect(
       assigned.text,
@@ -310,6 +323,7 @@ describe("the folder a colleague was assigned is the folder its turn is grounded
       strict: true,
       // Routes to CHAT without asking the model: "resume" with nothing resumable is a conversation.
       prompt: "resume",
+      chatResume: true,
     })
     expect(
       fallthrough.everything,

@@ -10,7 +10,7 @@ import { SessionEvent } from "@novaclaw/core/session/event"
 import { SessionInput } from "@novaclaw/core/session/input"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionContextEpochTable } from "@novaclaw/core/session/sql"
-import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, exitTurn, makeRunnerHarness } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIM — a session that MOVES leaves its old location behind, mid-flight.
@@ -41,7 +41,11 @@ import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixtu
 
 describe("SessionRunnerLLM — a session that moves", () => {
   test("interrupts a source Location runner after a Session moves", async () => {
-    const harness = makeRunnerHarness({ turns: [completeTurn("t1", "One")] })
+    const harness = makeRunnerHarness({
+      withExitTool: true,
+      turns: [completeTurn("t1", "One"), exitTurn("done")],
+      utilityTurns: [completeTurn("audit", "YES")],
+    })
 
     const { epoch, exit, pending } = await drive(
       harness,

@@ -495,6 +495,174 @@ definition: new ToolDefinition({
                   "command"
                 ],
                 "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "repeated-tool"
+                    ]
+                  },
+                  "tool": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "count": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "NaN"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "Infinity"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "-Infinity"
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "kind": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "identical",
+                          "failure"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "additionalProperties": false,
+                "description": "Fires when the agent calls the same tool with the same arguments (or to the same failing target) N times in a row. The harness detects the loop; this hook only selects which loops a nudge answers."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "session-restarted"
+                    ]
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "additionalProperties": false,
+                "description": "Fires once when a provider recovery restarts the session. Replaces the hardcoded restart notice."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "empty-turn"
+                    ]
+                  },
+                  "count": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "NaN"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "Infinity"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "-Infinity"
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "additionalProperties": false,
+                "description": "Fires when a turn ends with no reply and no tool call. count 1 is the first recovery, 2 the diagnostic."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "announced-tool"
+                    ]
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "additionalProperties": false,
+                "description": "Fires when a turn promised a tool call and never made one."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "finish-audit"
+                    ]
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "additionalProperties": false,
+                "description": "Fires when the finish audit finds the goal not fully achieved and the agent must continue."
               }
             ],
             "description": "A harness-owned event selector. Script hooks fire when their command exits successfully."
@@ -523,6 +691,239 @@ definition: new ToolDefinition({
               }
             ],
             "description": "Repeat as often as the trigger fires. Off by default: a nudge is delivered at most once per 30 minutes and at most once per context epoch."
+          },
+          "minSubordinates": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "NaN"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "Infinity"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "-Infinity"
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Deliver only when the officer has at least this many direct subordinates."
+          },
+          "requireNoSubordinates": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Deliver only when the officer has no direct subordinates."
+          },
+          "tokenRate": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "tokens": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "NaN"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "Infinity"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "-Infinity"
+                        ]
+                      }
+                    ]
+                  },
+                  "windowSeconds": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "NaN"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "Infinity"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "-Infinity"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "tokens",
+                  "windowSeconds"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Deliver only when the agent generated at least this many tokens in the last windowSeconds."
+          },
+          "requireTmpFolder": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Deliver only when the project folder contains a ./tmp directory."
+          },
+          "clearChat": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Clear the officer's chat before inserting the nudge."
+          },
+          "forceCompaction": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Force a context compaction before inserting the nudge."
+          },
+          "stopOfficer": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stop the officer (interrupt its current work)."
+          },
+          "sleepSeconds": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "NaN"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "Infinity"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "-Infinity"
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Put the officer to sleep for this many seconds before inserting the nudge."
+          },
+          "cooldownSeconds": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "NaN"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "Infinity"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "-Infinity"
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Seconds this nudge stays silent after firing, independent of the quiet rule."
+          },
+          "default": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "True for shipped default nudges. The UI badges these and can hide them."
           }
         },
         "required": [

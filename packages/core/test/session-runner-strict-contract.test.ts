@@ -8,7 +8,7 @@ import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionStrict } from "@novaclaw/core/session/runner/strict"
 import { AbsolutePath } from "@novaclaw/core/schema"
-import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, userTexts } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, resumeUntil, userTexts } from "./fixture/runner-harness"
 
 /**
  * The first EXECUTING contract over `runStrictDrain`.
@@ -52,7 +52,7 @@ describe("SessionRunnerLLM — Strict dispatch contract", () => {
           prompt: Prompt.make({ text: "Hello Strict" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Hello from the normal drain.")
         return yield* session.context(HARNESS_SESSION)
       }),
       "Strict contract — CHAT falls through to normal dispatch",

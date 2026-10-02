@@ -5,7 +5,7 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { SessionEvent } from "@novaclaw/core/session/event"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, userTexts } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, resumeUntil, userTexts } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — input promotion survives a fault on either side of its commit.
@@ -88,7 +88,7 @@ describe("SessionRunnerLLM — input promotion", () => {
         })
 
         harness.requests.length = 0
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Ran anyway")
       }),
       "claim — a committed promotion is not stranded by a listener",
     )

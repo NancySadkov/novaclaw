@@ -70,21 +70,40 @@ const itWithCapability = testEffect(
   ]),
 )
 
+/**
+ * The `<env>` baseline, derived from the SAME capability `builtins.ts` reads.
+ *
+ * The image line is not optional dressing: a shipped instance bundles ImageMagick, so a baseline
+ * without it would only pass on a box where the tool is missing. Mirroring `Shell.imagemagick()` keeps
+ * the assertion exact (it is what catches volatile wall-clock context) without hard-coding a machine.
+ */
+const envBaseline = () =>
+  [
+    "Here is some useful information about the environment you are running in:",
+    "<env>",
+    `  Platform: ${process.platform}`,
+    `  Shell: ${Shell.agentDefault()}`,
+    ...(Shell.imagemagick()
+      ? [
+          `  Images: \`magick\` (ImageMagick 7) is on your PATH — use it to inspect, convert,`,
+          `    crop, resize, annotate and DRAW. Examples: \`magick in.png out.webp\` (convert),`,
+          `    \`magick identify in.png\` (dimensions/format), \`magick in.png -crop 100x80+10+10 out.png\`,`,
+          `    \`magick -size 64x48 xc:navy -stroke yellow -fill none -draw "rectangle 5,5 30,30" out.png\``,
+          `    (primitives: point, line, rectangle, circle, ellipse, polygon, text),`,
+          `    \`magick in.png -fill red -draw "point 2,3" out.png\` (set one pixel),`,
+          `    \`magick in.png -format "%[pixel:p{2,3}]" info:\` (read one pixel).`,
+        ]
+      : []),
+    "</env>",
+  ].join("\n")
+
 describe("SystemContextBuiltIns", () => {
   it.effect("loads location-scoped environment without volatile wall-clock context", () =>
     Effect.gen(function* () {
       const context = yield* SystemContextRegistry.Service
       const initialized = yield* SystemContext.initialize(yield* context.load())
 
-      expect(initialized.baseline).toBe(
-        [
-          "Here is some useful information about the environment you are running in:",
-          "<env>",
-          `  Platform: ${process.platform}`,
-          `  Shell: ${Shell.agentDefault()}`,
-          "</env>",
-        ].join("\n"),
-      )
+      expect(initialized.baseline).toBe(envBaseline())
     }),
   )
 
@@ -99,15 +118,7 @@ describe("SystemContextBuiltIns", () => {
       const context = yield* SystemContextRegistry.Service
       const initialized = yield* SystemContext.initialize(yield* context.load())
 
-      expect(initialized.baseline).toBe(
-        [
-          "Here is some useful information about the environment you are running in:",
-          "<env>",
-          `  Platform: ${process.platform}`,
-          `  Shell: ${Shell.agentDefault()}`,
-          "</env>",
-        ].join("\n"),
-      )
+      expect(initialized.baseline).toBe(envBaseline())
     }),
   )
 

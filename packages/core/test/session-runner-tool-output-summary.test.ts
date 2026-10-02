@@ -6,7 +6,7 @@ import { Tool } from "@novaclaw/core/tool/tool"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { completeTurn, drive, HARNESS_SESSION, makeRunnerHarness } from "./fixture/runner-harness"
+import { completeTurn, drive, HARNESS_SESSION, makeRunnerHarness, resumeUntil } from "./fixture/runner-harness"
 import { tmpdir } from "./fixture/tmpdir"
 
 const toolTurn = (id: string, name: string) => [
@@ -55,7 +55,7 @@ describe("SessionRunnerLLM — oversized tool output", () => {
           prompt: Prompt.make({ text: "Inspect the large report" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Done")
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — runner semantically summarizes retained tool output",
@@ -117,7 +117,7 @@ describe("SessionRunnerLLM — oversized tool output", () => {
           prompt: Prompt.make({ text: "Inspect the huge report" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Handled")
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — runner bypasses semantic summary above four MiB",

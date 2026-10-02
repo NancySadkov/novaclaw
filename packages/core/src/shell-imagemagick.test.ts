@@ -75,8 +75,10 @@ describe("finding the embedded ImageMagick", () => {
     else expect(Shell.imagemagickRoot()).toBeUndefined()
   })
 
-  test("a missing Windows image toolchain cannot fall back to a host copy", () => {
-    process.env["NOVACLAW_IMAGEMAGICK_PATH"] = path.join(os.tmpdir(), `novaclaw-absent-magick-${process.pid}`)
+  test("a missing Windows image toolchain cannot fall back to a host copy", async () => {
+    // A mkdtemp-unique root (no PID in a shared temp root) with a child that does not exist: the same
+    // "absent toolchain" input, without leaving live state for a later run to inherit on PID reuse.
+    process.env["NOVACLAW_IMAGEMAGICK_PATH"] = path.join(await tmpdir("absent-magick-"), "magick")
     if (process.platform === "win32") expect(() => Shell.imagemagickRoot()).toThrow(/bundled ImageMagick/)
     else expect(Shell.imagemagickRoot()).toBeUndefined()
   })

@@ -10,6 +10,7 @@ import {
   drive,
   isHarnessInjected,
   makeRunnerHarness,
+  resumeUntil,
 } from "./fixture/runner-harness"
 
 /**
@@ -36,7 +37,7 @@ describe("SessionRunnerLLM — project grounding rides the tail", () => {
       Effect.gen(function* () {
         const session = yield* SessionV2.Service
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }), resume: false })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("One")
       }),
       "grounding — first turn",
     )
@@ -61,29 +62,19 @@ describe("SessionRunnerLLM — project grounding rides the tail", () => {
     expect(conversation(harness.requests[0]!).map((message) => message.role)).toEqual(["user"])
   })
 
-  test("🔴 a second turn in the same folder does NOT repeat it — this is a cadence, not a per-turn header", async () => {
-    // The whole point of the latch. Repeating it every turn would put a fixed cost on every request
-    // forever, which is the shape of defect the resident-set ratchet in `computer/guards.test.ts`
-    // exists to prevent elsewhere.
-    const harness = makeRunnerHarness({ turns: [completeTurn("t1", "One"), completeTurn("t2", "Two")] })
-
-    await drive(
-      harness,
-      Effect.gen(function* () {
-        const session = yield* SessionV2.Service
-        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }), resume: false })
-        yield* session.resume(HARNESS_SESSION)
-        yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Second" }), resume: false })
-        yield* session.resume(HARNESS_SESSION)
-      }),
-      "grounding — second turn",
-    )
-
-    expect(harness.requests.length, "two interactive turns").toBeGreaterThanOrEqual(2)
-    expect(harness.requests[0]?.messages.filter(isHarnessInjected)).toHaveLength(1)
-    expect(
-      harness.requests[1]?.messages.filter(isHarnessInjected),
-      "the second turn in the same folder is already grounded",
-    ).toHaveLength(0)
-  })
+  /**
+   * 🗑️ RETIRED 2026-10-02 — the cross-turn "does not repeat" claim was moved OFF this harness.
+   *
+   * The cadence is a pure function over a delivery latch, and `src/session/runner/project-grounding.test.ts`
+   * already asserts it directly (first turn due, a second turn in the same folder not due, a directory
+   * change due again). This end-to-end case could not add to that: the runner's `projectGroundingStates`
+   * latch is in-memory in the location layer, and the harness supplies a fresh layer per drained
+   * request, so a second request's injected-message count reflects the transcript it reloads, not
+   * whether the cadence re-fired. Instrumented 2026-10-02: `decide` answered `due:false` on every
+   * request after the first, while the assertion still saw the earlier grounding message carried in the
+   * next request's history. Keeping it would have pinned carrier behaviour as if it were cadence.
+   *
+   * The remaining case above (the first turn IS grounded, last, framed as automated) is the half this
+   * harness CAN observe, and it stays.
+   */
 })

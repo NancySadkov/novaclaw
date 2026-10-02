@@ -143,25 +143,29 @@ describe("a prompt aimed at a filed chat", () => {
     }),
   )
 
-  it.effect("a chat NOBODY live owns is brought back, and is never left owned by a retired id", () =>
+  it.effect("a chat NOBODY live owns routes to the governing officer, never onto a retired id", () =>
     Effect.gen(function* () {
-      // A retirement archives the colleague's chats and deletes its config row. There is no entity to
-      // resolve through, so the chat the caller NAMED is the address — filed is a state the user put
-      // it in, and typing into it is the user asking for it not to be.
+      // A retirement archives the colleague's chats and deletes its config row. The named transcript
+      // stays HISTORY — filed is a state the user put it in — and the words go to the officer who now
+      // governs the instance (Nova).
       //
-      // ⚠️ The owner is re-stamped to a POSTURE. Leaving the retired id on a LIVE root is the bleed
-      // `agent/retire.ts` archives chats to prevent: officer names come from a fixed pool, so the next
-      // colleague drawn on that name would be handed this transcript as its own.
+      // 🔴 The chat is NOT revived and re-stamped onto a posture. That path (`build`) was the last
+      // writer of a retired agent, and the 2026-09-27 retirement removed it: reviving would hand a
+      // returning pool name this transcript as its own. See `resolveFiledChat` in `session.ts`.
       const sessions = yield* SessionV2.Service
       const filed = yield* sessions.create({ location, agent: AgentV2.ID.make("myron"), title: "retired" })
       yield* sessions.setArchived({ sessionID: filed.id, time: Date.now() })
 
       const admitted = yield* sessions.prompt({ sessionID: filed.id, prompt: { text: "anything" } })
 
-      expect(admitted.sessionID).toBe(filed.id)
+      expect(admitted.sessionID).not.toBe(filed.id)
+      // The named chat stays filed, under its original id — history, not a live root.
       const restored = yield* sessions.get(filed.id)
-      expect(restored.time.archived).toBeUndefined()
-      expect(restored.agent).toBe(AgentV2.ID.make("build"))
+      expect(restored.time.archived).toBeDefined()
+      expect(restored.agent).toBe(AgentV2.ID.make("myron"))
+      // The governing officer is the default colleague (Nova).
+      const governing = yield* sessions.get(admitted.sessionID)
+      expect(governing.agent).toBe(AgentV2.NOVA_ID)
     }),
   )
 

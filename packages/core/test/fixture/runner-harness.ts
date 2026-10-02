@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs"
-import { Effect, Layer, Schema, Stream } from "effect"
+import { Effect, Fiber, Layer, Schema, Stream } from "effect"
 import { LLMClient, LLMEvent, Model, type LLMClientShape, type LLMError, type LLMRequest } from "@novaclaw/llm"
 import { runBounded } from "./bounded"
 import { asc, desc, eq } from "drizzle-orm"
@@ -15,6 +15,7 @@ import { PermissionV2 } from "@novaclaw/core/permission"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { AbsolutePath, RelativePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionEvent } from "@novaclaw/core/session/event"
 import { Snapshot } from "@novaclaw/core/snapshot"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionExecution } from "@novaclaw/core/session/execution"
@@ -1098,6 +1099,55 @@ export const completeTurn = (id: string, text: string): LLMEvent[] => [
   LLMEvent.stepFinish({ index: 0, reason: "stop" }),
   LLMEvent.finish({ reason: "stop" }),
 ]
+
+/**
+ * A terminal turn that requests completion with `exit`.
+ *
+ * A non-Chat officer does not settle on a text reply: `drive.ts` re-prompts it to call `exit`, so a
+ * claim whose scripted conversation ends in `completeTurn` never returns from `resume`/`run`. Pair this
+ * with `withExitTool: true` and an accepting `utilityTurns` entry (`completeTurn("audit", "YES")`) to
+ * let the drain reach an accepted exit — the state a real officer reaches after a reply.
+ */
+export const exitTurn = (result: string): LLMEvent[] => [
+  LLMEvent.stepStart({ index: 0 }),
+  LLMEvent.toolCall({ id: "exit-call", name: "exit", input: { result } }),
+  LLMEvent.stepFinish({ index: 0, reason: "tool-calls" }),
+  LLMEvent.finish({ reason: "tool-calls" }),
+]
+
+/**
+ * Resume the harness session, stop as soon as an assistant turn's text contains `marker`, then await the
+ * interrupt.
+ *
+ * A claim that asserts an EXACT provider-request set cannot script the `exit` the drive now requires —
+ * the exit turn would be a request the claim measures. This observes the turn under test and stops the
+ * drain instead, leaving the request/transcript state the claim asserts on.
+ */
+export const resumeUntil = (marker: string) =>
+  Effect.gen(function* () {
+    const session = yield* SessionV2.Service
+    const events = yield* EventV2.Service
+    const seen = yield* events.subscribe(SessionEvent.Text.Ended).pipe(
+      Stream.filter((event) => event.data.sessionID === HARNESS_SESSION && event.data.text.includes(marker)),
+      Stream.take(1),
+      Stream.runHead,
+      Effect.forkScoped,
+    )
+    yield* Effect.yieldNow
+    const running = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+    yield* Fiber.join(seen)
+    // `Text.Ended` fires before the step settles, and `finish`/tokens are projected on `Step.Ended`.
+    // Wait for the marked turn to settle before stopping, or the caller reads a transcript missing its
+    // `finish`. Bounded by the drive's own `runBounded`; `yieldNow` does not sleep.
+    for (;;) {
+      const messages = yield* session.context(HARNESS_SESSION)
+      const assistant = messages.findLast((message) => message.type === "assistant")
+      if (assistant !== undefined && assistant.type === "assistant" && assistant.finish !== undefined) break
+      yield* Effect.yieldNow
+    }
+    yield* session.interrupt(HARNESS_SESSION)
+    yield* Fiber.await(running)
+  })
 
 /**
  * Seed the session, run `body` against the harness graph, and bound the whole thing against a hang.

@@ -356,26 +356,6 @@ const LEDGER = new Map<string, { readonly classes: ReadonlyArray<string>; readon
         "them — but the escaped spelling is the identical value and is readable. Fix: escape both.",
     },
   ],
-  [
-    "packages/core/src/recipe.ts",
-    {
-      classes: [INVISIBLE_CLASS],
-      reason:
-        "PENDING (U6, filed): line 85 strips a leading byte-order mark with a raw U+FEFF inside the regex " +
-        'literal — `markdown.replace(/^<BOM>/, "")`. The intent is right and the regex works; it simply ' +
-        "cannot be read, reviewed or searched for. Fix: spell the BOM as an escape in the character class.",
-    },
-  ],
-  [
-    "packages/core/src/recipe.test.ts",
-    {
-      classes: [INVISIBLE_CLASS],
-      reason:
-        "PENDING (U6, filed): line 41 is the fixture for the above — a raw U+FEFF opening a template " +
-        "literal, so the input that is supposed to CARRY a BOM looks identical to one that does not, and " +
-        "the test cannot be read. Fix: spell it as an escape in the literal.",
-    },
-  ],
 ])
 
 /** The files this incident was written for. Each must stay clean AND keep the escape it gained. */
@@ -568,10 +548,10 @@ describe("the guard actually bites (negative control)", () => {
   })
 
   test("a ledgered file is exempt only for the class its row names", () => {
-    // A row is not a blanket pardon. `recipe.ts` may carry a BOM; a NUL appearing in it must still
+    // A row is not a blanket pardon. `irc.ts` may carry a C0 byte; a NUL appearing in it must still
     // fail — and `no ledger row sanctions a raw NUL` guarantees no row can ever grant that.
-    const row = LEDGER.get("packages/core/src/recipe.ts")
-    expect(row?.classes).toEqual([INVISIBLE_CLASS])
+    const row = LEDGER.get("packages/core/src/messenger/driver/irc.ts")
+    expect(row?.classes).toEqual([C0_CLASS])
     expect(row?.classes).not.toContain(NUL_CLASS)
   })
 })

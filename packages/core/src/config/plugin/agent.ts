@@ -173,7 +173,10 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
   // AgentConfigStore. Officer nudges are harness-delivery components, not fields on the
   // AgentV2 identity row. `item.adhocTools` is consumed the same way, by the ad-hoc
   // guidance reader: recipe text reaches only the owning officer's prompt, so it is
-  // delivery configuration rather than a roster fact.
+  // delivery configuration rather than a roster fact. `item.unansweredMessageNudges`
+  // and `item.colleagueMessageIntervalMinutes` are the same shape again — messaging
+  // posture and cadence read straight from the store by the colleague stall sweep and
+  // hand-off, never copied onto the identity row.
   if (AgentV2.isProtected(agentID)) {
     const refused = AgentV2.protectedRefusedKeys(item as Record<string, unknown>, "operator")
     // ⚠️ A fragment carrying a refused key is refused WHOLE. A partial override is the shape that

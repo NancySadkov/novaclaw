@@ -35,6 +35,10 @@ const CONSUMED: Record<string, string> = {
     "read directly from the agent config store by NudgeService; they are harness config, not an AgentV2 record field",
   adhocTools:
     "read directly from the agent config store by the ad-hoc guidance reader; officer recipes reach only that officer's prompt, not the roster",
+  unansweredMessageNudges:
+    "read directly from the agent config store by the colleague stall sweep; a messaging posture, not an AgentV2 record field",
+  colleagueMessageIntervalMinutes:
+    "read directly from the agent config store by colleague hand-off; a messaging cadence, not an AgentV2 record field",
 }
 
 describe("no config field is silently dropped on the way to the agent record", () => {
