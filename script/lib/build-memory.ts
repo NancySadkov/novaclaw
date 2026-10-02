@@ -3,7 +3,17 @@ import policy from "./build-memory.json"
 
 export const BUILD_MEMORY_LIMIT_BYTES = policy.budgetMiB * 1024 ** 2
 export const BUILD_NODE_HEAP_MB = policy.nodeHeapMiB
-export const buildAllocationLimit = (budgetBytes: number) => Math.floor((budgetBytes * 3) / 4)
+/**
+ * The Job Object's commit cap for an N MiB budget.
+ *
+ * ⚠️ Kept strictly below the budget: `PeakJobMemoryUsed` is Windows' own accounting and overshoots
+ * the cap it enforces (measured ~1% on a cap-filling probe, ~5% on the release build), so a
+ * cap-filling workload must still measure at or under the budget. It was 3/4 (960 of 1280), which the
+ * release build's real committed need (~1010 MiB — the UI vendor/worker asset builds) exceeded, so an
+ * esbuild allocation failed at random. 9/10 keeps the overshoot inside the budget and gives the build
+ * ~140 MiB of cap headroom.
+ */
+export const buildAllocationLimit = (budgetBytes: number) => Math.floor((budgetBytes * 9) / 10 / 4096) * 4096
 const JOB_ENV = "NOVACLAW_BUILD_MEMORY_JOB"
 const LIMIT_FLAGS = 0x200 | 0x2000
 

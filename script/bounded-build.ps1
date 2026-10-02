@@ -27,7 +27,7 @@ $job = [BuildMemoryJob]::CreateJobObjectW([IntPtr]::Zero, $jobName)
 [BuildMemoryJob]::Require($job -ne [IntPtr]::Zero, 'CreateJobObjectW')
 $jobInformation = New-Object byte[] 144
 [BitConverter]::GetBytes([uint32]0x2200).CopyTo($jobInformation, 16)
-[BitConverter]::GetBytes([uint64]($policy.budgetMiB * 1MB * 3 / 4)).CopyTo($jobInformation, 120)
+[BitConverter]::GetBytes([uint64]($policy.budgetMiB * 1MB * 9 / 10)).CopyTo($jobInformation, 120)
 [BuildMemoryJob]::Require([BuildMemoryJob]::SetInformationJobObject($job, 9, $jobInformation, 144), 'SetInformationJobObject')
 [BuildMemoryJob]::Require([BuildMemoryJob]::AssignProcessToJobObject($job, [BuildMemoryJob]::GetCurrentProcess()), 'AssignProcessToJobObject')
 $env:NOVACLAW_BUILD_MEMORY_JOB = $jobName
@@ -37,7 +37,7 @@ $env:GOMAXPROCS = '2'
 $env:UV_THREADPOOL_SIZE = '2'
 $env:CARGO_BUILD_JOBS = '1'
 $env:RAYON_NUM_THREADS = '1'
-$remainingMiB = [Math]::Max(0, $policy.budgetMiB * 3 / 4 - (Get-Process -Id $PID).WorkingSet64 / 1MB)
+$remainingMiB = [Math]::Max(0, $policy.budgetMiB - (Get-Process -Id $PID).WorkingSet64 / 1MB)
 & bun --smol (Join-Path $PSScriptRoot 'guard.ts') 'a desktop build' --bounded-build --min-free-gb ($remainingMiB / 1024)
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 [GC]::Collect()
