@@ -1,6 +1,7 @@
 export * as PromptManager from "./prompt-manager"
 
 import { displayPath } from "../../util/path"
+import { taskOrNone } from "../../coordination/task"
 
 /**
  * THE ONE SYSTEM PROMPT, and its single source of authority.
@@ -31,8 +32,18 @@ export interface Input {
   readonly title?: string | undefined
   /** Display name of the officer's superior; absent means the owner (Nova and the owner itself). */
   readonly superior?: string | undefined
-  /** The officer's direct reports, by display name. Empty = none. */
-  readonly subordinates: readonly string[]
+  /** The officer's direct reports, by display name, each with the coordination task it declared. */
+  readonly subordinates: readonly Subordinate[]
+  /** The officer's own coordination task, declared with the `coordination` tool. */
+  readonly task?: string | undefined
+  /**
+   * Whether this session is an OFFICER that owns a coordination task.
+   *
+   * ⚠️ Machineries (the compaction/title service agents) and anonymous workers render an
+   * `agent`-kind prompt but have no task of their own; rendering `none set yet` into their prompt
+   * would name a tool they must not reach for. Absent = false, the narrow default.
+   */
+  readonly taskBoard: boolean
   /** The officer's durable job instructions (`officer_settings_profile` → its `system` field). */
   readonly jobInstructions?: string | undefined
   /** `uname -o`-equivalent: the OS name. */
@@ -104,9 +115,19 @@ export const renderMemos = (memoText: string | undefined): string | undefined =>
   return ["# memo_set memos", body].join("\n")
 }
 
-/** `Your subordinates are A, B, C.` — or `You have no subordinates.` */
-const renderSubordinates = (subordinates: readonly string[]): string =>
-  subordinates.length === 0 ? "You have no subordinates." : `Your subordinates are ${subordinates.join(", ")}.`
+/** One direct report and the coordination task it currently holds. */
+export interface Subordinate {
+  readonly name: string
+  readonly task?: string | undefined
+}
+
+/** `Your subordinates are A (task: …), B (task: none set yet).` — or `You have no subordinates.` */
+const renderSubordinates = (subordinates: readonly Subordinate[]): string =>
+  subordinates.length === 0
+    ? "You have no subordinates."
+    : `Your subordinates are ${subordinates
+        .map((subordinate) => `${subordinate.name} (task: ${taskOrNone(subordinate.task)})`)
+        .join(", ")}.`
 
 /**
  * The preamble every agent-kind officer receives. Operator-authored, byte-stable, and deliberately
@@ -153,6 +174,11 @@ export const generate = (input: Input): string => {
     )
   if (input.unattended && (input.goal?.trim() ?? "").length > 0)
     blocks.push(`Your durable goal, set for you by whoever assigned this work:\n\n${input.goal!.trim()}`)
+  // 🔴 THE TASK LINE IS RE-READ AFTER EVERY COMPACTION AND CLEAR, which is its whole reason for
+  // existing: an officer that has just lost its transcript needs one line that says what it is on.
+  // It is rendered from the AGENT-keyed task store, never from the transcript, so it survives both.
+  // ⚠️ Officers only — a service agent or an anonymous worker has no task to declare.
+  if (input.taskBoard) blocks.push(`Your task - set/clear with coordination tool: ${taskOrNone(input.task)}.`)
   const memos = renderMemos(input.memoText)
   if (memos !== undefined) blocks.push(memos)
   if (input.project !== undefined && input.project.trim().length > 0) {

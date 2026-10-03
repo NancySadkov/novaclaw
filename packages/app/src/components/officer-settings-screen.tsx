@@ -202,6 +202,7 @@ export function OfficerSettingsScreen(props: {
   const [strict, setStrict] = createSignal<boolean | undefined>()
   const [operationMode, setOperationMode] = createSignal<"interactive" | "unattended" | undefined>()
   const [goal, setGoal] = createSignal<string | undefined>()
+  const [teamCoordination, setTeamCoordination] = createSignal<boolean | undefined>()
   const [surgicalEdits, setSurgicalEdits] = createSignal<boolean | undefined>()
   const [introspection, setIntrospection] = createSignal<boolean | undefined>()
   const [affective, setAffective] = createSignal<boolean | undefined>()
@@ -337,6 +338,7 @@ export function OfficerSettingsScreen(props: {
     if (mode === "chat" || mode === "human") setDirectory("")
   }
   const goalValue = () => goal() ?? (agent()?.config?.["goal"] as string | undefined) ?? ""
+  const teamCoordinationValue = () => teamCoordination() ?? agent()?.config?.["teamCoordination"] !== false
   const standingValue = (draft: boolean | undefined, key: string, fallback: boolean) =>
     draft ?? (agent()?.config?.[key] as boolean | undefined) ?? fallback
   const surgicalEditsValue = () => standingValue(surgicalEdits(), "surgicalEdits", false)
@@ -760,6 +762,7 @@ export function OfficerSettingsScreen(props: {
     strict() !== undefined ||
     operationMode() !== undefined ||
     goal() !== undefined ||
+    teamCoordination() !== undefined ||
     surgicalEdits() !== undefined ||
     introspection() !== undefined ||
     affective() !== undefined ||
@@ -1331,6 +1334,7 @@ export function OfficerSettingsScreen(props: {
             ...(parsedStuckThreshold() === undefined ? {} : { stuckCompactionThreshold: parsedStuckThreshold()! }),
             ...(operationMode() === undefined ? {} : { operationMode: operationMode()! }),
             ...(goal() === undefined ? {} : { goal: goalValue() }),
+            ...(teamCoordination() === undefined ? {} : { teamCoordination: teamCoordination()! }),
             ...(toolLabels() === undefined ? {} : { toolLabels: toolLabels()! }),
             // A ruleset patch REPLACES the array, so the officer's and the user's other rules ride
             // along in `computerRuleset()`. An empty result is not sent as `[]` — see the deletion.
@@ -1409,6 +1413,7 @@ export function OfficerSettingsScreen(props: {
       setStrict(undefined)
       setOperationMode(undefined)
       setGoal(undefined)
+      setTeamCoordination(undefined)
       setSurgicalEdits(undefined)
       setIntrospection(undefined)
       setAffective(undefined)
@@ -2074,6 +2079,21 @@ export function OfficerSettingsScreen(props: {
                     </span>
                     <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
                       One message sent and one received per interval. Direct messages from a superior are exempt.
+                    </span>
+                  </label>
+                  <label class="mt-2 flex items-start gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      class="mt-0.5"
+                      checked={teamCoordinationValue()}
+                      onChange={(event) => setTeamCoordination(event.currentTarget.checked)}
+                    />
+                    <span>
+                      <span class="block">Team Coordination</span>
+                      <span class="mt-1 block text-[11px] leading-relaxed text-v2-text-text-faint">
+                        Tell this officer's other reports when one of them declares or clears its task, and expose the
+                        Tasks board beside Team Chat. Turn off to keep a large team quiet.
+                      </span>
                     </span>
                   </label>
                 </Show>

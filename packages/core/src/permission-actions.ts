@@ -56,7 +56,7 @@ const SESSION = ["todowrite", "resource_status"] as const
 const CAPABILITY = ["recipe", "revert", "provision", "define_tool", "register-app"] as const
 
 /** Delegation: staffing, directing, and stopping sub-agents, plus handing work to a colleague. */
-const DELEGATION = ["spawn", "kill", "colleague"] as const
+const DELEGATION = ["spawn", "kill", "colleague", "coordination"] as const
 
 /** The community network and the messengers, which speak as the user to other people. */
 const SOCIAL = [

@@ -11,6 +11,7 @@ import { SessionSchema } from "../session/schema"
 import * as MemoryAccess from "../kb-graph/memory-access"
 import { AgentUsage } from "./usage"
 import { AgentStuckCounterTable } from "../agent-stuck.sql"
+import { AgentCoordinationTable } from "../coordination/sql"
 import { GraphRegistry } from "./graph-registry"
 import { AgentRetirement } from "./retirement"
 import { eq } from "drizzle-orm"
@@ -138,6 +139,13 @@ export const everything = (input: {
     yield* input.db
       .delete(AgentStuckCounterTable)
       .where(eq(AgentStuckCounterTable.agent, input.agent))
+      .run()
+      .pipe(Effect.orDie)
+    // A retired id is drawn again, and a coordination task is a statement about what a colleague is
+    // working on — leaving it behind would hand a stranger the old officer's job.
+    yield* input.db
+      .delete(AgentCoordinationTable)
+      .where(eq(AgentCoordinationTable.agent, input.agent))
       .run()
       .pipe(Effect.orDie)
     yield* input.db.delete(ProjectOfficerTable).where(eq(ProjectOfficerTable.agent, input.agent)).run().pipe(Effect.orDie)

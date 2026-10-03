@@ -12593,6 +12593,95 @@
         ]
       }
     },
+    "/api/agent/{agentID}/coordination": {
+      "get": {
+        "tags": ["agents"],
+        "operationId": "v2.agent.coordination",
+        "parameters": [
+          {
+            "name": "agentID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "location",
+            "in": "query",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "directory": {
+                  "type": "string"
+                },
+                "workspace": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            },
+            "required": false,
+            "style": "deepObject",
+            "explode": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "location": {
+                      "$ref": "#/components/schemas/LocationInfo"
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AgentCoordinationEntry"
+                      }
+                    }
+                  },
+                  "required": ["location", "data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "The officer, its superior, its peers and its direct reports, each with the coordination task it declared. Keyed on the AGENT, so a task survives a Clear chat and is re-read into the prompt after every compaction.",
+        "summary": "An officer team's coordination tasks",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.agent.coordination({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/session": {
       "get": {
         "tags": ["sessions"],
@@ -37858,6 +37947,9 @@
           "goal": {
             "type": "string"
           },
+          "teamCoordination": {
+            "type": "boolean"
+          },
           "contextBudget": {
             "type": "boolean"
           },
@@ -40240,6 +40332,9 @@
           "goal": {
             "type": "string"
           },
+          "teamCoordination": {
+            "type": "boolean"
+          },
           "contextBudget": {
             "type": "boolean"
           },
@@ -40562,6 +40657,31 @@
           }
         },
         "required": ["minute", "generated"],
+        "additionalProperties": false
+      },
+      "AgentCoordinationEntry": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "superior": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "teamCoordination": {
+            "type": "boolean"
+          }
+        },
+        "required": ["agent", "teamCoordination"],
         "additionalProperties": false
       },
       "SessionExecution": {

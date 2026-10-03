@@ -31,6 +31,7 @@ export const ACTION_LABEL_KEY = {
   community_ask: "settings.permissions.tool.community_ask.title",
   community_say: "settings.permissions.tool.community_say.title",
   computer: "settings.permissions.tool.computer.title",
+  coordination: "settings.permissions.tool.coordination.title",
   create: "settings.permissions.tool.create.title",
   define_tool: "settings.permissions.tool.define_tool.title",
   edit: "settings.permissions.tool.edit.title",

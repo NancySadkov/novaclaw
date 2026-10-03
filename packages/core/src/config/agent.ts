@@ -182,6 +182,14 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   operationMode: Schema.Literals(["interactive", "unattended"]).pipe(Schema.optional),
   /** The officer's durable objective. The live goal component may refine its plan, never replace this brief. */
   goal: Schema.String.pipe(Schema.optional),
+  /**
+   * When this officer has subordinates, may their task changes be broadcast to their team?
+   *
+   * The `coordination` tool reads it on the SUPERIOR of whoever declares or clears a task: when the
+   * toggle is on (absent = on), that officer's direct reports and its own other reports are told who
+   * is now on what. Turning it off keeps the board working but stops the chatter.
+   */
+  teamCoordination: Schema.Boolean.pipe(Schema.optional),
   /** Standing harness preferences. Each is sparse: absent inherits the instance setting.
    *  `introspection` and `affective` accept the historical bare boolean or the full
    *  detail struct — old rows keep decoding, new writes carry the struct. */

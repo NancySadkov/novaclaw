@@ -352,6 +352,14 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`agent_coordination\` (
+          \`agent\` text PRIMARY KEY,
+          \`task\` text NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`credential\` (
           \`id\` text PRIMARY KEY,
           \`integration_id\` text,

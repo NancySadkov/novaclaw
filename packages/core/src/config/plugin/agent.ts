@@ -135,6 +135,7 @@ function applyFields(agent: AgentRecord, agentID: AgentV2.ID, item: ConfigAgent.
   if (item.kind !== undefined) runtime["kind"] = item.kind
   if (item.operationMode !== undefined) runtime["operationMode"] = item.operationMode
   if (item.goal !== undefined) runtime["goal"] = item.goal
+  if (item.teamCoordination !== undefined) runtime["teamCoordination"] = item.teamCoordination
   if (item.contextBudget !== undefined) runtime["contextBudget"] = item.contextBudget
   if (item.surgicalEdits !== undefined) runtime["surgicalEdits"] = item.surgicalEdits
   if (item.introspection !== undefined) runtime["introspection"] = item.introspection

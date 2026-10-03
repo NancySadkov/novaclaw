@@ -6,7 +6,7 @@ const base: PromptManager.Input = {
   name: "Iris",
   title: "Reviewer",
   superior: "Nova",
-  subordinates: ["Theron"],
+  subordinates: [{ name: "Theron" }],
   jobInstructions: "Review the manuscript.",
   os: "Windows_NT",
   kernelRelease: "10.0.22631",
@@ -16,6 +16,7 @@ const base: PromptManager.Input = {
   scratch: "C:/data/scratch/iris",
   goal: undefined,
   unattended: false,
+  taskBoard: true,
   memoText: undefined,
   project: undefined,
   projectFiles: undefined,
@@ -32,7 +33,7 @@ describe("PromptManager — the one system prompt", () => {
     expect(text).toContain("Instance owner is nangl.")
     expect(text).toContain("Your name is Iris. Your job title is Reviewer.")
     expect(text).toContain("Your superior is Nova")
-    expect(text).toContain("Your subordinates are Theron.")
+    expect(text).toContain("Your subordinates are Theron (task: none set yet).")
     expect(text).toContain("Job Instructions: Review the manuscript.")
     expect(text).toContain(
       "C:/data/scratch/iris is your private intermediate files workspace; don't litter project's folder.",
@@ -115,5 +116,24 @@ describe("PromptManager — the one system prompt", () => {
     const text = PromptManager.generate({ ...base, superior: undefined, subordinates: [] })
     expect(text).toContain("Your superior is nangl")
     expect(text).toContain("You have no subordinates.")
+  })
+
+  test("the task line is always present, and reads `none set yet` when unset", () => {
+    expect(PromptManager.generate(base)).toContain("Your task - set/clear with coordination tool: none set yet.")
+    expect(PromptManager.generate({ ...base, task: "reviewing the P2P handshake" })).toContain(
+      "Your task - set/clear with coordination tool: reviewing the P2P handshake.",
+    )
+  })
+
+  test("machinery and workers do not get a task line", () => {
+    expect(PromptManager.generate({ ...base, taskBoard: false })).not.toContain("coordination tool")
+  })
+
+  test("a superior's subordinate list carries each report's task", () => {
+    const text = PromptManager.generate({
+      ...base,
+      subordinates: [{ name: "Theron", task: "build the parser" }, { name: "Xenia" }],
+    })
+    expect(text).toContain("Your subordinates are Theron (task: build the parser), Xenia (task: none set yet).")
   })
 })

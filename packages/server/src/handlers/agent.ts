@@ -10,6 +10,7 @@ import { Scratch } from "@novaclaw/core/scratch"
 import { AgentRetire } from "@novaclaw/core/agent/retire"
 import { AgentUsage } from "@novaclaw/core/agent/usage"
 import { AgentTeamChat } from "@novaclaw/core/agent/team-chat"
+import { Coordination } from "@novaclaw/core/coordination"
 import { RosterChat } from "@novaclaw/core/session/roster-chat"
 import { WorldMemory } from "@novaclaw/core/kb-graph/world-memory"
 import { Database } from "@novaclaw/core/database/database"
@@ -242,6 +243,19 @@ export const AgentHandler = handlerLayer(
               before: ctx.query.before,
               after: ctx.query.after,
             })
+          }),
+        ),
+      )
+      .handle("agent.coordination", (ctx) =>
+        response(
+          Effect.gen(function* () {
+            const { db } = yield* Database.Service
+            const roster = yield* AgentV2.Service.use((agent) => agent.all())
+            const officerID = String(ctx.params.agentID)
+            // Read the ids once, then the tasks for exactly those ids in one query.
+            const ids = Coordination.teamBoard(roster, new Map(), officerID).map((entry) => entry.agent)
+            const tasks = yield* Coordination.taskMap(db, ids)
+            return Coordination.teamBoard(roster, tasks, officerID)
           }),
         ),
       )

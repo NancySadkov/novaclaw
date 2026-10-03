@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "faeab946-4fd6-4e1c-93d8-8d4c8d5f2bc2",
+  "id": "c24d03d0-aa31-41fe-a5f8-d90f14c74ff3",
   "prevIds": [
-    "bd804d08-a923-4f07-99d8-13822c74e337"
+    "faeab946-4fd6-4e1c-93d8-8d4c8d5f2bc2"
   ],
   "ddl": [
     {
@@ -144,6 +144,10 @@
     },
     {
       "name": "community_succession",
+      "entityType": "tables"
+    },
+    {
+      "name": "agent_coordination",
       "entityType": "tables"
     },
     {
@@ -2297,6 +2301,46 @@
       "name": "time_updated",
       "entityType": "columns",
       "table": "community_succession"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "agent",
+      "entityType": "columns",
+      "table": "agent_coordination"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "task",
+      "entityType": "columns",
+      "table": "agent_coordination"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "agent_coordination"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "agent_coordination"
     },
     {
       "type": "text",
@@ -5636,6 +5680,15 @@
       "nameExplicit": false,
       "name": "community_succession_pk",
       "table": "community_succession",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "agent"
+      ],
+      "nameExplicit": false,
+      "name": "agent_coordination_pk",
+      "table": "agent_coordination",
       "entityType": "pks"
     },
     {

@@ -249,6 +249,29 @@ export const AgentGroup = HttpApiGroup.make("server.agent")
         }),
       ),
   )
+  .add(
+    /**
+     * The coordination task board beside Team Chat: who is on this officer's team and what each is
+     * working on. Answered from SQL by the instance because the membership (who shares this officer's
+     * superior) is a kernel rule, not a fold over a page of sessions.
+     */
+    HttpApiEndpoint.get("agent.coordination", "/api/agent/:agentID/coordination", {
+      params: { agentID: Agent.ID },
+      query: LocationQuery,
+      success: Location.response(Schema.Array(Agent.CoordinationEntry)),
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.agent.coordination",
+          summary: "An officer team's coordination tasks",
+          description:
+            "The officer, its superior, its peers and its direct reports, each with the coordination " +
+            "task it declared. Keyed on the AGENT, so a task survives a Clear chat and is re-read into " +
+            "the prompt after every compaction.",
+        }),
+      ),
+  )
   .annotateMerge(
     OpenApi.annotations({
       title: "agents",

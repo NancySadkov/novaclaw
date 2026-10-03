@@ -1267,6 +1267,35 @@ class ApiV2Agent extends NovaClawApiClient {
     })
   }
 
+  /**
+   * An officer team's coordination tasks
+   *
+   * The officer, its superior, its peers and its direct reports, each with the coordination task it declared. Keyed on the AGENT, so a task survives a Clear chat and is re-read into the prompt after every compaction.
+   */
+  public coordination<ThrowOnError extends boolean = false>(
+    parameters: {
+      agentID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const path = { agentID: parameters?.["agentID"] }
+    const query = { location: parameters?.["location"] }
+    return (options?.client ?? this.client).get<
+      T.V2AgentCoordinationResponses,
+      T.V2AgentCoordinationErrors,
+      ThrowOnError
+    >({
+      url: "/api/agent/{agentID}/coordination",
+      ...options,
+      path,
+      query,
+    })
+  }
+
   private _avatar?: ApiV2AgentAvatar
   get avatar(): ApiV2AgentAvatar {
     return (this._avatar ??= new ApiV2AgentAvatar({ client: this.client }))

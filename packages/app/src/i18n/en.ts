@@ -369,6 +369,12 @@ export const dict = {
   "teamChat.retry": "Try again",
   "teamChat.empty": "No team messages yet",
   "teamChat.emptyHint": "Colleague-tool coordination will appear here as the team works.",
+  "teamChat.tasks.tab": "Tasks",
+  "teamChat.tasks.loading": "Gathering the team's tasks…",
+  "teamChat.tasks.unavailable": "The task board is temporarily unavailable.",
+  "teamChat.tasks.empty": "No one on this team yet",
+  "teamChat.tasks.none": "none set yet",
+  "teamChat.tasks.you": "you",
 
   "prompt.permissionMode.title": "Permission mode",
   // One word each — these render inside a narrow listbox (and on a phone). The explanations live in
@@ -2129,6 +2135,9 @@ export const dict = {
   "settings.permissions.tool.kill.description": "Terminate a worker it spawned and archive that worker’s transcript",
   "settings.permissions.tool.colleague.title": "Hand Off to a Colleague",
   "settings.permissions.tool.colleague.description": "Give work to another named agent on the roster",
+  "settings.permissions.tool.coordination.title": "Coordination Board",
+  "settings.permissions.tool.coordination.description":
+    "Declare its own task on the team board, or set a direct report's",
   "settings.permissions.tool.community_ask.title": "Ask the Swarm",
   "settings.permissions.tool.community_ask.description": "Ask another user's Nova a question",
   "settings.permissions.tool.community_say.title": "Answer the Swarm",

@@ -54,6 +54,10 @@ const residentTools = [
   // wholly denied and never sees the tool; Nova re-allows it and pays for it. This list is the
   // worst case, which is the right thing for a ratchet to measure.
   "colleague",
+  // RESIDENT for the same reason as `colleague`: the prompt tells every officer its task and its
+  // subordinates' tasks, so a board that had to be discovered would be a tool the prompt already
+  // named and the model cannot reach. The task line is re-read after every compaction and Clear.
+  "coordination",
   // RESIDENT on purpose, and the ratchet's question was answered before it was added: a colleague
   // that must first DISCOVER it can delegate will not delegate. Deferred disclosure costs one
   // `tool_search` round-trip in the sessions that need a tool — but nothing prompts a model to go
@@ -367,7 +371,16 @@ describe("LocationServiceMap", () => {
           //
           // *Could it be deferred?* It could, but then every manager paid a discovery round trip to
           // read a fact the instance already holds. Deferred stays for tools reached AFTER an event.
-          expect(residentBytes).toBeLessThan(44_000) // observed 43,384 on 2026-10-02
+          // ── Raised 2026-10-03 for the `coordination` board (43,384 → 45,286) ──────────────────
+          //
+          // *Who pays?* Every officer's turn prefix. The prompt names the board by telling the officer
+          // its task and its reports' tasks; a deferred tool would be one the prompt already named but
+          // the model had to `tool_search` for. The schema is a four-op union, small.
+          //
+          // *Could it be deferred?* Same answer as `memo_set`/`colleague`: the task line is re-read
+          // after every compaction and Clear chat, so the tool that clears it must be reachable at
+          // that moment without a discovery round trip.
+          expect(residentBytes).toBeLessThan(48_000) // observed 45,286 on 2026-10-03
           const chatTools = blockedState.tools.filter((tool) => ShortChat.offered(true, tool.name))
           expect(chatTools).toEqual([])
           // The second location boots AFTER the policy is gone — its boot snapshot allows the

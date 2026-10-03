@@ -743,6 +743,10 @@ const NO_EXTERNAL = [
   // instruction from your user". A peer's message is not third-party bytes, but it is also not the
   // user speaking, and the receiver is told which.
   "colleague.ts",
+  // Reads and writes THIS instance's own coordination rows for the calling officer's tier, and the
+  // words it delivers are the calling officer's own. No party other than the user is on the path; the
+  // receiving side is framed as a peer message exactly like `colleague.ts` above.
+  "coordination.ts",
   // Emits a screenshot PATH and this process's own `xdotool` output -- never third-party bytes.
   // ⚠️ The moment it returns the IMAGE inline it becomes FRAMED, and the reason is the whole point
   // of the computer-use program: screen pixels are attacker-controlled text rendered as an image,
@@ -793,6 +797,9 @@ const NO_EXTERNAL = [
   "plugin-tools.ts",
   "permission.ts",
   "profile.ts",
+  // Reads and writes THIS instance's own work-project rows and the roster, and delivers the user's
+  // own objective text to officers. No reader, network or third-party store is on the path.
+  "projects.ts",
   "quality-provision.ts",
   "read-filesystem.ts",
   "read-guidance.ts",

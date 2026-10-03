@@ -379,7 +379,11 @@ const GENERATE_TIMEOUT_MS = 60_000
 // response are inline, so the public schema naming table is UNCHANGED — confirmed by comparing the
 // HEAD table against the regenerated one (identical 505 entries). So this re-pin records the
 // already-missing removal and nothing else.
-const SCHEMA_NAME_FINGERPRINT = "bfe2239e70ba715525692eb38d4fd3ec9558af6a66c9f208100119710831cdd0"
+// 2026-10-03 - ONE schema ADDED for the coordination board: `AgentCoordinationEntry`, the wire row
+// of `GET /api/agent/:agentID/coordination` (the Team Chat Tasks tab). Nothing removed, no existing
+// name changed — `AgentV2Info` gained the `teamCoordination` field but that is a shape change on an
+// existing name, which this table deliberately does not track. Pure addition, re-pinned here.
+const SCHEMA_NAME_FINGERPRINT = "82a2b194542172d1708c7edb9ccf0d6e6c0bbcee62390c70627d6d606e30a10c"
 
 /** A compact, readable account of HOW two spec documents differ — a 2000-line diff helps nobody. */
 function describeDrift(committed: Document, fresh: Document): string {

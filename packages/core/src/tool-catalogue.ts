@@ -42,6 +42,7 @@ const CORE_CATEGORIES: Readonly<Record<string, string>> = {
   question: "agents",
   read: "files",
   "read-hex": "files",
+  coordination: "agents",
   recipe: "knowledge",
   session: "configuration",
   resource_status: "system",

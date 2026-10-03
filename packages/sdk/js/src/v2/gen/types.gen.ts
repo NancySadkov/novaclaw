@@ -3893,6 +3893,7 @@ export type ConfigV2Agent = {
   kind?: "agent" | "chat" | "human"
   operationMode?: "interactive" | "unattended"
   goal?: string
+  teamCoordination?: boolean
   contextBudget?: boolean
   surgicalEdits?: boolean
   introspection?:
@@ -4707,6 +4708,7 @@ export type AgentV2Info = {
   service?: boolean
   operationMode?: "interactive" | "unattended"
   goal?: string
+  teamCoordination?: boolean
   contextBudget?: boolean
   surgicalEdits?: boolean
   introspection?:
@@ -4807,6 +4809,15 @@ export type AgentChatSummary = {
 export type AgentUsageMinute = {
   minute: number
   generated: number
+}
+
+export type AgentCoordinationEntry = {
+  agent: string
+  name?: string
+  title?: string
+  superior?: string
+  task?: string
+  teamCoordination: boolean
 }
 
 export type SessionExecution = {
@@ -13737,6 +13748,45 @@ export type V2AgentRemoveResponses = {
 }
 
 export type V2AgentRemoveResponse = V2AgentRemoveResponses[keyof V2AgentRemoveResponses]
+
+export type V2AgentCoordinationData = {
+  body?: never
+  path: {
+    agentID: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/agent/{agentID}/coordination"
+}
+
+export type V2AgentCoordinationErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2AgentCoordinationError = V2AgentCoordinationErrors[keyof V2AgentCoordinationErrors]
+
+export type V2AgentCoordinationResponses = {
+  /**
+   * Success
+   */
+  200: {
+    location: LocationInfo
+    data: Array<AgentCoordinationEntry>
+  }
+}
+
+export type V2AgentCoordinationResponse = V2AgentCoordinationResponses[keyof V2AgentCoordinationResponses]
 
 export type V2SessionListData = {
   body?: never

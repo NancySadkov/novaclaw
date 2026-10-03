@@ -38,6 +38,7 @@ import { AgentModelFit } from "../../agent/model-fit"
 import { ModelHealth } from "./model-health"
 import { Config } from "../../config"
 import { ConfigToolRouting } from "../../config/tool-routing"
+import { Coordination } from "../../coordination"
 import { Global } from "../../global"
 import { ascending } from "@novaclaw/schema/identifier"
 import { Database } from "../../database/database"
@@ -1414,9 +1415,21 @@ export const layer = Layer.effect(
               // Every other officer falls back to Nova, the immutable root of the org chart.
               (configuredSuperior?.name ?? (String(agent.id) === AgentV2.NOVA_ID ? undefined : "Nova"))
         const role = parentAgent === undefined ? "agent" : "worker"
+        const directReports = role === "agent" ? AgentV2.directReports(agent.id, roster) : []
+        // The coordination board, read for the officer AND its reports in one query. It rides the
+        // prompt rather than the transcript on purpose (see `PromptManager`): a task survives a Clear
+        // chat because it is keyed on the AGENT, and a superior sees each report's task beside its
+        // name after every compaction.
+        const taskByAgent = yield* Coordination.taskMap(db, [
+          String(agent.id),
+          ...directReports.map((candidate) => String(candidate.id)),
+        ])
         const subordinates =
           role === "agent"
-            ? AgentV2.directReports(agent.id, roster).map((candidate) => candidate.name ?? String(candidate.id))
+            ? directReports.map((candidate) => ({
+                name: candidate.name ?? String(candidate.id),
+                task: taskByAgent.get(String(candidate.id)),
+              }))
             : []
         const jobInstructions =
           prototype?.system ??
@@ -1482,6 +1495,8 @@ export const layer = Layer.effect(
             officerGoal: agent.info?.goal,
             component: goalEntry,
           }),
+          task: role === "agent" ? taskByAgent.get(String(agent.id)) : undefined,
+          taskBoard: role === "agent" && agent.info?.service !== true,
           unattended,
           memoText: Durable.textOf(durablePrompt),
           project: directory,

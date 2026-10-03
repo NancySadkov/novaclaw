@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
 import { createQuery } from "@/utils/query"
 import { Icon } from "@novaclaw/ui/v2/icon"
-import type { AgentTeamChatMessage } from "@novaclaw/sdk/v2"
+import type { AgentCoordinationEntry, AgentTeamChatMessage } from "@novaclaw/sdk/v2"
 import { AgentPortrait } from "@/components/agent-portrait"
 import { displayName, type AgentLike } from "@/apps/contacts"
 import { agentColor } from "@/utils/agent"
@@ -46,6 +46,8 @@ export const restoreTeamChatScrollAnchor = (scroller: HTMLElement, anchor: TeamC
   scroller.scrollTop += message.getBoundingClientRect().top - anchor.top
   return true
 }
+
+type TeamTab = "chat" | "tasks"
 
 export function TeamChatMessageList(props: {
   messages: readonly AgentTeamChatMessage[]
@@ -105,6 +107,93 @@ export function TeamChatMessageList(props: {
   )
 }
 
+/**
+ * The coordination board — what each officer on this team is working on.
+ *
+ * Read from the instance rather than folded from the roster: WHO is on an officer's team (its
+ * superior, its peers, its reports) is a kernel rule, and a second copy here would drift from the
+ * Team Chat beside it. The task is keyed on the AGENT, so a Clear chat does not lose it.
+ */
+export function CoordinationBoard(props: {
+  entries: readonly AgentCoordinationEntry[]
+  roster: readonly AgentLike[]
+  selfID: string
+  loading: boolean
+  failed: boolean
+  onRetry: () => void
+}) {
+  const language = useLanguage()
+  const roster = createMemo(() => new Map(props.roster.map((agent) => [agent.id, agent])))
+  const name = (id: string) => roster().get(id)?.name?.trim() || displayName(id)
+  const accent = (id: string) => agentColor(id, roster().get(id)?.color)
+
+  return (
+    <div class="mx-auto flex w-full max-w-3xl flex-col gap-2.5 px-3 py-3 sm:px-4 sm:py-4">
+      <Show when={props.loading && props.entries.length === 0}>
+        <div class="flex h-40 items-center justify-center text-xs text-v2-text-text-faint">
+          {language.t("teamChat.tasks.loading")}
+        </div>
+      </Show>
+      <Show when={props.failed && props.entries.length === 0}>
+        <div class="mx-auto mt-8 max-w-sm rounded-xl border border-v2-state-border-danger bg-v2-state-bg-danger px-4 py-3 text-center text-xs text-v2-state-fg-danger">
+          <p>{language.t("teamChat.tasks.unavailable")}</p>
+          <button type="button" class="mt-2 font-semibold underline underline-offset-2" onClick={props.onRetry}>
+            {language.t("teamChat.retry")}
+          </button>
+        </div>
+      </Show>
+      <Show when={!props.loading && !props.failed && props.entries.length === 0}>
+        <div class="flex h-40 flex-col items-center justify-center text-center">
+          <Icon name="task" class="mb-2 size-6 text-v2-icon-icon-accent" />
+          <p class="text-sm text-v2-text-text-muted">{language.t("teamChat.tasks.empty")}</p>
+        </div>
+      </Show>
+      <For each={props.entries}>
+        {(entry) => (
+          <article
+            data-team-chat-task={entry.agent}
+            style={{ "--team-accent": accent(entry.agent) }}
+            class="relative overflow-hidden rounded-[14px] border border-[#cba7651f] bg-[linear-gradient(145deg,rgba(139,101,196,0.10),rgba(185,149,92,0.045))] px-3 py-2.5 shadow-[inset_0_1px_0_#ffffff0d]"
+          >
+            <span
+              aria-hidden="true"
+              class="absolute inset-y-2.5 left-0 w-[2px] rounded-r-full bg-[var(--team-accent)] opacity-50"
+            />
+            <div class="flex items-start gap-2.5">
+              <AgentPortrait
+                id={entry.agent}
+                name={name(entry.agent)}
+                avatar={roster().get(entry.agent)?.avatar}
+                background={`color-mix(in srgb, ${accent(entry.agent)} 30%, var(--v2-background-bg-layer-02))`}
+                class="size-8 ring-1 ring-[#cba76533]"
+              />
+              <div class="min-w-0 flex-1">
+                <div class="flex min-w-0 items-baseline gap-x-1.5">
+                  <span class="truncate text-[12.5px] font-semibold text-amber-100">{name(entry.agent)}</span>
+                  <Show when={entry.title}>
+                    <span class="shrink-0 truncate text-[11px] text-v2-text-text-muted">{entry.title}</span>
+                  </Show>
+                  <Show when={entry.agent === props.selfID}>
+                    <span class="shrink-0 text-[10px] uppercase tracking-wide text-v2-text-text-faint">
+                      {language.t("teamChat.tasks.you")}
+                    </span>
+                  </Show>
+                </div>
+                <p
+                  class="mt-1 whitespace-pre-wrap break-words text-[13px] leading-5"
+                  classList={{ "text-v2-text-text-base": Boolean(entry.task), "text-v2-text-text-faint": !entry.task }}
+                >
+                  {entry.task ?? language.t("teamChat.tasks.none")}
+                </p>
+              </div>
+            </div>
+          </article>
+        )}
+      </For>
+    </div>
+  )
+}
+
 export function TeamChatScreen(props: { agentID: string; roster: readonly AgentLike[]; onBack: () => void }) {
   const sdk = useSDK()
   const language = useLanguage()
@@ -116,6 +205,7 @@ export function TeamChatScreen(props: { agentID: string; roster: readonly AgentL
   const [latestCursor, setLatestCursor] = createSignal<string>()
   const [loadingOlder, setLoadingOlder] = createSignal(false)
   const [olderFailed, setOlderFailed] = createSignal(false)
+  const [activeTab, setActiveTab] = createSignal<TeamTab>("chat")
 
   const initialQuery = createQuery(() => ({
     queryKey: ["agent-team-chat", server.key, sdk().directory, props.agentID],
@@ -130,15 +220,28 @@ export function TeamChatScreen(props: { agentID: string; roster: readonly AgentL
     queryKey: ["agent-team-chat-tail", server.key, sdk().directory, props.agentID, latestCursor()],
     enabled: Boolean(latestCursor()),
     queryFn: async ({ signal }) => {
-      const response = await sdk().client.v2.agent.teamChat({
-        agentID: props.agentID,
-        limit: "50",
-        after: latestCursor(),
-      }, { signal })
+      const response = await sdk().client.v2.agent.teamChat(
+        {
+          agentID: props.agentID,
+          limit: "50",
+          after: latestCursor(),
+        },
+        { signal },
+      )
       if (response.error) throw response.error
       return response.data?.data
     },
     refetchInterval: 2_000,
+  }))
+  const coordinationQuery = createQuery(() => ({
+    queryKey: ["agent-coordination", server.key, sdk().directory, props.agentID],
+    enabled: activeTab() === "tasks",
+    queryFn: async ({ signal }) => {
+      const response = await sdk().client.v2.agent.coordination({ agentID: props.agentID }, { signal })
+      if (response.error) throw response.error
+      return response.data?.data
+    },
+    refetchInterval: () => (activeTab() === "tasks" ? 3_000 : false),
   }))
   const roster = createMemo(() => new Map(props.roster.map((agent) => [agent.id, agent])))
   const officer = createMemo(() => roster().get(props.agentID))
@@ -191,6 +294,11 @@ export function TeamChatScreen(props: { agentID: string; roster: readonly AgentL
     }
   }
 
+  const tabs: ReadonlyArray<{ id: TeamTab; label: string; icon: "chats" | "task" }> = [
+    { id: "chat", label: language.t("teamChat.title"), icon: "chats" },
+    { id: "tasks", label: language.t("teamChat.tasks.tab"), icon: "task" },
+  ]
+
   return (
     <div
       data-component="team-chat-screen"
@@ -219,76 +327,116 @@ export function TeamChatScreen(props: { agentID: string; roster: readonly AgentL
             {officer()?.title ?? language.t("agentConfig.noTitle")}
           </span>
         </span>
-        <span class="hidden shrink-0 items-center gap-1.5 rounded-full border border-amber-300/20 bg-amber-200/5 px-2.5 py-1 text-[11px] font-medium text-amber-100 sm:flex">
-          <Icon name="chats" class="size-3.5" />
-          {language.t("teamChat.title")}
-        </span>
+        <nav
+          role="tablist"
+          aria-label={language.t("teamChat.title")}
+          class="flex shrink-0 items-center gap-1 rounded-full border border-amber-300/20 bg-amber-200/5 p-0.5"
+        >
+          <For each={tabs}>
+            {(tab) => (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab() === tab.id}
+                data-team-chat-tab-button={tab.id}
+                data-active={activeTab() === tab.id}
+                class={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                  activeTab() === tab.id
+                    ? "bg-amber-200/15 text-amber-100"
+                    : "text-v2-text-text-muted hover:text-amber-100"
+                }`}
+                onClick={() => setActiveTab(tab.id)}
+              >
+                <Icon name={tab.icon} class="size-3.5" />
+                {tab.label}
+              </button>
+            )}
+          </For>
+        </nav>
       </header>
 
-      <div
-        ref={scroller}
-        onScroll={(event) => {
-          const target = event.currentTarget
-          pinned = isTeamChatPinned(target.scrollTop, target.clientHeight, target.scrollHeight)
-        }}
-        class="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-[radial-gradient(ellipse_at_80%_-10%,rgba(116,72,161,0.10),transparent_55%)]"
-      >
-        <div class="mx-auto flex w-full max-w-3xl flex-col gap-2.5 px-3 py-3 sm:px-4 sm:py-4">
-          <Show when={initialQuery.isPending}>
-            <div class="flex h-40 items-center justify-center text-xs text-v2-text-text-faint">
-              {language.t("teamChat.loading")}
+      <div class="team-chat-panels" data-team-tab={activeTab()}>
+        <div data-team-chat-tab="chat" class="min-h-0 flex-1 flex-col">
+          <div
+            ref={scroller}
+            onScroll={(event) => {
+              const target = event.currentTarget
+              pinned = isTeamChatPinned(target.scrollTop, target.clientHeight, target.scrollHeight)
+            }}
+            class="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-[radial-gradient(ellipse_at_80%_-10%,rgba(116,72,161,0.10),transparent_55%)]"
+          >
+            <div class="mx-auto flex w-full max-w-3xl flex-col gap-2.5 px-3 py-3 sm:px-4 sm:py-4">
+              <Show when={initialQuery.isPending}>
+                <div class="flex h-40 items-center justify-center text-xs text-v2-text-text-faint">
+                  {language.t("teamChat.loading")}
+                </div>
+              </Show>
+              <Show when={initialQuery.isError && messages().length === 0}>
+                <div class="mx-auto mt-8 max-w-sm rounded-xl border border-v2-state-border-danger bg-v2-state-bg-danger px-4 py-3 text-center text-xs text-v2-state-fg-danger">
+                  <p>{language.t("teamChat.unavailable")}</p>
+                  <button
+                    type="button"
+                    class="mt-2 font-semibold underline underline-offset-2"
+                    onClick={() => void initialQuery.refetch()}
+                  >
+                    {language.t("teamChat.retry")}
+                  </button>
+                </div>
+              </Show>
+              <Show when={!initialQuery.isPending && !initialQuery.isError && messages().length === 0}>
+                <div class="flex h-40 flex-col items-center justify-center text-center">
+                  <Icon name="chats" class="mb-2 size-6 text-v2-icon-icon-accent" />
+                  <p class="text-sm text-v2-text-text-muted">{language.t("teamChat.empty")}</p>
+                  <p class="mt-1 max-w-xs text-[11px] leading-4 text-v2-text-text-faint">
+                    {language.t("teamChat.emptyHint")}
+                  </p>
+                </div>
+              </Show>
+              <Show when={tailQuery.isError && messages().length > 0}>
+                <div class="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-lg border border-v2-border-border-muted bg-v2-background-bg-layer-02 px-3 py-2 text-[11px] text-v2-text-text-muted shadow-sm">
+                  <span>{language.t("teamChat.reconnecting")}</span>
+                  <button
+                    type="button"
+                    class="shrink-0 font-semibold text-amber-100 underline underline-offset-2"
+                    onClick={() => void tailQuery.refetch()}
+                  >
+                    {language.t("teamChat.retry")}
+                  </button>
+                </div>
+              </Show>
+              <Show when={olderCursor()}>
+                <div class="flex justify-center">
+                  <button
+                    type="button"
+                    class="rounded-full border border-amber-300/20 bg-amber-200/5 px-3 py-1.5 text-[11px] font-medium text-amber-100 transition-colors hover:bg-amber-200/10 disabled:opacity-50"
+                    disabled={loadingOlder()}
+                    onClick={() => void loadOlder()}
+                  >
+                    {loadingOlder()
+                      ? language.t("teamChat.loading")
+                      : olderFailed()
+                        ? language.t("teamChat.retry")
+                        : language.t("teamChat.loadOlder")}
+                  </button>
+                </div>
+              </Show>
+              <TeamChatMessageList messages={messages()} roster={props.roster} />
             </div>
-          </Show>
-          <Show when={initialQuery.isError && messages().length === 0}>
-            <div class="mx-auto mt-8 max-w-sm rounded-xl border border-v2-state-border-danger bg-v2-state-bg-danger px-4 py-3 text-center text-xs text-v2-state-fg-danger">
-              <p>{language.t("teamChat.unavailable")}</p>
-              <button
-                type="button"
-                class="mt-2 font-semibold underline underline-offset-2"
-                onClick={() => void initialQuery.refetch()}
-              >
-                {language.t("teamChat.retry")}
-              </button>
-            </div>
-          </Show>
-          <Show when={!initialQuery.isPending && !initialQuery.isError && messages().length === 0}>
-            <div class="flex h-40 flex-col items-center justify-center text-center">
-              <Icon name="chats" class="mb-2 size-6 text-v2-icon-icon-accent" />
-              <p class="text-sm text-v2-text-text-muted">{language.t("teamChat.empty")}</p>
-              <p class="mt-1 max-w-xs text-[11px] leading-4 text-v2-text-text-faint">
-                {language.t("teamChat.emptyHint")}
-              </p>
-            </div>
-          </Show>
-          <Show when={tailQuery.isError && messages().length > 0}>
-            <div class="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-lg border border-v2-border-border-muted bg-v2-background-bg-layer-02 px-3 py-2 text-[11px] text-v2-text-text-muted shadow-sm">
-              <span>{language.t("teamChat.reconnecting")}</span>
-              <button
-                type="button"
-                class="shrink-0 font-semibold text-amber-100 underline underline-offset-2"
-                onClick={() => void tailQuery.refetch()}
-              >
-                {language.t("teamChat.retry")}
-              </button>
-            </div>
-          </Show>
-          <Show when={olderCursor()}>
-            <div class="flex justify-center">
-              <button
-                type="button"
-                class="rounded-full border border-amber-300/20 bg-amber-200/5 px-3 py-1.5 text-[11px] font-medium text-amber-100 transition-colors hover:bg-amber-200/10 disabled:opacity-50"
-                disabled={loadingOlder()}
-                onClick={() => void loadOlder()}
-              >
-                {loadingOlder()
-                  ? language.t("teamChat.loading")
-                  : olderFailed()
-                    ? language.t("teamChat.retry")
-                    : language.t("teamChat.loadOlder")}
-              </button>
-            </div>
-          </Show>
-          <TeamChatMessageList messages={messages()} roster={props.roster} />
+          </div>
+        </div>
+
+        <div
+          data-team-chat-tab="tasks"
+          class="min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(ellipse_at_80%_-10%,rgba(116,72,161,0.10),transparent_55%)]"
+        >
+          <CoordinationBoard
+            entries={coordinationQuery.data ?? []}
+            roster={props.roster}
+            selfID={props.agentID}
+            loading={coordinationQuery.isPending}
+            failed={coordinationQuery.isError}
+            onRetry={() => void coordinationQuery.refetch()}
+          />
         </div>
       </div>
     </div>

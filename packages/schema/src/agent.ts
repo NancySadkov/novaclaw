@@ -111,6 +111,13 @@ export const Info = Schema.Struct({
   /** Persistent operation defaults for the colleague's canonical root session. */
   operationMode: Schema.Literals(["interactive", "unattended"]).pipe(optional),
   goal: Schema.String.pipe(optional),
+  /**
+   * Whether this officer's team hears about a direct report's coordination task changes.
+   *
+   * Read off the SUPERIOR of whoever declares or clears a task. Absent = on, so the feature works on
+   * a fresh instance and the toggle exists to quieten a large team.
+   */
+  teamCoordination: Schema.Boolean.pipe(optional),
   /** Standing harness preferences, folded below project and chat overrides.
    *  `introspection` and `affective` carry the historical bare boolean or the full
    *  detail struct, exactly as the config side authors them. */
@@ -223,6 +230,19 @@ export const TeamChatPage = Schema.Struct({
     latest: Schema.optional(Schema.String),
   }),
 }).annotate({ identifier: "Agent.TeamChatPage" })
+
+/** One officer's row on the coordination task board a superior (or the owner) reads. */
+export interface CoordinationEntry extends Schema.Schema.Type<typeof CoordinationEntry> {}
+export const CoordinationEntry = Schema.Struct({
+  agent: ID,
+  name: Schema.String.pipe(optional),
+  title: Schema.String.pipe(optional),
+  superior: ID.pipe(optional),
+  /** Absent = no task yet; the board renders that as "none set yet". */
+  task: Schema.String.pipe(optional),
+  /** Whether this officer's superior broadcasts task changes to the tier. Absent = on. */
+  teamCoordination: Schema.Boolean,
+}).annotate({ identifier: "Agent.CoordinationEntry" })
 
 /**
  * A colleague's own chat, resolved by the instance.

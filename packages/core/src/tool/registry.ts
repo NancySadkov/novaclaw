@@ -69,9 +69,23 @@ export const nativeDefinitions = (definitions: ReadonlyArray<ToolDefinition>, bu
    * The cost is real and is paid deliberately: `colleague`'s schema is not small, so this spends
    * budget on EVERY turn, forever — 2,078 bytes, measured 2026-08-21. It buys the absence of a wasted
    * turn, which is the only currency that matters here.
+   *
+   * ⚠️ `coordination` joins on the same argument (owner, 2026-10-03): the system prompt names the
+   * tool in its task line, so a session that had to `tool_search` for a tool the prompt just told it
+   * to use would be doing the prompt's work. It is small — a four-op union.
    */
-  const always = new Set(["tool_search", "tool_call", "colleague"])
-  const priority = ["tool_search", "tool_call", "colleague", "projects", "spawn", "memo_set", "memo_clear", "exit"]
+  const always = new Set(["tool_search", "tool_call", "colleague", "coordination"])
+  const priority = [
+    "tool_search",
+    "tool_call",
+    "colleague",
+    "coordination",
+    "projects",
+    "spawn",
+    "memo_set",
+    "memo_clear",
+    "exit",
+  ]
   const rank = (name: string) => (priority.includes(name) ? priority.indexOf(name) : priority.length)
   const selected = new Set<string>()
   let used = 2

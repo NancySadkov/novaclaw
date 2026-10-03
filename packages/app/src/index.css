@@ -1259,6 +1259,23 @@ body[data-new-layout] [data-slot="dialog-container"] {
 .agent-settings-panels[data-active-tab="schedule"] [data-settings-tab="schedule"] {
   display: block;
 }
+.team-chat-panels {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex: 1 1 0%;
+  flex-direction: column;
+}
+.team-chat-panels > [data-team-chat-tab] {
+  display: none;
+}
+.team-chat-panels[data-team-tab="chat"] > [data-team-chat-tab="chat"],
+.team-chat-panels[data-team-tab="tasks"] > [data-team-chat-tab="tasks"] {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 0%;
+  flex-direction: column;
+}
 .agent-settings-card {
   border: 1px solid color-mix(in srgb, var(--v2-border-border-base) 70%, #a77a47);
   border-radius: 0.85rem;

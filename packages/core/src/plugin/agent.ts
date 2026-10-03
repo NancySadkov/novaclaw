@@ -122,6 +122,11 @@ export const floor = (input: {
   // now handled where it belongs: `nativeDefinitions` keeps `colleague` disclosed without charging it
   // to the budget, so the model still reads it and no agent is refused it.
   { action: "colleague", resource: "*", effect: "allow" },
+  // The coordination board is GRANTED TO EVERYONE on the same terms as `colleague`: the org chart
+  // lives in the tool (`assign` refuses a name that is not a direct report, and `set` writes only the
+  // caller's own row), so a floor rule that could mute an officer's own declaration would be a policy
+  // the org chart already answers. An explicit rule, never `{ action: "*" }`.
+  { action: "coordination", resource: "*", effect: "allow" },
   // 🔴 AN OFFICER MAY STAFF ITSELF — the owner's metaphor names it: *"top level executive agents …
   // spawn the nameless sub-agents"*. Until 2026-08-22 nobody could: `spawn` is absent from
   // `AMBIENT_SAFE_BASELINE`, so it fell through to the evaluator's `ask` default — and asking was
