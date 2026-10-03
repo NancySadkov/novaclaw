@@ -178,8 +178,13 @@ describe("runner/llm.ts wiring", () => {
     // The PROPERTY is what matters and it is unchanged: the truncation continuation reaches the model
     // only through a steer that stamps provenance, and only once. Pinned against the seam, which is
     // the primitive that now owns the rule.
-    expect(runnerSource).toContain(
-      'Steering.inject(db, events, { sessionID: input.sessionID, reason: "truncation", text: truncation.message })',
+    // ⚠️ WHITESPACE-INSENSITIVE on purpose. An exact one-line match is a second way this ratchet
+    // goes "red over nothing": the formatter legitimately reflows the call across lines (it did on
+    // 2026-10-03, splitting `Steering.inject(` from its argument object), and the PROPERTY being
+    // guarded is the seam, not the line break. Match the collapsed token sequence, allowing the
+    // trailing comma the multi-line form adds.
+    expect(runnerSource.replace(/\s+/g, " ")).toMatch(
+      /Steering\.inject\(db, events, \{ sessionID: input\.sessionID, reason: "truncation", text: truncation\.message,? \}\)/,
     )
     // Exactly one use — a second would be a bypass (e.g. published raw as a Synthetic/user message).
     expect(runnerSource.split("truncation.message").length - 1).toBe(1)

@@ -574,6 +574,22 @@ definition: new ToolDefinition({
                   "type": {
                     "type": "string",
                     "enum": [
+                      "stuck"
+                    ]
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "additionalProperties": false,
+                "description": "Fires when the runner's no-progress appraisal says the session is repeating itself without changing the result."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
                       "session-restarted"
                     ]
                   }
@@ -654,6 +670,57 @@ definition: new ToolDefinition({
                   "type": {
                     "type": "string",
                     "enum": [
+                      "step-tokens"
+                    ]
+                  },
+                  "channel": {
+                    "type": "string",
+                    "enum": [
+                      "reasoning",
+                      "answer",
+                      "tool"
+                    ]
+                  },
+                  "tokens": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "NaN"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "Infinity"
+                        ]
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "-Infinity"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "type",
+                  "channel",
+                  "tokens"
+                ],
+                "additionalProperties": false,
+                "description": "Fires when ONE model step generated at least this many tokens on one channel — `reasoning` deliberation, `answer` reply text, or `tool` tool-call arguments. The answer channel is a step-ending budget, and the reasoning channel breaks a repetition loop, without truncating a reply mid-sentence the way a `max_tokens` cap would."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
                       "finish-audit"
                     ]
                   }
@@ -663,6 +730,54 @@ definition: new ToolDefinition({
                 ],
                 "additionalProperties": false,
                 "description": "Fires when the finish audit finds the goal not fully achieved and the agent must continue."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "markdown-budget"
+                    ]
+                  },
+                  "count": {
+                    "anyOf": [
+                      {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "NaN"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "Infinity"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "-Infinity"
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "additionalProperties": false,
+                "description": "Refuses a NEW `.md` file written into the project while the project already holds more than `count` (default 20) `.md` files outside ./tmp. `<COUNT>` in the text is replaced with the current total at refusal time."
               },
               {
                 "type": "object",
@@ -953,6 +1068,17 @@ definition: new ToolDefinition({
               }
             ],
             "description": "Seconds this nudge stays silent after firing, independent of the quiet rule."
+          },
+          "stuckDetected": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Count toward the officer's hourly stuck counter when this nudge matches; the counter reaching the threshold forces a full compaction."
           },
           "default": {
             "anyOf": [
