@@ -6,7 +6,7 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { SessionContextEpochTable } from "@novaclaw/core/session/sql"
 import { ContextSnapshotDecodeError } from "@novaclaw/core/session/error"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, makeLatch } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, makeLatch, resumeUntil } from "./fixture/runner-harness"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { Tool } from "@novaclaw/core/tool/tool"
 import { PromptEstimate } from "@novaclaw/core/session/runner/prompt-estimate"
@@ -54,10 +54,10 @@ describe("SessionRunnerLLM — the one prompt baseline", () => {
             bulky: fake("long native documentation ".repeat(3000)),
           })
           const session = yield* SessionV2.Service
-          for (const [model, context] of [
-            ["large", 1048576],
-            ["small", 4096],
-            ["large-again", 1048576],
+          for (const [model, context, marker] of [
+            ["large", 1048576, "First."],
+            ["small", 4096, "Second."],
+            ["large-again", 1048576, "Third."],
           ] as const) {
             harness.controls.currentModel = harness.makeModel(model, { context, output: 512 })
             if (mode === "manual" && context === 4096) {
@@ -76,7 +76,7 @@ describe("SessionRunnerLLM — the one prompt baseline", () => {
               prompt: Prompt.make({ text: "Continue this task." }),
               resume: false,
             })
-            yield* session.resume(HARNESS_SESSION)
+            yield* resumeUntil(marker)
           }
         }),
         "adaptive native prefix",
@@ -100,9 +100,12 @@ describe("SessionRunnerLLM — the one prompt baseline", () => {
         harness,
         Effect.gen(function* () {
           const session = yield* SessionV2.Service
-          for (const text of ["Remember the launch code is cobalt.", "What launch code did I give you?"]) {
+          for (const [text, marker] of [
+            ["Remember the launch code is cobalt.", "I remember cobalt."],
+            ["What launch code did I give you?", "cobalt"],
+          ] as const) {
             yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text }), resume: false })
-            yield* session.resume(HARNESS_SESSION)
+            yield* resumeUntil(marker)
           }
         }),
         `normal runner at ${context} tokens`,
@@ -124,12 +127,12 @@ describe("SessionRunnerLLM — the one prompt baseline", () => {
       Effect.gen(function* () {
         const session = yield* SessionV2.Service
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }), resume: false })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("One")
 
         harness.controls.systemBaseline = "Changed context"
 
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Second" }), resume: false })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Two")
       }),
       "claim — a casual turn cannot rewrite the one prompt",
     )
@@ -155,7 +158,7 @@ describe("SessionRunnerLLM — the one prompt baseline", () => {
           sessionID: HARNESS_SESSION,
           prompt: Prompt.make({ text: "Run automatically" }),
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Done")
         const messages = yield* session.messages({ sessionID: HARNESS_SESSION })
         return { messages, id: message.id }
       }),
@@ -178,7 +181,7 @@ describe("SessionRunnerLLM — the one prompt baseline", () => {
         const session = yield* SessionV2.Service
         const { db } = yield* Database.Service
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }), resume: false })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("First answer")
 
         yield* db
           .update(SessionContextEpochTable)
