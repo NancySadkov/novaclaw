@@ -279,13 +279,38 @@ const migrateLowResource = (nudge: ConfigNudge.Info): ConfigNudge.Info => {
   return { ...current, ...(nudge.enabled === undefined ? {} : { enabled: nudge.enabled }) }
 }
 
+/** The shipped wording before the duplicate was removed; a stored row that still matches it is migrated. */
+const LEGACY_SESSION_RESTART_TEXT = "Session restarted. Recover and proceed."
+
+/**
+ * Drop the duplicated "Session restarted." from an UNTOUCHED stored session-restart nudge.
+ *
+ * 🔴 The rendered line is already `Nudge — Session restarted: <body>`, so the old body said it twice.
+ * Existing officers hold this nudge in their config, so changing `defaults()` alone would reach only
+ * officers hired afterwards — the gap that left the old wording on a live instance. Like the
+ * resource and bloated-todo migrations, this fires only while the stored row still matches the
+ * shipped old name, body and hook; a user who rewrote it keeps their sentence.
+ */
+const migrateSessionRestart = (nudge: ConfigNudge.Info): ConfigNudge.Info => {
+  if (
+    nudge.id !== SESSION_RESTART_ID ||
+    nudge.name !== "Session restarted" ||
+    nudge.text !== LEGACY_SESSION_RESTART_TEXT ||
+    nudge.hook.type !== "session-restarted" ||
+    nudge.script !== undefined
+  )
+    return nudge
+  const current = defaults().find((item) => item.id === SESSION_RESTART_ID)!
+  return { ...current, ...(nudge.enabled === undefined ? {} : { enabled: nudge.enabled }) }
+}
+
 /**
  * Normalize one STORED nudge: migrate an old built-in body, then mark shipped ids as `default` so the
  * settings UI can badge them and offer a "show default nudges" filter. A user's own edits, enabled
  * state and custom nudges are preserved untouched.
  */
 export const refreshStoredDefault = (nudge: ConfigNudge.Info): ConfigNudge.Info => {
-  const refreshed = migrateLowResource(migrateBloatedTodo(nudge))
+  const refreshed = migrateLowResource(migrateBloatedTodo(migrateSessionRestart(nudge)))
   const shipped = defaults().find((item) => item.id === refreshed.id)
   return shipped !== undefined && refreshed.default !== true ? { ...refreshed, default: true } : refreshed
 }

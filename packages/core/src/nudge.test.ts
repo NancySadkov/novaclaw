@@ -432,6 +432,26 @@ describe("withDefaults", () => {
     ).toBe("Watch the memory please.")
   })
 
+  test("the duplicated restart wording is dropped from an untouched stored nudge; an edit is kept", () => {
+    const legacy = {
+      id: Nudge.SESSION_RESTART_ID,
+      name: "Session restarted",
+      enabled: false,
+      hook: { type: "session-restarted" },
+      text: "Session restarted. Recover and proceed.",
+    } as ConfigNudge.Info
+    const migrated = Nudge.withDefaults([legacy]).find((item) => item.id === Nudge.SESSION_RESTART_ID)!
+    // The rendered line is `Nudge — Session restarted: <body>`, so the body must not repeat it.
+    expect(Nudge.prompt(migrated)).toContain("Nudge — Session restarted: Recover and proceed.")
+    // The user's disabling survives: the wording changed, the choice did not.
+    expect(migrated.enabled).toBe(false)
+    expect(
+      Nudge.withDefaults([{ ...legacy, text: "Back online, carry on." }]).find(
+        (item) => item.id === Nudge.SESSION_RESTART_ID,
+      )?.text,
+    ).toBe("Back online, carry on.")
+  })
+
   test("the shipped resource notice reports rather than instructs", () => {
     const item = Nudge.defaults().find((entry) => entry.id === Nudge.LOW_RESOURCE_ID)!
     expect(item.name).toBe("Resources Monitor")
