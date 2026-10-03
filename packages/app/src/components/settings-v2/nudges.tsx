@@ -262,9 +262,6 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
                         and the delivery mode are detail a person reads in Edit — printing them on
                         every row turned a scannable list into a wall of text. */}
                     <div class="nudge-card-top">
-                      <Show when={item.default === true}>
-                        <span class="nudge-default-badge">{language.t("settings.nudges.default")}</span>
-                      </Show>
                       <div class="nudge-card-title">
                         <h4>{item.name}</h4>
                       </div>
