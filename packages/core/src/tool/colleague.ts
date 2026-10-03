@@ -212,6 +212,26 @@ export const addressable = (agents: ReadonlyArray<AgentV2.Info>, selfID: string)
     (agent) => AgentV2.isColleague(agent) && AgentV2.kindOf(agent) !== "chat" && String(agent.id) !== selfID,
   )
 
+/**
+ * What a sender is told when the router REROUTED its hand-off — or `""` when it did not.
+ *
+ * 🔴 A redirect is not a denial, and the sender must be told which one it got. The router always
+ * delivers an in-instance message (AGENTS.md), so an off-tier target is rerouted to the real superior
+ * rather than refused; a sender that is not told will believe it reached the officer whose id it
+ * named. Measured 2026-10-03: asking an owner-held officer read as *"Delivered to the instance owner's
+ * transcript"* with no mention of the target, so Nova could not tell Lacedaemon was never addressed.
+ */
+export const redirectNoteFor = (input: {
+  readonly target: string
+  readonly recipient: string | undefined
+  readonly redirected: boolean | undefined
+}): string =>
+  input.redirected
+    ? ` ${input.target} is not in your chain of command, so this was routed to ${
+        input.recipient ?? "the next person in the chain"
+      } instead — message them directly next time.`
+    : ""
+
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
@@ -492,6 +512,11 @@ export const layer = Layer.effectDiscard(
                     `The hand-off to ${target} did not land, and the instance gave no reason. Do NOT tell anyone it was delivered.`,
                 })
 
+              const redirectNote = redirectNoteFor({
+                target,
+                recipient: outcome.recipient,
+                redirected: outcome.redirected,
+              })
               return {
                 ok: true,
                 // 🔴 What the sender may promise, and what it may not.
@@ -504,22 +529,16 @@ export const layer = Layer.effectDiscard(
                 // the flat denial that replaced it: the answer arrives HERE, LATER, as a message from
                 // them, and this turn must not wait for it.
                 message: outcome.human
-                  ? `Delivered to the instance owner's transcript. They can answer later; their reply will arrive in your chat. Continue all work that does not depend on the answer. Do not wait, poll, or stop merely because you asked a question.`
+                  ? `Delivered to the instance owner's transcript.${redirectNote} They can answer later; their reply will arrive in your chat. Continue all work that does not depend on the answer. Do not wait, poll, or stop merely because you asked a question.`
                   : outcome.started
-                    ? `Left it with ${outcome.recipient ?? target}, in their own chat, and they have started on it. ` +
-                      (outcome.redirected
-                        ? `The request to ${target} was routed to the next person in the chain of command. `
-                        : "") +
+                    ? `Left it with ${outcome.recipient ?? target}, in their own chat, and they have started on it.${redirectNote} ` +
                       `Their answer will ` +
                       `arrive HERE as a message from them — later, in their own time. Do NOT wait for it and do not ` +
                       `stall this turn: finish what you can do yourself and tell the user who has the rest.`
                     : // Durable but dormant, and SAID so: nothing is running their chat, so a caller
                       // reporting "handed over" would promise a reply nobody is going to write.
-                      `Stored the message in ${outcome.recipient ?? target}'s chat` +
-                      (outcome.redirected
-                        ? ` (routed to the next person in the chain of command instead of ${target})`
-                        : "") +
-                      `. It is queued${outcome.deferred ? ` because ${outcome.deferred}` : " because no executor is attached"}; ` +
+                      `Stored the message in ${outcome.recipient ?? target}'s chat.${redirectNote} ` +
+                      `It is queued${outcome.deferred ? ` because ${outcome.deferred}` : " because no executor is attached"}; ` +
                       `their chat will read it on its next run. Their answer will arrive here if and when they write it. Tell the user it is queued ` +
                       `with that colleague rather than under way, and do not wait for it.`,
               } satisfies Output
