@@ -21,15 +21,17 @@ export const STEP_ANSWER_ID = "builtin-step-answer"
 export const MARKDOWN_BUDGET_ID = "builtin-markdown-budget"
 
 export const defaults = (): ReadonlyArray<ConfigNudge.Info> => [
+  // ⚠️ Named a MONITOR, and worded to report rather than to instruct. The old body told officers to
+  // "avoid starting memory- or disk-intensive work … and confirm recovery before resuming heavy work",
+  // which they read as an order to cut memory use and spent turns reacting to it. A low-headroom
+  // notice is INFORMATION; the live figures are appended below it by `Nudge.prompt`.
   {
     id: LOW_RESOURCE_ID,
-    name: "Protect work when resources run low",
+    name: "Resources Monitor",
     enabled: true,
     default: true,
     hook: { type: "resource-pressure", level: "either" },
-    text:
-      "This instance is low on memory or disk headroom. Avoid starting memory- or disk-intensive work. " +
-      "Use tool_search for resource status, then resource_status for the live figures and confirm recovery before resuming heavy work.",
+    text: "This instance is low on memory or disk headroom. Use tool_search for resource status, then resource_status for the live figures.",
   },
   {
     id: JAVASCRIPT_TIME_ID,
@@ -236,13 +238,41 @@ const migrateBloatedTodo = (nudge: ConfigNudge.Info): ConfigNudge.Info => {
   return { ...current, ...(nudge.enabled === undefined ? {} : { enabled: nudge.enabled }) }
 }
 
+/** The shipped wording before `Resources Monitor`; a stored row that still matches it is migrated. */
+const LEGACY_LOW_RESOURCE_NAME = "Protect work when resources run low"
+const LEGACY_LOW_RESOURCE_TEXT =
+  "This instance is low on memory or disk headroom. Avoid starting memory- or disk-intensive work. " +
+  "Use tool_search for resource status, then resource_status for the live figures and confirm recovery before resuming heavy work."
+
+/**
+ * Rename and reword an UNTOUCHED stored resource-pressure notice.
+ *
+ * Existing officers already hold this nudge in their config, so changing `defaults()` alone would
+ * reach only officers hired afterwards. Like the bloated-todo migration, this fires only while the
+ * stored row still matches the shipped old name, body and hook; the moment a user renames it, rewrites
+ * it or retargets the hook, it is their row and is left exactly as they left it.
+ */
+const migrateLowResource = (nudge: ConfigNudge.Info): ConfigNudge.Info => {
+  if (
+    nudge.id !== LOW_RESOURCE_ID ||
+    nudge.name !== LEGACY_LOW_RESOURCE_NAME ||
+    nudge.text !== LEGACY_LOW_RESOURCE_TEXT ||
+    nudge.hook.type !== "resource-pressure" ||
+    nudge.hook.level !== "either" ||
+    nudge.script !== undefined
+  )
+    return nudge
+  const current = defaults().find((item) => item.id === LOW_RESOURCE_ID)!
+  return { ...current, ...(nudge.enabled === undefined ? {} : { enabled: nudge.enabled }) }
+}
+
 /**
  * Normalize one STORED nudge: migrate an old built-in body, then mark shipped ids as `default` so the
  * settings UI can badge them and offer a "show default nudges" filter. A user's own edits, enabled
  * state and custom nudges are preserved untouched.
  */
 export const refreshStoredDefault = (nudge: ConfigNudge.Info): ConfigNudge.Info => {
-  const refreshed = migrateBloatedTodo(nudge)
+  const refreshed = migrateLowResource(migrateBloatedTodo(nudge))
   const shipped = defaults().find((item) => item.id === refreshed.id)
   return shipped !== undefined && refreshed.default !== true ? { ...refreshed, default: true } : refreshed
 }

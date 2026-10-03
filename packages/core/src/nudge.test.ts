@@ -385,6 +385,43 @@ describe("withDefaults", () => {
     expect(Nudge.withDefaults([])).toEqual([])
   })
 
+  test("an untouched stored resource notice is renamed and reworded; a customized one is left alone", () => {
+    const legacy = {
+      id: Nudge.LOW_RESOURCE_ID,
+      name: "Protect work when resources run low",
+      enabled: false,
+      hook: { type: "resource-pressure", level: "either" },
+      text:
+        "This instance is low on memory or disk headroom. Avoid starting memory- or disk-intensive work. " +
+        "Use tool_search for resource status, then resource_status for the live figures and confirm recovery before resuming heavy work.",
+    } as ConfigNudge.Info
+    const migrated = Nudge.withDefaults([legacy]).find((item) => item.id === Nudge.LOW_RESOURCE_ID)!
+    expect(migrated.name).toBe("Resources Monitor")
+    expect(migrated.text).toBe(
+      "This instance is low on memory or disk headroom. Use tool_search for resource status, then resource_status for the live figures.",
+    )
+    // The user's disabling survives the migration: the wording changed, the choice did not.
+    expect(migrated.enabled).toBe(false)
+
+    // A row the user rewrote is theirs — the migration must never clobber an edit.
+    expect(
+      Nudge.withDefaults([{ ...legacy, text: "Watch the memory please." }]).find(
+        (item) => item.id === Nudge.LOW_RESOURCE_ID,
+      )?.text,
+    ).toBe("Watch the memory please.")
+  })
+
+  test("the shipped resource notice reports rather than instructs", () => {
+    const item = Nudge.defaults().find((entry) => entry.id === Nudge.LOW_RESOURCE_ID)!
+    expect(item.name).toBe("Resources Monitor")
+    expect(item.text).toBe(
+      "This instance is low on memory or disk headroom. Use tool_search for resource status, then resource_status for the live figures.",
+    )
+    // The two sentences that made officers chase memory usage are gone.
+    expect(item.text).not.toContain("Avoid starting")
+    expect(item.text).not.toContain("confirm recovery")
+  })
+
   test("a stored built-in gains the default marker, keeps its choices, and new defaults are merged in", () => {
     const low = Nudge.defaults().find((item) => item.id === Nudge.LOW_RESOURCE_ID)!
     const stored = [

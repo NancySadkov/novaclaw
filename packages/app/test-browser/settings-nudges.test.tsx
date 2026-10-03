@@ -193,7 +193,7 @@ describe("Officer Nudges", () => {
 
     // No scope picker: this surface has its officer, and there is no global list anymore.
     expect(document.querySelector('[data-component="select-v2"]')).toBeNull()
-    expect(document.body.textContent).not.toContain("Protect work when resources run low")
+    expect(document.body.textContent).not.toContain("Resources Monitor")
     expect(document.body.textContent).not.toContain("Check JavaScript time conversions")
     click(t("settings.nudges.add"))
     await settle()
