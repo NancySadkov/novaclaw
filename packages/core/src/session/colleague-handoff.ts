@@ -372,6 +372,8 @@ const landColleagueMessage = (
     readonly message: string
     readonly label: string | undefined
     readonly fromWorker?: boolean | undefined
+    /** The officer the sender named, when the chain of command rerouted this away from them. */
+    readonly routedFrom?: string | undefined
     readonly turn: ReturnType<typeof ColleagueNote.turnFor>
     readonly hop: number
     /** The chain so far, so the next hop can decide a cycle rather than infer depth. */
@@ -395,12 +397,13 @@ const landColleagueMessage = (
         // answer's note differs from a question's so the exchange stops at one round trip
         // (`colleague-note.ts` holds the argument).
         text: human
-          ? args.message
+          ? `${args.message}${args.routedFrom === undefined ? "" : ColleagueNote.rerouteNote(args.routedFrom)}`
           : ColleagueNote.compose({
               message: args.message,
               from: args.label ?? String(args.from),
               turn: args.turn,
               fromWorker: args.fromWorker,
+              ...(args.routedFrom === undefined ? {} : { routedFrom: args.routedFrom }),
               // The room MINUS the sender (the note names them separately) and minus the reader, who
               // does not need telling they are here. Absent for a 1:1, which keeps that note identical.
               ...(args.participants === undefined
@@ -772,6 +775,7 @@ export const fromParts = (input: {
           message: request.message,
           label,
           fromWorker: route.kind === "worker-parent",
+          routedFrom: route.kind === "officer" && route.redirected ? request.colleague.trim() : undefined,
           turn,
           hop,
           path,
@@ -823,6 +827,7 @@ export const fromParts = (input: {
         // recipients would answer someone who never heard the question, and nobody in the room could
         // tell. One lookup means the two lists cannot disagree, by construction rather than by care.
         const chats = new Map<string, SessionSchema.ID>()
+        const reroutedFrom = new Map<string, string>()
         for (const colleague of named) {
           const route = ColleagueRoute.route(sender, colleague, roster)
           if (route.kind === "unavailable") {
@@ -835,7 +840,10 @@ export const fromParts = (input: {
             missing.push(colleague)
             continue
           }
-          if (route.redirected) redirected.push({ requested: colleague, recipient })
+          if (route.redirected) {
+            redirected.push({ requested: colleague, recipient })
+            reroutedFrom.set(recipient, colleague)
+          }
           if (chats.has(recipient)) continue
           reachable.push(recipient)
           chats.set(recipient, chatID)
@@ -924,6 +932,7 @@ export const fromParts = (input: {
             message: request.message,
             label,
             fromWorker: sender?.parentID !== undefined,
+            routedFrom: reroutedFrom.get(entry.colleague),
             turn: announced ? "announce" : entry.turn,
             hop,
             path,

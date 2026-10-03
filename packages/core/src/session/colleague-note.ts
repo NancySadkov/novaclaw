@@ -75,6 +75,24 @@ export const turnFor = (input: { readonly askedByRecipient: boolean }): Turn =>
   input.askedByRecipient ? "answer" : "ask"
 
 /**
+ * The line a REROUTED message carries so the recipient knows it was not addressed to them.
+ *
+ * 🔴 A redirect is not a delivery to the named officer. The router sends an off-tier hand-off up the
+ * chain (AGENTS.md: chain of command preserved), but without this the recipient — the owner, or an
+ * intermediate superior — reads a peer message whose "you" was aimed at someone else and cannot tell.
+ * Measured live 2026-10-03: Nova addressed `lacedaemon`; the owner received it with no marker, so
+ * "tell Lacedaemon…" looked like an instruction to the owner.
+ *
+ * ⚠️ It names the officer the sender TYPED, never claims the recipient is that officer's superior: the
+ * redirect target is the sender's own next-in-chain, which for a stranger's target is not the target's
+ * boss. The sentence stays true in both cases.
+ */
+export const rerouteNote = (addressedTo: string): string =>
+  `\n\n[This was addressed to ${addressedTo}, who is outside the sender's chain of command, so it was ` +
+  `routed to you instead — you are the next person in the chain. It is not yours to answer as if it were ` +
+  `sent to you; act on it as this officer's superior would, or pass it on.]`
+
+/**
  * Does this group delivery ANSWER somebody? If so it is a reply, and only the person being answered
  * is woken — everyone else is informed.
  *
@@ -111,5 +129,7 @@ export const compose = (input: {
   readonly turn: Turn
   readonly group?: ReadonlyArray<string> | undefined
   readonly fromWorker?: boolean | undefined
+  /** The officer the sender named, when the chain of command rerouted this away from them. */
+  readonly routedFrom?: string | undefined
 }): string =>
-  `${input.message.trimEnd()}${replyNote({ from: input.from, turn: input.turn, group: input.group, fromWorker: input.fromWorker })}`
+  `${input.message.trimEnd()}${input.routedFrom === undefined ? "" : rerouteNote(input.routedFrom)}${replyNote({ from: input.from, turn: input.turn, group: input.group, fromWorker: input.fromWorker })}`

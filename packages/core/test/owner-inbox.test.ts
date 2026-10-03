@@ -216,3 +216,43 @@ it.effect("the upgrade exposes the existing owner while preserving a customized 
     expect(row?.layers).toEqual([{}, { name: "Alex", description: "My saved messages" }])
   }),
 )
+
+it.effect("a message addressed to an owner-held officer reaches the owner MARKED as rerouted", () =>
+  Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    const events = yield* EventV2.Service
+    const store = yield* SessionStore.Service
+    const owner = SessionSchema.ID.make("ses_owner_reroute")
+    const nova = SessionSchema.ID.make("ses_nova_reroute")
+    for (const [id, agent] of [
+      [owner, "owner"],
+      [nova, "nova"],
+    ] as const)
+      yield* db
+        .insert(SessionTable)
+        .values({ id, agent, slug: id, directory: process.cwd(), title: agent, version: "test" })
+        .run()
+        .pipe(Effect.orDie)
+    const handoff = ColleagueHandoff.fromParts({
+      db,
+      events,
+      store: {} as never,
+      session: (id) => store.get(id),
+      chat: (id) => Effect.succeed(id === "owner" ? owner : nova),
+      roster: Effect.succeed([officer("owner", "owner"), officer("nova", "owner"), officer("direct", "owner")]),
+      wake: () => Effect.succeed(false),
+      refresh: Effect.void,
+      takenNames: Effect.succeed([]),
+      forget: () => Effect.void,
+    })
+    // Nova addresses `direct`, who reports to the owner. The chain of command reroutes it up Nova's
+    // line — which is the owner — so the owner receives it, and must be told it was not sent to them.
+    const result = yield* handoff.deliver({ from: nova, colleague: "direct", message: "Tell direct: stop." })
+    expect(result).toMatchObject({ delivered: true, recipient: "owner", redirected: true, human: true })
+    const received = (yield* store.context(owner))[0]!
+    const text = (received as { text?: string }).text ?? ""
+    expect(text).toContain("Tell direct: stop.")
+    expect(text).toContain("This was addressed to direct")
+    expect(text).toContain("routed to you instead")
+  }),
+)
