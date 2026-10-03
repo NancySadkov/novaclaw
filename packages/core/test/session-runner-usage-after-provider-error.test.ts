@@ -6,7 +6,7 @@ import { Database } from "@novaclaw/core/database/database"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionTable } from "@novaclaw/core/session/sql"
-import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, resumeAndStop } from "./fixture/runner-harness"
 
 /**
  * **A18.3 — when a provider error arrives AFTER tokens have already streamed, does the settlement
@@ -83,7 +83,9 @@ const promptThen = (text: string) =>
   Effect.gen(function* () {
     const session = yield* SessionV2.Service
     yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text }), resume: false })
-    yield* session.resume(HARNESS_SESSION)
+    // Two of these turns end on a provider error with no reply text to mark, so stop at the first
+    // settled step (success OR failure) rather than keying on a marker.
+    yield* resumeAndStop()
     return { context: yield* session.context(HARNESS_SESSION), usage: yield* usageRow }
   })
 

@@ -5,7 +5,7 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { ApplicationTools } from "@novaclaw/core/tool/application-tools"
 import { Tool } from "@novaclaw/core/tool/tool"
-import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, resumeAndStop, resumeUntil } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — how a provider error becomes a durable, terminal assistant failure.
@@ -57,7 +57,7 @@ describe("SessionRunnerLLM — provider errors", () => {
           prompt: Prompt.make({ text: "Run the write and continue" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Continued after the recorded write")
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — a settled tool call survives provider recovery",
@@ -100,7 +100,7 @@ describe("SessionRunnerLLM — provider errors", () => {
           prompt: Prompt.make({ text: "Keep working" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Recovered")
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — a provider rejection can recover on another route",
@@ -128,7 +128,7 @@ describe("SessionRunnerLLM — provider errors", () => {
           prompt: Prompt.make({ text: "Fail durably" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeAndStop()
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — provider error is a terminal assistant failure",
@@ -156,7 +156,7 @@ describe("SessionRunnerLLM — provider errors", () => {
           prompt: Prompt.make({ text: "Fail before step" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeAndStop()
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — provider error before any step start",
@@ -198,7 +198,7 @@ describe("SessionRunnerLLM — provider errors", () => {
           prompt: Prompt.make({ text: "Fail after output" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Partial")
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — no overflow recovery once output is durable",
@@ -260,7 +260,7 @@ describe("SessionRunnerLLM — provider errors", () => {
           prompt: Prompt.make({ text: "Survive a broken reply" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Recovered")
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — a malformed tail becomes broken context, not a replay",
@@ -337,7 +337,7 @@ describe("SessionRunnerLLM — provider errors", () => {
           prompt: Prompt.make({ text: "Answer me" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeAndStop()
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — an empty provider response is a named fault",
