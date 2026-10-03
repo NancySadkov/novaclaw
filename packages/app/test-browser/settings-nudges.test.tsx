@@ -140,6 +140,22 @@ describe("Officer Nudges", () => {
     expect(saved[0]?.hook).toEqual({ type: "step-tokens", channel: "reasoning", tokens: 8_000 })
   })
 
+  test("a Markdown budget saves its count", async () => {
+    const config = mount()
+    await settle()
+    click(t("settings.nudges.add"))
+    await settle()
+    typeInto(`input[placeholder="${t("settings.nudges.field.name")}"]`, "MD cap")
+    await chooseHook("markdown-budget")
+    typeInto(".nudge-interval-field input", "30")
+    document.querySelector(".nudge-interval-field input")?.dispatchEvent(new Event("change", { bubbles: true }))
+    typeInto(`textarea[placeholder="${t("settings.nudges.field.text")}"]`, "Project already has <COUNT> .md files.")
+    click(t("common.save"))
+    await settle()
+    const saved = (config().agents as { writer: { nudges: Array<{ hook: unknown }> } }).writer.nudges
+    expect(saved[0]?.hook).toEqual({ type: "markdown-budget", count: 30 })
+  })
+
   test("edits a before-call shell nudge and a recurring heartbeat for the selected officer", async () => {
     const config = mount()
     await settle()

@@ -3818,6 +3818,10 @@ export type ConfigV2Nudge = {
         type: "finish-audit"
       }
     | {
+        type: "markdown-budget"
+        count?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }
+    | {
         type: "ask"
         question: string
       }

@@ -114,7 +114,8 @@ export const layer = Layer.effect(
           continue
         }
         const output = result.output.trim().slice(0, 1_024)
-        const trustedDate = /^date(?:\s|$)/.test(match[1]!.trim()) && /^\d{4}-\d{2}-\d{2} [A-Za-z]+( \d{2}:\d{2}(:\d{2})?)?$/.test(output)
+        const trustedDate =
+          /^date(?:\s|$)/.test(match[1]!.trim()) && /^\d{4}-\d{2}-\d{2} [A-Za-z]+( \d{2}:\d{2}(:\d{2})?)?$/.test(output)
         text = text.replace(
           match[0],
           trustedDate
@@ -186,26 +187,43 @@ export const layer = Layer.effect(
           name: input.name,
           input: input.arguments,
         }
-        const matched = (agent?.nudges ?? []).filter(
-          (nudge) =>
-            (nudge.hook.type === "tool-call" || nudge.hook.type === "shell-command") &&
-            nudge.hook.phase === "before" &&
-            Nudge.matches(nudge, event),
-        )
+        const directory = input.directory ?? process.cwd()
+        // `markdown-budget` is the one before-hook whose trigger needs the filesystem (does the target
+        // exist? how much Markdown is already there?), so it is evaluated here rather than in the pure
+        // `Nudge.matches`. Everything else stays a pure match over the call's shape.
+        const matched: Array<{ nudge: ConfigNudge.Info; markdownCount?: number }> = []
+        for (const nudge of agent?.nudges ?? []) {
+          const hook = nudge.hook
+          if (hook.type === "markdown-budget") {
+            const gate = yield* Effect.promise(() => Nudge.markdownBudgetGate({ hook, event, directory }))
+            if (gate !== undefined) matched.push({ nudge, markdownCount: gate.count })
+            continue
+          }
+          if (
+            (hook.type === "tool-call" || hook.type === "shell-command") &&
+            hook.phase === "before" &&
+            Nudge.matches(nudge, event)
+          )
+            matched.push({ nudge })
+        }
         const signature = JSON.stringify([input.name, input.arguments])
         const now = Date.now()
-        const waiting = matched.find((nudge) => {
+        const waiting = matched.find(({ nudge }) => {
           const key = pendingKey(input.sessionID, input.agentID, nudge.id)
           const prior = pending.get(key)
           return !(prior?.confirmed && prior.signature === signature && now - prior.at < 10 * 60_000)
         })
         if (waiting) {
-          const key = pendingKey(input.sessionID, input.agentID, waiting.id)
+          const key = pendingKey(input.sessionID, input.agentID, waiting.nudge.id)
           pending.set(key, { callID: input.callID, signature, confirmed: false, at: now })
-          const rendered = yield* renderInline(waiting.text, input.directory ?? process.cwd())
-          return `${Nudge.prompt({ ...waiting, text: rendered })}\nThis call was blocked before execution. Find nudge with tool_search if needed, then call nudge({"op":"confirm","id":${JSON.stringify(waiting.id)},"callId":${JSON.stringify(input.callID)}}) and retry the same call.`
+          const source =
+            waiting.markdownCount === undefined
+              ? waiting.nudge.text
+              : Nudge.markdownCountText(waiting.nudge.text, waiting.markdownCount)
+          const rendered = yield* renderInline(source, directory)
+          return `${Nudge.prompt({ ...waiting.nudge, text: rendered })}\nThis call was blocked before execution. Find nudge with tool_search if needed, then call nudge({"op":"confirm","id":${JSON.stringify(waiting.nudge.id)},"callId":${JSON.stringify(input.callID)}}) and retry the same call.`
         }
-        for (const nudge of matched) pending.delete(pendingKey(input.sessionID, input.agentID, nudge.id))
+        for (const { nudge } of matched) pending.delete(pendingKey(input.sessionID, input.agentID, nudge.id))
         return undefined
       }),
       confirmBefore: Effect.fn("NudgeService.confirmBefore")(function* (input) {
@@ -336,9 +354,7 @@ export const layer = Layer.effect(
           const modelHook = scoped.nudge.hook
           if (Nudge.isModelHook(modelHook)) {
             if (!input.judge) continue
-            const reply = yield* input
-              .judge({ hook: modelHook })
-              .pipe(Effect.catchCause(() => Effect.succeed("")))
+            const reply = yield* input.judge({ hook: modelHook }).pipe(Effect.catchCause(() => Effect.succeed("")))
             if (modelHook.type === "ask") {
               if (!Nudge.answeredYes(reply)) continue
             } else {

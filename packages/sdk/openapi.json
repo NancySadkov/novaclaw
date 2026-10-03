@@ -37519,6 +37519,41 @@
                 "properties": {
                   "type": {
                     "type": "string",
+                    "enum": ["markdown-budget"]
+                  },
+                  "count": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  }
+                },
+                "required": ["type"],
+                "additionalProperties": false,
+                "description": "Refuses a NEW `.md` file written into the project while the project already holds more than `count` (default 20) `.md` files outside ./tmp. `<COUNT>` in the text is replaced with the current total at refusal time."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
                     "enum": ["ask"]
                   },
                   "question": {

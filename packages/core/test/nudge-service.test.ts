@@ -319,8 +319,12 @@ describe("NudgeService", () => {
       try {
         const target = path.join(directory, "ghidra_todo.md")
         yield* Effect.promise(() => fs.writeFile(target, "x".repeat(50 * 1024 + 1)))
-        const edited = yield* Effect.promise(() => Nudge.fileEditEvents(["ghidra_todo.md"], directory, "snapshot-write"))
-        expect(edited).toEqual([{ type: "file-edit", id: `snapshot-write:${target}`, path: target, sizeBytes: 50 * 1024 + 1 }])
+        const edited = yield* Effect.promise(() =>
+          Nudge.fileEditEvents(["ghidra_todo.md"], directory, "snapshot-write"),
+        )
+        expect(edited).toEqual([
+          { type: "file-edit", id: `snapshot-write:${target}`, path: target, sizeBytes: 50 * 1024 + 1 },
+        ])
         const claimed = yield* service.claim({
           sessionID: "ses_shell_bloated",
           agentID: "nova",
@@ -574,6 +578,44 @@ describe("NudgeService", () => {
       expect(yield* call("four")).toContain("First")
     }),
   )
+
+  it.effect("refuses a new project .md file over the officer's Markdown budget, naming the live total", () =>
+    Effect.gen(function* () {
+      const service = yield* NudgeService.Service
+      const agents = yield* AgentConfigStore.Service
+      const directory = yield* Effect.promise(() => fs.mkdtemp(path.join(os.tmpdir(), "novaclaw-md-gate-")))
+      try {
+        yield* Effect.promise(() => fs.writeFile(path.join(directory, "one.md"), "x"))
+        yield* Effect.promise(() => fs.writeFile(path.join(directory, "two.md"), "x"))
+        yield* agents.setLayers("md", [
+          {
+            nudges: [
+              {
+                id: "md-budget",
+                name: "Cap new Markdown files",
+                hook: { type: "markdown-budget", count: 1 },
+                text: "Project already has <COUNT> .md files. Either create under ./tmp or prune the existing ones.",
+              },
+            ],
+          },
+        ])
+        const before = (name: string, args: unknown) =>
+          service.beforeTool({ sessionID: "ses_md", agentID: "md", callID: "call-1", name, arguments: args, directory })
+        const blocked = yield* before("write", { path: "new.md", content: "" })
+        expect(blocked).toContain(
+          "Project already has 2 .md files. Either create under ./tmp or prune the existing ones.",
+        )
+        expect(blocked).toContain("blocked before execution")
+        // ./tmp is the named escape hatch, replacing an existing file adds nothing, and a non-Markdown
+        // write is never gated.
+        expect(yield* before("write", { path: "tmp/new.md", content: "" })).toBeUndefined()
+        expect(yield* before("write", { path: "one.md", content: "" })).toBeUndefined()
+        expect(yield* before("write", { path: "notes.txt", content: "" })).toBeUndefined()
+      } finally {
+        yield* Effect.promise(() => fs.rm(directory, { recursive: true, force: true }))
+      }
+    }),
+  )
 })
 
 /**
@@ -722,7 +764,10 @@ describe("NudgeService gates and cooldown", () => {
 })
 
 describe("NudgeService model-judged hooks", () => {
-  const tick = (minute: number) => ({ type: "clock" as const, at: new Date(`2026-10-02T12:${String(minute).padStart(2, "0")}:00Z`) })
+  const tick = (minute: number) => ({
+    type: "clock" as const,
+    at: new Date(`2026-10-02T12:${String(minute).padStart(2, "0")}:00Z`),
+  })
 
   it.effect("ask fires only on a yes answer and delivers its own text", () =>
     Effect.gen(function* () {
@@ -778,19 +823,34 @@ describe("NudgeService model-judged hooks", () => {
       const agents = yield* AgentConfigStore.Service
       yield* agents.setLayers("quiett", [
         {
-          nudges: [
-            { id: "ask-quiet", name: "Ask", hook: { type: "ask", question: "Anything?" }, text: "Look again." },
-          ],
+          nudges: [{ id: "ask-quiet", name: "Ask", hook: { type: "ask", question: "Anything?" }, text: "Look again." }],
         },
       ])
       let calls = 0
-      const judge = () => Effect.sync(() => {
-        calls++
-        return "yes"
-      })
+      const judge = () =>
+        Effect.sync(() => {
+          calls++
+          return "yes"
+        })
       const at = tick(0)
-      expect(yield* service.claim({ sessionID: "ses_quiet_model", agentID: "quiett", directory: process.cwd(), event: at, judge })).toHaveLength(1)
-      expect(yield* service.claim({ sessionID: "ses_quiet_model", agentID: "quiett", directory: process.cwd(), event: at, judge })).toEqual([])
+      expect(
+        yield* service.claim({
+          sessionID: "ses_quiet_model",
+          agentID: "quiett",
+          directory: process.cwd(),
+          event: at,
+          judge,
+        }),
+      ).toHaveLength(1)
+      expect(
+        yield* service.claim({
+          sessionID: "ses_quiet_model",
+          agentID: "quiett",
+          directory: process.cwd(),
+          event: at,
+          judge,
+        }),
+      ).toEqual([])
       expect(calls).toBe(1)
     }),
   )
@@ -803,7 +863,12 @@ describe("NudgeService model-judged hooks", () => {
         { nudges: [{ id: "ask-nobody", name: "Ask", hook: { type: "ask", question: "?" }, text: "Hello." }] },
       ])
       expect(
-        yield* service.claim({ sessionID: "ses_no_judge", agentID: "nojudge", directory: process.cwd(), event: tick(0) }),
+        yield* service.claim({
+          sessionID: "ses_no_judge",
+          agentID: "nojudge",
+          directory: process.cwd(),
+          event: tick(0),
+        }),
       ).toEqual([])
     }),
   )

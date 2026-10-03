@@ -50,6 +50,7 @@ const HOOK_KEY: Record<HookType, TranslationKey> = {
   "announced-tool": "settings.nudges.hook.announced-tool",
   "finish-audit": "settings.nudges.hook.finish-audit",
   "step-tokens": "settings.nudges.hook.step-tokens",
+  "markdown-budget": "settings.nudges.hook.markdown-budget",
   ask: "settings.nudges.hook.ask",
   prompt: "settings.nudges.hook.prompt",
 }
@@ -102,6 +103,8 @@ const hookFor = (type: HookType): ConfigNudge.Hook => {
       return { type }
     case "step-tokens":
       return { type, channel: "answer", tokens: 4_000 }
+    case "markdown-budget":
+      return { type, count: 20 }
     case "ask":
       return { type, question: "" }
     case "prompt":
@@ -175,6 +178,7 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
         "announced-tool",
         "finish-audit",
         "step-tokens",
+        "markdown-budget",
         "ask",
         "prompt",
       ] as const
@@ -266,6 +270,7 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
                           {"phase" in item.hook ? ` · ${item.hook.phase ?? "after"}` : ""}
                           {item.hook.type === "interval" ? ` · ${item.hook.minutes} min` : ""}
                           {item.hook.type === "step-tokens" ? ` · ${item.hook.channel} ≥ ${item.hook.tokens} tok` : ""}
+                          {item.hook.type === "markdown-budget" ? ` · ≤ ${item.hook.count ?? 20} .md` : ""}
                         </p>
                       </div>
                       <Switch
@@ -528,6 +533,21 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
                   ariaLabel={language.t("settings.nudges.field.emptyTurnCount")}
                 />
               </label>
+            </Show>
+            <Show when={draft().hook.type === "markdown-budget"}>
+              <label class="nudge-interval-field">
+                <span>{language.t("settings.nudges.field.markdownCount")}</span>
+                <SettingsNumberFieldV2
+                  value={() => (draft().hook as { count?: number }).count ?? 20}
+                  onCommit={(count) =>
+                    setDraft((item) => ({ ...item, hook: { ...item.hook, count } as ConfigNudge.Hook }))
+                  }
+                  min={1}
+                  max={1_000}
+                  ariaLabel={language.t("settings.nudges.field.markdownCount")}
+                />
+              </label>
+              <p class="settings-v2-field-description">{language.t("settings.nudges.markdownBudget.description")}</p>
             </Show>
             <Show when={draft().hook.type === "step-tokens"}>
               <SelectV2

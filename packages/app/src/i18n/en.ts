@@ -1140,6 +1140,10 @@ export const dict = {
   "settings.nudges.stepTokens.channel.tool": "Tool-call arguments",
   "settings.nudges.stepTokens.description":
     "Fires when one model step generates at least this many tokens on the chosen channel. The answer channel is a step-ending budget and reasoning breaks a repetition loop; a nudge is used instead of a token cap so a reply is never cut off mid-sentence.",
+  "settings.nudges.hook.markdown-budget": "A new .md file exceeds the project Markdown budget",
+  "settings.nudges.field.markdownCount": "Markdown files allowed",
+  "settings.nudges.markdownBudget.description":
+    "Refuses a new .md file when the project already holds more than this many outside ./tmp. <COUNT> in the instruction below is replaced with the live total when the refusal fires.",
   "settings.nudges.hook.ask": "A model answers a yes/no question about the chat",
   "settings.nudges.hook.prompt": "A model writes the instruction from a request",
   "settings.nudges.field.question": "Yes/no question about the chat",

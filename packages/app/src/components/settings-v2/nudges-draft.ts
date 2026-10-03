@@ -36,6 +36,9 @@ export function planNudgeSave(input: {
     (draft.hook.type === "script" && !draft.hook.command.trim()) ||
     (draft.hook.type === "javascript" && !draft.hook.code.trim()) ||
     (draft.hook.type === "step-tokens" && (!Number.isInteger(draft.hook.tokens) || draft.hook.tokens < 1)) ||
+    (draft.hook.type === "markdown-budget" &&
+      draft.hook.count !== undefined &&
+      (!Number.isInteger(draft.hook.count) || draft.hook.count < 1)) ||
     (draft.hook.type === "ask" && !draft.hook.question.trim()) ||
     (draft.hook.type === "prompt" && !draft.hook.request.trim()) ||
     (draft.hook.type === "interval" &&

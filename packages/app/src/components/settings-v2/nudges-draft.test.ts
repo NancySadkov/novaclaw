@@ -87,6 +87,16 @@ describe("planNudgeSave", () => {
     ).toBe(true)
   })
 
+  test("a Markdown budget needs a whole positive count when it sets one", () => {
+    expect(planNudgeSave({ nudges: [], draft: { ...draft(), hook: { type: "markdown-budget", count: 0 } } })).toEqual({
+      ok: false,
+      reason: "hook",
+    })
+    expect(planNudgeSave({ nudges: [], draft: { ...draft(), hook: { type: "markdown-budget", count: 20 } } }).ok).toBe(
+      true,
+    )
+  })
+
   test("a prompt-bodied nudge needs a request but not a static instruction", () => {
     const base = { ...draft(), text: "" }
     expect(planNudgeSave({ nudges: [], draft: { ...base, hook: { type: "prompt", request: "Write it." } } }).ok).toBe(

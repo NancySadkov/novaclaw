@@ -25,6 +25,7 @@ export {
   STEP_REASONING_ID,
   STEP_TOOL_ID,
   STEP_ANSWER_ID,
+  MARKDOWN_BUDGET_ID,
   refreshStoredDefault,
   validPattern,
 } from "./nudge-definition"
@@ -110,6 +111,105 @@ const extensionMatches = (candidate: string, configured: string) => {
 const toolWrites = new Set(["write", "write-hex", "edit", "apply_patch", "patch"])
 const textToolWrites = new Set(["write", "edit", "apply_patch", "patch"])
 const toolReads = new Set(["read", "read-hex", "glob", "grep"])
+
+/** Tools whose call can bring a file into existence — the only ones the Markdown budget gates. */
+const toolCreates = new Set(["write", "write-hex", "apply_patch", "patch"])
+
+export const MARKDOWN_BUDGET_DEFAULT_COUNT = 20
+
+/** Dependencies, history and the exempt scratch area are not the project's own Markdown. */
+const MARKDOWN_EXCLUDED_DIRECTORIES = new Set(["node_modules", ".git", "tmp"])
+
+/** A bound so a pathological tree cannot make a before-tool check expensive. */
+const MARKDOWN_SCAN_LIMIT = 200_000
+
+const isMarkdown = (candidate: string) => candidate.toLowerCase().endsWith(".md")
+
+/**
+ * The paths a writing tool would CREATE, not replace.
+ *
+ * A `write` lists its single target; an `apply_patch` lists only its `*** Add File:` targets, so a
+ * patch that updates or deletes an existing `.md` is not mistaken for a new file. `edit` is absent by
+ * construction — it only changes a file that already exists.
+ */
+export const createdPaths = (event: Event): ReadonlyArray<string> => {
+  if (event.type !== "tool" || !toolCreates.has(event.name)) return []
+  if (event.name === "apply_patch" || event.name === "patch") {
+    if (typeof event.input !== "object" || event.input === null || !("patchText" in event.input)) return []
+    const patchText = (event.input as { patchText?: unknown }).patchText
+    if (typeof patchText !== "string") return []
+    return patchText.split("\n").flatMap((line) => {
+      const target = /^\*\*\* Add File:\s*(.+)$/.exec(line.trim())?.[1]?.trim()
+      return target ? [target] : []
+    })
+  }
+  return pathsIn(event.input)
+}
+
+/** Recursive `.md` count under one project folder, bounded, symlink-safe, `./tmp` excluded. */
+export const countProjectMarkdown = async (directory: string): Promise<number> => {
+  let count = 0
+  let scanned = 0
+  const stack = [path.resolve(directory)]
+  while (stack.length > 0 && scanned < MARKDOWN_SCAN_LIMIT) {
+    const current = stack.pop()!
+    const entries = await fs.readdir(current, { withFileTypes: true }).catch(() => [])
+    for (const entry of entries) {
+      scanned += 1
+      if (scanned > MARKDOWN_SCAN_LIMIT) break
+      if (entry.isSymbolicLink()) continue
+      if (entry.isDirectory()) {
+        if (!MARKDOWN_EXCLUDED_DIRECTORIES.has(entry.name)) stack.push(path.join(current, entry.name))
+        continue
+      }
+      if (entry.isFile() && isMarkdown(entry.name)) count += 1
+    }
+  }
+  return count
+}
+
+/** The project-relative path, or `undefined` when the target is outside the project or under ./tmp. */
+const projectRelative = (root: string, target: string): string | undefined => {
+  const relative = path.relative(root, target)
+  if (relative === "" || relative.startsWith("..") || path.isAbsolute(relative)) return undefined
+  if (relative === "tmp" || relative.startsWith(`tmp${path.sep}`)) return undefined
+  return relative
+}
+
+/**
+ * The filesystem half of a `markdown-budget` refusal: does this call CREATE a `.md` file in the
+ * project, and does the project already hold more Markdown than the budget allows? Returns the
+ * current total so the refusal can name it, or `undefined` when the call may proceed.
+ */
+export const markdownBudgetGate = async (input: {
+  readonly hook: Extract<ConfigNudge.Hook, { type: "markdown-budget" }>
+  readonly event: Event
+  readonly directory: string
+}): Promise<{ readonly count: number } | undefined> => {
+  if (input.event.type !== "tool") return undefined
+  const root = path.resolve(input.directory)
+  const limit = input.hook.count ?? MARKDOWN_BUDGET_DEFAULT_COUNT
+  let creating = false
+  for (const candidate of createdPaths(input.event)) {
+    if (!isMarkdown(candidate)) continue
+    const target = path.resolve(root, candidate)
+    if (projectRelative(root, target) === undefined) continue
+    const exists = await fs.stat(target).then(
+      () => true,
+      () => false,
+    )
+    if (!exists) {
+      creating = true
+      break
+    }
+  }
+  if (!creating) return undefined
+  const count = await countProjectMarkdown(root)
+  return count > limit ? { count } : undefined
+}
+
+/** Substitute the current Markdown total into a budget nudge's text. */
+export const markdownCountText = (text: string, count: number): string => text.replaceAll("<COUNT>", String(count))
 
 export const editedPaths = (event: Event, directory: string): ReadonlyArray<string> => {
   if (event.type !== "tool" || !textToolWrites.has(event.name)) return []
@@ -279,6 +379,10 @@ export function matches(nudge: ConfigNudge.Info, event: Event): boolean {
       return event.type === "announced-tool"
     case "finish-audit":
       return event.type === "finish-audit"
+    case "markdown-budget":
+      // The gate needs the filesystem (does the target exist? how many .md files are there?), so it
+      // lives in `markdownBudgetGate`, which `beforeTool` awaits. `matches` stays pure.
+      return false
     case "step-tokens":
       // The step's own count for the channel, so a threshold is a floor the step crossed — not a
       // guess. A step that generated less never fires the hook, whatever the model intended.

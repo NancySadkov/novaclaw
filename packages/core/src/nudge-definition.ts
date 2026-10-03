@@ -18,6 +18,7 @@ export const PROJECT_CLEANUP_ID = "builtin-project-cleanup"
 export const STEP_REASONING_ID = "builtin-step-reasoning"
 export const STEP_TOOL_ID = "builtin-step-tool"
 export const STEP_ANSWER_ID = "builtin-step-answer"
+export const MARKDOWN_BUDGET_ID = "builtin-markdown-budget"
 
 export const defaults = (): ReadonlyArray<ConfigNudge.Info> => [
   {
@@ -198,6 +199,20 @@ export const defaults = (): ReadonlyArray<ConfigNudge.Info> => [
     text:
       "This step's reply has grown very long. Stop and end the step now: give the conclusion and the " +
       "single next action, and put the detail in a file or the next step instead of this answer.",
+  },
+  // ── Markdown budget ─────────────────────────────────────────────────────────────────────────────
+  //
+  // Projects drown in `.md`: every turn leaves another plan, status, summary or report behind. This
+  // is a before-tool refusal, not a reminder — the write never runs until the agent either puts the
+  // file under ./tmp (excluded from the count) or prunes the project back under the budget. The
+  // shipped text carries `<COUNT>`, which `NudgeService.beforeTool` replaces with the live total.
+  {
+    id: MARKDOWN_BUDGET_ID,
+    name: "Cap new Markdown files",
+    enabled: true,
+    default: true,
+    hook: { type: "markdown-budget", count: 20 },
+    text: "Project already has <COUNT> .md files. Either create under ./tmp or prune the existing ones.",
   },
 ]
 

@@ -32,6 +32,7 @@ describe("Nudge", () => {
       [Nudge.STEP_REASONING_ID, true, true],
       [Nudge.STEP_TOOL_ID, true, true],
       [Nudge.STEP_ANSWER_ID, true, true],
+      [Nudge.MARKDOWN_BUDGET_ID, true, true],
     ])
   })
 
@@ -457,5 +458,94 @@ describe("the quiet rule", () => {
     // A script hook's occurrence is a hash of its output: it changes exactly as often as the output
     // does, so it is NOT a period, and a chatty heartbeat has to say so with `spammable`.
     expect(Nudge.periodic("script:deadbeef")).toBe(false)
+  })
+})
+
+describe("the Markdown budget", () => {
+  const withProject = async (build: (dir: string) => Promise<void>, run: (dir: string) => Promise<void>) => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "novaclaw-md-"))
+    try {
+      await build(dir)
+      await run(dir)
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  }
+
+  test("counts .md recursively, excluding ./tmp and .git", () =>
+    withProject(
+      async (dir) => {
+        await fs.writeFile(path.join(dir, "a.md"), "x")
+        await fs.mkdir(path.join(dir, "docs"))
+        await fs.writeFile(path.join(dir, "docs", "b.md"), "x")
+        await fs.writeFile(path.join(dir, "c.txt"), "x")
+        await fs.mkdir(path.join(dir, "tmp"))
+        await fs.writeFile(path.join(dir, "tmp", "scratch.md"), "x")
+        await fs.mkdir(path.join(dir, ".git"))
+        await fs.writeFile(path.join(dir, ".git", "note.md"), "x")
+      },
+      async (dir) => {
+        expect(await Nudge.countProjectMarkdown(dir)).toBe(2)
+      },
+    ))
+
+  test("createdPaths is a write target or an apply_patch Add, never an Update or an edit", () => {
+    expect(
+      Nudge.createdPaths({ type: "tool", id: "1", name: "write", input: { path: "New.md", content: "" } }),
+    ).toEqual(["New.md"])
+    expect(
+      Nudge.createdPaths({
+        type: "tool",
+        id: "2",
+        name: "edit",
+        input: { path: "old.md", oldString: "a", newString: "b" },
+      }),
+    ).toEqual([])
+    expect(
+      Nudge.createdPaths({
+        type: "tool",
+        id: "3",
+        name: "apply_patch",
+        input: {
+          patchText: "*** Begin Patch\n*** Add File: new.md\n+x\n*** Update File: old.md\n@@\n-a\n+b\n*** End Patch",
+        },
+      }),
+    ).toEqual(["new.md"])
+  })
+
+  test("the gate refuses a NEW project .md over the budget, and lets tmp and existing files through", () =>
+    withProject(
+      async (dir) => {
+        await fs.writeFile(path.join(dir, "one.md"), "x")
+        await fs.writeFile(path.join(dir, "two.md"), "x")
+      },
+      async (dir) => {
+        const hook = { type: "markdown-budget" as const, count: 1 }
+        const write = (target: string) => ({
+          type: "tool" as const,
+          id: "w",
+          name: "write",
+          input: { path: target, content: "" },
+        })
+        expect(await Nudge.markdownBudgetGate({ hook, event: write("new.md"), directory: dir })).toEqual({ count: 2 })
+        // ./tmp is the escape hatch the message names.
+        expect(await Nudge.markdownBudgetGate({ hook, event: write("tmp/new.md"), directory: dir })).toBeUndefined()
+        // Replacing an existing file does not add to the pile.
+        expect(await Nudge.markdownBudgetGate({ hook, event: write("one.md"), directory: dir })).toBeUndefined()
+        // A non-Markdown write is never gated.
+        expect(await Nudge.markdownBudgetGate({ hook, event: write("notes.txt"), directory: dir })).toBeUndefined()
+        // Under the budget, creation is allowed.
+        expect(
+          await Nudge.markdownBudgetGate({ hook: { ...hook, count: 5 }, event: write("new.md"), directory: dir }),
+        ).toBeUndefined()
+      },
+    ))
+
+  test("the shipped Markdown budget refuses with the live count in its exact text", () => {
+    const item = Nudge.defaults().find((entry) => entry.id === Nudge.MARKDOWN_BUDGET_ID)!
+    expect(item.hook).toEqual({ type: "markdown-budget", count: 20 })
+    expect(Nudge.markdownCountText(item.text, 23)).toBe(
+      "Project already has 23 .md files. Either create under ./tmp or prune the existing ones.",
+    )
   })
 })

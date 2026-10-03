@@ -64,6 +64,15 @@ export const Hook = Schema.Union([
   Schema.Struct({ type: Schema.Literal("finish-audit") }).annotate({
     description: "Fires when the finish audit finds the goal not fully achieved and the agent must continue.",
   }),
+  Schema.Struct({
+    type: Schema.Literal("markdown-budget"),
+    count: Schema.Number.pipe(Schema.optional),
+  }).annotate({
+    description:
+      "Refuses a NEW `.md` file written into the project while the project already holds more than " +
+      "`count` (default 20) `.md` files outside ./tmp. `<COUNT>` in the text is replaced with the " +
+      "current total at refusal time.",
+  }),
   Schema.Struct({ type: Schema.Literal("ask"), question: Schema.String }).annotate({
     description:
       "Ask a model a single yes/no question with the conversation's current context as prefix. The nudge fires when the answer contains yes.",
