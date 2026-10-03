@@ -5,6 +5,13 @@ export default {
   up(tx) {
     return Effect.gen(function* () {
       yield* tx.run(`
+        CREATE TABLE \`agent_stuck_counter\` (
+          \`agent\` text PRIMARY KEY,
+          \`count\` integer NOT NULL,
+          \`window_start\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`agent_retirement\` (
           \`id\` integer PRIMARY KEY AUTOINCREMENT,
           \`agent\` text NOT NULL,

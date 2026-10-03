@@ -40,6 +40,10 @@ export const Hook = Schema.Union([
     description:
       "Fires when the agent calls the same tool with the same arguments (or to the same failing target) N times in a row. The harness detects the loop; this hook only selects which loops a nudge answers.",
   }),
+  Schema.Struct({ type: Schema.Literal("stuck") }).annotate({
+    description:
+      "Fires when the runner's no-progress appraisal says the session is repeating itself without changing the result.",
+  }),
   Schema.Struct({ type: Schema.Literal("session-restarted") }).annotate({
     description: "Fires once when a provider recovery restarts the session. Replaces the hardcoded restart notice.",
   }),
@@ -146,6 +150,17 @@ export class Info extends Schema.Class<Info>("ConfigV2.Nudge")({
    */
   cooldownSeconds: Schema.Number.pipe(Schema.optional).annotate({
     description: "Seconds this nudge stays silent after firing, independent of the quiet rule.",
+  }),
+  /**
+   * **Stuck detector.** When this nudge matches, it adds one to the owning officer's hourly
+   * `stuck_counter`. Crossing the officer's `stuckCompactionThreshold` forces a full compaction,
+   * which is the reliable way out of a loop the model cannot see. Detection counts even when the
+   * quiet rule suppresses the delivery, so a loop that repeats without ever reaching the transcript
+   * still escalates.
+   */
+  stuckDetected: Schema.Boolean.pipe(Schema.optional).annotate({
+    description:
+      "Count toward the officer's hourly stuck counter when this nudge matches; the counter reaching the threshold forces a full compaction.",
   }),
   /**
    * **Vanilla marker.** True for the nudges NovaClaw ships with; absent for user-created ones.

@@ -1,11 +1,15 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "bd804d08-a923-4f07-99d8-13822c74e337",
+  "id": "faeab946-4fd6-4e1c-93d8-8d4c8d5f2bc2",
   "prevIds": [
-    "7aad8ee1-2e7b-4e8b-87db-a6387f4b7d54"
+    "bd804d08-a923-4f07-99d8-13822c74e337"
   ],
   "ddl": [
+    {
+      "name": "agent_stuck_counter",
+      "entityType": "tables"
+    },
     {
       "name": "agent_retirement",
       "entityType": "tables"
@@ -273,6 +277,36 @@
     {
       "name": "work_project",
       "entityType": "tables"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "agent",
+      "entityType": "columns",
+      "table": "agent_stuck_counter"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "count",
+      "entityType": "columns",
+      "table": "agent_stuck_counter"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "window_start",
+      "entityType": "columns",
+      "table": "agent_stuck_counter"
     },
     {
       "type": "integer",
@@ -5315,6 +5349,15 @@
       "name": "tool_catalogue_pk",
       "entityType": "pks",
       "table": "tool_catalogue"
+    },
+    {
+      "columns": [
+        "agent"
+      ],
+      "nameExplicit": false,
+      "name": "agent_stuck_counter_pk",
+      "table": "agent_stuck_counter",
+      "entityType": "pks"
     },
     {
       "columns": [

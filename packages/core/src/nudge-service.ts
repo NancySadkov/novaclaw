@@ -19,6 +19,8 @@ import { SessionOrigin } from "./session/origin"
 import { SessionSchema } from "./session/schema"
 import { SessionCompactionTable } from "./session/sql"
 import { NudgeDeliveryTable } from "./nudge-delivery.sql"
+import { AgentStuck } from "./agent-stuck"
+import { SessionCompactionRequest } from "./session/compaction-request"
 import { SessionInput } from "./session/input"
 import { resolveSessionMode } from "./session/mode"
 import { SessionMessage } from "./session/message"
@@ -72,6 +74,8 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const { db } = yield* Database.Service
     const agents = yield* AgentConfigStore.Service
+    const stuck = yield* AgentStuck.Service
+    const compactionRequests = yield* SessionCompactionRequest.Service
     const runner = JhProcessRunner.plannedRunner({
       maxOutputBytes: 16_384,
       plan: ({ command, cwd }) =>
@@ -286,6 +290,7 @@ export const layer = Layer.effect(
               }))),
         ]
         const claimed: ConfigNudge.Info[] = []
+        let stuckDetected = false
         for (const scoped of definitions) {
           if (!Nudge.matches(scoped.nudge, input.event)) continue
           // Opt-in delivery gates, evaluated before any quiet-rule bookkeeping so a suppressed
@@ -303,6 +308,9 @@ export const layer = Layer.effect(
             suppressed++
             continue
           }
+          // A stuck detection counts even when the quiet rule will silence the delivery: the counter
+          // is what rescues an officer from a loop the transcript never sees.
+          if (scoped.nudge.stuckDetected === true) stuckDetected = true
           let occurrence = Nudge.occurrenceFor(scoped.nudge, input.event)
           // The interval cap is tested BEFORE any hook runs: saying "quiet" must not itself cost a
           // command execution on the way to the answer.
@@ -424,6 +432,21 @@ export const layer = Layer.effect(
           if (!recorded) continue
           claimed.push({ ...scoped.nudge, text })
         }
+        // ONE detection per claim, whatever the officer's nudge list: the counter answers "how often
+        // did this session trip a stuck detector", not "how many nudges matched". Crossing the
+        // threshold writes a durable full-compaction request the runner consumes at a turn boundary.
+        if (stuckDetected && input.agentID !== undefined) {
+          const threshold = agent?.stuckCompactionThreshold ?? AgentStuck.DEFAULT_THRESHOLD
+          const outcome = yield* stuck.record(input.agentID, { threshold, now: Date.now() })
+          if (outcome.escalated) {
+            yield* compactionRequests.request(input.sessionID as SessionSchema.ID)
+            yield* Log.event("session.stuck.escalated", {
+              "session.id": input.sessionID,
+              "stuck.count": outcome.count,
+              "stuck.threshold": threshold,
+            })
+          }
+        }
         // Suppression is the interesting half of this feature and it is invisible by construction:
         // a quiet nudge leaves no trace in the transcript. Without this line, "the rule is working"
         // and "the nudge stopped matching" are the same observation.
@@ -441,9 +464,11 @@ export const layer = Layer.effect(
 export const defaultLayer = layer.pipe(
   Layer.provide(Database.defaultLayer),
   Layer.provide(AgentConfigStore.defaultLayer),
+  Layer.provide(AgentStuck.defaultLayer),
+  Layer.provide(SessionCompactionRequest.defaultLayer),
 )
 export const node = makeGlobalNode({
   service: Service,
   layer,
-  deps: [Database.node, AgentConfigStore.node],
+  deps: [Database.node, AgentConfigStore.node, AgentStuck.node, SessionCompactionRequest.node],
 })

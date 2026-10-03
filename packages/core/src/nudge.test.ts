@@ -20,6 +20,7 @@ describe("Nudge", () => {
       [Nudge.JAVASCRIPT_TIME_ID, true, true],
       [Nudge.BLOATED_TODO_ID, true, true],
       [Nudge.NEW_DAY_ID, true, true],
+      [Nudge.STUCK_ID, true, true],
       [Nudge.DOOM_LOOP_ID, true, true],
       [Nudge.FAILURE_STREAK_ID, true, true],
       [Nudge.SESSION_RESTART_ID, true, true],
@@ -105,6 +106,26 @@ describe("Nudge", () => {
     expect(item.text).toBe(
       "Last 3 bash calls got same result. Don't loop - do better. Now is $(date '+%Y-%m-%d %A %H:%M:%S').",
     )
+  })
+
+  test("the stuck default is a normal nudge selected by the no-progress event, and names the clock", () => {
+    const item = Nudge.defaults().find((entry) => entry.id === Nudge.STUCK_ID)!
+    expect(item.hook).toEqual({ type: "stuck" })
+    expect(item.text).toBe(
+      "This did not change the result. Use other tool / command / rethink. Now is $(date '+%Y-%m-%d %A %H:%M:%S').",
+    )
+    expect(Nudge.matches(item, { type: "stuck", id: "affective" })).toBe(true)
+    expect(Nudge.matches(item, { type: "session-restarted", id: "r" })).toBe(false)
+    expect(Nudge.occurrence({ type: "stuck", id: "affective" })).toBe("stuck:affective")
+    // An event occurrence, not a period: the ordinary quiet rule is what bounds repeats across drains.
+    expect(Nudge.periodic(Nudge.occurrence({ type: "stuck", id: "affective" }))).toBe(false)
+  })
+
+  test("every shipped stuck detector is marked so it counts toward the officer's rescue counter", () => {
+    const byId = new Map(Nudge.defaults().map((entry) => [entry.id, entry]))
+    for (const id of [Nudge.STUCK_ID, Nudge.DOOM_LOOP_ID, Nudge.FAILURE_STREAK_ID, Nudge.STEP_REASONING_ID])
+      expect(byId.get(id)!.stuckDetected).toBe(true)
+    expect(byId.get(Nudge.NEW_DAY_ID)!.stuckDetected).toBeUndefined()
   })
 
   test("the cadence defaults carry the gates the owner asked for", () => {

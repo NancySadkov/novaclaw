@@ -15,6 +15,7 @@ export {
   BLOATED_TODO_ID,
   DOOM_LOOP_ID,
   FAILURE_STREAK_ID,
+  STUCK_ID,
   SESSION_RESTART_ID,
   EMPTY_TURN_ID,
   ANNOUNCED_TOOL_ID,
@@ -57,6 +58,7 @@ export type Event =
       readonly kind: "identical" | "failure"
     }
   | { readonly type: "session-restarted"; readonly id: string }
+  | { readonly type: "stuck"; readonly id: string }
   | { readonly type: "empty-turn"; readonly id: string; readonly count: number }
   | { readonly type: "announced-tool"; readonly id: string }
   | { readonly type: "finish-audit"; readonly id: string }
@@ -373,6 +375,8 @@ export function matches(nudge: ConfigNudge.Info, event: Event): boolean {
       )
     case "session-restarted":
       return event.type === "session-restarted"
+    case "stuck":
+      return event.type === "stuck"
     case "empty-turn":
       return event.type === "empty-turn" && (hook.count === undefined || event.count === hook.count)
     case "announced-tool":
@@ -402,6 +406,7 @@ export const occurrence = (event: Event): string => {
     event.type === "file-edit" ||
     event.type === "repeated-tool" ||
     event.type === "session-restarted" ||
+    event.type === "stuck" ||
     event.type === "empty-turn" ||
     event.type === "announced-tool" ||
     event.type === "finish-audit" ||

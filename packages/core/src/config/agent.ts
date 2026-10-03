@@ -212,6 +212,12 @@ export class Info extends Schema.Class<Info>("ConfigV2.Agent")({
   reasoningBudget: NonNegativeInt.pipe(Schema.optional),
   /** Maximum wall time for one tool call in milliseconds. Absent = 600000. */
   maxToolTimeoutMs: PositiveInt.pipe(Schema.optional),
+  /**
+   * Stuck-detector threshold. A `stuckDetected` nudge adds one to the officer's hourly
+   * `stuck_counter`; when the counter reaches this number the session is force-compacted to break
+   * the loop. Counter resets to zero after an hour of quiet. Absent = 10.
+   */
+  stuckCompactionThreshold: PositiveInt.pipe(Schema.optional),
   /** Named officer cloned as the persona/config layer for anonymous workers. Absent = this officer. */
   workerPrototype: Schema.String.pipe(Schema.optional),
   /** Maximum unfinished workers in this officer's whole descendant tree. Absent = 100. */

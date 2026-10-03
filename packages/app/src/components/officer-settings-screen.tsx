@@ -227,6 +227,7 @@ export function OfficerSettingsScreen(props: {
   const [intrPrompt, setIntrPrompt] = createSignal<string | undefined>()
   const [intrInterjection, setIntrInterjection] = createSignal<string | undefined>()
   const [intrGenerate, setIntrGenerate] = createSignal<boolean | undefined>()
+  const [stuckThreshold, setStuckThreshold] = createSignal<string | undefined>()
   /**
    * Tools-tab drafts. Recipes and the horizon save live (like Nudges), rather than on screen exit:
    * they are replace-semantics lists, and merging them with the scalar drafts would
@@ -373,6 +374,18 @@ export function OfficerSettingsScreen(props: {
   const affTemperatureValue = () => affTemperature() ?? structNumber(affStored().temperature)
   const affExtendedValue = () => affExtended() ?? (affStored().extended as boolean | undefined) ?? false
   const intrCadenceValue = () => intrCadence() ?? structNumber(intrStored().cadence)
+  const stuckThresholdValue = (): string => {
+    const draft = stuckThreshold()
+    if (draft !== undefined) return draft
+    const stored = agent()?.config?.["stuckCompactionThreshold"]
+    return typeof stored === "number" ? String(stored) : ""
+  }
+  const parsedStuckThreshold = (): number | undefined => {
+    const draft = stuckThreshold()
+    if (draft === undefined) return undefined
+    const value = Number(draft)
+    return Number.isFinite(value) && value >= 1 ? Math.floor(value) : undefined
+  }
   const intrModelValue = () => {
     const draft = intrModel()
     if (draft !== undefined) return draft
@@ -1315,6 +1328,7 @@ export function OfficerSettingsScreen(props: {
             ...(strictPatch === undefined ? {} : { strict: strictPatch }),
             ...(affectivePatch === undefined ? {} : { affective: affectivePatch }),
             ...(introspectionPatch === undefined ? {} : { introspection: introspectionPatch }),
+            ...(parsedStuckThreshold() === undefined ? {} : { stuckCompactionThreshold: parsedStuckThreshold()! }),
             ...(operationMode() === undefined ? {} : { operationMode: operationMode()! }),
             ...(goal() === undefined ? {} : { goal: goalValue() }),
             ...(toolLabels() === undefined ? {} : { toolLabels: toolLabels()! }),
@@ -2415,6 +2429,27 @@ export function OfficerSettingsScreen(props: {
                   {language.t("agentConfig.resetTab.action")}
                 </button>
               </div>
+            </section>
+
+            <section class="agent-settings-card" data-section="stuck" data-settings-tab="mind">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-muted">Stuck rescue</h3>
+              <label class="mt-3 block text-xs text-v2-text-text-muted">
+                Stuck detections before a full compaction
+                <input
+                  aria-label="Stuck compaction threshold"
+                  class="mt-1 w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1.5 text-sm"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={stuckThresholdValue()}
+                  placeholder="10"
+                  onInput={(event) => setStuckThreshold(event.currentTarget.value)}
+                />
+              </label>
+              <p class="mt-1 text-[11px] leading-relaxed text-v2-text-text-faint">
+                Nudges with “Stuck Detected” count toward an hourly counter for this officer. When it reaches
+                this number the chat is fully compacted, which summarises the loop away and frees the officer.
+              </p>
             </section>
 
             <section class="agent-settings-card" data-settings-tab="capabilities" data-section="workers">

@@ -37409,6 +37409,18 @@
                 "properties": {
                   "type": {
                     "type": "string",
+                    "enum": ["stuck"]
+                  }
+                },
+                "required": ["type"],
+                "additionalProperties": false,
+                "description": "Fires when the runner's no-progress appraisal says the session is repeating itself without changing the result."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
                     "enum": ["session-restarted"]
                   }
                 },
@@ -37731,6 +37743,9 @@
             ],
             "description": "Seconds this nudge stays silent after firing, independent of the quiet rule."
           },
+          "stuckDetected": {
+            "type": "boolean"
+          },
           "default": {
             "type": "boolean"
           }
@@ -37971,6 +37986,10 @@
             "minimum": 0
           },
           "maxToolTimeoutMs": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "stuckCompactionThreshold": {
             "type": "integer",
             "exclusiveMinimum": 0
           },

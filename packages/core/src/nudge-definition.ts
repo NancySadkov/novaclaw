@@ -8,6 +8,7 @@ export const NEW_DAY_ID = "builtin-new-day"
 export const BLOATED_TODO_ID = "builtin-bloated-todo"
 export const DOOM_LOOP_ID = "builtin-doom-loop"
 export const FAILURE_STREAK_ID = "builtin-failure-streak"
+export const STUCK_ID = "builtin-stuck"
 export const SESSION_RESTART_ID = "builtin-session-restart"
 export const EMPTY_TURN_ID = "builtin-empty-turn"
 export const ANNOUNCED_TOOL_ID = "builtin-announced-tool"
@@ -75,11 +76,21 @@ export const defaults = (): ReadonlyArray<ConfigNudge.Info> => [
     text: "Today is $(date '+%Y-%m-%d %A').",
   },
   {
+    id: STUCK_ID,
+    name: "Break a stuck loop",
+    enabled: true,
+    default: true,
+    hook: { type: "stuck" },
+    stuckDetected: true,
+    text: "This did not change the result. Use other tool / command / rethink. Now is $(date '+%Y-%m-%d %A %H:%M:%S').",
+  },
+  {
     id: DOOM_LOOP_ID,
     name: "Break a repeating tool loop",
     enabled: true,
     default: true,
     hook: { type: "repeated-tool", tool: "bash", count: 3, kind: "identical" },
+    stuckDetected: true,
     text: "Last 3 bash calls got same result. Don't loop - do better. Now is $(date '+%Y-%m-%d %A %H:%M:%S').",
   },
   {
@@ -88,6 +99,7 @@ export const defaults = (): ReadonlyArray<ConfigNudge.Info> => [
     enabled: true,
     default: true,
     hook: { type: "repeated-tool", count: 3, kind: "failure" },
+    stuckDetected: true,
     text:
       "The last few tool calls to the same target failed the same way. Stop repeating it — read the " +
       "error, change your approach, or tell the user what's blocking you.",
@@ -178,6 +190,7 @@ export const defaults = (): ReadonlyArray<ConfigNudge.Info> => [
     enabled: true,
     default: true,
     hook: { type: "step-tokens", channel: "reasoning", tokens: 8_000 },
+    stuckDetected: true,
     text:
       "This one step has spent a very large amount of reasoning and started repeating itself. Stop " +
       "re-deriving: state the best conclusion you have, then act on it or answer.",

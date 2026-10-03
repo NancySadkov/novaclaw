@@ -1129,6 +1129,7 @@ export const dict = {
   "settings.nudges.resource.warning": "Warning only",
   "settings.nudges.resource.floor": "Critical only",
   "settings.nudges.hook.repeated-tool": "The same tool repeats with the same result",
+  "settings.nudges.hook.stuck": "The agent is repeating with no change in result",
   "settings.nudges.hook.session-restarted": "After a provider recovery restarts the session",
   "settings.nudges.hook.empty-turn": "A turn ends with no reply and no tool call",
   "settings.nudges.hook.announced-tool": "A turn promised a tool call and never made one",
@@ -1175,6 +1176,9 @@ export const dict = {
   "settings.nudges.clearChat.description": "Clear the officer's chat before inserting the nudge.",
   "settings.nudges.field.forceCompaction": "Force compaction first",
   "settings.nudges.forceCompaction.description": "Force a context compaction before inserting the nudge.",
+  "settings.nudges.field.stuckDetected": "Stuck Detected",
+  "settings.nudges.stuckDetected.description":
+    "Count toward the officer's hourly stuck counter when this fires. Reaching the officer's threshold forces a full compaction.",
   "settings.nudges.field.stopOfficer": "Stop the officer",
   "settings.nudges.stopOfficer.description": "Interrupt the officer's current work.",
   "settings.nudges.field.sleepSeconds": "Sleep (seconds)",

@@ -10,6 +10,7 @@ import { SessionPatch } from "../session/patch"
 import { SessionSchema } from "../session/schema"
 import * as MemoryAccess from "../kb-graph/memory-access"
 import { AgentUsage } from "./usage"
+import { AgentStuckCounterTable } from "../agent-stuck.sql"
 import { GraphRegistry } from "./graph-registry"
 import { AgentRetirement } from "./retirement"
 import { eq } from "drizzle-orm"
@@ -134,6 +135,11 @@ export const everything = (input: {
 }): Effect.Effect<void> =>
   Effect.gen(function* () {
     yield* AgentUsage.forget(input.db, input.agent)
+    yield* input.db
+      .delete(AgentStuckCounterTable)
+      .where(eq(AgentStuckCounterTable.agent, input.agent))
+      .run()
+      .pipe(Effect.orDie)
     yield* input.db.delete(ProjectOfficerTable).where(eq(ProjectOfficerTable.agent, input.agent)).run().pipe(Effect.orDie)
     yield* input.db.delete(ProjectNoticeTable).where(eq(ProjectNoticeTable.agent, input.agent)).run().pipe(Effect.orDie)
     // The CHAT goes too — archived, exactly as "Clear chat" archives it, and for the same reason

@@ -2577,12 +2577,12 @@ export const layer = Layer.effect(
         // used to trip the "stop deliberating" steer within a few replies. Attendance is the
         // chain ROOT's property (the Agent Jail doctrine — AgentJail.attendedRoot); sampling
         // modulation above stays active either way.
-        const nudge = Affective.intervention(mood)
+        const stuck = Affective.intervention(mood) !== undefined
         const wasCalm = Affective.intervention(previous) === undefined
-        if (nudge && wasCalm) {
+        if (stuck && wasCalm) {
           const rootType = yield* rootSessionType(session.id, (id) => store.get(id as SessionSchema.ID))
           if (!AgentJail.attendedRoot(rootType))
-            yield* Steering.inject(db, events, { sessionID: session.id, reason: "jail", text: nudge })
+            yield* deliverNudges(session.id, session.agent, { type: "stuck", id: "affective" })
         }
       }
       // THE ONE SYSTEM MESSAGE. `PromptManager` built it when this context epoch was established (a

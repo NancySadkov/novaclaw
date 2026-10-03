@@ -2313,6 +2313,17 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  "session.stuck.escalated": {
+    level: "warn",
+    message: "stuck counter reached its threshold — forcing a full compaction",
+    attributes: {
+      "session.id": "correlate",
+      "stuck.count": "count",
+      "stuck.threshold": "count",
+    },
+    content: "correlated",
+    file: "packages/core/src/nudge-service.ts",
+  },
   "session.drain.exit": {
     level: "info",
     message: "exit(result) recorded — stopping the drain",

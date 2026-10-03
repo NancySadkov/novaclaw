@@ -3800,6 +3800,9 @@ export type ConfigV2Nudge = {
         kind?: "identical" | "failure"
       }
     | {
+        type: "stuck"
+      }
+    | {
         type: "session-restarted"
       }
     | {
@@ -3853,6 +3856,7 @@ export type ConfigV2Nudge = {
    * Seconds this nudge stays silent after firing, independent of the quiet rule.
    */
   cooldownSeconds?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  stuckDetected?: boolean
   default?: boolean
 }
 
@@ -3938,6 +3942,7 @@ export type ConfigV2Agent = {
   }>
   reasoningBudget?: number
   maxToolTimeoutMs?: number
+  stuckCompactionThreshold?: number
   workerPrototype?: string
   maxWorkers?: number
   spawnDepth?: number

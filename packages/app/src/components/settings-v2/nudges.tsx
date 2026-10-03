@@ -45,6 +45,7 @@ const HOOK_KEY: Record<HookType, TranslationKey> = {
   interval: "settings.nudges.hook.interval",
   script: "settings.nudges.hook.script",
   "repeated-tool": "settings.nudges.hook.repeated-tool",
+  stuck: "settings.nudges.hook.stuck",
   "session-restarted": "settings.nudges.hook.session-restarted",
   "empty-turn": "settings.nudges.hook.empty-turn",
   "announced-tool": "settings.nudges.hook.announced-tool",
@@ -93,6 +94,8 @@ const hookFor = (type: HookType): ConfigNudge.Hook => {
       return { type, command: "" }
     case "repeated-tool":
       return { type, tool: "", count: 3, kind: "identical" }
+    case "stuck":
+      return { type }
     case "session-restarted":
       return { type }
     case "empty-turn":
@@ -700,6 +703,18 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
                 hideLabel
               >
                 {language.t("settings.nudges.field.forceCompaction")}
+              </Switch>
+            </SettingsRowV2>
+            <SettingsRowV2
+              title={language.t("settings.nudges.field.stuckDetected")}
+              description={language.t("settings.nudges.stuckDetected.description")}
+            >
+              <Switch
+                checked={draft().stuckDetected === true}
+                onChange={(stuckDetected) => setDraft((item) => ({ ...item, stuckDetected }))}
+                hideLabel
+              >
+                {language.t("settings.nudges.field.stuckDetected")}
               </Switch>
             </SettingsRowV2>
             <SettingsRowV2

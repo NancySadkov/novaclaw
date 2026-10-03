@@ -9,6 +9,8 @@ import { Database } from "@novaclaw/core/database/database"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { NudgeService } from "@novaclaw/core/nudge-service"
 import { Nudge } from "@novaclaw/core/nudge"
+import { AgentStuck } from "@novaclaw/core/agent-stuck"
+import { SessionCompactionRequest } from "@novaclaw/core/session/compaction-request"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { AgentUsage } from "@novaclaw/core/agent/usage"
@@ -18,7 +20,14 @@ import { testEffect } from "./lib/effect"
 
 const it = testEffect(
   AppNodeBuilder.build(
-    LayerNode.group([Database.node, SettingsConfigStore.node, AgentConfigStore.node, NudgeService.node]),
+    LayerNode.group([
+      Database.node,
+      SettingsConfigStore.node,
+      AgentConfigStore.node,
+      NudgeService.node,
+      AgentStuck.node,
+      SessionCompactionRequest.node,
+    ]),
   ),
 )
 
@@ -870,6 +879,43 @@ describe("NudgeService model-judged hooks", () => {
           event: tick(0),
         }),
       ).toEqual([])
+    }),
+  )
+
+  it.effect("counts a stuck detection once and force-compacts at the officer's threshold", () =>
+    Effect.gen(function* () {
+      const service = yield* NudgeService.Service
+      const agents = yield* AgentConfigStore.Service
+      const stuck = yield* AgentStuck.Service
+      const compaction = yield* SessionCompactionRequest.Service
+      const { db } = yield* Database.Service
+      const sessionID = SessionSchema.ID.make("ses_stuck_officer")
+      yield* db
+        .insert(SessionTable)
+        .values({
+          id: sessionID,
+          agent: "stuckofficer",
+          slug: sessionID,
+          directory: process.cwd(),
+          title: "stuckofficer",
+          version: "test",
+        })
+        .run()
+        .pipe(Effect.orDie)
+      yield* agents.setLayers("stuckofficer", [{ stuckCompactionThreshold: 2 }])
+      const detected = { type: "stuck" as const, id: "affective" }
+      expect(
+        (yield* service.claim({ sessionID, agentID: "stuckofficer", directory: process.cwd(), event: detected })).map(
+          (item) => item.id,
+        ),
+      ).toEqual([Nudge.STUCK_ID])
+      expect(yield* stuck.count("stuckofficer", Date.now())).toBe(1)
+      // The SAME detection repeats every drain. The quiet rule silences the delivery, never the count.
+      expect(
+        yield* service.claim({ sessionID, agentID: "stuckofficer", directory: process.cwd(), event: detected }),
+      ).toEqual([])
+      expect(yield* stuck.count("stuckofficer", Date.now())).toBe(0)
+      expect(yield* compaction.consume(sessionID)).toBe(true)
     }),
   )
 })
