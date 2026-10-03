@@ -184,7 +184,10 @@ describe("Officer Nudges", () => {
     await settle()
     const updated = (config().agents as { writer: { nudges: Array<{ hook: unknown }> } }).writer.nudges
     expect(updated[1]?.hook).toEqual({ type: "interval", minutes: 15 })
-    expect(document.body.textContent).toContain("Runs bash")
+    // The card is name + switch + actions: neither the body nor the delivery-mode metadata is shown.
+    expect(document.body.textContent).toContain("Heartbeat")
+    expect(document.body.textContent).not.toContain("Runs bash")
+    expect(document.body.textContent).not.toContain("Today is $(date +%F).")
   })
 
   test("one officer's list, no global scope, and a saved personal nudge", async () => {

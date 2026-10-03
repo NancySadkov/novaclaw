@@ -1491,8 +1491,7 @@ body[data-new-layout] [data-slot="dialog-container"] {
   color: var(--v2-text-text-muted);
   font-size: 11px;
 }
-.schedule-status-dot,
-.nudge-status-dot {
+.schedule-status-dot {
   flex: 0 0 7px;
   width: 7px;
   height: 7px;
@@ -1501,8 +1500,7 @@ body[data-new-layout] [data-slot="dialog-container"] {
   background: #8d799f;
   box-shadow: 0 0 0 4px #8d799f1c;
 }
-.schedule-status-dot[data-state="pending"],
-.nudge-status-dot[data-state="on"] {
+.schedule-status-dot[data-state="pending"] {
   background: #bda36e;
   box-shadow: 0 0 0 4px #bda36e1f;
 }
@@ -1836,6 +1834,10 @@ body[data-new-layout] [data-slot="dialog-container"] {
 /* The card no longer carries a body, so the head row owns the gap above the footer. */
 .nudge-card-top {
   padding-bottom: 14px;
+}
+/* Only the actions remain in the footer, so they sit at the end rather than space-between. */
+.nudge-card-foot {
+  justify-content: flex-end;
 }
 .nudge-editor {
   display: grid;

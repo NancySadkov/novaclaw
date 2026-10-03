@@ -258,13 +258,13 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
               <For each={visibleNudges()}>
                 {(item) => (
                   <article class="nudge-card" data-disabled={item.enabled === false}>
+                    {/* Name, switch and actions ONLY. The body, the hook selection and its parameters,
+                        and the delivery mode are detail a person reads in Edit — printing them on
+                        every row turned a scannable list into a wall of text. */}
                     <div class="nudge-card-top">
-                      <span class="nudge-status-dot" data-state={item.enabled === false ? "off" : "on"} />
                       <Show when={item.default === true}>
                         <span class="nudge-default-badge">{language.t("settings.nudges.default")}</span>
                       </Show>
-                      {/* Name and switch only: the body, the hook selection and its parameters are
-                          detail a person reads in Edit, not a wall of text on every row. */}
                       <div class="nudge-card-title">
                         <h4>{item.name}</h4>
                       </div>
@@ -279,10 +279,6 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
                       </Switch>
                     </div>
                     <div class="nudge-card-foot">
-                      <span>
-                        {item.spammable ? "Every matching event" : "Quiet delivery"}
-                        {item.script || item.text.includes("$(") ? " · Runs bash" : ""}
-                      </span>
                       <div class="nudge-actions">
                         <button type="button" onClick={() => open(item)}>
                           {language.t("common.edit")}
