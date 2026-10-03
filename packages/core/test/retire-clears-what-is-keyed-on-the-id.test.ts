@@ -21,7 +21,7 @@ import { AgentRetire } from "@novaclaw/core/agent/retire"
 /** A `db` that answers the built-in steps' chains and returns nothing. */
 const stubDb = () => {
   const chain: Record<string, unknown> = {}
-  for (const method of ["delete", "where", "update", "set", "select", "from", "orderBy", "limit"])
+  for (const method of ["insert", "values", "delete", "where", "update", "set", "select", "from", "orderBy", "limit"])
     chain[method] = () => chain
   chain["run"] = () => Effect.void
   chain["all"] = () => Effect.succeed([])

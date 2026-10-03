@@ -279,7 +279,7 @@ describe("which sessions the sweep hands back", () => {
       const store = yield* SessionStoreService.Service
 
       const queued = yield* session.create({ location, agent: rootAgent })
-      const steered = yield* session.create({ location, agent: rootAgent })
+      const steered = yield* session.create({ location, agent: AgentV2.ID.make("plan") })
       yield* queue(queued.id)
       yield* queue(steered.id, "steer")
 
@@ -387,7 +387,7 @@ describe("which sessions the sweep hands back", () => {
 
       const officer = yield* session.create({ location, agent: rootAgent })
       const worker = yield* session.create({ location, parentID: officer.id })
-      const explicitlyStopped = yield* session.create({ location, agent: rootAgent })
+      const explicitlyStopped = yield* session.create({ location, agent: AgentV2.ID.make("plan") })
       yield* db
         .insert(SessionExecutionTable)
         .values([
@@ -562,7 +562,7 @@ describe("a stop survives the restart", () => {
 
       // Positive control in the same sweep: an unstopped session with the SAME leftover queue row
       // must still be woken, or this test would also pass with a gate that stops everything.
-      const waiting = yield* session.create({ location, agent: rootAgent })
+      const waiting = yield* session.create({ location, agent: AgentV2.ID.make("plan") })
       yield* queue(waiting.id)
 
       const { woken, wake } = record()

@@ -610,10 +610,20 @@ describe("SessionV2.spawn — a global caller gets the same quota", () => {
       const session = yield* SessionV2.Service
 
       // More than every per-parent cap, all parentless. None of them may refuse.
+      // ⚠️ A DISTINCT agent per launch: a root must name its agent (NC-SEC-020), and the
+      // one-live-root index is keyed on the agent alone for roots — the retirement of the anonymous
+      // agents removed the posture exemption, so two live roots for ONE agent are refused by design.
+      // The property under test is that these skip the caps that key on a PARENT, which they do.
       const ids: string[] = []
       for (let index = 0; index < SessionSpawner.MAX_SPAWNS_PER_MINUTE + 2; index++) {
         const spawned = yield* session
-          .spawn({ location, agent: rootAgent, text: PROMPT, type: "goal-oriented", title: `scheduled ${index}` })
+          .spawn({
+            location,
+            agent: AgentV2.ID.make(`scheduled-${index}`),
+            text: PROMPT,
+            type: "goal-oriented",
+            title: `scheduled ${index}`,
+          })
           .pipe(Effect.orDie)
         ids.push(spawned.id)
       }

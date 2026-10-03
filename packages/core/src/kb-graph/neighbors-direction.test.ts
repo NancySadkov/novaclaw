@@ -5,7 +5,8 @@ import { join } from "node:path"
 import { WasmMemory } from "./wasm-engine"
 // The WASM engine is not loadable in every runtime (measured: Bun 1.3.14 rejects the package's CJS
 // entry), so this file is skipped where it cannot open rather than failing every test.
-const describe = WasmMemory.available() ? bunDescribe : bunDescribe.skip
+const engineAvailable = WasmMemory.available()
+const describe = engineAvailable ? bunDescribe : bunDescribe.skip
 
 /**
  * 🔴 **`neighbors` matched only OUTGOING edges, which made it useless on every real store.**
@@ -37,6 +38,9 @@ let dir: string
 let mem: WasmMemory
 
 beforeAll(async () => {
+  // ⚠️ A top-level hook runs even when every `describe` is skipped, so the engine probe has to gate
+  // HERE too or the file reports an `(unnamed)` failure where all it has is a missing dependency.
+  if (!engineAvailable) return
   dir = mkdtempSync(join(tmpdir(), "nc-neighbors-"))
   mem = await WasmMemory.open(join(dir, "graph"), { dim: DIM })
   // The shape the lifecycle actually writes: a CLAIM points AT the entity it is about.
@@ -46,7 +50,9 @@ beforeAll(async () => {
   expect(edge.ok).toBe(true) // a refused edge would make every assertion below vacuously pass
 })
 
-afterAll(() => rmSync(dir, { recursive: true, force: true }))
+afterAll(() => {
+  if (engineAvailable) rmSync(dir, { recursive: true, force: true })
+})
 
 describe("neighbors is UNDIRECTED — an entity is a sink, and a sink is what questions start from", () => {
   test("control: the direction that always worked still works", async () => {

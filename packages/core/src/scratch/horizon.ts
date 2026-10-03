@@ -131,7 +131,7 @@ export const sweep = (
         }).pipe(
           Effect.catchCause((cause) =>
             Log.event("instance.schedule.tick.failed", {
-              "instance.cause": `Scratch cleanup for ${agent}: ${Log.fault(cause)}`,
+              "instance.cause": Log.fault(cause),
             }).pipe(Effect.as(false)),
           ),
         )

@@ -61,11 +61,10 @@ const location = Location.Ref.make({ directory: AbsolutePath.make("/project") })
 /**
  * 🔴 NC-SEC-020 — a ROOT names the agent it runs as; there is no anonymous chat.
  *
- * `build` rather than a colleague, deliberately: it records the POSTURE this chat runs in, which is
- * the ordinary production case (the one-live-root index measures 55–98 live `build` roots on the
- * owner's own instances). It also keeps these tests' semantics exactly as they were — a posture is
- * excluded from the canonical `ses_<agent>` id and from the one-chat-per-colleague guard, so ids and
- * idempotence below still mean what they meant.
+ * `build` records the POSTURE this chat runs in. ⚠️ The one-live-root index used to EXEMPT postures;
+ * the retirement of the anonymous agents (`20260927201500_retire_the_anonymous_agents`) removed that
+ * exemption, so TWO live roots for the same agent now collide. A test that needs two roots uses two
+ * agents.
  */
 const agent = AgentV2.ID.make("build")
 const id = SessionV2.ID.create()
@@ -132,8 +131,10 @@ describe("SessionV2.create", () => {
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
 
+      // Two DIFFERENT agents: the one-live-root index is keyed on the agent alone, so two roots for
+      // one agent are refused by design (see the `agent` note above).
       const first = yield* session.create({ location, agent })
-      const second = yield* session.create({ location, agent })
+      const second = yield* session.create({ location, agent: AgentV2.ID.make("plan") })
 
       expect(second.id).not.toBe(first.id)
       expect(yield* session.list()).toHaveLength(2)

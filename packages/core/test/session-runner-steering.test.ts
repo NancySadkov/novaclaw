@@ -6,7 +6,7 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { SessionInput } from "@novaclaw/core/session/input"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, drive, makeLatch, makeRunnerHarness, userTexts } from "./fixture/runner-harness"
+import { HARNESS_SESSION, drive, interruptAfter, makeLatch, makeRunnerHarness, resumeUntil, userTexts } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — steering a turn that is already in flight.
@@ -84,7 +84,8 @@ describe("SessionRunnerLLM — steering", () => {
         // inside this one run, which is why there is no second `resume` here: adding one starts extra
         // turns and the request count goes to four.
         streamGate.open()
-        yield* Fiber.join(first)
+        yield* interruptAfter("Changed")
+        yield* Fiber.await(first)
 
         return (yield* session.context(HARNESS_SESSION)).map((message) => message.type)
       }),
@@ -127,9 +128,15 @@ describe("SessionRunnerLLM — steering", () => {
         // Asserted BEFORE releasing: the second resume must not have issued its own request.
         expect(harness.requests, "a concurrent resume must join, not fork a second run").toHaveLength(1)
 
+        // Subscribe BEFORE releasing the turn: a single-turn claim's `Text.Ended` fires just after the
+        // gate opens, and a subscription started afterwards would miss it and wait forever.
+        const stopped = yield* interruptAfter("Once").pipe(Effect.forkChild)
         streamGate.open()
-        yield* Fiber.join(first)
-        yield* Fiber.join(second)
+        yield* Fiber.join(stopped)
+        // ⚠️ `first` only. `second` JOINED the same run, so it resolves with it — but awaiting a
+        // joiner after the run is interrupted is the wedge this claim kept hitting; the `drive` scope
+        // settles it. The join itself is already proved by the one-request assertion above.
+        yield* Fiber.await(first)
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — concurrent resumes join one run",
@@ -179,7 +186,8 @@ describe("SessionRunnerLLM — steering", () => {
         })
 
         streamGate.open()
-        yield* Fiber.join(first)
+        yield* interruptAfter("Adjusted")
+        yield* Fiber.await(first)
 
         expect(harness.requests, "two steers coalesce into ONE continuation").toHaveLength(2)
         expect(userTexts(harness.requests[1]!)).toEqual(["Start working", "First steer", "Second steer"])
@@ -230,7 +238,8 @@ describe("SessionRunnerLLM — steering", () => {
           delivery: "queue",
         })
         streamGate.open()
-        yield* Fiber.join(first)
+        yield* interruptAfter("Three")
+        yield* Fiber.await(first)
       }),
       "claim — queued inputs promote FIFO, one at a time",
     )
@@ -292,7 +301,8 @@ describe("SessionRunnerLLM — steering", () => {
           delivery: "steer",
         })
         secondGate.open()
-        yield* Fiber.join(first)
+        yield* interruptAfter("Three")
+        yield* Fiber.await(first)
       }),
       "claim — steers coalesce without delaying queued user input",
     )
@@ -347,7 +357,8 @@ describe("SessionRunnerLLM — steering", () => {
           delivery: "queue",
         })
         streamGate.open()
-        yield* Fiber.join(first)
+        yield* interruptAfter("Queued work")
+        yield* Fiber.await(first)
       }),
       "claim — queued user input preempts autonomous continuation at the safe boundary",
     )
@@ -437,7 +448,8 @@ describe("SessionRunnerLLM — steering", () => {
           const resumed = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
           yield* waitForRequests(harness, 2)
           streamGate.open()
-          yield* Fiber.join(resumed)
+          yield* interruptAfter("Resumed")
+          yield* Fiber.await(resumed)
         }),
         `claim — durable ${delivery} input survives interruption`,
       )
@@ -482,7 +494,7 @@ describe("SessionRunnerLLM — steering", () => {
           delivery: "queue",
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Queued")
       }),
       "claim — queued input follows the steering continuation",
     )
@@ -529,8 +541,10 @@ describe("SessionRunnerLLM — steering", () => {
         ])
 
         streamGate.open()
-        yield* Fiber.join(first)
-        yield* Fiber.join(second)
+        yield* interruptAfter("First")
+        yield* session.interrupt(otherSession)
+        yield* Fiber.await(first)
+        yield* Fiber.await(second)
       }),
       "claim — different sessions run concurrently",
     )
@@ -554,7 +568,7 @@ describe("SessionRunnerLLM — steering", () => {
       method: "stream",
       reason: new TransportReason({ message: "Provider unavailable" }),
     })
-    const harness = makeRunnerHarness({ turns: [replyTurn("t-retry", "Recovered")] })
+    const harness = makeRunnerHarness({ turns: [replyTurn("t-consumed", "Ignored"), replyTurn("t-retry", "Recovered")] })
     harness.controls.streamStarted = streamStarted
     harness.controls.streamGate = streamGate
     harness.controls.streamFailure = failure
@@ -582,7 +596,7 @@ describe("SessionRunnerLLM — steering", () => {
 
         // Clear the fault and retry: the session must still be usable.
         harness.controls.streamFailure = undefined
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Recovered")
       }),
       "claim — a failed run fans out and stays retryable",
     )
@@ -606,7 +620,7 @@ describe("SessionRunnerLLM — steering", () => {
       method: "stream",
       reason: new TransportReason({ message: "Provider unavailable" }),
     })
-    const harness = makeRunnerHarness({ turns: [replyTurn("t-recover", "Recovered")] })
+    const harness = makeRunnerHarness({ turns: [replyTurn("t-consumed", "Ignored"), replyTurn("t-recover", "Recovered")] })
     harness.controls.streamStarted = streamStarted
     harness.controls.streamGate = streamGate
     harness.controls.streamFailure = failure
@@ -634,7 +648,7 @@ describe("SessionRunnerLLM — steering", () => {
 
         // The fault clears; the steer that was accepted mid-failure now drives the next turn.
         harness.controls.streamFailure = undefined
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Recovered")
       }),
       "claim — a steer accepted during a failing turn still runs",
     )

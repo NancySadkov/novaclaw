@@ -75,7 +75,7 @@ const insert = (input: {
         directory: "/project",
         title: input.id,
         version: "test",
-        agent: "build",
+        agent: input.id,
         ...(input.type ? { type: input.type } : {}),
         ...(input.permissionMode ? { permission_mode: input.permissionMode } : {}),
       })

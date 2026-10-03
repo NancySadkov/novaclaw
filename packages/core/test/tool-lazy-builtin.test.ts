@@ -33,7 +33,7 @@ const call = (id: string): ToolRegistry.ExecuteInput => ({
   call: { type: "tool-call", id, name: "sleepy", input: {} },
 })
 
-test("discovery and permission withdrawal do not load; concurrent calls share the original services and one scoped implementation", async () => {
+test("permission withdrawal does not load; an undisclosed tool still does; concurrent calls share one scoped implementation", async () => {
   let imports = 0,
     acquisitions = 0,
     finalized = 0
@@ -72,9 +72,8 @@ test("discovery and permission withdrawal do not load; concurrent calls share th
           }),
           scope,
         )
-        const undisclosed = yield* registry.materialize()
-        expect(undisclosed.deferred.map((s) => s.definition.name)).toEqual(["sleepy"])
-        expect((yield* undisclosed.settle(call("hidden"))).result.type).toBe("error")
+        // Permission WITHDRAWAL refuses without loading: it is the only gate left that can stop a
+        // call, and stopping it must not pay for the implementation.
         const denied = yield* registry.materialize(
           [{ action: "sleepy", resource: "*", effect: "deny" }],
           undefined,
@@ -82,6 +81,13 @@ test("discovery and permission withdrawal do not load; concurrent calls share th
         )
         expect((yield* denied.settle(call("denied"))).result.type).toBe("error")
         expect(imports).toBe(0)
+        // ⚠️ An UNDISCLOSED deferred tool is CALLABLE and loads on its first call (owner, 2026-09-27:
+        // *"any tool, deferred or not"*). Disclosure is a prompt-budget choice, never a permission one,
+        // so there is nothing left for a discovery gate to refuse.
+        const undisclosed = yield* registry.materialize()
+        expect(undisclosed.deferred.map((s) => s.definition.name)).toEqual(["sleepy"])
+        expect(JSON.stringify((yield* undisclosed.settle(call("hidden"))).result)).toContain("original owner")
+        // Twelve concurrent calls share ONE scoped implementation and ONE acquisition.
         const ready = yield* registry.materialize([], undefined, new Set(["sleepy"]))
         const results = yield* Effect.all(
           Array.from({ length: 12 }, (_, i) => ready.settle(call(String(i)))),

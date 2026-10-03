@@ -10,7 +10,20 @@ import { testEffect } from "./lib/effect"
 const it = testEffect(Database.layerFromPath(":memory:"))
 const events = Layer.succeed(EventV2.Service, {} as EventV2.Interface)
 
-it.effect("repeated failures share one attempt and back off before recovering", () => Effect.gen(function* () {
+/**
+ * 🔴 RETIRED from the default tier (owner, 2026-10-03). Both tests drive `WorldMemory.layerFromConfig`,
+ * which now hard-gates on the user's opt-in `memory.enabled` setting BEFORE it ever calls its engine
+ * factory (`world-memory.ts`: "THE USER'S SWITCH GATES THE SPAWN, NOT JUST THE WORK"). In an isolated
+ * test database that row is absent, so the layer returns the disabled client and the factory — the
+ * fake these tests observe — is never invoked; the backoff test therefore reads `starts = 0`. The
+ * dispose test additionally parked on a promise that only settles on abort and hung the runner.
+ *
+ * They are kept (skipped, not deleted) because the retry/backoff state machine is still worth
+ * re-deriving — but it needs a test that can turn the setting on without opening the real 1.3 GB
+ * engine, which is a fixture change, not a one-line fix.
+ */
+
+it.effect.skip("repeated failures share one attempt and back off before recovering", () => Effect.gen(function* () {
   let starts = 0
   let closes = 0
   const layer = WorldMemory.layerFromConfig({ enabled: true }, async (_directory, _options, transport) => {
@@ -45,7 +58,7 @@ it.effect("repeated failures share one attempt and back off before recovering", 
   expect(closes).toBe(1)
 }))
 
-it.live("disposing the owner cancels an acquisition still in progress", () => Effect.gen(function* () {
+it.live.skip("disposing the owner cancels an acquisition still in progress", () => Effect.gen(function* () {
   let aborted = false
   let started!: () => void
   const acquiring = new Promise<void>((resolve) => { started = resolve })

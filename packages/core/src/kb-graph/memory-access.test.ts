@@ -6,7 +6,8 @@ import * as MemoryAccess from "./memory-access"
 import { WasmMemory } from "./wasm-engine"
 // The WASM engine is not loadable in every runtime (measured: Bun 1.3.14 rejects the package's CJS
 // entry), so this file is skipped where it cannot open rather than failing every test.
-const describe = WasmMemory.available() ? bunDescribe : bunDescribe.skip
+const engineAvailable = WasmMemory.available()
+const describe = engineAvailable ? bunDescribe : bunDescribe.skip
 
 /**
  * THE SCOPE BOUNDARY, against the engine that ships — NC-SEC-016's acceptance test.
@@ -39,6 +40,9 @@ let dir: string
 let mem: WasmMemory
 
 beforeAll(async () => {
+  // ⚠️ A top-level hook runs even when every `describe` is skipped, so the engine probe has to gate
+  // HERE too or the file reports an `(unnamed)` failure where all it has is a missing dependency.
+  if (!engineAvailable) return
   dir = mkdtempSync(join(tmpdir(), "kb-access-"))
   mem = await WasmMemory.open(join(dir, "graph"), { dim: DIM })
   await mem.addMemory({ id: "G", kind: "entity", name: "Public", text: "a shared thing", scope: "global" })

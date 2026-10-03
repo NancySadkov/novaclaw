@@ -52,7 +52,19 @@ const runWith = async (policies: readonly ToolPolicy.Provider[], label: string, 
           prompt: Prompt.make({ text: `Do the work ${index}` }),
           resume: false,
         })
-      yield* session.resume(HARNESS_SESSION)
+      const run = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+      // ⚠️ A HALT ends the drain on its own; a DENY (and no policy) keeps going until the script is
+      // spent and the officer is then re-prompted for `exit` forever. Stop at the point the claim
+      // measures — the request count — instead of joining a drain that never returns. This is the
+      // same stop the self-driving control already uses; only the count assertion differs.
+      yield* Effect.race(
+        Effect.gen(function* () {
+          while (harness.requests.length < 2) yield* Effect.yieldNow
+        }),
+        Fiber.await(run).pipe(Effect.asVoid),
+      )
+      yield* session.interrupt(HARNESS_SESSION)
+      yield* Fiber.await(run)
       return yield* session.context(HARNESS_SESSION)
     }),
     label,
