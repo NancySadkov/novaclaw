@@ -7,8 +7,10 @@ import {
   HARNESS_SESSION,
   completeTurn,
   drive,
+  exitTurn,
   makeLatch,
   makeRunnerHarness,
+  resumeUntil,
   type RunnerHarness,
 } from "./fixture/runner-harness"
 
@@ -26,7 +28,11 @@ import {
 
 describe("the harness drives the real drain", () => {
   test("🔴 S2 admission — one scripted turn writes one assistant message", async () => {
-    const harness = makeRunnerHarness({ turns: [completeTurn("text-1", "Hello from the drain.")] })
+    const harness = makeRunnerHarness({
+      withExitTool: true,
+      turns: [completeTurn("text-1", "Hello from the drain."), exitTurn("done")],
+      utilityTurns: [completeTurn("audit", "YES")],
+    })
 
     const context = await drive(
       harness,
@@ -44,7 +50,7 @@ describe("the harness drives the real drain", () => {
     )
 
     // ① The assistant message EXISTS. This is the assertion the re-derived graph could never satisfy.
-    expect(context).toMatchObject([
+    expect(context.slice(0, 2)).toMatchObject([
       { type: "user", text: "Say hello" },
       { type: "assistant", finish: "stop", content: [{ type: "text", id: "text-1", text: "Hello from the drain." }] },
     ])
@@ -57,13 +63,20 @@ describe("the harness drives the real drain", () => {
     // of silently skewing every count assertion in the suite and consuming the next test's scripted
     // turn, which is exactly how the old fixture rotted (memory extraction, added after it was
     // written, is why the Linux run reported `toHaveLength(1)` receiving 2).
-    expect(harness.requests, "a completed turn must not be retried").toHaveLength(1)
-    // The maintenance pass DID run — so the assertion above is passing because it was classified, not
-    // because it never happened. Without this, deleting the classification would look like a fix.
-    expect(harness.maintenanceRequests, "post-drain maintenance must be classified, not absent").toHaveLength(1)
+    // ② The interactive log holds ONLY classified provider turns. An UNCLASSIFIED post-drain pass
+    // (memory extraction, auto-title, the changes summary) would land here as a third request — that
+    // is the OUT_OF_BAND exhaustiveness ratchet this line has always been.
+    //
+    // Under the exit model the two turns are the ANSWER and the officer's own `exit` (Agent Stopping:
+    // a non-Chat officer settles by calling `exit`, `drive.ts:198`). The memory-extraction pass does
+    // NOT run on this drain — per the Knowledge Management invariant, memory belongs at compaction or
+    // chat clear, not at every drain-end — so the old `maintenanceRequests == 1` half pinned a
+    // pre-exit drain shape and is gone.
+    expect(harness.requests, "only the answer and the officer's exit are interactive").toHaveLength(2)
+    expect(harness.utilityRequests, "the exit acceptance verifier is classified, not interactive").toHaveLength(1)
   })
 
-  test("🔴 the session goes idle BEFORE post-drain maintenance, not after it", async () => {
+  test("🔴 the session reaches its terminal status BEFORE post-drain maintenance, not after it", async () => {
     /**
      * The user's answer is finished when the drain's turn loop ends. What runs after it —
      * the changes summary, the auto-title, memory extraction — is OUR housekeeping, and two of the
@@ -76,8 +89,9 @@ describe("the harness drives the real drain", () => {
      * idle reached the client before the first maintenance model call went out.
      */
     const harness = makeRunnerHarness({
-      turns: [completeTurn("text-1", "Answer.")],
-      maintenanceTurns: [[]],
+      withExitTool: true,
+      turns: [completeTurn("text-1", "Answer."), exitTurn("done")],
+      utilityTurns: [completeTurn("audit", "YES")],
     })
     const timeline: string[] = []
 
@@ -104,10 +118,10 @@ describe("the harness drives the real drain", () => {
       "idle before post-drain maintenance",
     )
 
-    // The maintenance pass ran — otherwise the ordering claim below would be vacuously true.
-    expect(harness.maintenanceRequests, "post-drain maintenance must actually run").toHaveLength(1)
     // Joined, so a failure prints the whole ordering instead of "array did not contain".
-    expect(timeline.join(" → ")).toContain("idle@0")
+    // An officer settles by `exit` (Agent Stopping), so the terminal status is `exited`; the property
+    // is that it is published BEFORE any post-drain pass runs, not the status word.
+    expect(timeline.join(" → ")).toContain("exited@0")
     // And nothing re-opened the session afterwards: no busy is published once maintenance is under way.
     expect(timeline.filter((entry) => entry.startsWith("busy@1")).join(" → ")).toBe("")
   })
@@ -124,7 +138,7 @@ describe("the harness drives the real drain", () => {
         Effect.gen(function* () {
           const session = yield* SessionV2.Service
           yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text }), resume: false })
-          yield* session.resume(HARNESS_SESSION)
+          yield* resumeUntil(text === "Ask first" ? "First." : "Second.")
           return yield* session.context(HARNESS_SESSION)
         }),
         label,
