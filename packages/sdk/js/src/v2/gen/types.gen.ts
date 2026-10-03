@@ -3810,6 +3810,11 @@ export type ConfigV2Nudge = {
         type: "announced-tool"
       }
     | {
+        type: "step-tokens"
+        channel: "reasoning" | "answer" | "tool"
+        tokens: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }
+    | {
         type: "finish-audit"
       }
     | {

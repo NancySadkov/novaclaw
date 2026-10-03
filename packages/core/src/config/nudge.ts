@@ -8,8 +8,16 @@ export const Hook = Schema.Union([
     description:
       "Fires when the content a writing tool is about to write matches the pattern. Never tested against a tool's OUTPUT, so text the agent merely read cannot fire it.",
   }),
-  Schema.Struct({ type: Schema.Literal("tool-call"), tool: Schema.String, phase: Schema.Literals(["before", "after"]).pipe(Schema.optional) }),
-  Schema.Struct({ type: Schema.Literal("shell-command"), pattern: Schema.String, phase: Schema.Literals(["before", "after"]).pipe(Schema.optional) }),
+  Schema.Struct({
+    type: Schema.Literal("tool-call"),
+    tool: Schema.String,
+    phase: Schema.Literals(["before", "after"]).pipe(Schema.optional),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("shell-command"),
+    pattern: Schema.String,
+    phase: Schema.Literals(["before", "after"]).pipe(Schema.optional),
+  }),
   Schema.Struct({ type: Schema.Literal("mcp-call"), server: Schema.String }),
   Schema.Struct({ type: Schema.Literal("file-read"), extension: Schema.String }),
   Schema.Struct({ type: Schema.Literal("file-write"), extension: Schema.String }),
@@ -36,10 +44,22 @@ export const Hook = Schema.Union([
     description: "Fires once when a provider recovery restarts the session. Replaces the hardcoded restart notice.",
   }),
   Schema.Struct({ type: Schema.Literal("empty-turn"), count: Schema.Number.pipe(Schema.optional) }).annotate({
-    description: "Fires when a turn ends with no reply and no tool call. count 1 is the first recovery, 2 the diagnostic.",
+    description:
+      "Fires when a turn ends with no reply and no tool call. count 1 is the first recovery, 2 the diagnostic.",
   }),
   Schema.Struct({ type: Schema.Literal("announced-tool") }).annotate({
     description: "Fires when a turn promised a tool call and never made one.",
+  }),
+  Schema.Struct({
+    type: Schema.Literal("step-tokens"),
+    channel: Schema.Literals(["reasoning", "answer", "tool"]),
+    tokens: Schema.Number,
+  }).annotate({
+    description:
+      "Fires when ONE model step generated at least this many tokens on one channel — `reasoning` " +
+      "deliberation, `answer` reply text, or `tool` tool-call arguments. The answer channel is a " +
+      "step-ending budget, and the reasoning channel breaks a repetition loop, without truncating a " +
+      "reply mid-sentence the way a `max_tokens` cap would.",
   }),
   Schema.Struct({ type: Schema.Literal("finish-audit") }).annotate({
     description: "Fires when the finish audit finds the goal not fully achieved and the agent must continue.",
@@ -89,11 +109,9 @@ export class Info extends Schema.Class<Info>("ConfigV2.Nudge")({
   requireNoSubordinates: Schema.Boolean.pipe(Schema.optional).annotate({
     description: "Deliver only when the officer has no direct subordinates.",
   }),
-  tokenRate: Schema.Struct({ tokens: Schema.Number, windowSeconds: Schema.Number })
-    .pipe(Schema.optional)
-    .annotate({
-      description: "Deliver only when the agent generated at least this many tokens in the last windowSeconds.",
-    }),
+  tokenRate: Schema.Struct({ tokens: Schema.Number, windowSeconds: Schema.Number }).pipe(Schema.optional).annotate({
+    description: "Deliver only when the agent generated at least this many tokens in the last windowSeconds.",
+  }),
   requireTmpFolder: Schema.Boolean.pipe(Schema.optional).annotate({
     description: "Deliver only when the project folder contains a ./tmp directory.",
   }),

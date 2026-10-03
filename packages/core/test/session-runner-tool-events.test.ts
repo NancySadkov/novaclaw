@@ -217,6 +217,29 @@ test("a broken stream settles its partial assistant without publishing a fatal f
   expect(published.some((event) => event.type === "session.next.text.ended.1")).toBe(true)
 })
 
+test("a settled step reports per-channel generated tokens from the streamed fragments", async () => {
+  const { publisher } = capture()
+  await Effect.runPromise(publisher.publish(LLMEvent.stepStart({ index: 0 })))
+  await Effect.runPromise(publisher.publish(LLMEvent.reasoningStart({ id: "r" })))
+  await Effect.runPromise(publisher.publish(LLMEvent.reasoningDelta({ id: "r", text: "r".repeat(8_000) })))
+  await Effect.runPromise(publisher.publish(LLMEvent.reasoningEnd({ id: "r" })))
+  await Effect.runPromise(publisher.publish(LLMEvent.textStart({ id: "t" })))
+  await Effect.runPromise(publisher.publish(LLMEvent.textDelta({ id: "t", text: "a".repeat(4_000) })))
+  await Effect.runPromise(publisher.publish(LLMEvent.toolInputStart({ id: "c", name: "write" })))
+  await Effect.runPromise(
+    publisher.publish(LLMEvent.toolInputDelta({ id: "c", name: "write", text: "t".repeat(2_000) })),
+  )
+  await Effect.runPromise(publisher.publish(LLMEvent.toolInputEnd({ id: "c", name: "write" })))
+  await Effect.runPromise(publisher.publish(LLMEvent.stepFinish({ index: 0, reason: "stop" })))
+
+  // The provider's usage lumps reply text and tool input into one `output`; the channels are separate.
+  expect(publisher.stepSettlement()!.channels).toEqual({
+    reasoning: 2_000,
+    answer: 1_000,
+    tool: 500,
+  })
+})
+
 test("stream checkpoints stay storage-linear and identify their offsets", async () => {
   const { published, publisher } = capture()
   const first = "a".repeat(600)

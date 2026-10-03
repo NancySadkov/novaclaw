@@ -22,6 +22,9 @@ export {
   DELEGATE_CHECK_ID,
   PROJECT_OPTIMIZATION_ID,
   PROJECT_CLEANUP_ID,
+  STEP_REASONING_ID,
+  STEP_TOOL_ID,
+  STEP_ANSWER_ID,
   refreshStoredDefault,
   validPattern,
 } from "./nudge-definition"
@@ -56,6 +59,12 @@ export type Event =
   | { readonly type: "empty-turn"; readonly id: string; readonly count: number }
   | { readonly type: "announced-tool"; readonly id: string }
   | { readonly type: "finish-audit"; readonly id: string }
+  | {
+      readonly type: "step-tokens"
+      readonly id: string
+      readonly channel: "reasoning" | "answer" | "tool"
+      readonly tokens: number
+    }
 
 export interface Match {
   readonly nudge: ConfigNudge.Info
@@ -153,8 +162,7 @@ const minutes = (value: string): number | undefined => {
  */
 export type ModelHook = Extract<ConfigNudge.Hook, { type: "ask" } | { type: "prompt" }>
 
-export const isModelHook = (hook: ConfigNudge.Hook): hook is ModelHook =>
-  hook.type === "ask" || hook.type === "prompt"
+export const isModelHook = (hook: ConfigNudge.Hook): hook is ModelHook => hook.type === "ask" || hook.type === "prompt"
 
 /** The user wording asks for the word yes anywhere in the reply; case-insensitive. */
 export const answeredYes = (reply: string): boolean => /\byes\b/i.test(reply)
@@ -181,10 +189,7 @@ export const bodyPrompt = (request: string, context: string): string =>
   `${context}\n\n---\n\nGiven the above, generate a prompt fulfilling the below \`\`\`-quoted request\n\`\`\`\n${request.trim()}\n\`\`\`\n\nQuote result in "\`\`\`"`
 
 export function matches(nudge: ConfigNudge.Info, event: Event): boolean {
-  if (
-    nudge.enabled === false ||
-    (nudge.text.trim() === "" && !nudge.script?.trim() && nudge.hook.type !== "prompt")
-  )
+  if (nudge.enabled === false || (nudge.text.trim() === "" && !nudge.script?.trim() && nudge.hook.type !== "prompt"))
     return false
   const hook = nudge.hook
   switch (hook.type) {
@@ -206,7 +211,17 @@ export function matches(nudge: ConfigNudge.Info, event: Event): boolean {
     case "tool-call":
       return event.type === "tool" && event.name === hook.tool && (hook.phase ?? "after") === (event.phase ?? "after")
     case "shell-command":
-      return event.type === "tool" && event.name === "bash" && (hook.phase ?? "after") === (event.phase ?? "after") && validPattern(hook.pattern) && typeof event.input === "object" && event.input !== null && "command" in event.input && typeof event.input.command === "string" && new RegExp(hook.pattern, "i").test(event.input.command)
+      return (
+        event.type === "tool" &&
+        event.name === "bash" &&
+        (hook.phase ?? "after") === (event.phase ?? "after") &&
+        validPattern(hook.pattern) &&
+        typeof event.input === "object" &&
+        event.input !== null &&
+        "command" in event.input &&
+        typeof event.input.command === "string" &&
+        new RegExp(hook.pattern, "i").test(event.input.command)
+      )
     case "mcp-call":
       return event.type === "tool" && event.name.startsWith(`${hook.server}_`)
     case "file-read":
@@ -264,6 +279,10 @@ export function matches(nudge: ConfigNudge.Info, event: Event): boolean {
       return event.type === "announced-tool"
     case "finish-audit":
       return event.type === "finish-audit"
+    case "step-tokens":
+      // The step's own count for the channel, so a threshold is a floor the step crossed — not a
+      // guess. A step that generated less never fires the hook, whatever the model intended.
+      return event.type === "step-tokens" && event.channel === hook.channel && event.tokens >= hook.tokens
     case "ask":
     case "prompt":
       // A model reads the current context; the clock tick is the ambient moment that context is
@@ -281,7 +300,8 @@ export const occurrence = (event: Event): string => {
     event.type === "session-restarted" ||
     event.type === "empty-turn" ||
     event.type === "announced-tool" ||
-    event.type === "finish-audit"
+    event.type === "finish-audit" ||
+    event.type === "step-tokens"
   )
     return `${event.type}:${event.id}`
   if (event.type === "resource") return `resource:${event.level}:${event.bucket}`
@@ -315,7 +335,8 @@ export const occurrenceFor = (nudge: ConfigNudge.Info, event: Event): string =>
  * `script:` occurrences are hashes of the hook's output, so they change exactly as often as the
  * output does — that is repetition by construction, and such a nudge needs `spammable` to be chatty.
  */
-export const periodic = (occurrence: string): boolean => occurrence.startsWith("clock:") || occurrence.startsWith("resource:") || occurrence.startsWith("interval:")
+export const periodic = (occurrence: string): boolean =>
+  occurrence.startsWith("clock:") || occurrence.startsWith("resource:") || occurrence.startsWith("interval:")
 
 /**
  * 🔴 **THE QUIET RULE.** How long a delivered nudge stays silenced before the same one may be
@@ -360,7 +381,9 @@ export const deliverable = (input: {
 }
 
 export const select = (definitions: readonly ConfigNudge.Info[], event: Event): ReadonlyArray<Match> =>
-  definitions.filter((nudge) => matches(nudge, event)).map((nudge) => ({ nudge, occurrence: occurrenceFor(nudge, event) }))
+  definitions
+    .filter((nudge) => matches(nudge, event))
+    .map((nudge) => ({ nudge, occurrence: occurrenceFor(nudge, event) }))
 
 export const prompt = (nudge: ConfigNudge.Info, event?: Event): string =>
   [

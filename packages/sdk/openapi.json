@@ -37468,6 +37468,45 @@
                 "properties": {
                   "type": {
                     "type": "string",
+                    "enum": ["step-tokens"]
+                  },
+                  "channel": {
+                    "type": "string",
+                    "enum": ["reasoning", "answer", "tool"]
+                  },
+                  "tokens": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  }
+                },
+                "required": ["type", "channel", "tokens"],
+                "additionalProperties": false,
+                "description": "Fires when ONE model step generated at least this many tokens on one channel — `reasoning` deliberation, `answer` reply text, or `tool` tool-call arguments. The answer channel is a step-ending budget, and the reasoning channel breaks a repetition loop, without truncating a reply mid-sentence the way a `max_tokens` cap would."
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
                     "enum": ["finish-audit"]
                   }
                 },

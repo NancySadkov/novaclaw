@@ -15,6 +15,9 @@ export const FINISH_AUDIT_ID = "builtin-finish-audit"
 export const DELEGATE_CHECK_ID = "builtin-delegate-check"
 export const PROJECT_OPTIMIZATION_ID = "builtin-project-optimization"
 export const PROJECT_CLEANUP_ID = "builtin-project-cleanup"
+export const STEP_REASONING_ID = "builtin-step-reasoning"
+export const STEP_TOOL_ID = "builtin-step-tool"
+export const STEP_ANSWER_ID = "builtin-step-answer"
 
 export const defaults = (): ReadonlyArray<ConfigNudge.Info> => [
   {
@@ -158,10 +161,52 @@ export const defaults = (): ReadonlyArray<ConfigNudge.Info> => [
       "2. Move files from ./attic to ./tmp\n" +
       "3. Review project files, then move the obsolete/temporary/unrelated-to-project files to ./attic.",
   },
+  // ── Step budgets ────────────────────────────────────────────────────────────────────────────────
+  //
+  // Officer parity for the reasoning controller: a reasoning budget exists, but nothing bounded a
+  // single step's ANSWER, so a runaway reply (or a tool call with a body the size of a file) had no
+  // backstop at all. These three are that backstop, and they are nudges rather than `max_tokens`
+  // caps on purpose: a cap truncates mid-sentence and a thinking model truncated inside its think
+  // block returns NOTHING, while a nudge lets the step finish and asks for a conclusion. The
+  // threshold is per STEP, so a long session that answers briefly every turn is never touched.
+  {
+    id: STEP_REASONING_ID,
+    name: "Break a repeating reasoning loop",
+    enabled: true,
+    default: true,
+    hook: { type: "step-tokens", channel: "reasoning", tokens: 8_000 },
+    text:
+      "This one step has spent a very large amount of reasoning and started repeating itself. Stop " +
+      "re-deriving: state the best conclusion you have, then act on it or answer.",
+  },
+  {
+    id: STEP_TOOL_ID,
+    name: "End a step with an oversized tool call",
+    enabled: true,
+    default: true,
+    hook: { type: "step-tokens", channel: "tool", tokens: 8_000 },
+    text:
+      "This step is producing an extremely large tool call. Stop and end the step: make a smaller, " +
+      "targeted call, or write the content across separate steps.",
+  },
+  {
+    id: STEP_ANSWER_ID,
+    name: "Hold the answer to its budget",
+    enabled: true,
+    default: true,
+    hook: { type: "step-tokens", channel: "answer", tokens: 4_000 },
+    text:
+      "This step's reply has grown very long. Stop and end the step now: give the conclusion and the " +
+      "single next action, and put the detail in a file or the next step instead of this answer.",
+  },
 ]
 
 const migrateBloatedTodo = (nudge: ConfigNudge.Info): ConfigNudge.Info => {
-  if (nudge.id !== BLOATED_TODO_ID || nudge.text !== "The $(absolute_file_path) got bloated - reduce to 30kb, remove completed items and cruft, use simple direct concise language.")
+  if (
+    nudge.id !== BLOATED_TODO_ID ||
+    nudge.text !==
+      "The $(absolute_file_path) got bloated - reduce to 30kb, remove completed items and cruft, use simple direct concise language."
+  )
     return nudge
   const current = defaults().find((item) => item.id === BLOATED_TODO_ID)!
   if (
@@ -196,9 +241,7 @@ export const refreshStoredDefault = (nudge: ConfigNudge.Info): ConfigNudge.Info 
  * cadence defaults (delegate check, project optimization, cleanup) reach agents created before those
  * defaults shipped. A fresh agent has no stored list and simply gets `defaults()`.
  */
-export const withDefaults = (
-  stored: ReadonlyArray<ConfigNudge.Info> | undefined,
-): ReadonlyArray<ConfigNudge.Info> => {
+export const withDefaults = (stored: ReadonlyArray<ConfigNudge.Info> | undefined): ReadonlyArray<ConfigNudge.Info> => {
   if (stored === undefined) return defaults()
   if (stored.length === 0) return stored
   const present = new Set(stored.map((item) => item.id))

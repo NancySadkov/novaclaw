@@ -1133,6 +1133,13 @@ export const dict = {
   "settings.nudges.hook.empty-turn": "A turn ends with no reply and no tool call",
   "settings.nudges.hook.announced-tool": "A turn promised a tool call and never made one",
   "settings.nudges.hook.finish-audit": "The finish audit finds work unfinished",
+  "settings.nudges.hook.step-tokens": "A single step generates too many tokens on one channel",
+  "settings.nudges.field.stepTokens": "Tokens per step",
+  "settings.nudges.stepTokens.channel.reasoning": "Reasoning",
+  "settings.nudges.stepTokens.channel.answer": "Answer text",
+  "settings.nudges.stepTokens.channel.tool": "Tool-call arguments",
+  "settings.nudges.stepTokens.description":
+    "Fires when one model step generates at least this many tokens on the chosen channel. The answer channel is a step-ending budget and reasoning breaks a repetition loop; a nudge is used instead of a token cap so a reply is never cut off mid-sentence.",
   "settings.nudges.hook.ask": "A model answers a yes/no question about the chat",
   "settings.nudges.hook.prompt": "A model writes the instruction from a request",
   "settings.nudges.field.question": "Yes/no question about the chat",
@@ -1149,11 +1156,13 @@ export const dict = {
   "settings.nudges.defaultBadge": "This is a NovaClaw default nudge. You can disable it or edit its text.",
   "settings.nudges.showDefaults": "Show default nudges",
   "settings.nudges.field.minSubordinates": "Minimum subordinates",
-  "settings.nudges.minSubordinates.description": "Deliver only when the officer has at least this many direct subordinates.",
+  "settings.nudges.minSubordinates.description":
+    "Deliver only when the officer has at least this many direct subordinates.",
   "settings.nudges.field.requireNoSubordinates": "No subordinates",
   "settings.nudges.requireNoSubordinates.description": "Deliver only when the officer has no direct subordinates.",
   "settings.nudges.field.tokenRate": "Token rate gate",
-  "settings.nudges.tokenRate.description": "Deliver only when the agent generated at least this many tokens in the window.",
+  "settings.nudges.tokenRate.description":
+    "Deliver only when the agent generated at least this many tokens in the window.",
   "settings.nudges.field.tokenRateTokens": "Tokens",
   "settings.nudges.field.tokenRateWindow": "Window (seconds)",
   "settings.nudges.field.requireTmpFolder": "Requires ./tmp folder",
@@ -1165,9 +1174,11 @@ export const dict = {
   "settings.nudges.field.stopOfficer": "Stop the officer",
   "settings.nudges.stopOfficer.description": "Interrupt the officer's current work.",
   "settings.nudges.field.sleepSeconds": "Sleep (seconds)",
-  "settings.nudges.sleepSeconds.description": "Put the officer to sleep for this many seconds before inserting the nudge.",
+  "settings.nudges.sleepSeconds.description":
+    "Put the officer to sleep for this many seconds before inserting the nudge.",
   "settings.nudges.field.cooldownSeconds": "Cooldown (seconds)",
-  "settings.nudges.cooldownSeconds.description": "Seconds this nudge stays silent after firing, independent of the quiet rule.",
+  "settings.nudges.cooldownSeconds.description":
+    "Seconds this nudge stays silent after firing, independent of the quiet rule.",
   "officer.context.toast.failed": "Saving context settings failed",
   "officer.context.guard.enabled.title": "Context guard",
   "officer.context.guard.enabled.description.more":

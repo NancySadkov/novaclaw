@@ -789,10 +789,7 @@ export const layer = Layer.effect(
         guard: SessionRunnerModel.dispatchGuard(models, ran),
         llm,
         system: NUDGE_JUDGE_SYSTEM,
-        text:
-          hook.type === "ask"
-            ? Nudge.askPrompt(hook.question, bounded)
-            : Nudge.bodyPrompt(hook.request, bounded),
+        text: hook.type === "ask" ? Nudge.askPrompt(hook.question, bounded) : Nudge.bodyPrompt(hook.request, bounded),
         // A yes/no verdict wants no deliberation; body writing gets the titler's brief budget.
         reasoningBudget: hook.type === "ask" ? 0 : 128,
         maxTokens: NUDGE_JUDGE_MAX_TOKENS,
@@ -1457,8 +1454,7 @@ export const layer = Layer.effect(
                   directory === undefined || directory.trim().length === 0
                     ? undefined
                     : yield* Effect.promise(() => ProjectGrounding.readListing(directory, 256))
-                const workLog =
-                  scratch === undefined ? undefined : OldContext.file({ scratchFolder: scratch })
+                const workLog = scratch === undefined ? undefined : OldContext.file({ scratchFolder: scratch })
                 return {
                   directory,
                   scratch,
@@ -2586,7 +2582,7 @@ export const layer = Layer.effect(
         if (nudge && wasCalm) {
           const rootType = yield* rootSessionType(session.id, (id) => store.get(id as SessionSchema.ID))
           if (!AgentJail.attendedRoot(rootType))
-        yield* Steering.inject(db, events, { sessionID: session.id, reason: "jail", text: nudge })
+            yield* Steering.inject(db, events, { sessionID: session.id, reason: "jail", text: nudge })
         }
       }
       // THE ONE SYSTEM MESSAGE. `PromptManager` built it when this context epoch was established (a
@@ -4104,6 +4100,22 @@ export const layer = Layer.effect(
                 if (deliveredFileSizes.get(fileKey(editedFile.path)) !== editedFile.sizeBytes)
                   yield* deliverNudges(session.id, String(agent.id), editedFile)
             }
+            // Step budgets: one settled step's per-channel totals, offered to the officer's own nudges
+            // (and the shipped step defaults). Emitted for EVERY channel, including the ones under
+            // their threshold, so the match is the nudge's own comparison — the runner states the
+            // fact and the hook decides, exactly as `repeated-tool` does with `count`.
+            for (const channel of ["reasoning", "answer", "tool"] as const) {
+              const tokens = stepSettlement.channels[channel]
+              if (tokens <= 0) continue
+              yield* deliverNudges(session.id, String(agent.id), {
+                type: "step-tokens",
+                // The assistant message id is unique per provider step and survives a drain restart,
+                // so a later step over budget is a NEW occurrence rather than a replay.
+                id: `${assistantMessageID}:${channel}`,
+                channel,
+                tokens,
+              })
+            }
             yield* withPublication(
               events.publish(SessionEvent.Step.Ended, {
                 sessionID: session.id,
@@ -4797,7 +4809,11 @@ export const layer = Layer.effect(
       ) {
         provisionNudged.add(input.sessionID)
         if (provisionNudged.size > 500) provisionNudged.clear()
-        yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "quality", text: QualityProvision.NUDGE })
+        yield* Steering.inject(db, events, {
+          sessionID: input.sessionID,
+          reason: "quality",
+          text: QualityProvision.NUDGE,
+        })
       }
       let promotion: SessionInput.Delivery | undefined = hasSteer ? "steer" : hasQueue ? "queue" : undefined
       let shouldRun = input.force || hasSteer || hasQueue || providerRecovery !== undefined
@@ -4940,7 +4956,11 @@ export const layer = Layer.effect(
               step,
               recoveries: finishRecovery.recoveries,
             })
-            yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "truncation", text: truncation.message })
+            yield* Steering.inject(db, events, {
+              sessionID: input.sessionID,
+              reason: "truncation",
+              text: truncation.message,
+            })
             needsContinuation = true
             continue
           }
@@ -4982,7 +5002,11 @@ export const layer = Layer.effect(
                 "session.id": input.sessionID,
                 "session.shells.running": runningShells.length,
               })
-              yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "unfinished-shell", text: UnfinishedShells.exitNudge(runningShells) })
+              yield* Steering.inject(db, events, {
+                sessionID: input.sessionID,
+                reason: "unfinished-shell",
+                text: UnfinishedShells.exitNudge(runningShells),
+              })
               needsContinuation = true
               continue
             }
@@ -5253,7 +5277,11 @@ export const layer = Layer.effect(
                     "session.tool.tell": attempted.tell,
                     "session.tool.detail": attempted.detail,
                   })
-                  yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "textual-call", text: TextualCall.recoveryMessage(attempted) })
+                  yield* Steering.inject(db, events, {
+                    sessionID: input.sessionID,
+                    reason: "textual-call",
+                    text: TextualCall.recoveryMessage(attempted),
+                  })
                 }
               }
               // 🔴 The turn answered about SOME of a set the HARNESS enumerated and stopped. Measured
@@ -5714,7 +5742,11 @@ export const layer = Layer.effect(
               shouldRun = pendingSteer || (yield* SessionInput.hasPending(db, input.sessionID, "queue"))
               promotion = shouldRun ? (pendingSteer ? "steer" : "queue") : undefined
             } else {
-              yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "goal-drive", text: decision.message })
+              yield* Steering.inject(db, events, {
+                sessionID: input.sessionID,
+                reason: "goal-drive",
+                text: decision.message,
+              })
               shouldRun = true
               promotion = "steer"
             }
@@ -5725,7 +5757,11 @@ export const layer = Layer.effect(
               "session.id": input.sessionID,
               round: driveState.rounds,
             })
-            yield* Steering.inject(db, events, { sessionID: input.sessionID, reason: "goal-drive", text: decision.message })
+            yield* Steering.inject(db, events, {
+              sessionID: input.sessionID,
+              reason: "goal-drive",
+              text: decision.message,
+            })
             shouldRun = true
             promotion = "steer"
           }

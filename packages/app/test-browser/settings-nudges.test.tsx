@@ -48,13 +48,19 @@ const typeInto = (selector: string, value: string) => {
 }
 
 const chooseHook = async (key: string) => {
-  const select = document.querySelector<HTMLElement>('[data-component="settings-nudges-editor"] [data-component="select-v2"]')!
-  select.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }))
+  const select = document.querySelector<HTMLElement>(
+    '[data-component="settings-nudges-editor"] [data-component="select-v2"]',
+  )!
+  select.dispatchEvent(
+    new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
+  )
   select.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }))
   await settle()
   const option = document.querySelector<HTMLElement>(`[role="option"][data-key="${key}"]`)!
   expect(option).toBeDefined()
-  option.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }))
+  option.dispatchEvent(
+    new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
+  )
   option.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }))
   await settle()
 }
@@ -99,6 +105,41 @@ const mount = (fixedAgentID = "writer") => {
 }
 
 describe("Officer Nudges", () => {
+  test("a step-token budget saves its channel and threshold", async () => {
+    const config = mount()
+    await settle()
+    click(t("settings.nudges.add"))
+    await settle()
+    typeInto(`input[placeholder="${t("settings.nudges.field.name")}"]`, "Answer budget")
+    await chooseHook("step-tokens")
+    // The channel picker is the SECOND select in the editor (the first chooses the hook type).
+    const channel = document.querySelectorAll<HTMLElement>(
+      '[data-component="settings-nudges-editor"] [data-component="select-v2"]',
+    )[1]!
+    channel.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
+    )
+    channel.dispatchEvent(
+      new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
+    )
+    await settle()
+    const option = document.querySelector<HTMLElement>('[role="option"][data-key="reasoning"]')!
+    option.dispatchEvent(
+      new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
+    )
+    option.dispatchEvent(
+      new PointerEvent("pointerup", { bubbles: true, pointerId: 1, pointerType: "mouse", button: 0 }),
+    )
+    await settle()
+    typeInto(".nudge-interval-field input", "8000")
+    document.querySelector(".nudge-interval-field input")?.dispatchEvent(new Event("change", { bubbles: true }))
+    typeInto(`textarea[placeholder="${t("settings.nudges.field.text")}"]`, "Stop repeating and conclude.")
+    click(t("common.save"))
+    await settle()
+    const saved = (config().agents as { writer: { nudges: Array<{ hook: unknown }> } }).writer.nudges
+    expect(saved[0]?.hook).toEqual({ type: "step-tokens", channel: "reasoning", tokens: 8_000 })
+  })
+
   test("edits a before-call shell nudge and a recurring heartbeat for the selected officer", async () => {
     const config = mount()
     await settle()
@@ -120,8 +161,8 @@ describe("Officer Nudges", () => {
     await settle()
     typeInto(`input[placeholder="${t("settings.nudges.field.name")}"]`, "Heartbeat")
     await chooseHook("interval")
-    typeInto('.nudge-interval-field input', "15")
-    document.querySelector('.nudge-interval-field input')?.dispatchEvent(new Event("change", { bubbles: true }))
+    typeInto(".nudge-interval-field input", "15")
+    document.querySelector(".nudge-interval-field input")?.dispatchEvent(new Event("change", { bubbles: true }))
     typeInto(`textarea[placeholder="${t("settings.nudges.field.text")}"]`, "Today is $(date +%F).")
     click(t("common.save"))
     await settle()

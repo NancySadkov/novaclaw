@@ -29,6 +29,9 @@ describe("Nudge", () => {
       [Nudge.DELEGATE_CHECK_ID, true, true],
       [Nudge.PROJECT_OPTIMIZATION_ID, true, true],
       [Nudge.PROJECT_CLEANUP_ID, true, true],
+      [Nudge.STEP_REASONING_ID, true, true],
+      [Nudge.STEP_TOOL_ID, true, true],
+      [Nudge.STEP_ANSWER_ID, true, true],
     ])
   })
 
@@ -59,6 +62,40 @@ describe("Nudge", () => {
     expect(Nudge.matches(definition({ type: "announced-tool" }), { type: "announced-tool", id: "a" })).toBe(true)
     expect(Nudge.matches(definition({ type: "finish-audit" }), { type: "finish-audit", id: "f" })).toBe(true)
     expect(Nudge.matches(definition({ type: "session-restarted" }), { type: "finish-audit", id: "f" })).toBe(false)
+  })
+
+  test("step-token budgets fire only above their threshold and only on their own channel", () => {
+    const answer = definition({ type: "step-tokens", channel: "answer", tokens: 4_000 })
+    const step = (channel: "reasoning" | "answer" | "tool", tokens: number) => ({
+      type: "step-tokens" as const,
+      id: `s:1:${channel}`,
+      channel,
+      tokens,
+    })
+    expect(Nudge.matches(answer, step("answer", 4_000))).toBe(true)
+    expect(Nudge.matches(answer, step("answer", 3_999))).toBe(false)
+    expect(Nudge.matches(answer, step("reasoning", 40_000))).toBe(false)
+    expect(Nudge.matches(answer, step("tool", 40_000))).toBe(false)
+
+    const reasoning = definition({ type: "step-tokens", channel: "reasoning", tokens: 8_000 })
+    expect(Nudge.matches(reasoning, step("reasoning", 8_000))).toBe(true)
+    expect(Nudge.matches(reasoning, step("reasoning", 7_999))).toBe(false)
+
+    // The occurrence is per step, so a later step over budget is a new event rather than a replay.
+    expect(Nudge.occurrence(step("answer", 9_000))).toBe("step-tokens:s:1:answer")
+    expect(Nudge.periodic(Nudge.occurrence(step("answer", 9_000)))).toBe(false)
+  })
+
+  test("the shipped step budgets name their channel and threshold, and the answer one is the default budget", () => {
+    const byId = new Map(Nudge.defaults().map((item) => [item.id, item]))
+    expect(byId.get(Nudge.STEP_REASONING_ID)!.hook).toEqual({
+      type: "step-tokens",
+      channel: "reasoning",
+      tokens: 8_000,
+    })
+    expect(byId.get(Nudge.STEP_TOOL_ID)!.hook).toEqual({ type: "step-tokens", channel: "tool", tokens: 8_000 })
+    // The answer budget is the officer parity for the reasoning controller.
+    expect(byId.get(Nudge.STEP_ANSWER_ID)!.hook).toEqual({ type: "step-tokens", channel: "answer", tokens: 4_000 })
   })
 
   test("the doom-loop default names the bash loop and grounds its body in the clock", () => {
@@ -166,7 +203,7 @@ describe("Nudge", () => {
 
     // Nothing to say: a one-off query that formats a SQLite column. `time_created` is snake_case, and
     // the loose `new Date(...)` arm of the pattern is what caught it.
-    expect(matches("bash", { command: "bun -e \"console.log(new Date(r.time_created).toISOString())\"" })).toBe(false)
+    expect(matches("bash", { command: 'bun -e "console.log(new Date(r.time_created).toISOString())"' })).toBe(false)
     // Nothing to say: reading a file that merely CONTAINS the arithmetic — the tool's output is the
     // world, not the agent's action.
     expect(matches("read", { path: "packages/core/src/nudge.test.ts" }, "done - message.time.created")).toBe(false)
@@ -175,7 +212,10 @@ describe("Nudge", () => {
     // Something to say: the agent is writing it. This is the firing the nudge was written for.
     expect(matches("write", { content: "const elapsed = endedAt - startedAt" })).toBe(true)
     expect(
-      matches("edit", { oldString: "const t = 0", newString: "const elapsed = message.time.created - message.time.updated" }),
+      matches("edit", {
+        oldString: "const t = 0",
+        newString: "const elapsed = message.time.created - message.time.updated",
+      }),
     ).toBe(true)
     expect(matches("apply_patch", { patchText: "+  const at = new Date(event.timestamp)" })).toBe(true)
   })
@@ -262,8 +302,24 @@ describe("Nudge", () => {
     const call = { type: "tool", id: "call-1", name: "write", input: { path: "x" } } as const
     expect(Nudge.matches(definition(before), { ...call, phase: "before" })).toBe(true)
     expect(Nudge.matches(definition(before), { ...call, phase: "after" })).toBe(false)
-    expect(Nudge.matches(definition(shell), { type: "tool", id: "call-2", name: "bash", phase: "before", input: { command: "rm -rf x" } })).toBe(true)
-    expect(Nudge.matches(definition(shell), { type: "tool", id: "call-2", name: "bash", phase: "after", input: { command: "rm -rf x" } })).toBe(false)
+    expect(
+      Nudge.matches(definition(shell), {
+        type: "tool",
+        id: "call-2",
+        name: "bash",
+        phase: "before",
+        input: { command: "rm -rf x" },
+      }),
+    ).toBe(true)
+    expect(
+      Nudge.matches(definition(shell), {
+        type: "tool",
+        id: "call-2",
+        name: "bash",
+        phase: "after",
+        input: { command: "rm -rf x" },
+      }),
+    ).toBe(false)
   })
 
   test("interval occurrences recur by elapsed bucket", () => {
@@ -317,7 +373,6 @@ describe("Nudge", () => {
     expect(Nudge.fencedBody("no fence here")).toBeUndefined()
     expect(Nudge.fencedBody("```\n```")).toBeUndefined()
   })
-
 })
 
 describe("withDefaults", () => {

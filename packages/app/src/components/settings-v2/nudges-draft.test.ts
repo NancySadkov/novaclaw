@@ -45,18 +45,53 @@ describe("planNudgeSave", () => {
   })
 
   test("validates shell patterns and heartbeat intervals", () => {
-    expect(planNudgeSave({ nudges: [], draft: { ...draft(), hook: { type: "shell-command", pattern: "[", phase: "before" } } })).toEqual({ ok: false, reason: "pattern" })
-    expect(planNudgeSave({ nudges: [], draft: { ...draft(), hook: { type: "interval", minutes: 0 } } })).toEqual({ ok: false, reason: "hook" })
-    expect(planNudgeSave({ nudges: [], draft: { ...draft(), hook: { type: "javascript", code: "" } } })).toEqual({ ok: false, reason: "hook" })
-    expect(planNudgeSave({ nudges: [], draft: { ...draft(), hook: { type: "interval", minutes: 15 }, spammable: true } })).toEqual({
-      ok: true,
-      next: [{ ...draft(), name: "Time safety", text: "Check the transport shape.", hook: { type: "interval", minutes: 15 }, spammable: true }],
+    expect(
+      planNudgeSave({
+        nudges: [],
+        draft: { ...draft(), hook: { type: "shell-command", pattern: "[", phase: "before" } },
+      }),
+    ).toEqual({ ok: false, reason: "pattern" })
+    expect(planNudgeSave({ nudges: [], draft: { ...draft(), hook: { type: "interval", minutes: 0 } } })).toEqual({
+      ok: false,
+      reason: "hook",
     })
+    expect(planNudgeSave({ nudges: [], draft: { ...draft(), hook: { type: "javascript", code: "" } } })).toEqual({
+      ok: false,
+      reason: "hook",
+    })
+    expect(
+      planNudgeSave({ nudges: [], draft: { ...draft(), hook: { type: "interval", minutes: 15 }, spammable: true } }),
+    ).toEqual({
+      ok: true,
+      next: [
+        {
+          ...draft(),
+          name: "Time safety",
+          text: "Check the transport shape.",
+          hook: { type: "interval", minutes: 15 },
+          spammable: true,
+        },
+      ],
+    })
+  })
+
+  test("a step-token budget needs a whole positive token count", () => {
+    expect(
+      planNudgeSave({ nudges: [], draft: { ...draft(), hook: { type: "step-tokens", channel: "answer", tokens: 0 } } }),
+    ).toEqual({ ok: false, reason: "hook" })
+    expect(
+      planNudgeSave({
+        nudges: [],
+        draft: { ...draft(), hook: { type: "step-tokens", channel: "answer", tokens: 4_000 } },
+      }).ok,
+    ).toBe(true)
   })
 
   test("a prompt-bodied nudge needs a request but not a static instruction", () => {
     const base = { ...draft(), text: "" }
-    expect(planNudgeSave({ nudges: [], draft: { ...base, hook: { type: "prompt", request: "Write it." } } }).ok).toBe(true)
+    expect(planNudgeSave({ nudges: [], draft: { ...base, hook: { type: "prompt", request: "Write it." } } }).ok).toBe(
+      true,
+    )
     expect(planNudgeSave({ nudges: [], draft: { ...base, hook: { type: "prompt", request: "   " } } })).toEqual({
       ok: false,
       reason: "hook",
@@ -66,8 +101,9 @@ describe("planNudgeSave", () => {
       ok: false,
       reason: "text",
     })
-    expect(
-      planNudgeSave({ nudges: [], draft: { ...draft(), hook: { type: "ask", question: "   " } } }),
-    ).toEqual({ ok: false, reason: "hook" })
+    expect(planNudgeSave({ nudges: [], draft: { ...draft(), hook: { type: "ask", question: "   " } } })).toEqual({
+      ok: false,
+      reason: "hook",
+    })
   })
 })

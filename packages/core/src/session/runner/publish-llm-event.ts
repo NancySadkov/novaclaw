@@ -6,6 +6,14 @@ import { SessionEvent } from "../event"
 import { SessionMessage } from "../message"
 import { SessionSchema } from "../schema"
 import { SessionExecutionAttempt } from "../execution-attempt"
+import { Token } from "../../util/token"
+
+/** Estimated tokens a single step generated per channel, from its streamed fragment lengths. */
+export interface StepChannels {
+  readonly reasoning: number
+  readonly answer: number
+  readonly tool: number
+}
 
 type Input = {
   readonly sessionID: SessionSchema.ID
@@ -139,7 +147,9 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
   // cannot distinguish them.
   let assistantFailureMessage: string | undefined
   let providerFailed = false
-  let stepSettlement: { readonly finish: string; readonly tokens: ReturnType<typeof tokens> } | undefined
+  let stepSettlement:
+    | { readonly finish: string; readonly tokens: ReturnType<typeof tokens>; readonly channels: StepChannels }
+    | undefined
   const executionBoundary = input.executionBoundary ?? (() => Effect.void)
   const providerToolProtocol = input.providerToolProtocol ?? (() => Effect.void)
   let providerCheckpointed = false
@@ -189,6 +199,9 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         checkpointAt: number
       }
     >()
+    // Sums every fragment this publisher ever saw, across `end`/`flush`/`end` cycles and across a
+    // checkpointed reasoning-budget turn. One publisher is one provider step, so this is a step total.
+    let total = 0
     const start = (id: string) =>
       Effect.suspend(() => {
         if (chunks.has(id)) return Effect.die(`Duplicate ${name} start: ${id}`)
@@ -206,6 +219,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
       if (!current) return yield* Effect.die(`${name} delta before start: ${id}`)
       current.values.push(value)
       current.length += value.length
+      total += value.length
       const now = Date.now()
       if (
         current.length - current.checkpointLength < STREAM_CHECKPOINT_CHARS &&
@@ -228,7 +242,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     const flush = Effect.fnUntraced(function* () {
       for (const id of chunks.keys()) yield* end(id)
     })
-    return { start, append, end, flush }
+    return { start, append, end, flush, total: () => total }
   }
 
   const text = fragments(
@@ -316,6 +330,18 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     yield* toolInput.flush()
   })
 
+  /**
+   * Per-channel token estimate for the step just settled. The provider's own usage frame lumps reply
+   * text and tool-call arguments into one `output` count, so it cannot answer "which channel ran
+   * away"; the streamed fragment lengths can, and they are the only place all three are visible.
+   * Character-based, the same cheap estimate the reasoning controller uses live.
+   */
+  const stepChannels = (): StepChannels => ({
+    reasoning: Token.estimateFromChars(reasoning.total()),
+    answer: Token.estimateFromChars(text.total()),
+    tool: Token.estimateFromChars(toolInput.total()),
+  })
+
   const startToolInput = Effect.fnUntraced(function* (event: { readonly id: string; readonly name: string }) {
     if (tools.has(event.id)) return yield* Effect.die(`Duplicate tool input start: ${event.id}`)
     const assistantMessageID = yield* startAssistant()
@@ -378,7 +404,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     yield* flush()
     yield* startAssistant()
     assistantActive = false
-    stepSettlement = { finish: "broken", tokens: tokens(undefined) }
+    stepSettlement = { finish: "broken", tokens: tokens(undefined), channels: stepChannels() }
   })
 
   /**
@@ -624,7 +650,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         yield* executionBoundary("provider", "mark")
         assistantActive = false
         if (stepSettlement) return yield* Effect.die("Duplicate step finish")
-        stepSettlement = { finish: event.reason, tokens: tokens(event.usage) }
+        stepSettlement = { finish: event.reason, tokens: tokens(event.usage), channels: stepChannels() }
         return
       case "finish":
         return

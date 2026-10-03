@@ -49,6 +49,7 @@ const HOOK_KEY: Record<HookType, TranslationKey> = {
   "empty-turn": "settings.nudges.hook.empty-turn",
   "announced-tool": "settings.nudges.hook.announced-tool",
   "finish-audit": "settings.nudges.hook.finish-audit",
+  "step-tokens": "settings.nudges.hook.step-tokens",
   ask: "settings.nudges.hook.ask",
   prompt: "settings.nudges.hook.prompt",
 }
@@ -99,6 +100,8 @@ const hookFor = (type: HookType): ConfigNudge.Hook => {
       return { type }
     case "finish-audit":
       return { type }
+    case "step-tokens":
+      return { type, channel: "answer", tokens: 4_000 }
     case "ask":
       return { type, question: "" }
     case "prompt":
@@ -171,6 +174,7 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
         "empty-turn",
         "announced-tool",
         "finish-audit",
+        "step-tokens",
         "ask",
         "prompt",
       ] as const
@@ -257,7 +261,12 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
                       </Show>
                       <div class="nudge-card-title">
                         <h4>{item.name}</h4>
-                        <p>{language.t(HOOK_KEY[item.hook.type])}{"phase" in item.hook ? ` · ${item.hook.phase ?? "after"}` : ""}{item.hook.type === "interval" ? ` · ${item.hook.minutes} min` : ""}</p>
+                        <p>
+                          {language.t(HOOK_KEY[item.hook.type])}
+                          {"phase" in item.hook ? ` · ${item.hook.phase ?? "after"}` : ""}
+                          {item.hook.type === "interval" ? ` · ${item.hook.minutes} min` : ""}
+                          {item.hook.type === "step-tokens" ? ` · ${item.hook.channel} ≥ ${item.hook.tokens} tok` : ""}
+                        </p>
                       </div>
                       <Switch
                         checked={item.enabled !== false}
@@ -359,7 +368,7 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
             </Show>
             <Show when={draft().hook.type === "tool-call" || draft().hook.type === "shell-command"}>
               <div class="nudge-phase-picker" role="group" aria-label={language.t("settings.nudges.phase.title")}>
-                <For each={(["before", "after"] as const)}>
+                <For each={["before", "after"] as const}>
                   {(phase) => (
                     <button
                       type="button"
@@ -484,7 +493,9 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
                 <span>{language.t("settings.nudges.field.repeatCount")}</span>
                 <SettingsNumberFieldV2
                   value={() => (draft().hook as { count?: number }).count ?? 3}
-                  onCommit={(count) => setDraft((item) => ({ ...item, hook: { ...item.hook, count } as ConfigNudge.Hook }))}
+                  onCommit={(count) =>
+                    setDraft((item) => ({ ...item, hook: { ...item.hook, count } as ConfigNudge.Hook }))
+                  }
                   min={2}
                   max={20}
                   ariaLabel={language.t("settings.nudges.field.repeatCount")}
@@ -509,12 +520,42 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
                 <span>{language.t("settings.nudges.field.emptyTurnCount")}</span>
                 <SettingsNumberFieldV2
                   value={() => (draft().hook as { count?: number }).count ?? 1}
-                  onCommit={(count) => setDraft((item) => ({ ...item, hook: { ...item.hook, count } as ConfigNudge.Hook }))}
+                  onCommit={(count) =>
+                    setDraft((item) => ({ ...item, hook: { ...item.hook, count } as ConfigNudge.Hook }))
+                  }
                   min={1}
                   max={5}
                   ariaLabel={language.t("settings.nudges.field.emptyTurnCount")}
                 />
               </label>
+            </Show>
+            <Show when={draft().hook.type === "step-tokens"}>
+              <SelectV2
+                appearance="inline"
+                options={(["reasoning", "answer", "tool"] as const).map((value) => ({
+                  value,
+                  label: language.t(`settings.nudges.stepTokens.channel.${value}`),
+                }))}
+                current={(["reasoning", "answer", "tool"] as const)
+                  .map((value) => ({ value, label: language.t(`settings.nudges.stepTokens.channel.${value}`) }))
+                  .find((option) => option.value === (draft().hook as { channel: string }).channel)}
+                value={(option) => option.value}
+                label={(option) => option.label}
+                onSelect={(option) => option && patchHook({ channel: option.value })}
+              />
+              <label class="nudge-interval-field">
+                <span>{language.t("settings.nudges.field.stepTokens")}</span>
+                <SettingsNumberFieldV2
+                  value={() => (draft().hook as { tokens: number }).tokens}
+                  onCommit={(tokens) =>
+                    setDraft((item) => ({ ...item, hook: { ...item.hook, tokens } as ConfigNudge.Hook }))
+                  }
+                  min={1}
+                  max={1_000_000}
+                  ariaLabel={language.t("settings.nudges.field.stepTokens")}
+                />
+              </label>
+              <p class="settings-v2-field-description">{language.t("settings.nudges.stepTokens.description")}</p>
             </Show>
             <Show when={draft().hook.type === "ask"}>
               <TextareaV2
@@ -576,7 +617,9 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
             >
               <SettingsNumberFieldV2
                 value={() => draft().minSubordinates ?? 0}
-                onCommit={(minSubordinates) => setDraft((item) => ({ ...item, minSubordinates: minSubordinates || undefined }))}
+                onCommit={(minSubordinates) =>
+                  setDraft((item) => ({ ...item, minSubordinates: minSubordinates || undefined }))
+                }
                 min={0}
                 max={50}
                 ariaLabel={language.t("settings.nudges.field.minSubordinates")}
@@ -601,14 +644,21 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
               <div class="settings-v2-models-row-actions">
                 <SettingsNumberFieldV2
                   value={() => draft().tokenRate?.tokens ?? 0}
-                  onCommit={(tokens) => setDraft((item) => ({ ...item, tokenRate: { tokens, windowSeconds: item.tokenRate?.windowSeconds ?? 3_600 } }))}
+                  onCommit={(tokens) =>
+                    setDraft((item) => ({
+                      ...item,
+                      tokenRate: { tokens, windowSeconds: item.tokenRate?.windowSeconds ?? 3_600 },
+                    }))
+                  }
                   min={0}
                   max={1_000_000}
                   ariaLabel={language.t("settings.nudges.field.tokenRateTokens")}
                 />
                 <SettingsNumberFieldV2
                   value={() => draft().tokenRate?.windowSeconds ?? 3_600}
-                  onCommit={(windowSeconds) => setDraft((item) => ({ ...item, tokenRate: { tokens: item.tokenRate?.tokens ?? 0, windowSeconds } }))}
+                  onCommit={(windowSeconds) =>
+                    setDraft((item) => ({ ...item, tokenRate: { tokens: item.tokenRate?.tokens ?? 0, windowSeconds } }))
+                  }
                   min={60}
                   max={86_400}
                   ariaLabel={language.t("settings.nudges.field.tokenRateWindow")}
@@ -681,7 +731,9 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
             >
               <SettingsNumberFieldV2
                 value={() => draft().cooldownSeconds ?? 0}
-                onCommit={(cooldownSeconds) => setDraft((item) => ({ ...item, cooldownSeconds: cooldownSeconds || undefined }))}
+                onCommit={(cooldownSeconds) =>
+                  setDraft((item) => ({ ...item, cooldownSeconds: cooldownSeconds || undefined }))
+                }
                 min={0}
                 max={86_400}
                 ariaLabel={language.t("settings.nudges.field.cooldownSeconds")}

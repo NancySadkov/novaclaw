@@ -21,5 +21,8 @@ test("the runner dispatches every Nudge event family and pressure is absent from
   expect(runner).toContain('type: "resource"')
   expect(runner).toContain("resourcePressure.level()")
   expect(runner).toContain("Nudge.fileEditEvents(files, location.root,")
+  // The per-step budget facts reach the officer's nudges from the publisher's channel counts.
+  expect(runner).toContain('type: "step-tokens"')
+  expect(runner).toContain("stepSettlement.channels")
   expect(builtins).not.toContain("ResourcePressureContext")
 })
