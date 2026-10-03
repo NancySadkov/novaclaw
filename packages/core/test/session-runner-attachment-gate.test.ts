@@ -304,7 +304,14 @@ describe("runner/llm.ts is wired to the gate", () => {
   const source = codeOnly(readFileSync(runnerPath, "utf8"))
   // `toContain` on a 100 KB string dumps the whole runner into the failure report, which buries the
   // one line that matters. Assert on the boolean and let the label carry the diagnosis.
-  const wired = (fragment: string, why: string) => expect(source.includes(fragment), why).toBe(true)
+  //
+  // ⚠️ WHITESPACE-COLLAPSED, deliberately. A multi-line call that prettier reflows is the same call,
+  // and an exact-line match is a second way this ratchet goes red over nothing — measured when the
+  // `toLLMMessages(...)` call gained its fifth argument and wrapped. The intent is "the arguments are
+  // passed", not "they sit on one line".
+  const flat = source.replace(/\s+/g, "")
+  const wired = (fragment: string, why: string) =>
+    expect(flat.includes(fragment.replace(/\s+/g, "")), why).toBe(true)
 
   test("the ratchet's own reader still sees the runner", () => {
     // A source ratchet that silently matches nothing passes forever. Pin the file first.
@@ -338,7 +345,7 @@ describe("runner/llm.ts is wired to the gate", () => {
     // The budget is inert unless the model declares one, so the regression is silent: lowering keeps
     // its old call, the limit is never passed, and only a live multi-image sweep notices.
     wired("models.imageLimit(", "nothing reads the resolved model's per-request image limit")
-    wired("modelCapabilities, modelImageLimit)", "the image budget never reaches lowering")
+    wired("modelCapabilities, modelImageLimit", "the image budget never reaches lowering")
   })
 
   test("a capability refusal is not re-described as 'the model is unavailable'", () => {

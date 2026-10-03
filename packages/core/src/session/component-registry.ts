@@ -45,6 +45,7 @@ export const KERNEL_KIND_NAMES = [
   "goal",
   "durable",
   "durable_prompt",
+  "coordination_prompt",
   "plan",
   "control_binding",
   "observation",
@@ -137,6 +138,20 @@ export const DurablePrompt = Schema.Struct({
   text: Schema.String,
 }).annotate({ identifier: "SessionComponent.DurablePrompt" })
 export type DurablePrompt = typeof DurablePrompt.Type
+
+/**
+ * The coordination tasks as the model sees them, MATERIALISED.
+ *
+ * ⚠️ A snapshot rather than a live read, for the reason `DurablePrompt` above carries: a task change
+ * is a mid-epoch edit to the system prompt if rendered live. The owner's rule (2026-10-03) is that the
+ * task lines re-render at COMPACTION — an officer that has just lost its transcript gets one line
+ * saying what it is on, and until then the officer knows what it set. The `agent_coordination` rows are
+ * the shadow copy; this is the materialisation.
+ */
+export const CoordinationPrompt = Schema.Struct({
+  tasks: Schema.Record(Schema.String, Schema.String),
+}).annotate({ identifier: "SessionComponent.CoordinationPrompt" })
+export type CoordinationPrompt = typeof CoordinationPrompt.Type
 
 export const PlanVerdict = Schema.Struct({
   check: Schema.NonEmptyString,
@@ -431,6 +446,28 @@ export const DurablePromptDefinition = kernelDefinition({
     system
       ? Effect.void
       : Effect.fail(new Error("The durable area is cleared by the kernel when its last item is cleared.")),
+})
+
+export const CoordinationPromptDefinition = kernelDefinition({
+  kind: "coordination_prompt",
+  description:
+    "The coordination tasks as rendered into the system prompt: the officer's own task and its direct reports', materialised by the KERNEL after a context rewrite. READ-ONLY to an agent by construction — a live read would edit the prompt mid-epoch.",
+  cardinality: "singleton",
+  lifetime: "entity",
+  version: 1,
+  codec: CoordinationPrompt,
+  validateWrite: ({ system }) =>
+    system
+      ? Effect.void
+      : Effect.fail(
+          new Error(
+            "The coordination board is materialised by the kernel after a context rewrite, from the `agent_coordination` rows. Use the `coordination` tool: writing this would leave the prompt and the tasks it claims to show disagreeing.",
+          ),
+        ),
+  validateRemove: ({ system }) =>
+    system
+      ? Effect.void
+      : Effect.fail(new Error("The coordination board is cleared by the kernel when it is rewritten.")),
 })
 
 export const PlanDefinition = kernelDefinition({
@@ -1482,6 +1519,7 @@ const compiledDefinitions = Effect.gen(function* () {
     // other is the defect this comment exists to stop the next author repeating.
     DurableItemDefinition,
     DurablePromptDefinition,
+    CoordinationPromptDefinition,
     PlanDefinition,
     ObservationDefinition,
     kernelDefinition({

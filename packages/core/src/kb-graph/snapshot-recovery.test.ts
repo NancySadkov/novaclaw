@@ -1,10 +1,13 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe as bunDescribe, expect, test } from "bun:test"
 import { createHash } from "node:crypto"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { GraphSnapshot } from "./snapshot"
 import { EMPTY_GENERATION, WasmMemory } from "./wasm-engine"
+// The WASM engine is not loadable in every runtime (measured: Bun 1.3.14 rejects the package's CJS
+// entry), so this file is skipped where it cannot open rather than failing every test.
+const describe = WasmMemory.available() ? bunDescribe : bunDescribe.skip
 
 /**
  * THE ENGINE HALF OF NC-REL-018: A DAMAGED NEWEST GENERATION MUST NOT COST THE STORE.

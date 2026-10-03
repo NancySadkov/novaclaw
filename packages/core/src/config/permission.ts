@@ -57,9 +57,8 @@ export type Rule = Schema.Schema.Type<typeof Rule>
 // ⚠️ The filing said removing it would NARROW a live path. It does not, and the reason is worth
 // keeping: the rules that authored it lived in `packages/novaclaw/src/agent/agent.ts`, whose ruleset
 // is NOT the gate. `packages/core` cannot import `packages/novaclaw` (see `config-store-write.ts`),
-// so the live evaluator in `permission.ts` structurally never sees that ruleset; its only live legacy
-// consumer evaluates `task` (`novaclaw/src/tool/truncate.ts`). A premise about a live path is worth one grep before it is worth
-// a deferral.
+// so the live evaluator in `permission.ts` structurally never sees that ruleset. A premise about a
+// live path is worth one grep before it is worth a deferral.
 // `doom_loop` and `question` were removed on 2026-09-04, for the same reason and by the
 // same test that now derives this list. Neither named an action: nothing in the tree ever called
 // `evaluate("doom_loop", …)` or `evaluate("question", …)`, so a user who set either got a rule that
@@ -73,24 +72,16 @@ export type Rule = Schema.Schema.Type<typeof Rule>
 // `test/permission-actions.test.ts` re-derives the named keys BELOW from this file and fails when
 // one of them is not a real action. Adding a key here for a gate you have not written is a red test.
 
-// ⚠️ `task` STAYS, and is not a V2 action. Nothing on the V2 path spends it, but ONE legacy consumer
-// still does: `packages/novaclaw/src/tool/truncate.ts` calls `evaluate("task", "*", …)` to choose a
-// truncation hint. Removing a documented key for a gate that still fires would be the wrong
-// direction; it goes when that last caller does.
-//
-// ⚠️ This list said THREE consumers until 2026-08-23 and two of them were wrong. Re-counted:
-// `agent/subagent-permissions.ts` was deleted (built, tested, never called — and its test asserted
-// "subagent permissions take precedence over parent agent restrictions", which is the widening
-// AGENTS.md forbids), and `cli/cmd/agent.ts`'s `AVAILABLE_PERMISSIONS` does not contain `task` and
-// evidently had not for some time. A comment naming who depends on a thing is a claim; count it
-// before trusting it.
+// ⚠️ `task` was retired 2026-10-03. It was kept as a documented key for exactly one legacy consumer,
+// `packages/novaclaw/src/tool/truncate.ts` (`evaluate("task", "*", …)`), and that caller is gone:
+// nothing in the tree evaluates it, so a user writing a rule for it got a switch wired to nothing —
+// the same fault `doom_loop` and `question` were removed for. It comes back only with a real caller.
 const InputObject = Schema.StructWithRest(
   Schema.Struct({
     read: Schema.optional(Rule),
     edit: Schema.optional(Rule),
     explore: Schema.optional(Rule),
     bash: Schema.optional(Rule),
-    task: Schema.optional(Rule),
     todowrite: Schema.optional(Action),
     resource_status: Schema.optional(Action),
     webfetch: Schema.optional(Action),

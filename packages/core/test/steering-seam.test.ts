@@ -8,7 +8,7 @@ import { stripComments } from "./lib/source-scan"
  *
  * **What this closes, measured 2026-09-29.** Xenia — the shipped Companion, a *chat* LLM with every
  * tool withdrawn and therefore no `exit` — ran 61 generations with no user message before any of them.
- * Her session's last input was a harness steer: `"Session restarted. Recover and proceed."`, admitted
+ * Her session's last input was a harness steer: `"Recover and proceed."`, admitted
  * and promoted (`admitted_seq=99`, `promoted_seq=100`). Once started she cannot stop: chat mode
  * withdraws every tool, so nothing in her turn can end it.
  *
@@ -53,10 +53,6 @@ const KNOWN_BYPASSES: [path: string, reason: string][] = [
   [
     "packages/core/src/work-project/store.ts",
     "an `automated` admit with a caller-minted idempotency id. The seam accepts a caller id, so this is a mechanical fold that has not been made yet.",
-  ],
-  [
-    "packages/core/src/session/colleague-stall.ts",
-    "an `automated` admit for a peer-stall notice. Agent-only by construction — a stall notice only ever targets a peer — but it is still on the old path.",
   ],
 ]
 

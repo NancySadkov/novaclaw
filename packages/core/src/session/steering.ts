@@ -24,7 +24,7 @@ import { applySteerProvenance } from "./steer-provenance"
  * was a harness interjection, admitted and promoted:
  *
  *     delivery=steer   "[Automated NovaClaw check — not a message from your user.]
- *                       Session restarted. Recover and proceed."
+ *                       Recover and proceed."
  *     admitted_seq=99  promoted_seq=100
  *
  * Once started she cannot stop, and that is not bad luck. Chat mode withdraws every tool, so nothing

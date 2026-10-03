@@ -2101,8 +2101,6 @@ export const dict = {
   "settings.permissions.tool.explore.description": "List and search through your files",
   "settings.permissions.tool.bash.title": "Bash",
   "settings.permissions.tool.bash.description": "Run shell commands",
-  "settings.permissions.tool.task.title": "Task",
-  "settings.permissions.tool.task.description": "Start helper agents to work on part of the task",
   "settings.permissions.tool.todowrite.title": "Todo Write",
   "settings.permissions.tool.todowrite.description": "Update the todo list",
   "settings.permissions.tool.webfetch.title": "Web Fetch",

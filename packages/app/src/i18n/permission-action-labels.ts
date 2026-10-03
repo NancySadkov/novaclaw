@@ -53,7 +53,6 @@ export const ACTION_LABEL_KEY = {
   resource_status: "settings.permissions.tool.resource_status.title",
   revert: "settings.permissions.tool.revert.title",
   spawn: "settings.permissions.tool.spawn.title",
-  task: "settings.permissions.tool.task.title",
   todowrite: "settings.permissions.tool.todowrite.title",
   trash: "settings.permissions.tool.trash.title",
   wait: "settings.permissions.tool.wait.title",

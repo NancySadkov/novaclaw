@@ -341,8 +341,6 @@ export const dict = {
     "Modificar arquivos, incluindo edições, escritas, patches e multi-edições",
   "settings.permissions.tool.bash.title": "Bash",
   "settings.permissions.tool.bash.description": "Executar comandos shell",
-  "settings.permissions.tool.task.title": "Tarefa",
-  "settings.permissions.tool.task.description": "Lançar sub-agentes",
   "settings.permissions.tool.todowrite.title": "Escrever Tarefas",
   "settings.permissions.tool.todowrite.description": "Atualizar a lista de tarefas",
   "settings.permissions.tool.webfetch.title": "Buscar Web",

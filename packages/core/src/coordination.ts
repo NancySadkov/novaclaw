@@ -5,10 +5,10 @@ import { Effect } from "effect"
 import { AgentV2 } from "./agent"
 import { AgentTeamChat } from "./agent/team-chat"
 import { AgentCoordinationTable } from "./coordination/sql"
-import { TASK_MAX, taskOrNone, taskTooLongNotice } from "./coordination/task"
+import { TASK_MAX, snapshotOf, taskOrNone, taskTooLongNotice, tasksOf } from "./coordination/task"
 import type { Database } from "./database/database"
 
-export { TASK_MAX, taskOrNone, taskTooLongNotice }
+export { TASK_MAX, taskOrNone, taskTooLongNotice, snapshotOf, tasksOf }
 
 /**
  * The coordination task board — the store half plus the pure rendering.

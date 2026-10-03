@@ -64,6 +64,16 @@ describe("Coordination — the pure board", () => {
     expect(text).toContain("xenia - Xenia: none set yet")
     expect(text).toContain("theron - Theron (you): reviewing the P2P handshake")
   })
+
+  test("a task snapshot round-trips, and malformed values fail closed", () => {
+    const snapshot = Coordination.snapshotOf(new Map([["theron", "writing the migration"]]))
+    expect(Coordination.tasksOf(snapshot)?.get("theron")).toBe("writing the migration")
+    // A materialised but EMPTY board is a Map, not `undefined` — the difference is "rewritten, nothing
+    // set" versus "not materialised yet".
+    expect(Coordination.tasksOf(Coordination.snapshotOf(new Map()))?.size).toBe(0)
+    expect(Coordination.tasksOf(undefined)).toBeUndefined()
+    expect(Coordination.tasksOf({ nope: true })).toBeUndefined()
+  })
 })
 
 describe("Coordination — the durable store", () => {

@@ -55,9 +55,8 @@ const RULE_SOURCES = [
 
 /**
  * ⚠️ The OTHER tool directory, outside this package. `novaclaw/src/tool/` holds the tools that need
- * an instance, and one of them — `truncate.ts` — is the last caller that spends `task`. Scanning it
- * is what makes "this action still fires" a claim this test checks rather than a sentence in a
- * comment: when that caller goes, `task` leaves the vocabulary and the list goes red until it does.
+ * an instance; scanning it keeps actions spent there in the vocabulary. (`task` was the last such
+ * action and was retired 2026-10-03 when its only caller, `truncate.ts`, stopped evaluating it.)
  */
 const ruleActions = new Set([...RULE_SOURCES, ...files("../novaclaw/src/tool")].flatMap(actionsIn))
 
@@ -126,7 +125,7 @@ describe("the permission gate vocabulary", () => {
   const UNSPENT_CONFIG_KEYS: readonly string[] = []
 
   test("the config-key scan is real — it finds the keys we know are there", () => {
-    expect(configKeys.length).toBeGreaterThan(8)
+    expect(configKeys.length).toBeGreaterThanOrEqual(8)
     expect(configKeys).toContain("bash")
     expect(configKeys).not.toContain("external_directory")
     // The three retired keys, so this goes red if any is ever re-added.

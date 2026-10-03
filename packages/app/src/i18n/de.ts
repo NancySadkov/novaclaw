@@ -344,8 +344,6 @@ export const dict = {
     "Dateien ändern, einschließlich Bearbeitungen, Schreibvorgängen, Patches und Mehrfachbearbeitungen",
   "settings.permissions.tool.bash.title": "Bash",
   "settings.permissions.tool.bash.description": "Shell-Befehle ausführen",
-  "settings.permissions.tool.task.title": "Aufgabe",
-  "settings.permissions.tool.task.description": "Unteragenten starten",
   "settings.permissions.tool.todowrite.title": "Todo schreiben",
   "settings.permissions.tool.todowrite.description": "Die Todo-Liste aktualisieren",
   "settings.permissions.tool.webfetch.title": "Web-Abruf",

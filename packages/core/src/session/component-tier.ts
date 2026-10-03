@@ -59,6 +59,9 @@ export const CROSS_READ_KIND_TIERS: Record<SessionComponentRegistry.KernelKind, 
   // nothing — `readTierOf` answers `operational` there, and this entry never applies.
   durable: "privileged",
   durable_prompt: "privileged",
+  // The coordination board carries colleagues' own task lines — free text they chose, the same class
+  // as the durable area beside it.
+  coordination_prompt: "privileged",
   plan: "privileged",
   control_binding: "operational",
   observation: "operational",

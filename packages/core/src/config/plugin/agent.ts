@@ -188,7 +188,8 @@ function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Inf
   // delivery configuration rather than a roster fact. `item.unansweredMessageNudges`
   // and `item.colleagueMessageIntervalMinutes` are the same shape again — messaging
   // posture and cadence read straight from the store by the colleague stall sweep and
-  // hand-off, never copied onto the identity row.
+  // hand-off, never copied onto the identity row. `item.stuckCompactionThreshold` is a
+  // threshold read the same way by the stuck detector.
   if (AgentV2.isProtected(agentID)) {
     const refused = AgentV2.protectedRefusedKeys(item as Record<string, unknown>, "operator")
     // ⚠️ A fragment carrying a refused key is refused WHOLE. A partial override is the shape that

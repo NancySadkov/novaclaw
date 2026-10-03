@@ -383,8 +383,6 @@ export const dict = {
   "settings.permissions.tool.edit.description": "修改檔案，包括編輯、寫入、修補和多重編輯",
   "settings.permissions.tool.bash.title": "Bash",
   "settings.permissions.tool.bash.description": "執行 shell 命令",
-  "settings.permissions.tool.task.title": "Task",
-  "settings.permissions.tool.task.description": "啟動子代理程式",
   "settings.permissions.tool.todowrite.title": "更新待辦",
   "settings.permissions.tool.todowrite.description": "更新待辦清單",
   "settings.permissions.tool.webfetch.title": "Web Fetch",

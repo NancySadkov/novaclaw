@@ -521,6 +521,25 @@ const loadWasm = (): Promise<any> => {
   return initPromise
 }
 
+/**
+ * Can the WASM engine load here?
+ *
+ * ⚠️ A cheap, side-effect-free probe. The package's CJS entry is not loadable under every runtime —
+ * measured on Bun 1.3.14, `require("@ladybugdb/wasm-core/nodejs/sync")` throws `Expected CommonJS
+ * module to have a function wrapper` — and a test that drives the real engine must be SKIPPED where
+ * it cannot open rather than report ~70 failures for one missing dependency.
+ */
+const engineAvailable = (): boolean => {
+  try {
+    const require = createRequire(import.meta.url)
+    const bundled = bundledModulePath("@ladybugdb/wasm-core/nodejs/sync")
+    require(bundled ?? "@ladybugdb/wasm-core/nodejs/sync")
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** How long `close()` will wait for a final flush before giving up and saying so. */
 const CLOSE_FLUSH_DEADLINE_MS = 10_000
 
@@ -543,6 +562,8 @@ const releaseHandle = (handle: any): void => {
 }
 
 export class WasmMemory {
+  /** Can the engine load here? See {@link engineAvailable}. */
+  static readonly available = engineAvailable
   private readonly lbug: any
   private readonly db: any
   private readonly conn: any

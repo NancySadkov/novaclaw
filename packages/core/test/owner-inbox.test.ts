@@ -160,7 +160,7 @@ it.effect("Chat and Human reject all harness steers, including previously queued
       .values({ name: "mode_test", layers: [{ kind: "chat" }] })
       .run()
       .pipe(Effect.orDie)
-    expect(yield* SessionInput.steer(db, events, id, "Session restarted. Recover and proceed.")).toBeUndefined()
+    expect(yield* SessionInput.steer(db, events, id, "Recover and proceed.")).toBeUndefined()
     yield* SessionInput.promoteSteers(db, events, id, Number.MAX_SAFE_INTEGER)
     expect(yield* SessionInput.listPending(db, id)).toEqual([])
     expect(

@@ -385,8 +385,6 @@ export const dict = {
   "settings.permissions.tool.edit.description": "修改文件，包括编辑、写入、补丁和多重编辑",
   "settings.permissions.tool.bash.title": "Bash",
   "settings.permissions.tool.bash.description": "运行 shell 命令",
-  "settings.permissions.tool.task.title": "任务",
-  "settings.permissions.tool.task.description": "启动子智能体",
   "settings.permissions.tool.todowrite.title": "更新待办",
   "settings.permissions.tool.todowrite.description": "更新待办列表",
   "settings.permissions.tool.webfetch.title": "网页获取",

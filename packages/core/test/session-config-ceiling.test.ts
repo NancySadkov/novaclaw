@@ -61,7 +61,7 @@ describe("the memory ceiling", () => {
     expect(source).toMatch(/AgentDefaults\.fold\(EFFECTIVE_CONFIG_DEFAULTS/)
     expect(source).toMatch(/const inherited = resolveConfig\(defaults, chain\)/)
     expect(source).toMatch(
-      /const resolved = clampToCeilings\(\s*[^?]+\?\s*\{\s*\.\.\.inherited, shortChat: true\s*\}\s*:\s*inherited,\s*currentCeilings\(\)/,
+      /const resolved = clampToCeilings\(\s*[^?]+\?\s*\{\s*\.\.\.withCeiling, shortChat: true\s*\}\s*:\s*withCeiling,\s*currentCeilings\(\)/,
     )
   })
 

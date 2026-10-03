@@ -69,16 +69,13 @@ const SOCIAL = [
 ] as const
 
 /**
- * Named for completeness because a compiled rule still mentions them, or a live caller still spends
- * them.
+ * Named for completeness because a compiled rule still mentions them.
  *
- * `plan_enter`/`plan_exit` are denied by every built-in agent's floor. `task` is spent by exactly one
- * caller and it is outside this package — `novaclaw/src/tool/truncate.ts` reads it to choose a
- * truncation hint — which is why the test that derives this list names that file explicitly rather
- * than scanning `core` alone. A rule editor that hid either would be lying about what a rule can
- * name.
+ * `plan_enter`/`plan_exit` are denied by every built-in agent's floor. `task` used to be spent by
+ * `novaclaw/src/tool/truncate.ts`, but that caller is gone: nothing in the tree evaluates it, so it
+ * was retired from this list on 2026-10-03 rather than left as a switch wired to nothing.
  */
-const LEGACY = ["plan_enter", "plan_exit", "task"] as const
+const LEGACY = ["plan_enter", "plan_exit"] as const
 
 /** Every action a rule may name, grouped for a control that wants to show them in sections. */
 export const GROUPS = {

@@ -110,7 +110,7 @@ export const defaults = (): ReadonlyArray<ConfigNudge.Info> => [
     enabled: true,
     default: true,
     hook: { type: "session-restarted" },
-    text: "Session restarted. Recover and proceed.",
+    text: "Recover and proceed.",
   },
   {
     id: EMPTY_TURN_ID,

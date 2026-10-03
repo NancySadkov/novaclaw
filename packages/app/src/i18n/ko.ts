@@ -337,8 +337,6 @@ export const dict = {
   "settings.permissions.tool.edit.description": "파일 수정 (편집, 쓰기, 패치 및 다중 편집 포함)",
   "settings.permissions.tool.bash.title": "Bash",
   "settings.permissions.tool.bash.description": "셸 명령어 실행",
-  "settings.permissions.tool.task.title": "작업",
-  "settings.permissions.tool.task.description": "하위 에이전트 실행",
   "settings.permissions.tool.todowrite.title": "할 일 쓰기",
   "settings.permissions.tool.todowrite.description": "할 일 목록 업데이트",
   "settings.permissions.tool.webfetch.title": "웹 가져오기",

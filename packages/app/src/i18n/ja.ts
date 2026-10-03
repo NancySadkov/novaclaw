@@ -339,8 +339,6 @@ export const dict = {
   "settings.permissions.tool.edit.description": "ファイルの変更（編集、書き込み、パッチ、複数編集を含む）",
   "settings.permissions.tool.bash.title": "Bash",
   "settings.permissions.tool.bash.description": "シェルコマンドの実行",
-  "settings.permissions.tool.task.title": "タスク",
-  "settings.permissions.tool.task.description": "サブエージェントの起動",
   "settings.permissions.tool.todowrite.title": "Todo書き込み",
   "settings.permissions.tool.todowrite.description": "Todoリストの更新",
   "settings.permissions.tool.webfetch.title": "Web取得",

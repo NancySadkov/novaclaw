@@ -183,14 +183,18 @@ export const layer = Layer.effectDiscard(
                   const note = yield* announce(context.sessionID, selfID, self, `set their task: ${task}`)
                   return {
                     ok: true,
-                    message: `Your task is now: ${task}. It will reappear here after every compaction and Clear chat.${note}`,
+                    message:
+                      `Task set: "${task}". It is on the team board now, and your system prompt will carry it ` +
+                      `after your next compaction.${note}`,
                   } satisfies Output
                 }
                 yield* Coordination.remove(db, selfID)
                 const note = yield* announce(context.sessionID, selfID, self, "cleared their task")
                 return {
                   ok: true,
-                  message: `Your task is cleared — it now reads "none set yet" everywhere.${note}`,
+                  message:
+                    `Task cleared — it will read "none set yet" in your system prompt after your next ` +
+                    `compaction.${note}`,
                 } satisfies Output
               }
 

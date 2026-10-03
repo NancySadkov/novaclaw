@@ -1369,6 +1369,45 @@ export const layer = Layer.effect(
      * job instructions — returns `SystemContext.empty`, which renders to the empty baseline the
      * runner then drops.
      */
+    /**
+     * Write the coordination board into this session's `coordination_prompt` component from the live
+     * `agent_coordination` rows. The kernel calls this after a context rewrite; the prompt reads the
+     * materialisation, never the store, so a task change reaches the model at the next compaction.
+     */
+    const materializeCoordination = (
+      sessionID: SessionSchema.ID,
+      agentID: string,
+      roster: ReadonlyArray<AgentV2.Info>,
+    ): Effect.Effect<ReadonlyMap<string, string>> =>
+      Effect.gen(function* () {
+        const reports = AgentV2.directReports(agentID, roster)
+        const tasks = yield* Coordination.taskMap(db, [
+          agentID,
+          ...reports.map((candidate) => String(candidate.id)),
+        ])
+        yield* components
+          .put({ sessionID, kind: "coordination_prompt", value: Coordination.snapshotOf(tasks), system: true })
+          .pipe(Effect.catchCause(() => Effect.void))
+        return tasks
+      })
+
+    /**
+     * The task lines this turn renders: the materialised snapshot when one exists, otherwise a fresh
+     * session's first materialisation. A snapshot that exists is NEVER re-derived here — that is what
+     * keeps the prompt byte-stable until a compaction.
+     */
+    const coordinationTaskSnapshot = (
+      sessionID: SessionSchema.ID,
+      agentID: string,
+      roster: ReadonlyArray<AgentV2.Info>,
+    ): Effect.Effect<ReadonlyMap<string, string>> =>
+      Effect.gen(function* () {
+        const stored = yield* components
+          .get({ sessionID, kind: "coordination_prompt" })
+          .pipe(Effect.map((entry) => Coordination.tasksOf(entry?.value)), Effect.orElseSucceed(() => undefined))
+        return stored ?? (yield* materializeCoordination(sessionID, agentID, roster))
+      })
+
     const renderPrompt = (
       session: {
         readonly id: SessionSchema.ID
@@ -1416,14 +1455,15 @@ export const layer = Layer.effect(
               (configuredSuperior?.name ?? (String(agent.id) === AgentV2.NOVA_ID ? undefined : "Nova"))
         const role = parentAgent === undefined ? "agent" : "worker"
         const directReports = role === "agent" ? AgentV2.directReports(agent.id, roster) : []
-        // The coordination board, read for the officer AND its reports in one query. It rides the
-        // prompt rather than the transcript on purpose (see `PromptManager`): a task survives a Clear
-        // chat because it is keyed on the AGENT, and a superior sees each report's task beside its
-        // name after every compaction.
-        const taskByAgent = yield* Coordination.taskMap(db, [
-          String(agent.id),
-          ...directReports.map((candidate) => String(candidate.id)),
-        ])
+        const boardAgent = role === "agent" && agent.info?.service !== true && kind === "agent"
+        // 🔴 THE TASK LINES COME FROM THE MATERIALISED SNAPSHOT, NOT THE LIVE STORE (owner, 2026-10-03).
+        // A task change reaches the prompt at the next COMPACTION, not the next turn: the officer that
+        // set it knows, and re-rendering live would reset the provider's prefix cache for a line whose
+        // only other home is a notice the officer already received. A fresh session has no snapshot, so
+        // one is materialised here — that is what makes a task survive a Clear chat.
+        const taskByAgent = boardAgent
+          ? yield* coordinationTaskSnapshot(session.id, String(agent.id), roster)
+          : new Map<string, string>()
         const subordinates =
           role === "agent"
             ? directReports.map((candidate) => ({
@@ -1495,8 +1535,8 @@ export const layer = Layer.effect(
             officerGoal: agent.info?.goal,
             component: goalEntry,
           }),
-          task: role === "agent" ? taskByAgent.get(String(agent.id)) : undefined,
-          taskBoard: role === "agent" && agent.info?.service !== true,
+          task: boardAgent ? taskByAgent.get(String(agent.id)) : undefined,
+          taskBoard: boardAgent,
           unattended,
           memoText: Durable.textOf(durablePrompt),
           project: directory,
@@ -1763,6 +1803,20 @@ export const layer = Layer.effect(
       }).pipe(
         Effect.catch((cause) =>
           Log.event("session.compaction.memos.failed", {
+            "session.id": session.id,
+            error: Log.fault(cause),
+          }),
+        ),
+      )
+      // The coordination board is re-materialised at the SAME boundary as the memo area, and for the
+      // same reason: the task lines must be byte-stable for the whole epoch and refresh only on a
+      // rewrite. Workers and service sessions have no board of their own.
+      yield* Effect.gen(function* () {
+        if (session.parentID !== undefined || prepared.agent.info?.service === true) return
+        yield* materializeCoordination(session.id, String(prepared.agent.id), yield* agents.all())
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Log.event("session.compaction.coordination.failed", {
             "session.id": session.id,
             error: Log.fault(cause),
           }),

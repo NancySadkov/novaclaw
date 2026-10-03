@@ -10,7 +10,7 @@ const source = fs.readFileSync(path.join(import.meta.dir, "../src/session/runner
  * The branch used to publish a folded Synthetic notice ("Recovery resumed this work…") AND a
  * durable steer ("A process loss interrupted your previous reply…"), so a recovered agent read the
  * same event twice and the second sentence warned about in-flight tools that might never have
- * existed. The single steer now carries `Session restarted. Recover and proceed.`; the only
+ * existed. The single steer now carries the `session-restarted` nudge (`Recover and proceed.`); the only
  * call-specific fact — which tool has an unknown outcome — lives on that tool's own failure row
  * (`interruptedToolMessage`). This test pins the branch to that single, simple nudge.
  */

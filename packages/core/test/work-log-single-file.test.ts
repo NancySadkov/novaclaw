@@ -72,16 +72,21 @@ describe("the work-log is appended to, and bounded", () => {
 
   test("the cap drops the OLDEST half, and never the newest entry", () => {
     // Halving rather than trimming-to-fit: a log cut to exactly the limit re-triggers on the next
-    // fold, so the agent watches its history evaporate one entry at a time. And a single oversized
-    // entry is still written, because the cap is retention and the tombstone must not name a file
-    // that does not exist.
-    expect(source).toMatch(/while \(kept\.length > 1 && size\(\) > maxBytes\)/)
-    expect(source).toContain("kept.slice(Math.ceil(kept.length / 2))")
+    // fold, so the agent watches its history evaporate one entry at a time. The reclaim keeps the
+    // NEWEST bytes and snaps FORWARD to a line boundary, each entry being one physical JSONL line; a
+    // final line longer than the whole cap is left in place rather than truncated.
+    expect(source).toMatch(/const trimToNewestHalf = async \(/)
+    expect(source).toContain("const keep = Math.min(maxBytes, Math.floor(data.length / 2))")
+    expect(source).toMatch(/while \(start < data\.length && data\[start\] !== 0x0a\)/)
+    expect(source).toContain("data.subarray(start)")
   })
 
   test("a corrupt log is replaced, never refused", () => {
-    // Refusing to append would leave every future fold's text named in a prompt with nowhere to go.
-    expect(source).toMatch(/readHistory[\s\S]*?catch \{[\s\S]*?return \[\]/)
+    // The log is JSONL and `append` never parses what is already there, so a torn or corrupt file
+    // cannot refuse a fold; the bad line is dropped with the oldest half at the next reclaim.
+    expect(source).not.toContain("JSON.parse")
+    expect(source).toContain("await fs.appendFile(target")
+    expect(source).toMatch(/while \(start < data\.length && data\[start\] !== 0x0a\)/)
   })
 
   test("a fixed name means a shared write path, so the write is serialised AND its temp name unique", () => {

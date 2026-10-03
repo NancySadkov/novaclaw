@@ -1023,6 +1023,13 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  "session.compaction.coordination.failed": {
+    level: "warn",
+    message: "could not materialize the coordination board after compaction",
+    attributes: { "session.id": "correlate", error: "fault" },
+    content: "user",
+    file: "packages/core/src/session/runner/llm.ts",
+  },
   /**
    * The head the PACKER cut — not the summarizer's fold — was written to the agent's scratch folder,
    * and the tombstone in the request that leaves names THAT file (`invariants.md`, Context

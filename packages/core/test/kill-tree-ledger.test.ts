@@ -185,6 +185,12 @@ const LEDGER = new Map<string, string>([
     "Kills the lock-holder child it spawned. Not collapsed in Wave 1 (out of the C2 file ownership). FILED.",
   ],
   [
+    "packages/novaclaw/test/util/instance-job.test.ts",
+    "Kills the single parent process it spawned with `taskkill /f` and deliberately NO `/t` — the test " +
+      "is about job-object membership, so cooperative tree-kill is not in play. Not collapsed in Wave 1 " +
+      "(out of the C2 file ownership). FILED.",
+  ],
+  [
     "packages/core/test/util/effect-flock.test.ts",
     "Same as flock.test.ts — the Effect-flavoured twin of that suite. FILED.",
   ],
