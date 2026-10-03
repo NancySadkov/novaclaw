@@ -92,6 +92,14 @@ export interface ContactView {
    * colleague whose chat has no door. It is marked, not moved.
    */
   readonly paused: boolean
+  /**
+   * The pause is INHERITED — a superior is paused, so this colleague is paused in effect.
+   *
+   * 🔴 `paused` alone cannot say which control is honest. A colleague paused by an ancestor cannot be
+   * resumed directly: clearing its own flag leaves it paused, so the Resume item would be a no-op that
+   * looks like a dead button. This says "resume the superior instead".
+   */
+  readonly pausedBySuperior: boolean
   /** False for the governing agent — the roster must not offer a control the API will refuse. */
   readonly removable: boolean
   /** What this colleague remembers, as a key the page translates. Both halves, always. */
@@ -177,7 +185,7 @@ export const POSTURE_AGENTS: ReadonlySet<string> = AgentV2.POSTURE_IDS
  */
 export const isColleague = (agent: AgentLike): boolean => AgentV2.isColleague(agent)
 
-const view = (agent: AgentLike): ContactView => {
+const view = (agent: AgentLike, pausedBySuperior = false): ContactView => {
   const governing = agent.id === GOVERNING_ID
   return {
     id: agent.id,
@@ -191,6 +199,7 @@ const view = (agent: AgentLike): ContactView => {
     color: agent.color,
     kind: governing ? "governing" : "officer",
     paused: agent.paused === true,
+    pausedBySuperior: agent.paused === true && pausedBySuperior,
     // The row offers no Retire control for Nova, and the API refuses it too. Both, on purpose: a
     // rule enforced only where it is displayed is a rule an agent's own config write walks around.
     removable: !AgentV2.isProtected(agent.id),
@@ -235,9 +244,17 @@ export const moveOfficerOrder = (officerIDs: readonly string[], fromID: string, 
 
 /** The roster, in the order it is shown: the CEO first, then the saved officer arrangement. */
 export const roster = (agents: readonly AgentLike[], saved: readonly string[] = []): readonly ContactView[] => {
-  const natural = agents
-    .filter(isColleague)
-    .map(view)
+  const colleagues = agents.filter(isColleague)
+  const byID = new Map(colleagues.map((agent) => [agent.id, agent]))
+  // The pause a superior imposes is DERIVED server-side; the roster only has to say WHICH pause is
+  // whose. A direct superior is paused-in-effect whenever any ancestor is, so one hop is enough.
+  const bySuperior = (agent: AgentLike): boolean => {
+    if (agent.paused !== true) return false
+    const superior = agent.superior ?? GOVERNING_ID
+    return superior !== agent.id && byID.get(superior)?.paused === true
+  }
+  const natural = colleagues
+    .map((agent) => view(agent, bySuperior(agent)))
     .sort((left, right) => {
       if (left.kind !== right.kind) return left.kind === "governing" ? -1 : 1
       return left.name.localeCompare(right.name)
@@ -281,13 +298,7 @@ export const groupRoster = (views: readonly ContactView[], query = ""): readonly
   for (const view of views) {
     const node = nodes.get(view.id)!
     const parent = AgentV2.resolveSuperior(view.id, view.superior, views, { includePaused: true })
-    if (
-      view.id === "owner" ||
-      view.id === GOVERNING_ID ||
-      !parent ||
-      parent.id === GOVERNING_ID
-    )
-      roots.push(node)
+    if (view.id === "owner" || view.id === GOVERNING_ID || !parent || parent.id === GOVERNING_ID) roots.push(node)
     else nodes.get(parent.id)!.children.push(node)
   }
   roots.sort((left, right) => Number(right.id === "owner") - Number(left.id === "owner"))

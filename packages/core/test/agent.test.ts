@@ -251,3 +251,43 @@ describe("AgentV2", () => {
     }),
   )
 })
+
+describe("AgentV2.effectivePaused — the invariant is derived, not copied", () => {
+  const node = (
+    id: string,
+    over: { superior?: string; paused?: boolean; service?: boolean; hidden?: boolean; mode?: string } = {},
+  ) => ({ id, mode: "primary", hidden: false, ...over })
+
+  test("a subordinate is paused whenever any ancestor is, at any depth", () => {
+    const paused = AgentV2.effectivePaused([
+      node("nova", { paused: true }),
+      node("boss", { superior: "nova" }),
+      node("sub", { superior: "boss" }),
+      node("other"), // reports to nova
+      node("raised", { superior: "boss", paused: false }),
+    ])
+    expect([...paused].sort()).toEqual(["boss", "nova", "other", "raised", "sub"])
+  })
+
+  test("clearing the ancestor releases exactly those whose own flag is unset", () => {
+    const paused = AgentV2.effectivePaused([
+      node("nova"),
+      node("boss", { superior: "nova" }),
+      node("sub", { superior: "boss", paused: true }),
+    ])
+    expect([...paused]).toEqual(["sub"])
+  })
+
+  test("machinery is never dragged down by a paused officer, and a corrupt cycle terminates", () => {
+    const paused = AgentV2.effectivePaused([
+      node("nova", { paused: true }),
+      node("compaction", { service: true }),
+      // A cycle must not hang the walk. Both resolve through the canonical chain to Nova.
+      node("a", { superior: "b" }),
+      node("b", { superior: "a" }),
+    ])
+    expect(paused.has("compaction")).toBe(false)
+    expect(paused.has("a")).toBe(true)
+    expect(paused.has("b")).toBe(true)
+  })
+})

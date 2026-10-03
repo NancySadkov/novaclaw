@@ -154,6 +154,14 @@ export function OfficerSettingsScreen(props: {
   // ErrorBoundary, at its root, and replaced the whole UI.
   const agents = () => ctx()?.agents.list()
   const agent = createMemo<AgentLike | undefined>(() => (agents() ?? []).find((row) => row.id === props.agentID))
+  // A pause a superior imposes cannot be lifted here: clearing this officer's own flag leaves it
+  // paused, so Resume must yield to the superior that holds it.
+  const pausedBySuperior = createMemo(() => {
+    const self = agent()
+    if (self?.paused !== true) return false
+    const superior = self.superior ?? GOVERNING_ID
+    return superior !== self.id && (agents() ?? []).some((row) => row.id === superior && row.paused === true)
+  })
   const capabilities = createMemo(() => officerCapabilities(agent()?.config as Record<string, unknown> | undefined))
 
   const governing = createMemo(() => props.agentID === GOVERNING_ID)
@@ -1039,7 +1047,7 @@ export function OfficerSettingsScreen(props: {
         confirmLabel: language.t("agentConfig.retire.confirm.action"),
         destructive: true,
       }))
-      )
+    )
       return
     if (dirty() && !(await commitDraft())) return
     setBusy("retire")
@@ -1213,9 +1221,7 @@ export function OfficerSettingsScreen(props: {
         ...(runtimeHeartbeatMinutes() === undefined
           ? {}
           : { runtimeHeartbeatMinutes: parsedRuntimeHeartbeatMinutes() }),
-        ...(unansweredMessageNudges() === undefined
-          ? {}
-          : { unansweredMessageNudges: unansweredMessageNudges()! }),
+        ...(unansweredMessageNudges() === undefined ? {} : { unansweredMessageNudges: unansweredMessageNudges()! }),
         ...(colleagueMessageIntervalMinutes() === undefined
           ? {}
           : { colleagueMessageIntervalMinutes: parsedColleagueMessageIntervalMinutes() }),
@@ -1496,7 +1502,9 @@ export function OfficerSettingsScreen(props: {
           <Icon name="help" class="size-4" />
         </button>
         <Show when={saving()}>
-          <span role="status" class="text-xs text-v2-text-text-muted">{language.t("agentConfig.saving")}</span>
+          <span role="status" class="text-xs text-v2-text-text-muted">
+            {language.t("agentConfig.saving")}
+          </span>
         </Show>
         <div
           data-slot="agent-settings-actions"
@@ -1507,7 +1515,8 @@ export function OfficerSettingsScreen(props: {
               type="button"
               data-action="agent-pause"
               class="rounded-md px-2.5 py-1.5 text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-02 disabled:opacity-40"
-              disabled={saving() || busy() !== undefined || agent() === undefined}
+              disabled={saving() || busy() !== undefined || agent() === undefined || pausedBySuperior()}
+              title={pausedBySuperior() ? language.t("contacts.pausedBySuperiorHint") : undefined}
               onClick={() => void setPaused(agent()?.paused !== true)}
             >
               {busy() === "pause"

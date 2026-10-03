@@ -949,15 +949,27 @@ const agentFolders = (names: readonly string[]): Effect.Effect<Map<string, strin
     return folders
   })
 
-const agentPauseStates = (
-  names: readonly string[],
-): Effect.Effect<Map<string, boolean>, never, AgentConfigStore.Service> =>
+/**
+ * The ids paused IN EFFECT across every stored officer.
+ *
+ * 🔴 Deliberately every officer, not just the ones the patch names. Pausing a superior pauses its
+ * whole subtree, so the lifecycle announcement has to reach descendants whose own `disabled` never
+ * changed. The ancestry walk is `AgentV2.effectivePaused` — the SAME one the roster projection uses,
+ * so what the roster shows and what the runtime stops cannot drift.
+ */
+const effectivePauseStates = (): Effect.Effect<ReadonlySet<string>, never, AgentConfigStore.Service> =>
   Effect.gen(function* () {
-    const states = new Map<string, boolean>()
-    if (names.length === 0) return states
     const stored = yield* (yield* AgentConfigStore.Service).agents()
-    for (const name of names) states.set(name, AgentConfigStore.fold(stored[name] ?? [])?.disabled === true)
-    return states
+    const nodes = Object.entries(stored).map(([id, layers]) => {
+      const folded = AgentConfigStore.fold(layers)
+      return { id, superior: folded?.superior, paused: folded?.disabled === true }
+    })
+    // Nova may be CODE-seeded rather than stored, and the ancestry walk needs a root to terminate at:
+    // a stored subordinate whose line reaches an absent nova resolves to nobody and would silently
+    // escape the cascade. The synthetic root is unpaused, because nova's own pause is its stored row.
+    if (!nodes.some((node) => node.id === AgentV2.NOVA_ID))
+      nodes.push({ id: AgentV2.NOVA_ID, superior: AgentV2.OWNER_ID, paused: false })
+    return AgentV2.effectivePaused(nodes)
   })
 
 const agentWorkerLimits = (
@@ -970,7 +982,8 @@ const agentWorkerLimits = (
     // ⚠️ `limitFor(name, …)`, not the bare config: an officer with no stored `maxWorkers` falls back to
     // what SHIPPED for it, and a "before" of 100 against an "after" of 100 would announce nothing when
     // the user's real change was to 0. The id is the argument for the same reason.
-    for (const name of names) limits.set(name, AgentWorkerCapacity.limitFor(name, AgentConfigStore.fold(stored[name] ?? [])))
+    for (const name of names)
+      limits.set(name, AgentWorkerCapacity.limitFor(name, AgentConfigStore.fold(stored[name] ?? [])))
     return limits
   })
 
@@ -987,7 +1000,7 @@ export const apply = (patch: Config.Info, options: { readonly writer?: AgentV2.C
     // only place that can see the change whoever made it. `apply` cannot DELIVER (a store module
     // holds no sessions); it announces, and whatever graph owns sessions has registered to deliver.
     const foldersBefore = yield* agentFolders(Object.keys(patch.agents ?? {}))
-    const pausedBefore = yield* agentPauseStates(Object.keys(patch.agents ?? {}))
+    const pausedBefore = patch.agents === undefined ? undefined : yield* effectivePauseStates()
     const workerLimitsBefore = yield* agentWorkerLimits(Object.keys(patch.agents ?? {}))
     // Same shape as `remove`: succeed WITH the refusal so `orDie` cannot reach it, then re-fail.
     // A caller's refused write is a 400, not a 500 — blaming us for a rule we chose is the
@@ -1043,12 +1056,18 @@ export const apply = (patch: Config.Info, options: { readonly writer?: AgentV2.C
         "config.keys": stuck,
         "config.reasons": stuck.map((key) => RESTART_REQUIRED_KEYS.get(key) ?? key),
       })
-    const otherRefresh = yield* refreshDomains(staleDomains(consumed).filter((domain) => domain !== "devices")).pipe(Effect.exit)
+    const otherRefresh = yield* refreshDomains(staleDomains(consumed).filter((domain) => domain !== "devices")).pipe(
+      Effect.exit,
+    )
     if (consumed.has("agents")) {
-      const pausedAfter = yield* agentPauseStates([...pausedBefore.keys()])
-      for (const [agentID, paused] of pausedBefore) {
-        const next = pausedAfter.get(agentID) ?? false
-        if (next !== paused) yield* AgentLifecycle.announce({ agentID, paused: next })
+      const pausedAfter = yield* effectivePauseStates()
+      if (pausedBefore !== undefined) {
+        for (const agentID of new Set([...pausedBefore, ...pausedAfter])) {
+          const paused = pausedAfter.has(agentID)
+          // `pausedBefore` holds the EFFECTIVE set, so a superior's toggle already moved every
+          // descendant that inherits it: the symmetric difference is the whole subtree.
+          if (pausedBefore.has(agentID) !== paused) yield* AgentLifecycle.announce({ agentID, paused })
+        }
       }
       const workerLimitsAfter = yield* agentWorkerLimits([...workerLimitsBefore.keys()])
       for (const [agentID, previous] of workerLimitsBefore) {
@@ -1458,7 +1477,9 @@ export const remove = (
       "config.paths": paths.map(MergePatch.showPath),
       "config.cleared": cleared,
     })
-    const otherRefresh = yield* refreshDomains(staleDomains(consumed).filter((domain) => domain !== "devices")).pipe(Effect.exit)
+    const otherRefresh = yield* refreshDomains(staleDomains(consumed).filter((domain) => domain !== "devices")).pipe(
+      Effect.exit,
+    )
     if (Exit.isFailure(deviceRefresh)) return yield* Effect.failCause(deviceRefresh.cause)
     if (Exit.isFailure(otherRefresh)) return yield* Effect.failCause(otherRefresh.cause)
     return { removed: paths, cleared }
@@ -1499,7 +1520,7 @@ export const overlay = (base: Record<string, unknown>, view: "stored" | "setting
     if (defaultModel !== undefined) result.model = defaultModel
 
     const agents = yield* AgentConfigStore.Service
-    const agentLayers = yield* (view === "settings" ? agents.configured() : agents.agents())
+    const agentLayers = yield* view === "settings" ? agents.configured() : agents.agents()
     if (Object.keys(agentLayers).length > 0) {
       result.agents = foldLayers(agentLayers, Schema.encodeSync(ConfigAgent.Info))
     }
@@ -1520,5 +1541,8 @@ export const overlay = (base: Record<string, unknown>, view: "stored" | "setting
 
     return view === "stored"
       ? result
-      : InstancePath.mapValues(result, InstancePath.store, InstancePath.preserveProjectDirectory) as Record<string, unknown>
+      : (InstancePath.mapValues(result, InstancePath.store, InstancePath.preserveProjectDirectory) as Record<
+          string,
+          unknown
+        >)
   })

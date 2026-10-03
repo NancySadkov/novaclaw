@@ -47,6 +47,17 @@ export const Plugin = define({
         const stored = yield* store.agents()
         for (const [name, layers] of Object.entries(stored))
           for (const item of layers) applyItem(draft, AgentV2.ID.make(name), item, global)
+
+        // …then the reporting-line cascade: pausing a superior pauses its whole subtree. This runs
+        // LAST, after every `superior`/`disabled` fragment has landed, and it is DERIVED — no stored
+        // flag is copied down the tree — so a subordinate re-enabled directly, a reparented officer,
+        // or a hire placed under a paused superior all land paused without a second writer to miss.
+        const inherited = AgentV2.effectivePaused(draft.list())
+        for (const agent of draft.list())
+          if (inherited.has(String(agent.id)) && agent.paused !== true)
+            draft.update(agent.id, (record) => {
+              record.paused = true
+            })
       }),
     )
 

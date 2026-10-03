@@ -231,4 +231,30 @@ describe("a paused colleague", () => {
     const rows = roster([agent({ id: "theron", name: "Theron", paused: true })])
     expect(searchRoster(rows, "ther").map((r) => r.id)).toEqual(["theron"])
   })
+
+  /**
+   * 🔴 A pause a superior imposes cannot be lifted directly. `paused` is set server-side for the whole
+   * subtree, so a descendant reads paused while its own `disabled` is unset; the roster must say WHICH
+   * pause it is, or Resume is a button that does nothing.
+   */
+  test("a descendant of a paused superior is marked as paused BY the superior", () => {
+    const rows = roster([
+      agent({ id: "nova", name: "Nova", paused: true }),
+      agent({ id: "boss", name: "Boss", superior: "nova", paused: true }),
+      agent({ id: "sub", name: "Sub", superior: "boss", paused: true }),
+      agent({ id: "own", name: "Own", superior: "nova", paused: true }),
+      agent({ id: "free", name: "Free" }),
+    ])
+    const byId = new Map(rows.map((row) => [row.id, row]))
+    // `sub` is paused because `boss` is (which is itself paused by Nova) — resuming `sub` alone is a lie.
+    expect(byId.get("sub")?.pausedBySuperior).toBe(true)
+    // Nova has no paused superior.
+    expect(byId.get("nova")?.pausedBySuperior).toBe(false)
+    // A colleague paused directly, with an unpaused superior, can be resumed here.
+    const direct = roster([
+      agent({ id: "nova", name: "Nova" }),
+      agent({ id: "theron", name: "Theron", superior: "nova", paused: true }),
+    ])
+    expect(direct.find((row) => row.id === "theron")?.pausedBySuperior).toBe(false)
+  })
 })

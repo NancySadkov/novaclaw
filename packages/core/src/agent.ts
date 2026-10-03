@@ -269,6 +269,54 @@ export const directReports = (id: string, roster: readonly Info[]): Info[] =>
   )
 
 /**
+ * The ids paused IN EFFECT: their own pause, or any ancestor's.
+ *
+ * 🔴 The invariant *"a subordinate is paused whenever its superior is"* is enforced by DERIVATION, not
+ * by copying `disabled` down the tree. A copied flag needs a writer at every door that can create,
+ * reparent or re-enable a subordinate — and the one door somebody forgets breaks the invariant
+ * silently, leaving an unpaused officer under a paused superior. Derived, that state cannot be
+ * represented: pausing a superior pauses its whole subtree by construction, and unpausing it releases
+ * every descendant whose own `disabled` is unset.
+ *
+ * Only COLLEAGUES are paused or pause others. Machinery (compaction, titles) has no superior to
+ * inherit from, and `resolveSuperior` already refuses a non-colleague ancestor — so a service agent
+ * with no line is never dragged down by a paused officer it never reported to.
+ */
+export const effectivePaused = <
+  T extends {
+    readonly id: string
+    readonly superior?: string | undefined
+    readonly mode?: string
+    readonly hidden?: boolean
+    readonly service?: boolean | undefined
+    readonly paused?: boolean | undefined
+  },
+>(
+  roster: ReadonlyArray<T>,
+): ReadonlySet<string> => {
+  const byID = new Map(roster.map((agent) => [String(agent.id), agent]))
+  const memo = new Map<string, boolean>()
+  const paused = (id: string, seen: Set<string>): boolean => {
+    const cached = memo.get(id)
+    if (cached !== undefined) return cached
+    const node = byID.get(id)
+    if (node === undefined || seen.has(id)) return false
+    seen.add(id)
+    const superior = resolveSuperior(id, node.superior, roster, { includePaused: true })
+    const inherited = superior !== undefined && String(superior.id) !== id && paused(String(superior.id), seen)
+    const value = node.paused === true || inherited
+    memo.set(id, value)
+    return value
+  }
+  const pausedIDs = new Set<string>()
+  // Colleagues only: machinery (compaction, titles) and subagent-mode staff have no line to inherit
+  // and must never be suspended because an officer above them in a fallback chain is.
+  for (const agent of roster)
+    if (isColleague(agent) && paused(String(agent.id), new Set())) pausedIDs.add(String(agent.id))
+  return pausedIDs
+}
+
+/**
  * Does this officer report DIRECTLY to the human owner?
  *
  * 🔴 The owner's officers are the owner's. Authority narrows DOWNWARD from the CEO (AGENTS.md); the

@@ -812,7 +812,9 @@ function ContactRow(props: ContactRowProps) {
           />
           <span class="officer-card-status" data-working={state() === "working"} data-paused={props.view.paused}>
             <i />
-            {props.view.paused ? language.t("contacts.paused") : language.t(`contacts.state.${state()}`)}
+            {props.view.paused
+              ? language.t(props.view.pausedBySuperior ? "contacts.pausedBySuperior" : "contacts.paused")
+              : language.t(`contacts.state.${state()}`)}
           </span>
         </div>
         <div class="officer-card-identity">
@@ -853,7 +855,8 @@ function ContactRow(props: ContactRowProps) {
           </ContextMenu.Item>
           <ContextMenu.Item
             class="officer-context-item"
-            disabled={props.busy || props.view.id === "owner"}
+            disabled={props.busy || props.view.id === "owner" || props.view.pausedBySuperior}
+            title={props.view.pausedBySuperior ? language.t("contacts.pausedBySuperiorHint") : undefined}
             onSelect={props.onPause}
           >
             {language.t(props.view.paused ? "agentConfig.resume" : "agentConfig.pause")}

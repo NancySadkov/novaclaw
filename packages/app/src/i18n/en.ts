@@ -2191,6 +2191,9 @@ export const dict = {
   "agentConfig.pausing": "Saving…",
   "agentConfig.pauseFailed": "Could not change whether this colleague is paused",
   "contacts.pausedHint": "Set aside. Keeps its chat, its memories and its name, but will not act until resumed.",
+  "contacts.pausedBySuperior": "Paused by superior",
+  "contacts.pausedBySuperiorHint":
+    "A superior officer is paused, which pauses its whole team. Resume that superior to release this one.",
   "agentConfig.back": "Back",
   "agentConfig.clearChat": "Clear chat",
   "agentConfig.clearMemory": "Clear memory",

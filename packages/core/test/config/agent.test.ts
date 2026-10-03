@@ -301,6 +301,46 @@ describe("ConfigAgentPlugin.Plugin", () => {
     }),
   )
 
+  it.effect("pausing a superior pauses its whole subtree, and unpausing it releases the subtree", () =>
+    Effect.gen(function* () {
+      const agents = yield* AgentV2.Service
+      const nova = AgentV2.ID.make("nova")
+      const boss = AgentV2.ID.make("boss")
+      const sub = AgentV2.ID.make("sub")
+      const grand = AgentV2.ID.make("grand")
+      // The config door pauses only an agent that already EXISTS, so the tree is materialised first.
+      // Nova is the reporting line's root: without it `resolveSuperior` cannot terminate the walk.
+      yield* agents.transform((editor) => {
+        editor.update(nova, () => {})
+        editor.update(boss, () => {})
+      })
+
+      const store = memoryStore()
+      yield* store.setLayers("boss", [decode({ agents: { boss: { disabled: true } } }).agents!.boss])
+      yield* store.setLayers("sub", [decode({ agents: { sub: { superior: "boss" } } }).agents!.sub])
+      yield* store.setLayers("grand", [decode({ agents: { grand: { superior: "sub" } } }).agents!.grand])
+      yield* ConfigAgentPlugin.Plugin.effect(host({ agent: agentHost(agents) })).pipe(
+        Effect.provideService(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) })),
+        Effect.provideService(AgentConfigStore.Service, store),
+      )
+
+      // Neither descendant carries `disabled`; both are paused because an ancestor is — the invariant.
+      expect(yield* agents.get(boss)).toMatchObject({ paused: true })
+      expect(yield* agents.get(sub)).toMatchObject({ paused: true })
+      expect(yield* agents.get(grand)).toMatchObject({ paused: true })
+
+      // Clearing the superior's flag releases the whole line, with no descendant flag to rewrite.
+      yield* store.setLayers("boss", [decode({ agents: { boss: { name: "Boss" } } }).agents!.boss])
+      yield* ConfigAgentPlugin.Plugin.effect(host({ agent: agentHost(agents) })).pipe(
+        Effect.provideService(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) })),
+        Effect.provideService(AgentConfigStore.Service, store),
+      )
+      expect((yield* agents.get(boss))?.paused).not.toBe(true)
+      expect((yield* agents.get(sub))?.paused).not.toBe(true)
+      expect((yield* agents.get(grand))?.paused).not.toBe(true)
+    }),
+  )
+
   it.live("ignores hostile agent and mode markdown in every location", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),

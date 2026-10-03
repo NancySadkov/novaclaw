@@ -1,6 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Effect, Exit, Schema } from "effect"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import { AgentLifecycle } from "@novaclaw/core/agent/lifecycle"
 import { ConfigAgent } from "@novaclaw/core/config/agent"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
@@ -65,6 +66,30 @@ describe("ConfigStoreWrite.apply", () => {
         expect(Exit.isFailure(selected)).toBe(true)
         expect((yield* agents.configured())[id]).toBeUndefined()
       }
+    }),
+  )
+  it.effect("pausing a superior announces its whole subtree, so running descendants stop too", () =>
+    Effect.gen(function* () {
+      const changes: Array<{ readonly agentID: string; readonly paused: boolean }> = []
+      yield* AgentLifecycle.register((change) => Effect.sync(() => void changes.push(change)))
+      yield* ConfigStoreWrite.apply(
+        decodeInfo({ agents: { boss: { mode: "primary" }, sub: { superior: "boss" }, grand: { superior: "sub" } } }),
+      )
+      changes.length = 0
+      yield* ConfigStoreWrite.apply(decodeInfo({ agents: { boss: { disabled: true } } }))
+      // The descendant ids never appear in the patch; the cascade derives them from the reporting line.
+      expect(changes.map((change) => `${change.agentID}:${change.paused}`).sort()).toEqual([
+        "boss:true",
+        "grand:true",
+        "sub:true",
+      ])
+      changes.length = 0
+      yield* ConfigStoreWrite.apply(decodeInfo({ agents: { boss: { disabled: false } } }))
+      expect(changes.map((change) => `${change.agentID}:${change.paused}`).sort()).toEqual([
+        "boss:false",
+        "grand:false",
+        "sub:false",
+      ])
     }),
   )
   it.effect("routes log settings and updates the already-running hot-path projection", () =>
