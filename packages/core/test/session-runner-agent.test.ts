@@ -16,7 +16,7 @@ import { EventV2 } from "@novaclaw/core/event"
 import { Scratch } from "@novaclaw/core/scratch"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { tmpdir } from "./fixture/tmpdir"
-import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, resumeUntil } from "./fixture/runner-harness"
 
 /**
  * THE ONE SYSTEM PROMPT (owner, 2026-09-17).
@@ -37,9 +37,12 @@ describe("SessionRunnerLLM — the one system prompt", () => {
     await fs.writeFile(path.join(project.path, "initial.txt"), "first")
     const agentID = AgentV2.ID.make("prefix_reviewer")
     const scratch = Scratch.forAgent(String(agentID))
-    const logs = [1, 2].map((n) => path.join(scratch, "tmp", `oldlog-9999-${Date.now()}-${n}.json`))
-    await fs.mkdir(path.dirname(logs[0]!), { recursive: true })
-    await fs.writeFile(logs[0]!, "{}")
+    // ⚠️ Re-pinned 2026-10-03. The work-log is ONE file per agent since the 2026-09-29 rewrite
+    // (`old-context.ts`), not a fresh `oldlog-<date>-<time>-<n>.json` per pass — so this claim writes
+    // the one file the invariant names instead of asserting a naming scheme that is gone.
+    const log = path.join(scratch, "tmp", "history.json")
+    await fs.mkdir(path.dirname(log), { recursive: true })
+    await fs.writeFile(log, "{}")
     const harness = makeRunnerHarness({
       directory: AbsolutePath.make(project.path),
       turns: [1, 2, 3, 4].map((n) => completeTurn(`turn-${n}`, `Answer ${n}`)),
@@ -65,20 +68,19 @@ describe("SessionRunnerLLM — the one system prompt", () => {
             .where(eq(SessionTable.id, HARNESS_SESSION))
             .run()
             .pipe(Effect.orDie)
-          const turn = (text: string) =>
+          const turn = (text: string, marker: string) =>
             session
               .prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text }), resume: false })
-              .pipe(Effect.andThen(session.resume(HARNESS_SESSION)))
-          yield* turn("First")
+              .pipe(Effect.andThen(resumeUntil(marker)))
+          yield* turn("First", "Answer 1")
           yield* Effect.promise(() => fs.writeFile(path.join(project.path, "new-file.txt"), "new"))
-          yield* Effect.promise(() => fs.writeFile(logs[1]!, "{}"))
-          yield* turn("Second")
+          yield* turn("Second", "Answer 2")
           yield* agents.transform((editor) =>
             editor.update(agentID, (agent) => {
               agent.system = "Updated job brief."
             }),
           )
-          yield* turn("Third")
+          yield* turn("Third", "Answer 3")
           yield* events.publish(SessionEvent.Compaction.Ended, {
             sessionID: HARNESS_SESSION,
             messageID: SessionMessage.ID.create(),
@@ -88,22 +90,22 @@ describe("SessionRunnerLLM — the one system prompt", () => {
             recent: "",
             ...(yield* harness.currentPrefix),
           })
-          yield* turn("Fourth")
+          yield* turn("Fourth", "Answer 4")
         }),
         "prompt observations belong to the context epoch",
       )
       const systems = harness.requests.map((request) => (request.system ?? []).map((part) => part.text).join("\n"))
       expect(systems).toHaveLength(4)
       expect(systems[0]).toContain("initial.txt")
-      expect(systems[0]).toContain(path.basename(logs[0]!))
+      expect(systems[0]).toContain(path.basename(log))
       expect(systems[1]).toBe(systems[0])
       expect(systems[2]).toContain("Updated job brief.")
       expect(systems[2]).not.toContain("new-file.txt")
-      expect(systems[2]).toContain(path.basename(logs[0]!))
+      expect(systems[2]).toContain(path.basename(log))
       expect(systems[3]).toContain("new-file.txt")
-      expect(systems[3]).toContain(path.basename(logs[1]!))
+      expect(systems[3]).toContain(path.basename(log))
     } finally {
-      for (const log of logs) await fs.rm(log, { force: true })
+      await fs.rm(log, { force: true })
     }
   })
 
@@ -134,7 +136,7 @@ describe("SessionRunnerLLM — the one system prompt", () => {
           .pipe(Effect.orDie)
         const session = yield* SessionV2.Service
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }), resume: false })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("First")
 
         // A component changes (the brief). The next turn MUST carry the new text.
         yield* agents.transform((editor) =>
@@ -143,11 +145,11 @@ describe("SessionRunnerLLM — the one system prompt", () => {
           }),
         )
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Second" }), resume: false })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Second")
 
         // Nothing changes. The prompt must be byte-identical to the previous turn's.
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Third" }), resume: false })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Third")
       }),
       "claim — a changed component regenerates the prompt; an unchanged turn reuses it",
     )
@@ -209,7 +211,7 @@ describe("SessionRunnerLLM — the one system prompt", () => {
         const session = yield* SessionV2.Service
 
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "First" }), resume: false })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("First")
 
         // The agent writes the SHADOW. No rewrite has happened, so the prompt must not move.
         yield* components.put({
@@ -219,7 +221,7 @@ describe("SessionRunnerLLM — the one system prompt", () => {
           value: { name: "Path", value: "C:/books" },
         })
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Second" }), resume: false })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Second")
 
         // The rewrite materialises the area from the shadow. Now the prompt carries it.
         yield* components.put({
@@ -229,7 +231,7 @@ describe("SessionRunnerLLM — the one system prompt", () => {
           system: true,
         })
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Third" }), resume: false })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Third")
       }),
       "claim — a memo write waits for the rewrite",
     )

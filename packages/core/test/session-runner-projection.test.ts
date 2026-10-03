@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import { LLMEvent } from "@novaclaw/llm"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, drive, makeRunnerHarness, resumeAndStop, resumeUntil } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — the two provider-stream orderings the projector must REFUSE.
@@ -90,7 +90,7 @@ describe("SessionRunnerLLM — stream projection", () => {
           prompt: Prompt.make({ text: "Two blocks" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Second")
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — interleaved text blocks stay separate",
@@ -124,6 +124,9 @@ describe("SessionRunnerLLM — stream projection", () => {
             input: { query: "hello" },
             providerExecuted: true,
           }),
+          // Settle the step so a claim can observe it; without a finish there is no step boundary.
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
         ],
       ],
     })
@@ -137,7 +140,7 @@ describe("SessionRunnerLLM — stream projection", () => {
           prompt: Prompt.make({ text: "Call provider tool" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeAndStop()
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — raw tool input becomes parsed called input",
@@ -220,7 +223,7 @@ describe("SessionRunnerLLM — stream projection", () => {
       Effect.gen(function* () {
         const session = yield* SessionV2.Service
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Use tools" }), resume: false })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeAndStop()
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — provider-executed tools are projected, not run",

@@ -116,18 +116,11 @@ describe("novaclaw run — an --agent that cannot be honoured", () => {
     60_000,
   )
 
-  cliIt.concurrent(
-    "refuses a subagent named as the primary agent",
-    ({ novaclaw }) =>
-      Effect.gen(function* () {
-        const result = yield* novaclaw.run("audit the thing", { agent: "general" })
-        expect(result.exitCode).not.toBe(0)
-        expect(result.stderr).toContain("general")
-        expect(result.stderr).toContain("subagent")
-      }),
-    60_000,
-  )
-
+  // 🗑️ RETIRED 2026-10-03 — "refuses a subagent named as the primary agent" (named `general`).
+  // `general` is in `RETIRED_ROLE_IDS` (retired 2026-09-27, `3270baec8`) and is no longer in the
+  // roster, so the local door answers "no agent by that name" — the refusal the case ABOVE already
+  // pins — and no default agent carries `mode: "subagent"` any more. Re-covering the `run.ts` subagent
+  // branch needs a fixture that seeds one; the case as written asserted a premise that no longer exists.
   // The attach path resolves the name against a REMOTE roster and had the same silent fallback —
   // plus a third one the local path does not have, when the roster cannot be fetched at all.
   cliIt.concurrent(
