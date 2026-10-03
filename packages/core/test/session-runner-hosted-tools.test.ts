@@ -3,7 +3,7 @@ import { Effect, Stream } from "effect"
 import { LLMError, LLMEvent, TransportReason } from "@novaclaw/llm"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, drive, makeRunnerHarness, resumeAndStop } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — hosted (provider-executed) tools that never come back.
@@ -70,12 +70,12 @@ describe("SessionRunnerLLM — hosted tool results", () => {
           prompt: Prompt.make({ text: "Search first" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeAndStop()
         // Durable, not merely live: the replay is what proves the metadata survives a process boundary.
         yield* harness.replayProjection(HARNESS_SESSION)
 
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Continue" }), resume: false })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeAndStop()
       }),
       "claim — hosted results replay inline with metadata",
     )
@@ -123,7 +123,7 @@ describe("SessionRunnerLLM — hosted tools left unresolved", () => {
           prompt: Prompt.make({ text: "Fail hosted tool durably" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeAndStop()
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — hosted tool closed when the provider errors",
@@ -140,8 +140,18 @@ describe("SessionRunnerLLM — hosted tools left unresolved", () => {
     // The quietest case and the easiest to get wrong: the stream ends NORMALLY with the call still
     // open. There is no error to react to, so a runner that only closes hosted calls on failure paths
     // leaves this one running forever.
+    // The stream ends NORMALLY with the call still open. `stepFinish`/`finish` make it a settled step
+    // (the runner closes the dangling hosted call at turn end); without them the turn never settles and
+    // there is no point at which a claim could observe it.
     const harness = makeRunnerHarness({
-      turns: [[LLMEvent.stepStart({ index: 0 }), hostedCall("call-hosted-eof")]],
+      turns: [
+        [
+          LLMEvent.stepStart({ index: 0 }),
+          hostedCall("call-hosted-eof"),
+          LLMEvent.stepFinish({ index: 0, reason: "stop" }),
+          LLMEvent.finish({ reason: "stop" }),
+        ],
+      ],
     })
 
     const context = await drive(
@@ -153,7 +163,7 @@ describe("SessionRunnerLLM — hosted tools left unresolved", () => {
           prompt: Prompt.make({ text: "Fail hosted tool at EOF" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeAndStop()
         yield* harness.replayProjection(HARNESS_SESSION)
         return yield* session.context(HARNESS_SESSION)
       }),

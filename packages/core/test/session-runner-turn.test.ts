@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, completeTurn, conversation, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, conversation, drive, exitTurn, makeRunnerHarness, resumeUntil } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — turn start and request assembly.
@@ -37,7 +37,7 @@ describe("SessionRunnerLLM — turn start", () => {
           delivery: "steer",
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("One")
         // Both prompts plus the one reply they drew. (Was 2 while an unscripted turn produced no
         // assistant message at all — see the empty-response claim in `session-runner-errors.test.ts`.)
         expect(yield* session.messages({ sessionID: HARNESS_SESSION })).toHaveLength(3)
@@ -65,7 +65,13 @@ describe("SessionRunnerLLM — turn start", () => {
     // cache between unrelated sessions, which is a correctness bug wearing a performance hat.
     const longSessionID = SessionV2.ID.make(`ses_${"a".repeat(64)}`)
     const otherLongSessionID = SessionV2.ID.make(`ses_${"b".repeat(64)}`)
-    const harness = makeRunnerHarness()
+    // Each drain ends by calling `exit` (the officer's settle), so the two resumes terminate instead of
+    // hanging on the exit demand. The reply text is irrelevant to this claim.
+    const harness = makeRunnerHarness({
+      withExitTool: true,
+      turns: [exitTurn("first session done"), exitTurn("second session done")],
+      utilityTurns: [completeTurn("audit", "YES"), completeTurn("audit", "YES")],
+    })
 
     await drive(
       harness,

@@ -1150,6 +1150,61 @@ export const resumeUntil = (marker: string) =>
   })
 
 /**
+ * Wait for the marked reply to settle, then stop the drain — WITHOUT starting one.
+ *
+ * The dual of `resumeUntil` for a claim whose drain is ALREADY in flight (a forked `resume`, a gate held
+ * open to inject a steer mid-stream). A non-Chat officer's drive demands `exit` forever once its script
+ * is spent, so a claim that let the drain run to completion would hang; this stops it at the turn being
+ * asserted instead. `resumeUntil` cannot serve here because it owns the `resume`.
+ */
+export const interruptAfter = (marker: string) =>
+  Effect.gen(function* () {
+    const session = yield* SessionV2.Service
+    const events = yield* EventV2.Service
+    const seen = yield* events.subscribe(SessionEvent.Text.Ended).pipe(
+      Stream.filter((event) => event.data.sessionID === HARNESS_SESSION && event.data.text.includes(marker)),
+      Stream.take(1),
+      Stream.runHead,
+      Effect.forkScoped,
+    )
+    yield* Fiber.join(seen)
+    for (;;) {
+      const messages = yield* session.context(HARNESS_SESSION)
+      const assistant = messages.findLast((message) => message.type === "assistant")
+      if (assistant !== undefined && assistant.type === "assistant" && assistant.finish !== undefined) break
+      yield* Effect.yieldNow
+    }
+    yield* session.interrupt(HARNESS_SESSION)
+  })
+
+/**
+ * Start a drain and stop it as soon as its FIRST step settles — success OR failure — with no reply text
+ * to key on.
+ *
+ * For a fixture turn that emits no text at all (a hosted tool result, a provider error) and a claim that
+ * only needs the turn durably written. `resumeUntil` cannot serve (no marker) and `interruptAfter` cannot
+ * either; a non-Chat officer would otherwise demand `exit` forever on the spent script.
+ */
+export const resumeAndStop = () =>
+  Effect.gen(function* () {
+    const session = yield* SessionV2.Service
+    const events = yield* EventV2.Service
+    const settled = yield* Stream.merge(
+      events.subscribe(SessionEvent.Step.Ended),
+      events.subscribe(SessionEvent.Step.Failed),
+    ).pipe(
+      Stream.filter((event) => event.data.sessionID === HARNESS_SESSION),
+      Stream.take(1),
+      Stream.runHead,
+      Effect.forkScoped,
+    )
+    const running = yield* session.resume(HARNESS_SESSION).pipe(Effect.forkChild)
+    yield* Fiber.join(settled)
+    yield* session.interrupt(HARNESS_SESSION)
+    yield* Fiber.await(running)
+  })
+
+/**
  * Seed the session, run `body` against the harness graph, and bound the whole thing against a hang.
  *
  * ⚠️ **Every ported case goes through this.** The bound is the half of S2's ruling that survived

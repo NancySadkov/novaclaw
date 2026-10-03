@@ -4,7 +4,7 @@ import { AgentV2 } from "@novaclaw/core/agent"
 import { AgentModelFit } from "@novaclaw/core/agent/model-fit"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, resumeUntil } from "./fixture/runner-harness"
 
 /**
  * THE FIT NOTICE IS ACTUALLY DELIVERED — the half a pure test cannot reach.
@@ -57,7 +57,7 @@ describe("SessionRunnerLLM — role/model fit", () => {
           prompt: Prompt.make({ text: "Take on the quarterly close" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Working on it")
         return yield* session.context(HARNESS_SESSION)
       }),
       "fit — a colleague beneath its class is told",
@@ -85,7 +85,7 @@ describe("SessionRunnerLLM — role/model fit", () => {
           prompt: Prompt.make({ text: "Take on the quarterly close" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Working on it")
         return yield* session.context(HARNESS_SESSION)
       }),
       "fit — no class declared, no notice",
@@ -110,7 +110,7 @@ describe("SessionRunnerLLM — role/model fit", () => {
           prompt: Prompt.make({ text: "Take on the quarterly close" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Working on it")
         return yield* session.context(HARNESS_SESSION)
       }),
       "fit — unresolved class says nothing",

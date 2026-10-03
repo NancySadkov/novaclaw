@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import { LLMEvent } from "@novaclaw/llm"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, resumeUntil } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — reasoning that has to SURVIVE, not merely render.
@@ -59,13 +59,13 @@ describe("SessionRunnerLLM — reasoning round trip", () => {
           prompt: Prompt.make({ text: "Think first" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Done")
         // Durable, not merely live — rebuild from events before asserting.
         yield* harness.replayProjection(HARNESS_SESSION)
         const context = yield* session.context(HARNESS_SESSION)
 
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Continue" }), resume: false })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Continued")
         return context
       }),
       "claim — reasoning metadata survives to the next request",

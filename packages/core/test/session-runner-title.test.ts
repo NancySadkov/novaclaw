@@ -7,7 +7,7 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionMaintenance } from "@novaclaw/core/session/runner/maintenance"
 import { SessionTable } from "@novaclaw/core/session/sql"
-import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, exitTurn, makeLatch, makeRunnerHarness } from "./fixture/runner-harness"
 import { runBounded } from "./fixture/bounded"
 
 /**
@@ -60,7 +60,11 @@ describe("SessionRunnerLLM — auto-title", () => {
     // Without that flag the model would restart its thinking and could overrun again — the controller
     // would be a retry loop wearing a budget's name.
     const harness = makeRunnerHarness({
-      turns: [completeTurn("answer", "I found the parser issue.")],
+      // The drain must SETTLE for post-drain maintenance to title the session, and a non-Chat officer
+      // settles by calling `exit` — so the officer's exit turn is scripted (and counted below).
+      withExitTool: true,
+      turns: [completeTurn("answer", "I found the parser issue."), exitTurn("done")],
+      utilityTurns: [completeTurn("audit", "YES")],
       titleTurns: [
         // The first utility call gets stuck reasoning and produces no title.
         [LLMEvent.reasoningDelta({ id: "title-reasoning", text: "r".repeat(1_000) })],
@@ -102,13 +106,16 @@ describe("SessionRunnerLLM — auto-title", () => {
       harness.titleRequests[1]?.http?.body?.["continue_final_message"],
       "the second call CONTINUES the first — otherwise the controller is just a retry loop",
     ).toBe(true)
-    // And the title work stayed out of the interactive log.
-    expect(harness.requests).toHaveLength(1)
+    // And the title work stayed out of the interactive log: the interactive requests are the answer
+    // and the officer's `exit`, nothing from the title probe.
+    expect(harness.requests).toHaveLength(2)
   })
 
   test("drain-end maintenance joins an early title already in flight before worker disposal", async () => {
     const harness = makeRunnerHarness({
-      turns: [completeTurn("answer", "Recovered the provider stream.")],
+      withExitTool: true,
+      turns: [completeTurn("answer", "Recovered the provider stream."), exitTurn("done")],
+      utilityTurns: [completeTurn("audit", "YES")],
       // The setup drain establishes a real projected user turn but deliberately leaves the default
       // title in place. The second response belongs to the overlap under test.
       titleTurns: [completeTurn("setup-title", "Setup title"), completeTurn("early-title", "Recovered stream work")],

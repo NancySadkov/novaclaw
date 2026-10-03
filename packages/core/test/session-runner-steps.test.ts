@@ -4,7 +4,7 @@ import { LLMEvent } from "@novaclaw/llm"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, interruptAfter, makeLatch, makeRunnerHarness, resumeUntil } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — the agent's configured step allowance.
@@ -47,7 +47,7 @@ describe("SessionRunnerLLM — step allowance", () => {
           prompt: Prompt.make({ text: "Finish at the limit" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Finished at the limit")
       }),
       "claim — the final step forces a text response",
     )
@@ -123,7 +123,11 @@ describe("SessionRunnerLLM — step allowance", () => {
           delivery: "steer",
         })
         streamGate.open()
-        yield* Fiber.join(run)
+        // A step-limited officer cannot call `exit` on the forced text turn (tools are withdrawn), so
+        // the drive would demand it forever — stop at the turn this claim asserts instead of joining a
+        // drain that never settles.
+        yield* interruptAfter("Finished")
+        yield* Fiber.await(run)
       }),
       "claim — a steer resets the step allowance",
     )

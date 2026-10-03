@@ -8,7 +8,7 @@ import { EventTable } from "@novaclaw/core/event/sql"
 import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionRunner } from "@novaclaw/core/session/runner"
-import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness, resumeUntil } from "./fixture/runner-harness"
 import { fragmentFixture, fragmentID, fragmentKinds, type FragmentKind } from "./fixture/fragments"
 
 /**
@@ -53,7 +53,10 @@ describe("SessionRunnerLLM — streamed fragments", () => {
             .pipe(Stream.take(32), Stream.runCollect, Effect.forkScoped)
           yield* Effect.yieldNow
 
-          yield* session.resume(HARNESS_SESSION)
+          // A `text` fragment settles on its own reply; `reasoning` (no text) and `tool input` both
+          // draw the follow-up turn, whose reply is the marker. Either way the officer's drive would
+          // demand `exit` after it, so stop at the turn the claim is about.
+          yield* resumeUntil(kind === "text" ? chunks[0]! : "Done")
 
           const { db } = yield* Database.Service
           const deltaRows = yield* db

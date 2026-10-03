@@ -21,7 +21,13 @@ test("routine provider recovery is ONE folded nudge, not a synthetic notice plus
   expect(end).toBeGreaterThan(start)
   const recovery = source.slice(start, end)
 
-  expect(recovery).toContain('SessionInput.steer(db, events, input.sessionID, "Session restarted. Recover and proceed.")')
+  // ⚠️ Re-pinned 2026-10-03. The restart notice is no longer a raw `SessionInput.steer`: since the
+  // editable-nudge seam (`10b5c3a80`) the branch delivers EXACTLY ONE `session-restarted` nudge and
+  // the wording lives in `nudge-definition.ts`. Assert the seam, not the old call — and collapse
+  // whitespace, because an exact-line match is a second way this ratchet goes red over nothing.
+  const collapsed = recovery.replace(/\s+/g, " ")
+  expect(collapsed).toContain('type: "session-restarted"')
+  expect(recovery.match(/deliverNudges\(/g) ?? [], "exactly one nudge is delivered").toHaveLength(1)
   // One nudge means no second, transcript-shaped copy of the same event.
   expect(recovery).not.toContain("SessionEvent.Synthetic")
   expect(recovery).not.toContain("Recovery resumed this work")

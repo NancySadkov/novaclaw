@@ -6,7 +6,7 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { ApplicationTools } from "@novaclaw/core/tool/application-tools"
 import { Tool } from "@novaclaw/core/tool/tool"
-import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, interruptAfter, makeLatch, makeRunnerHarness, resumeUntil } from "./fixture/runner-harness"
 
 /**
  * PORTED CLAIMS — tools the runner did not register itself.
@@ -61,7 +61,7 @@ describe("SessionRunnerLLM — application tools", () => {
           prompt: Prompt.make({ text: "Use application context" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Done")
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — globally attached application tool",
@@ -162,7 +162,7 @@ describe("SessionRunnerLLM — local tool execution", () => {
             ),
           ),
         ),
-        [],
+        completeTurn("t2", "Done"),
       ],
     })
     harness.controls.toolsReady = 5
@@ -184,10 +184,13 @@ describe("SessionRunnerLLM — local tool execution", () => {
         yield* Effect.promise(() => toolsStarted.promise)
         const observed = yield* session.context(HARNESS_SESSION)
 
-        // Let the tools settle, then let the provider finish the turn.
+        // Let the tools settle, then let the provider finish the turn. A non-Chat officer's drive then
+        // demands `exit`, so stop at the scripted continuation instead of joining a drain that never
+        // settles.
         toolGate.open()
         providerGate.open()
-        yield* Fiber.join(run)
+        yield* interruptAfter("Done")
+        yield* Fiber.await(run)
         return observed
       }),
       "claim — local tools start eagerly",
@@ -241,7 +244,7 @@ describe("SessionRunnerLLM — local tool execution", () => {
       Effect.gen(function* () {
         const session = yield* SessionV2.Service
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Echo this" }), resume: false })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Done")
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — continuation reloads settled tool history",
@@ -311,7 +314,7 @@ describe("SessionRunnerLLM — local tool execution", () => {
           prompt: Prompt.make({ text: "Call missing" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Recovered")
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — an unknown tool settles as an error and the turn continues",
@@ -350,7 +353,7 @@ describe("SessionRunnerLLM — local tool execution", () => {
           prompt: Prompt.make({ text: "Call defect" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Recovered")
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — a tool defect is returned to the model",
@@ -415,7 +418,7 @@ describe("SessionRunnerLLM — local tool execution", () => {
           prompt: Prompt.make({ text: "Echo twice" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Done")
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — repeated call ids settle per assistant message",

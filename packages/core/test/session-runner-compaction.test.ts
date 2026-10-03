@@ -13,7 +13,7 @@ import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionComponentRegistry } from "@novaclaw/core/session/component-registry"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { Token } from "../src/util/token"
-import { HARNESS_SESSION, completeTurn, drive, makeLatch, makeRunnerHarness, userTexts } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, exitTurn, makeLatch, makeRunnerHarness, resumeUntil, userTexts } from "./fixture/runner-harness"
 import { fragmentFixture } from "./fixture/fragments"
 
 /**
@@ -96,13 +96,20 @@ describe("SessionRunnerLLM — compaction", () => {
         const events = yield* EventV2.Service
         const store = yield* SessionStore.Service
 
-        for (const text of ["First question ", "Second question ", "Third question "]) {
+        // ⚠️ A non-Chat officer settles by CALLING `exit`, and this claim's provider-request count must
+        // stay exact — so the drain is observed and interrupted at the marked reply (`resumeUntil`)
+        // rather than allowed to run on into the exit demand. See `runner-harness.ts`'s drive note.
+        for (const [text, marker] of [
+          ["First question ", "First answer"],
+          ["Second question ", "Second answer"],
+          ["Third question ", "Third answer"],
+        ] as const) {
           yield* session.prompt({
             sessionID: HARNESS_SESSION,
             prompt: Prompt.make({ text: text.repeat(180) }),
             resume: false,
           })
-          yield* session.resume(HARNESS_SESSION)
+          yield* resumeUntil(marker)
         }
 
         // ⚠️ The listener does the MINIMUM: capture a reference, open a latch. Real work in an event
@@ -146,7 +153,7 @@ describe("SessionRunnerLLM — compaction", () => {
           prompt: Prompt.make({ text: "Continue after manual compaction" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Continued after manual compaction")
         const afterRequests = [...harness.requests]
 
         return { contextAfterCompact, manualRequests, afterRequests }
@@ -199,13 +206,16 @@ describe("SessionRunnerLLM — compaction", () => {
 
         // TWO priming exchanges, for the reason at the top of this file: with only one, the retained
         // window lands after message 0 and `head` comes back empty, so nothing compacts.
-        for (const text of ["Earlier question ", "Second question "]) {
+        for (const [text, marker] of [
+          ["Earlier question ", "Earlier answer"],
+          ["Second question ", "Second answer"],
+        ] as const) {
           yield* session.prompt({
             sessionID: HARNESS_SESSION,
             prompt: Prompt.make({ text: text.repeat(180) }),
             resume: false,
           })
-          yield* session.resume(HARNESS_SESSION)
+          yield* resumeUntil(marker)
         }
 
         harness.controls.currentModel = harness.makeModel("compact", { context: 4_000, output: 50 })
@@ -215,7 +225,7 @@ describe("SessionRunnerLLM — compaction", () => {
           prompt: Prompt.make({ text: "Recent exact request ".repeat(180) }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Continued")
         const firstRound = [...harness.requests]
         const contextAfterFirst = yield* store.context(HARNESS_SESSION)
 
@@ -225,7 +235,7 @@ describe("SessionRunnerLLM — compaction", () => {
           prompt: Prompt.make({ text: "Newest exact request ".repeat(180) }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Continued again")
         const secondRound = [...harness.requests]
         const contextAfterSecond = yield* store.context(HARNESS_SESSION)
 
@@ -278,13 +288,16 @@ const primeForOverflow = Effect.fn("primeForOverflow")(function* (harness: Retur
   // TWO exchanges — see fault ① at the top of this file. One leaves [user, assistant, user], the
   // boundary walk drives recentStart to 0, head is empty, and the overflow recovery has nothing to
   // summarise, so it silently does not recover at all.
-  for (const text of ["Earlier question ", "Second question "]) {
+  for (const [text, marker] of [
+    ["Earlier question ", "Earlier answer"],
+    ["Second question ", "Second answer"],
+  ] as const) {
     yield* session.prompt({
       sessionID: HARNESS_SESSION,
       prompt: Prompt.make({ text: text.repeat(350) }),
       resume: false,
     })
-    yield* session.resume(HARNESS_SESSION)
+    yield* resumeUntil(marker)
   }
   harness.controls.currentModel = harness.makeModel("recovery", { context: 20_000, output: 1_000 })
   harness.requests.length = 0
@@ -306,7 +319,7 @@ describe("SessionRunnerLLM — overflow recovery", () => {
       Effect.gen(function* () {
         const session = yield* SessionV2.Service
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: dense }), resume: false })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Ready to continue.")
         return yield* session.context(HARNESS_SESSION)
       }),
       "a dense first request recovers",
@@ -341,13 +354,16 @@ describe("SessionRunnerLLM — overflow recovery", () => {
       Effect.gen(function* () {
         const session = yield* SessionV2.Service
         const store = yield* SessionStore.Service
-        for (const text of ["Earlier question ", "Second question "]) {
+        for (const [text, marker] of [
+          ["Earlier question ", "Earlier answer"],
+          ["Second question ", "Second answer"],
+        ] as const) {
           yield* session.prompt({
             sessionID: HARNESS_SESSION,
             prompt: Prompt.make({ text: text.repeat(180) }),
             resume: false,
           })
-          yield* session.resume(HARNESS_SESSION)
+          yield* resumeUntil(marker)
         }
         harness.controls.currentModel = harness.makeModel("compact", { context: 4_000, output: 50 })
         yield* session.prompt({
@@ -355,7 +371,7 @@ describe("SessionRunnerLLM — overflow recovery", () => {
           prompt: Prompt.make({ text: "Recent exact request ".repeat(180) }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Continued")
         return yield* store.context(HARNESS_SESSION)
       }),
       "claim — a truncated summary is marked without a retry",
@@ -398,13 +414,16 @@ describe("SessionRunnerLLM — overflow recovery", () => {
       Effect.gen(function* () {
         const session = yield* SessionV2.Service
         const store = yield* SessionStore.Service
-        for (const text of ["Earlier question ", "Second question "]) {
+        for (const [text, marker] of [
+          ["Earlier question ", "Earlier answer"],
+          ["Second question ", "Second answer"],
+        ] as const) {
           yield* session.prompt({
             sessionID: HARNESS_SESSION,
             prompt: Prompt.make({ text: text.repeat(180) }),
             resume: false,
           })
-          yield* session.resume(HARNESS_SESSION)
+          yield* resumeUntil(marker)
         }
         harness.controls.currentModel = harness.makeModel("compact", { context: 4_000, output: 50 })
         yield* session.prompt({
@@ -412,7 +431,7 @@ describe("SessionRunnerLLM — overflow recovery", () => {
           prompt: Prompt.make({ text: "Recent exact request ".repeat(180) }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Continued")
         return yield* store.context(HARNESS_SESSION)
       }),
       "claim — a truncated summary is marked via step-finish too",
@@ -460,13 +479,16 @@ describe("SessionRunnerLLM — overflow recovery", () => {
       Effect.gen(function* () {
         const session = yield* SessionV2.Service
         const store = yield* SessionStore.Service
-        for (const text of ["Earlier question ", "Second question "]) {
+        for (const [text, marker] of [
+          ["Earlier question ", "Earlier answer"],
+          ["Second question ", "Second answer"],
+        ] as const) {
           yield* session.prompt({
             sessionID: HARNESS_SESSION,
             prompt: Prompt.make({ text: text.repeat(180) }),
             resume: false,
           })
-          yield* session.resume(HARNESS_SESSION)
+          yield* resumeUntil(marker)
         }
         harness.controls.currentModel = harness.makeModel("compact", { context: 4_000, output: 50 })
         yield* session.prompt({
@@ -474,7 +496,7 @@ describe("SessionRunnerLLM — overflow recovery", () => {
           prompt: Prompt.make({ text: "Recent exact request ".repeat(180) }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Continued")
         return yield* store.context(HARNESS_SESSION)
       }),
       "claim — a failed continuation cannot persist a partial summary",
@@ -516,7 +538,7 @@ describe("SessionRunnerLLM — overflow recovery", () => {
           value: { name: "Recovery", value: "OVERFLOW_MEMO" },
         })
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Continue" }), resume: false })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Recovered")
         const context = yield* session.context(HARNESS_SESSION)
         yield* harness.replayProjection(HARNESS_SESSION)
         return { context, replayed: yield* session.context(HARNESS_SESSION) }
@@ -547,13 +569,19 @@ describe("SessionRunnerLLM — overflow recovery", () => {
     // reach the user — a second compaction would be the runner grinding against a limit it has already
     // failed to satisfy, on the user's time and tokens.
     const harness = makeRunnerHarness({
+      withExitTool: true,
       turns: [
         fragmentFixture("text", "text-earlier", ["Earlier answer"]).completeEvents,
         fragmentFixture("text", "text-second", ["Second answer"]).completeEvents,
         overflowTurn(),
         fragmentFixture("text", "text-summary", ["## Goal\n- Recover once"]).completeEvents,
         overflowTurn(),
+        // ⚠️ The retry overflows TOO, and a non-Chat officer's drive then demands `exit` forever
+        // (the harness's exhausted provider answers empty, which is retryable). Script the exit so the
+        // drain can settle into the terminal error this claim pins.
+        exitTurn("done"),
       ],
+      utilityTurns: [completeTurn("audit", "YES")],
     })
 
     const context = await drive(
@@ -567,11 +595,11 @@ describe("SessionRunnerLLM — overflow recovery", () => {
       "claim — a second overflow is not retried again",
     )
 
-    expect(harness.requests, "exactly one recovery attempt, not a loop").toHaveLength(3)
-    expect(context).toMatchObject([
-      { type: "compaction" },
-      { type: "assistant", finish: "error", error: { message: "prompt too long" } },
-    ])
+    // The recovery sequence is overflow, summary, retry-overflow — plus the `exit` the officer's drive
+    // requires before it settles. Exactly ONE recovery attempt, not a loop.
+    expect(harness.requests, "exactly one recovery attempt, not a loop").toHaveLength(4)
+    expect(context[0]).toMatchObject({ type: "compaction" })
+    expect(context[1]).toMatchObject({ type: "assistant", finish: "error", error: { message: "prompt too long" } })
   })
 
   test("recovers once from a raw context overflow failure", async () => {
@@ -599,7 +627,7 @@ describe("SessionRunnerLLM — overflow recovery", () => {
       Effect.gen(function* () {
         const session = yield* primeForOverflow(harness)
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Continue" }), resume: false })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Recovered")
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — a raw overflow failure recovers too",
@@ -631,7 +659,7 @@ describe("SessionRunnerLLM — overflow recovery", () => {
       Effect.gen(function* () {
         const session = yield* primeForOverflow(harness)
         yield* session.prompt({ sessionID: HARNESS_SESSION, prompt: Prompt.make({ text: "Continue" }), resume: false })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Recovered after the deterministic fold")
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — a failed recovery summary still folds and retries",
@@ -747,13 +775,16 @@ const driveGate = (harness: ReturnType<typeof makeRunnerHarness>, label: string)
     harness,
     Effect.gen(function* () {
       const session = yield* SessionV2.Service
-      for (const tokens of [GATE_TURN_ONE_TOKENS, GATE_TURN_TWO_TOKENS]) {
+      for (const [tokens, marker] of [
+        [GATE_TURN_ONE_TOKENS, "First answer"],
+        [GATE_TURN_TWO_TOKENS, "Second answer"],
+      ] as const) {
         yield* session.prompt({
           sessionID: HARNESS_SESSION,
           prompt: Prompt.make({ text: sized(tokens) }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil(marker)
       }
       return yield* session.context(HARNESS_SESSION)
     }),

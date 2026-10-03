@@ -5,7 +5,7 @@ import { ProviderV2 } from "@novaclaw/core/provider"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, resumeUntil } from "./fixture/runner-harness"
 
 /**
  * **A PRE-TURN failure must be SPOKEN, not merely logged.**
@@ -87,7 +87,7 @@ describe("SessionRunnerLLM — pre-turn failures are spoken in the chat", () => 
           prompt: Prompt.make({ text: "Answer me" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Here is your answer.")
         return yield* session.context(HARNESS_SESSION)
       }),
       "control — a healthy turn is silent",

@@ -1,10 +1,10 @@
 import { describe, expect, test, beforeEach } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Fiber } from "effect"
 import { LLMEvent } from "@novaclaw/llm"
 import { SessionV2 } from "@novaclaw/core/session"
 import { ModelHealth } from "@novaclaw/core/session/runner/model-health"
 import { Prompt } from "@novaclaw/core/session/prompt"
-import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, resumeUntil } from "./fixture/runner-harness"
 
 /**
  * THE RECORD SITE IS LIVE — the half of the "or gives errors" fallback that a pure test cannot reach.
@@ -38,7 +38,12 @@ describe("SessionRunnerLLM — model health bookkeeping", () => {
           prompt: Prompt.make({ text: "Fail once" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        // The failed turn leaves the officer's drive demanding `exit` forever on the spent script, so
+        // wait for the record this claim is about and then stop the drain.
+        const run = yield* session.resume(HARNESS_SESSION).pipe(Effect.ignore, Effect.forkChild)
+        while (ModelHealth.failures(HARNESS_MODEL, Date.now()) === 0) yield* Effect.yieldNow
+        yield* session.interrupt(HARNESS_SESSION)
+        yield* Fiber.await(run)
       }),
       "model health — a failed turn reaches ModelHealth",
     )
@@ -57,7 +62,7 @@ describe("SessionRunnerLLM — model health bookkeeping", () => {
           prompt: Prompt.make({ text: "Answer me" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Answered")
       }),
       "model health — a working turn reaches ModelHealth",
     )
