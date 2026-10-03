@@ -2,8 +2,7 @@
   user-select: text;
   background:
     radial-gradient(ellipse at 88% -10%, #66407d30, transparent 44%),
-    radial-gradient(ellipse at 8% 58%, #7d5b2812, transparent 48%),
-    var(--v2-background-bg-base);
+    radial-gradient(ellipse at 8% 58%, #7d5b2812, transparent 48%), var(--v2-background-bg-base);
 }
 
 .debug-scroll {
@@ -128,8 +127,14 @@
   overflow: hidden;
   border: 1px solid #c9a86d26;
   border-radius: 12px;
-  background: linear-gradient(150deg, color-mix(in srgb, var(--v2-background-bg-layer-02) 94%, #653a7c), var(--v2-background-bg-base));
-  box-shadow: inset 0 1px #ffffff0b, 0 6px 24px #0804101a;
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--v2-background-bg-layer-02) 94%, #653a7c),
+    var(--v2-background-bg-base)
+  );
+  box-shadow:
+    inset 0 1px #ffffff0b,
+    0 6px 24px #0804101a;
   scroll-margin-top: 66px;
 }
 
@@ -197,7 +202,9 @@
   background: #c9a86d0c;
   font-size: 11px;
   font-weight: 600;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
 }
 
 .debug-action:hover {
@@ -280,12 +287,413 @@
   }
 }
 
+/* ── Scheduler panel ─────────────────────────────────────────────────────────────────────────────
+   Model-first, because that is the noun an operator reasons in; the device is the hardware badge
+   beside it. Everything here is read from the snapshot the panel already fetched. */
+.debug-sched {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.debug-sched-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.debug-sched-stamp {
+  margin-left: auto;
+  color: var(--v2-text-text-faint);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.debug-sched-readouts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: 8px;
+}
+
+.debug-sched-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 11px;
+  border: 1px solid #c9a86d26;
+  border-radius: 10px;
+  background: linear-gradient(150deg, #9163ad12, #c9a86d08);
+}
+
+.debug-sched-stat strong {
+  color: #e8c883;
+  font-size: 18px;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.debug-sched-stat span {
+  color: var(--v2-text-text-muted);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+}
+
+.debug-sched-section-label {
+  margin: 2px 0 0;
+  color: #d4bb85;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.debug-sched-devices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  gap: 10px;
+}
+
+.debug-sched-device {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 9px;
+  padding: 11px 12px;
+  border: 1px solid #c9a86d2e;
+  border-radius: 11px;
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--v2-background-bg-layer-02) 93%, #5f3a75),
+    var(--v2-background-bg-base)
+  );
+  box-shadow: inset 0 1px #ffffff0b;
+}
+
+.debug-sched-device-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--v2-text-text-base);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.debug-sched-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border: 1px solid #c9a86d33;
+  border-radius: 999px;
+  color: var(--v2-text-text-muted);
+  background: #c9a86d0f;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.debug-sched-chip[data-tone="local"] {
+  border-color: color-mix(in srgb, #6fb98f 45%, transparent);
+  color: #8fd3ac;
+}
+
+.debug-sched-chip[data-tone="lan"] {
+  border-color: color-mix(in srgb, #7fa6d8 45%, transparent);
+  color: #a6c4ea;
+}
+
+.debug-sched-chip[data-tone="remote"] {
+  border-color: color-mix(in srgb, #c98fd3 45%, transparent);
+  color: #dda9e6;
+}
+
+.debug-sched-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+}
+
+.debug-sched-field > span:first-child {
+  color: var(--v2-text-text-muted);
+}
+
+.debug-sched-input {
+  width: 74px;
+  min-height: 26px;
+  padding: 3px 7px;
+  border: 1px solid #c9a86d33;
+  border-radius: 6px;
+  color: var(--v2-text-text-base);
+  background: #0d081260;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  text-align: right;
+}
+
+.debug-sched-input:focus-visible {
+  border-color: #d7b36d99;
+  outline: none;
+}
+
+.debug-sched-seg {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid #c9a86d33;
+  border-radius: 7px;
+}
+
+.debug-sched-seg button {
+  padding: 3px 8px;
+  color: var(--v2-text-text-muted);
+  font-size: 10px;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.debug-sched-seg button[data-on="true"] {
+  color: #f0d79b;
+  background: #c9a86d2a;
+}
+
+.debug-sched-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
+  gap: 10px;
+}
+
+.debug-sched-group {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #c9a86d2e;
+  border-radius: 11px;
+  background: linear-gradient(
+    150deg,
+    color-mix(in srgb, var(--v2-background-bg-layer-02) 94%, #653a7c),
+    var(--v2-background-bg-base)
+  );
+  box-shadow: inset 0 1px #ffffff0b;
+}
+
+.debug-sched-group-head {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 8px;
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid #c9a86d1c;
+}
+
+.debug-sched-group-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--v2-text-text-base);
+  font-size: 13.5px;
+  font-weight: 660;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.debug-sched-group-key {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--v2-text-text-faint);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.debug-sched-group-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-left: auto;
+}
+
+.debug-sched-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  align-items: center;
+  padding: 7px 12px;
+  border-top: 1px solid #c9a86d14;
+}
+
+.debug-sched-entry:first-child {
+  border-top: 0;
+}
+
+.debug-sched-entry-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+.debug-sched-entry-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--v2-text-text-base);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.debug-sched-entry-id {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--v2-text-text-faint);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.debug-sched-state {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 9.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.debug-sched-state[data-state="interactive"] {
+  color: #f0d79b;
+  background: #c9a86d2e;
+}
+
+.debug-sched-state[data-state="batch"] {
+  color: #a6c4ea;
+  background: #7fa6d82b;
+}
+
+.debug-sched-state[data-state="maintenance"] {
+  color: #dda9e6;
+  background: #b57fc42b;
+}
+
+.debug-sched-state[data-state="waiting"],
+.debug-sched-state[data-state="waiting-maintenance"] {
+  color: #e6b06e;
+  background: #d08a3a2e;
+}
+
+.debug-sched-state[data-state="recent"] {
+  color: var(--v2-text-text-faint);
+  background: #ffffff0f;
+}
+
+.debug-sched-entry-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--v2-text-text-muted);
+  font-size: 11px;
+}
+
+.debug-sched-entry-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--v2-text-text-faint);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.debug-sched-lag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.debug-sched-lag[data-debt="true"] {
+  color: #e6b06e;
+}
+
+.debug-sched-lag-bar {
+  position: relative;
+  width: 34px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #ffffff14;
+}
+
+.debug-sched-lag-bar > i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 999px;
+  background: #8fd3ac;
+}
+
+.debug-sched-lag[data-debt="true"] .debug-sched-lag-bar > i {
+  background: #e6b06e;
+  left: auto;
+  right: 0;
+}
+
+.debug-sched-legend {
+  border: 1px solid #c9a86d1c;
+  border-radius: 10px;
+  background: #0d081220;
+}
+
+.debug-sched-legend > summary {
+  padding: 8px 12px;
+  color: var(--v2-text-text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.debug-sched-legend-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 12px;
+  padding: 0 12px 11px;
+  color: var(--v2-text-text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.debug-sched-legend-grid dt {
+  color: #dcc58c;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.debug-sched-legend-grid dd {
+  margin: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .debug-scroll {
     scroll-behavior: auto;
   }
 
   .debug-action {
+    transition: none;
+  }
+
+  .debug-sched-seg button {
     transition: none;
   }
 }

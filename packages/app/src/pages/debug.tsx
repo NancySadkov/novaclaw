@@ -14,7 +14,15 @@ import { sessionHref } from "@/utils/session-route"
 import { clearErrorLog, errorLogEntries } from "@/utils/error-log"
 import { showToast } from "@/utils/toast"
 import { schedulerSnapshot } from "@/utils/scheduler-api"
-import { groupSchedulerByModel } from "@/utils/scheduler-grouping"
+import {
+  groupSchedulerByModel,
+  INHERITED_MODEL,
+  INHERITED_MODEL_LABEL,
+  type SchedulerSessionRef,
+} from "@/utils/scheduler-grouping"
+import { type DeviceConfigEntry, type DevicePolicyChange } from "@/utils/scheduler-device-policy"
+import { SchedulerDeviceCard, SchedulerModelGroupCard } from "./debug-scheduler"
+import { useServerSync } from "@/context/server-sync"
 import { capabilities, retryCapability } from "@/utils/capability-api"
 import { loadedPlugins } from "@/utils/plugin-api"
 import { createSettledResource } from "@/utils/settled-resource"
@@ -109,6 +117,9 @@ function DebugAppPage() {
   const language = useLanguage()
   const global = useGlobal()
   const server = useServer()
+  // Device policy lives in the instance's global config, whose ONE writer is this context — so the
+  // Scheduler tab reaches the same store Settings does rather than growing a second config client.
+  const serverSync = useServerSync()
   // Models is its own app now — the Debug `ps` row links to `/models`, not a Settings tab.
   const navigate = useNavigate()
   const showModels = () => navigate("/models")
@@ -305,17 +316,95 @@ function DebugAppPage() {
   // The panel speaks in MODELS, not endpoints. A device key is an ingress — an API provider — and
   // one provider can serve several models, so the raw snapshot answers "who is on this box" but
   // never "which model is packing onto it". The join lives in `scheduler-grouping.ts` (pure, tested);
-  // here we only supply the roster's per-session model label.
-  const schedulerModelLabel = createMemo(() => {
-    const labels = new Map<string, string>()
+  // here we supply each roster session's model key AND the model's catalogue name, because the raw
+  // `providerID/modelID` reads as another provider string and is not the noun a person uses.
+  //
+  // ⚠️ A session record pins a model only when the user picked one; an inheriting session resolves
+  // one per turn and its row says so, so it gets its own honest group rather than being folded into
+  // "unknown" (which is reserved for an id the roster does not hold at all).
+  const schedulerSessionIndex = createMemo(() => {
+    const index = new Map<string, SchedulerSessionRef>()
+    const providers = serverSync().data.config.providers ?? {}
     for (const row of sessions()) {
-      if (row.model !== undefined) labels.set(row.id, `${row.model.providerID}/${row.model.id}`)
+      const ref = row.model
+      index.set(
+        row.id,
+        ref === undefined
+          ? {
+              modelKey: INHERITED_MODEL,
+              label: INHERITED_MODEL_LABEL,
+              title: row.title,
+              agent: row.agent,
+              href: row.href,
+            }
+          : {
+              modelKey: `${ref.providerID}/${ref.id}`,
+              label: providers[ref.providerID]?.models?.[ref.id]?.name ?? `${ref.providerID}/${ref.id}`,
+              title: row.title,
+              agent: row.agent,
+              href: row.href,
+            },
+      )
     }
-    return labels
+    return index
   })
   const schedulerModelGroups = createMemo(() =>
-    groupSchedulerByModel(scheduler() ?? [], (id) => schedulerModelLabel().get(id)),
+    groupSchedulerByModel(scheduler() ?? [], (id) => schedulerSessionIndex().get(id)),
   )
+
+  const schedulerTotals = createMemo(() => {
+    const devices = scheduler() ?? []
+    const totals = { devices: devices.length, inFlight: 0, waiting: 0, maintenance: 0, recent: 0, slots: 0 }
+    for (const device of devices) {
+      totals.inFlight += device.inFlightInteractive.length + device.inFlightBatch.length
+      totals.maintenance += (device.inFlightMaintenance ?? []).length
+      totals.waiting += device.waiting.length + (device.waitingMaintenance ?? []).length
+      totals.recent += device.ledger.length
+      totals.slots += device.concurrency ?? 0
+    }
+    return totals
+  })
+
+  // Auto-refresh so a policy change is visible in the queue it moves. It reads the same snapshot
+  // resource the manual Refresh does; the timer only advances the tick.
+  const [schedulerAuto, setSchedulerAuto] = createSignal(true)
+  const [schedulerReadAt, setSchedulerReadAt] = createSignal<number | undefined>(undefined)
+  createEffect(
+    on(scheduler, (value) => {
+      if (value !== undefined) setSchedulerReadAt(Date.now())
+    }),
+  )
+  onMount(() => {
+    const timer = setInterval(() => {
+      if (schedulerAuto()) setSchedTick((value) => value + 1)
+    }, 5_000)
+    onCleanup(() => clearInterval(timer))
+  })
+
+  const deviceConfigs = () =>
+    (serverSync().data.config as { devices?: Record<string, DeviceConfigEntry> }).devices ?? {}
+  const [savingDevice, setSavingDevice] = createSignal<string | undefined>(undefined)
+  const applyDevicePolicy = async (change: DevicePolicyChange, deviceKey: string) => {
+    setSavingDevice(deviceKey)
+    try {
+      await serverSync().updateConfig({ devices: { [change.deviceID]: change.entry } } as never)
+      if (change.clear.length > 0) {
+        await serverSync().removeConfig(change.clear.map((field) => ["devices", change.deviceID, field]))
+      }
+      setSchedTick((value) => value + 1)
+      showToast({
+        title: change.created ? `Declared device ${change.deviceID}` : `Updated device ${change.deviceID}`,
+      })
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: "Could not update device policy",
+        description: formatServerError(error, language.t),
+      })
+    } finally {
+      setSavingDevice(undefined)
+    }
+  }
 
   // The process fleet behind the Memory tab. Another SERVER read (the worker registry lives in the
   // instance, not the client store), refreshed on demand like the scheduler snapshot.
@@ -600,8 +689,7 @@ function DebugAppPage() {
   const heading = "debug-panel-heading"
   const title = "debug-panel-title"
   const hint = "debug-panel-hint"
-  const btn =
-    "debug-action disabled:pointer-events-none disabled:opacity-40"
+  const btn = "debug-action disabled:pointer-events-none disabled:opacity-40"
 
   return (
     <AppPage class="debug-page flex flex-col overflow-hidden select-text">
@@ -612,9 +700,18 @@ function DebugAppPage() {
           <p>Live state, recent faults, and recovery controls for this instance.</p>
         </div>
         <div class="debug-readouts" aria-label="Instance overview">
-          <div><strong>{servers().length}</strong><span>servers</span></div>
-          <div><strong>{sessions().length}</strong><span>sessions</span></div>
-          <div><strong>{errorLogEntries().length}</strong><span>client events</span></div>
+          <div>
+            <strong>{servers().length}</strong>
+            <span>servers</span>
+          </div>
+          <div>
+            <strong>{sessions().length}</strong>
+            <span>sessions</span>
+          </div>
+          <div>
+            <strong>{errorLogEntries().length}</strong>
+            <span>client events</span>
+          </div>
         </div>
       </div>
       <KobalteTabs
@@ -670,838 +767,918 @@ function DebugAppPage() {
           data-active-tab={activeTab()}
           class="debug-panels min-h-0 min-w-0 flex-1 overflow-y-auto px-3 py-3 sm:px-4 md:px-5 md:py-4"
         >
-        {/* ── Connection ─────────────────────────────────────────────────────────────── */}
-        <div class={section} id="debug-connections" data-debug-tab="overview">
-          <div class={heading}>
-            <span class={title}>{language.t("debug.page.connection")}</span>
-            <span class={hint}>{language.t("debug.page.sseStreamStatusPerConfiguredServer")}</span>
-          </div>
-          <div class="px-4 pb-3">
-            <Show when={servers().length > 0} fallback={<div class={hint}>no servers configured</div>}>
-              <For each={servers()}>
-                {(conn) => {
-                  const ctx = global.ensureServerCtx(conn)
-                  return (
-                    <div class="flex items-center gap-3 py-1 text-[12px]">
-                      <span class={`w-24 shrink-0 font-medium ${STATUS_TONE[ctx.sdk.streamStatus()]}`}>
-                        {ctx.sdk.streamStatus()}
-                      </span>
-                      <span class="truncate font-mono text-v2-text-text-muted">{conn.http.url}</span>
-                      <Show when={focused() === conn}>
-                        <span class={hint}>(active)</span>
-                      </Show>
-                    </div>
-                  )
-                }}
-              </For>
-            </Show>
-          </div>
-        </div>
-
-        {/* ── Optional capabilities ─────────────────────────────────────────────────── */}
-        <div class={section} id="debug-capabilities" data-panel="capabilities" data-debug-tab="capabilities">
-          <div class={heading}>
-            <span class={title}>{language.t("debug.page.optionalCapabilities")}</span>
-            <span class={hint}>live state — looking here does not start anything</span>
-            <button class={`${btn} ml-auto`} onClick={() => setCapabilityTick((value) => value + 1)}>
-              {language.t("debug.page.refresh")}
-            </button>
-          </div>
-          <div class="px-4 pb-3">
-            <Show
-              when={capabilityList()}
-              fallback={
-                <div class={hint}>
-                  {capabilityList.loading ? "checking…" : "unavailable (older server, or no instance connected)"}
-                </div>
-              }
-            >
-              {(items) => (
-                <Show when={items().length > 0} fallback={<div class={hint}>no optional capabilities declared</div>}>
-                  <For each={items()}>
-                    {(item) => (
-                      <div class="border-t border-v2-border-border-base py-2 first:border-t-0 first:pt-0">
-                        <div class="flex items-center gap-2 text-[12px]">
-                          <span class="font-mono font-medium text-v2-text-text-base">{item.name}</span>
-                          <span
-                            classList={{
-                              "text-v2-state-fg-success": item.status.state === "ready",
-                              "text-v2-state-fg-warning": item.status.state === "starting",
-                              "text-v2-state-fg-danger": item.status.state === "unavailable",
-                              "text-v2-text-text-faint": item.status.state === "idle",
-                            }}
-                          >
-                            {item.status.state === "idle" ? "not used yet" : item.status.state}
-                          </span>
-                          <Show when={item.status.state === "unavailable"}>
-                            <button
-                              type="button"
-                              class={`${btn} ml-auto`}
-                              onClick={() => void retryUnavailableCapability(item.name)}
-                            >
-                              {language.t("debug.page.tryAgain")}
-                            </button>
-                          </Show>
-                        </div>
-                        <Show when={item.status.state === "unavailable" && item.status}>
-                          {(status) => {
-                            const unavailable = status() as Extract<typeof item.status, { state: "unavailable" }>
-                            return (
-                              <div class="mt-0.5 text-[11px] text-v2-text-text-muted">
-                                <div>{unavailable.reason.summary}</div>
-                                <Show when={unavailable.reason.repair?.length}>
-                                  <div class={hint}>repairable settings: {unavailable.reason.repair?.join(", ")}</div>
-                                </Show>
-                                <details class="mt-1">
-                                  <summary class="cursor-pointer text-v2-text-text-faint">
-                                    {language.t("debug.page.technicalDetail")}
-                                  </summary>
-                                  <pre class="mt-1 whitespace-pre-wrap break-all font-mono text-v2-text-text-faint">
-                                    {unavailable.reason.detail ?? "No additional detail."}
-                                  </pre>
-                                </details>
-                              </div>
-                            )
-                          }}
+          {/* ── Connection ─────────────────────────────────────────────────────────────── */}
+          <div class={section} id="debug-connections" data-debug-tab="overview">
+            <div class={heading}>
+              <span class={title}>{language.t("debug.page.connection")}</span>
+              <span class={hint}>{language.t("debug.page.sseStreamStatusPerConfiguredServer")}</span>
+            </div>
+            <div class="px-4 pb-3">
+              <Show when={servers().length > 0} fallback={<div class={hint}>no servers configured</div>}>
+                <For each={servers()}>
+                  {(conn) => {
+                    const ctx = global.ensureServerCtx(conn)
+                    return (
+                      <div class="flex items-center gap-3 py-1 text-[12px]">
+                        <span class={`w-24 shrink-0 font-medium ${STATUS_TONE[ctx.sdk.streamStatus()]}`}>
+                          {ctx.sdk.streamStatus()}
+                        </span>
+                        <span class="truncate font-mono text-v2-text-text-muted">{conn.http.url}</span>
+                        <Show when={focused() === conn}>
+                          <span class={hint}>(active)</span>
                         </Show>
                       </div>
-                    )}
-                  </For>
-                </Show>
-              )}
-            </Show>
+                    )
+                  }}
+                </For>
+              </Show>
+            </div>
           </div>
-        </div>
 
-        {/* ── Scheduler ──────────────────────────────────────────────────────────────── */}
-        <div class={section} data-panel="plugins" data-debug-tab="capabilities">
-          <div class={heading}>
-            <span class={title}>Loaded plugins</span>
-            <span class={hint}>what each one DECLARES it needs — a claim, not a granted permission</span>
-          </div>
-          <div class="px-4 pb-3">
-            <Show
-              when={pluginList()}
-              fallback={
-                <div class={hint}>
-                  {pluginList.loading
-                    ? "checking…"
-                    : pluginList.failed
-                      ? "could not be read — this is NOT the same as no plugins being loaded"
-                      : "no instance connected"}
-                </div>
-              }
-            >
-              {(items) => (
-                <Show when={items().length > 0} fallback={<div class={hint}>no plugins loaded</div>}>
-                  <For each={items()}>
-                    {(item) => (
-                      <div class="border-t border-v2-border-border-base py-2 first:border-t-0 first:pt-0">
-                        <div class="flex items-center gap-2 text-[12px]">
-                          <span class="font-mono font-medium text-v2-text-text-base">{item.id}</span>
-                          <span
-                            classList={{
-                              "text-v2-state-fg-warning": item.source === "external",
-                              "text-v2-text-text-faint": item.source === "internal",
+          {/* ── Optional capabilities ─────────────────────────────────────────────────── */}
+          <div class={section} id="debug-capabilities" data-panel="capabilities" data-debug-tab="capabilities">
+            <div class={heading}>
+              <span class={title}>{language.t("debug.page.optionalCapabilities")}</span>
+              <span class={hint}>live state — looking here does not start anything</span>
+              <button class={`${btn} ml-auto`} onClick={() => setCapabilityTick((value) => value + 1)}>
+                {language.t("debug.page.refresh")}
+              </button>
+            </div>
+            <div class="px-4 pb-3">
+              <Show
+                when={capabilityList()}
+                fallback={
+                  <div class={hint}>
+                    {capabilityList.loading ? "checking…" : "unavailable (older server, or no instance connected)"}
+                  </div>
+                }
+              >
+                {(items) => (
+                  <Show when={items().length > 0} fallback={<div class={hint}>no optional capabilities declared</div>}>
+                    <For each={items()}>
+                      {(item) => (
+                        <div class="border-t border-v2-border-border-base py-2 first:border-t-0 first:pt-0">
+                          <div class="flex items-center gap-2 text-[12px]">
+                            <span class="font-mono font-medium text-v2-text-text-base">{item.name}</span>
+                            <span
+                              classList={{
+                                "text-v2-state-fg-success": item.status.state === "ready",
+                                "text-v2-state-fg-warning": item.status.state === "starting",
+                                "text-v2-state-fg-danger": item.status.state === "unavailable",
+                                "text-v2-text-text-faint": item.status.state === "idle",
+                              }}
+                            >
+                              {item.status.state === "idle" ? "not used yet" : item.status.state}
+                            </span>
+                            <Show when={item.status.state === "unavailable"}>
+                              <button
+                                type="button"
+                                class={`${btn} ml-auto`}
+                                onClick={() => void retryUnavailableCapability(item.name)}
+                              >
+                                {language.t("debug.page.tryAgain")}
+                              </button>
+                            </Show>
+                          </div>
+                          <Show when={item.status.state === "unavailable" && item.status}>
+                            {(status) => {
+                              const unavailable = status() as Extract<typeof item.status, { state: "unavailable" }>
+                              return (
+                                <div class="mt-0.5 text-[11px] text-v2-text-text-muted">
+                                  <div>{unavailable.reason.summary}</div>
+                                  <Show when={unavailable.reason.repair?.length}>
+                                    <div class={hint}>repairable settings: {unavailable.reason.repair?.join(", ")}</div>
+                                  </Show>
+                                  <details class="mt-1">
+                                    <summary class="cursor-pointer text-v2-text-text-faint">
+                                      {language.t("debug.page.technicalDetail")}
+                                    </summary>
+                                    <pre class="mt-1 whitespace-pre-wrap break-all font-mono text-v2-text-text-faint">
+                                      {unavailable.reason.detail ?? "No additional detail."}
+                                    </pre>
+                                  </details>
+                                </div>
+                              )
                             }}
-                          >
-                            {item.source === "external" ? "third-party" : "built in"}
-                          </span>
+                          </Show>
                         </div>
-                        <div class={`${hint} mt-0.5 font-mono`}>
-                          {/* Three DISTINCT states, never collapsed: an external plugin that declared
+                      )}
+                    </For>
+                  </Show>
+                )}
+              </Show>
+            </div>
+          </div>
+
+          {/* ── Loaded plugins (capabilities) ─────────────────────────────────────────── */}
+          <div class={section} data-panel="plugins" data-debug-tab="capabilities">
+            <div class={heading}>
+              <span class={title}>Loaded plugins</span>
+              <span class={hint}>what each one DECLARES it needs — a claim, not a granted permission</span>
+            </div>
+            <div class="px-4 pb-3">
+              <Show
+                when={pluginList()}
+                fallback={
+                  <div class={hint}>
+                    {pluginList.loading
+                      ? "checking…"
+                      : pluginList.failed
+                        ? "could not be read — this is NOT the same as no plugins being loaded"
+                        : "no instance connected"}
+                  </div>
+                }
+              >
+                {(items) => (
+                  <Show when={items().length > 0} fallback={<div class={hint}>no plugins loaded</div>}>
+                    <For each={items()}>
+                      {(item) => (
+                        <div class="border-t border-v2-border-border-base py-2 first:border-t-0 first:pt-0">
+                          <div class="flex items-center gap-2 text-[12px]">
+                            <span class="font-mono font-medium text-v2-text-text-base">{item.id}</span>
+                            <span
+                              classList={{
+                                "text-v2-state-fg-warning": item.source === "external",
+                                "text-v2-text-text-faint": item.source === "internal",
+                              }}
+                            >
+                              {item.source === "external" ? "third-party" : "built in"}
+                            </span>
+                          </div>
+                          <div class={`${hint} mt-0.5 font-mono`}>
+                            {/* Three DISTINCT states, never collapsed: an external plugin that declared
                               nothing is not the same as one that declared it needs nothing, and a
                               built-in's declaration is checked against its source by a core guard
                               while an external one is only ever a claim. */}
-                          {item.capabilities === undefined
-                            ? "declared nothing"
-                            : item.capabilities.length === 0
-                              ? "declares it needs nothing"
-                              : item.capabilities.join(", ")}
+                            {item.capabilities === undefined
+                              ? "declared nothing"
+                              : item.capabilities.length === 0
+                                ? "declares it needs nothing"
+                                : item.capabilities.join(", ")}
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </For>
-                </Show>
-              )}
-            </Show>
+                      )}
+                    </For>
+                  </Show>
+                )}
+              </Show>
+            </div>
           </div>
-        </div>
 
-        <div class={section} id="debug-scheduler" data-panel="scheduler" data-debug-tab="scheduler">
-          <div class={heading}>
-            <span class={title}>{language.t("debug.page.scheduler")}</span>
-            <span class={hint}>
-              live EEVDF state grouped by model — in flight, queued, and the fair-share ledger
-            </span>
-            <button class={`${btn} ml-auto`} onClick={() => setSchedTick((t) => t + 1)}>
-              {language.t("debug.page.refresh")}
-            </button>
-          </div>
-          <div class="px-4 pb-3">
-            <Show
-              when={scheduler()}
-              fallback={
-                <div class={hint}>
-                  {scheduler.loading ? "loading…" : "unavailable (older server, or no instance connected)"}
-                </div>
-              }
-            >
+          {/* ── Scheduler ──────────────────────────────────────────────────────────────── */}
+          <div class={section} id="debug-scheduler" data-panel="scheduler" data-debug-tab="scheduler">
+            <div class={heading}>
+              <span class={title}>{language.t("debug.page.scheduler")}</span>
+              <span class={hint}>
+                live admission control, grouped by MODEL — each backend's cap, its queues, and the EEVDF fair-share
+                ledger
+              </span>
+              <button type="button" class={`${btn} ml-auto`} onClick={() => setSchedTick((t) => t + 1)}>
+                {language.t("debug.page.refresh")}
+              </button>
+            </div>
+            <div class="px-4 pb-3">
               <Show
-                when={schedulerModelGroups().length > 0}
-                fallback={<div class={hint}>idle — no device has run a turn yet this process</div>}
+                when={scheduler()}
+                fallback={
+                  <div class={hint}>
+                    {scheduler.loading
+                      ? "loading…"
+                      : scheduler.failed
+                        ? "could not be read — this is NOT the same as an idle scheduler"
+                        : "no instance connected"}
+                  </div>
+                }
               >
-                <For each={schedulerModelGroups()}>
-                  {(group) => (
-                    <div class="py-1.5" data-slot="debug-scheduler-model" data-model={group.key}>
-                      <div class="flex flex-wrap items-center gap-2 text-[12px]">
-                        <span class="font-mono font-medium text-v2-text-text-base">{group.key}</span>
-                        <span class={hint}>
-                          {group.entries.filter((entry) => entry.state !== "waiting" && entry.state !== "recent").length} in
-                          flight · {group.waiting.length} waiting · concurrency {group.concurrency} ·{" "}
-                          {group.deviceKeys.join(", ")}
-                        </span>
-                      </div>
-                      <Show when={group.waiting.length > 0}>
-                        {/* Queued sessions reflect scheduler policy or configured capacity, not a hardware limit. */}
-                        <div class="text-[11px] text-v2-state-fg-warning">queued: {group.waiting.join(", ")}</div>
-                      </Show>
-                      <For each={group.entries}>
-                        {(entry) => (
-                          <div class="flex gap-3 py-0.5 font-mono text-[11px] text-v2-text-text-muted">
-                            <span class="truncate">{entry.id}</span>
-                            <span class="shrink-0 text-v2-text-text-faint">{entry.state}</span>
-                            <Show when={entry.ledger}>
-                              {(ledger) => (
-                                <>
-                                  <span class="ml-auto shrink-0">w{ledger().weight}</span>
-                                  <span class="shrink-0">{ledger().sliceTokens} tok</span>
-                                  <span class="shrink-0">lag {ledger().lag.toFixed(1)}</span>
-                                  <span class="shrink-0">vd {ledger().vdeadline.toFixed(1)}</span>
-                                </>
-                              )}
+                <div class="debug-sched">
+                  <div class="debug-sched-toolbar">
+                    <button
+                      type="button"
+                      class={btn}
+                      aria-pressed={schedulerAuto()}
+                      title="Read the snapshot again every few seconds, so a policy change shows up in the queues it moves."
+                      onClick={() => setSchedulerAuto((value) => !value)}
+                    >
+                      <Icon
+                        name={schedulerAuto() ? "stop" : "play"}
+                        size="small"
+                        class="mr-1 inline-block align-[-2px]"
+                      />
+                      {schedulerAuto() ? "Tracking live" : "Paused"}
+                    </button>
+                    <span class="debug-sched-stamp">
+                      read {formatAge(schedulerReadAt() ?? null)} ago · {schedulerTotals().devices} device
+                      {schedulerTotals().devices === 1 ? "" : "s"}
+                    </span>
+                  </div>
+
+                  <div class="debug-sched-readouts" aria-label="Scheduler totals">
+                    <div class="debug-sched-stat">
+                      <strong>{schedulerTotals().inFlight}</strong>
+                      <span>in flight</span>
+                    </div>
+                    <div class="debug-sched-stat">
+                      <strong>{schedulerTotals().waiting}</strong>
+                      <span>waiting</span>
+                    </div>
+                    <div class="debug-sched-stat">
+                      <strong>{schedulerTotals().maintenance}</strong>
+                      <span>maintenance</span>
+                    </div>
+                    <div class="debug-sched-stat">
+                      <strong>{schedulerTotals().slots}</strong>
+                      <span>device slots</span>
+                    </div>
+                    <div class="debug-sched-stat">
+                      <strong>{schedulerTotals().recent}</strong>
+                      <span>ledger entries</span>
+                    </div>
+                  </div>
+
+                  <p class="debug-sched-section-label">Devices — the hardware policy a model shares</p>
+                  <Show
+                    when={(scheduler() ?? []).length > 0}
+                    fallback={<div class={hint}>no device has run a turn yet this process</div>}
+                  >
+                    <div class="debug-sched-devices">
+                      <For each={scheduler() ?? []}>
+                        {(device) => (
+                          <SchedulerDeviceCard
+                            device={device}
+                            entry={deviceConfigs()[device.deviceKey]}
+                            devices={deviceConfigs()}
+                            saving={savingDevice() === device.deviceKey}
+                            onApply={(change) => void applyDevicePolicy(change, device.deviceKey)}
+                          />
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+
+                  <p class="debug-sched-section-label">Models — what those devices are running</p>
+                  <Show
+                    when={schedulerModelGroups().length > 0}
+                    fallback={<div class={hint}>nothing in flight, queued, or recently finished</div>}
+                  >
+                    <div class="debug-sched-groups">
+                      <For each={schedulerModelGroups()}>
+                        {(group) => (
+                          <SchedulerModelGroupCard
+                            group={group}
+                            executionState={(sessionID) => executionBySession()[sessionID]?.state}
+                            onAction={(action, sessionID) => void actOnExecution(action, sessionID)}
+                          />
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+
+                  <details class="debug-sched-legend">
+                    <summary>What the numbers mean</summary>
+                    <dl class="debug-sched-legend-grid">
+                      <dt>interactive</dt>
+                      <dd>a turn a person is watching; it owns the next free slot</dd>
+                      <dt>batch</dt>
+                      <dd>a sub-agent, goal-oriented or scheduled turn</dd>
+                      <dt>maint</dt>
+                      <dd>summaries, titles and nudges — they cost the provider but hold no device slot</dd>
+                      <dt>waiting</dt>
+                      <dd>queued for a slot; contention, not a fault</dd>
+                      <dt>recent</dt>
+                      <dd>finished; kept briefly to explain why a device looks hot</dd>
+                      <dt>w</dt>
+                      <dd>the ledger weight of the turn's class; a session priority overrides it</dd>
+                      <dt>slice</dt>
+                      <dd>token budget bought before the virtual deadline</dd>
+                      <dt>lag</dt>
+                      <dd>fairness debt: ≥ 0 is eligible, below zero is over-consumed and waits</dd>
+                      <dt>vd</dt>
+                      <dd>virtual deadline — the earliest one wins the next slot</dd>
+                    </dl>
+                  </details>
+                </div>
+              </Show>
+            </div>
+          </div>
+
+          {/* ── Context findings ──────────────────────────────────────────────────────── */}
+          <div class={section} data-panel="context-findings" data-debug-tab="context">
+            <div class={heading}>
+              <span class={title}>{language.t("debug.page.contextFindings")}</span>
+              <span class={hint}>what shaped recent turns — concrete findings, never a mystery score</span>
+              <button type="button" class={`${btn} ml-auto`} onClick={() => void refetchContext()}>
+                {language.t("debug.page.refresh")}
+              </button>
+            </div>
+            <div class="px-4 pb-3">
+              <Show when={contextSession()} fallback={<div class={hint}>no cached session to inspect</div>}>
+                {(row) => (
+                  <>
+                    <div class="mb-2 flex items-center gap-2 text-[11px]">
+                      <span class={hint}>latest cached session</span>
+                      <A href={row().href} class="max-w-96 truncate text-v2-text-text-muted hover:underline">
+                        {row().title || row().id}
+                      </A>
+                    </div>
+                    <Show
+                      when={packedTurns().length > 0}
+                      fallback={
+                        <div class={hint}>
+                          {contextLoad.loading
+                            ? "loading packed turns…"
+                            : "no packed turns recorded yet — the next completed turn will appear here"}
+                        </div>
+                      }
+                    >
+                      <For each={packedTurns()}>
+                        {(message) => (
+                          <div class="border-t border-v2-border-border-base py-2 first:border-t-0 first:pt-0">
+                            <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-v2-text-text-faint">
+                              <span>
+                                {Timestamp.toDate(message.time.completed ?? message.time.created)?.toLocaleString() ??
+                                  "—"}
+                              </span>
+                              <span>
+                                {formatContextTokens(message.context.estimatedTokens)} /{" "}
+                                {formatContextTokens(message.context.window)} tokens
+                              </span>
+                              <Show when={message.context.droppedMessages > 0}>
+                                <span class="text-v2-state-fg-warning">
+                                  {message.context.droppedMessages} older message
+                                  {message.context.droppedMessages === 1 ? "" : "s"} left out
+                                </span>
+                              </Show>
+                              <Show when={message.context.elidedOutputs > 0}>
+                                <span>{message.context.elidedOutputs} repeated output folded</span>
+                              </Show>
+                            </div>
+                            <Show
+                              when={message.context.findings.length > 0}
+                              fallback={
+                                <div class={`${hint} pt-1`}>
+                                  {language.t("debug.page.noDuplicateOrDominantToolOutput")}
+                                </div>
+                              }
+                            >
+                              <ul class="list-disc space-y-0.5 pl-4 pt-1 text-[12px] text-v2-text-text-muted">
+                                <For each={message.context.findings}>
+                                  {(finding) => <li>{formatContextFinding(finding)}</li>}
+                                </For>
+                              </ul>
                             </Show>
                           </div>
                         )}
                       </For>
-                    </div>
-                  )}
-                </For>
+                    </Show>
+                  </>
+                )}
               </Show>
-            </Show>
+            </div>
           </div>
-        </div>
 
-        {/* ── Context findings ──────────────────────────────────────────────────────── */}
-        <div class={section} data-panel="context-findings" data-debug-tab="context">
-          <div class={heading}>
-            <span class={title}>{language.t("debug.page.contextFindings")}</span>
-            <span class={hint}>what shaped recent turns — concrete findings, never a mystery score</span>
-            <button type="button" class={`${btn} ml-auto`} onClick={() => void refetchContext()}>
-              {language.t("debug.page.refresh")}
-            </button>
-          </div>
-          <div class="px-4 pb-3">
-            <Show when={contextSession()} fallback={<div class={hint}>no cached session to inspect</div>}>
-              {(row) => (
-                <>
-                  <div class="mb-2 flex items-center gap-2 text-[11px]">
-                    <span class={hint}>latest cached session</span>
-                    <A href={row().href} class="max-w-96 truncate text-v2-text-text-muted hover:underline">
-                      {row().title || row().id}
-                    </A>
-                  </div>
-                  <Show
-                    when={packedTurns().length > 0}
-                    fallback={
-                      <div class={hint}>
-                        {contextLoad.loading
-                          ? "loading packed turns…"
-                          : "no packed turns recorded yet — the next completed turn will appear here"}
-                      </div>
-                    }
-                  >
-                    <For each={packedTurns()}>
-                      {(message) => (
-                        <div class="border-t border-v2-border-border-base py-2 first:border-t-0 first:pt-0">
-                          <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-v2-text-text-faint">
-                            <span>
-                              {Timestamp.toDate(message.time.completed ?? message.time.created)?.toLocaleString() ??
-                                "—"}
-                            </span>
-                            <span>
-                              {formatContextTokens(message.context.estimatedTokens)} /{" "}
-                              {formatContextTokens(message.context.window)} tokens
-                            </span>
-                            <Show when={message.context.droppedMessages > 0}>
-                              <span class="text-v2-state-fg-warning">
-                                {message.context.droppedMessages} older message
-                                {message.context.droppedMessages === 1 ? "" : "s"} left out
-                              </span>
-                            </Show>
-                            <Show when={message.context.elidedOutputs > 0}>
-                              <span>{message.context.elidedOutputs} repeated output folded</span>
-                            </Show>
-                          </div>
-                          <Show
-                            when={message.context.findings.length > 0}
-                            fallback={
-                              <div class={`${hint} pt-1`}>
-                                {language.t("debug.page.noDuplicateOrDominantToolOutput")}
-                              </div>
-                            }
-                          >
-                            <ul class="list-disc space-y-0.5 pl-4 pt-1 text-[12px] text-v2-text-text-muted">
-                              <For each={message.context.findings}>
-                                {(finding) => <li>{formatContextFinding(finding)}</li>}
-                              </For>
-                            </ul>
-                          </Show>
-                        </div>
-                      )}
-                    </For>
-                  </Show>
-                </>
-              )}
-            </Show>
-          </div>
-        </div>
-
-        {/* ── Error log ──────────────────────────────────────────────────────────────── */}
-        <div class={section} id="debug-logs" data-panel="error-log" data-debug-tab="logs">
-          <div class={heading}>
-            <span class={title}>{language.t("debug.page.errorLog")}</span>
-            <span class={hint}>
-              this UI's own uncaught errors, rejections, console error/warn and subsystem notices — newest first, last{" "}
-              {200} kept
-            </span>
-            <span class="flex-1" />
-            <button type="button" class={btn} onClick={copyLog} disabled={filteredLog().length === 0}>
-              <Icon name="copy" size="normal" class="mr-1 inline-block align-[-2px]" />
-              {language.t("debug.page.copy")}
-            </button>
-            <button type="button" class={btn} onClick={clearErrorLog} disabled={errorLogEntries().length === 0}>
-              {language.t("debug.page.clear")}
-            </button>
-          </div>
-          {/* ⚠️ Naming the OTHER file is the point of this line, not decoration. Someone reading
+          {/* ── Error log ──────────────────────────────────────────────────────────────── */}
+          <div class={section} id="debug-logs" data-panel="error-log" data-debug-tab="logs">
+            <div class={heading}>
+              <span class={title}>{language.t("debug.page.errorLog")}</span>
+              <span class={hint}>
+                this UI's own uncaught errors, rejections, console error/warn and subsystem notices — newest first, last{" "}
+                {200} kept
+              </span>
+              <span class="flex-1" />
+              <button type="button" class={btn} onClick={copyLog} disabled={filteredLog().length === 0}>
+                <Icon name="copy" size="normal" class="mr-1 inline-block align-[-2px]" />
+                {language.t("debug.page.copy")}
+              </button>
+              <button type="button" class={btn} onClick={clearErrorLog} disabled={errorLogEntries().length === 0}>
+                {language.t("debug.page.clear")}
+              </button>
+            </div>
+            {/* ⚠️ Naming the OTHER file is the point of this line, not decoration. Someone reading
               "Error log" in the Debug app and seeing no server faults would reasonably conclude the
               server had none — this panel is the renderer's ring buffer and the instance writes a
               separate, keyed, rotated `novaclaw.log`, read by the Instance log panel below. The path
               comes from `GET /instance`, never from guessing (§0.6). */}
-          <div class={`${hint} px-4 pb-2`} data-slot="debug-server-log-note">
-            The instance's own log is a different file, shown below:{" "}
-            <code class="select-all font-mono">{serverLogPath() ?? "(ask the instance — not connected)"}</code>
-          </div>
-          {/* Filters (3f). The levels come from what is actually IN the ring with their counts,
+            <div class={`${hint} px-4 pb-2`} data-slot="debug-server-log-note">
+              The instance's own log is a different file, shown below:{" "}
+              <code class="select-all font-mono">{serverLogPath() ?? "(ask the instance — not connected)"}</code>
+            </div>
+            {/* Filters (3f). The levels come from what is actually IN the ring with their counts,
               rather than from a hard-coded list — a level nobody produced is not a useful chip, and
               a level somebody adds to `error-log.ts` appears here without a second edit. */}
-          <div class="flex flex-wrap items-center gap-1.5 px-4 pb-2" data-slot="debug-log-filters">
-            <button
-              type="button"
-              class={btn}
-              classList={{ "bg-v2-background-bg-layer-02 text-v2-text-text-base": levelFilter() === undefined }}
-              onClick={() => setLevelFilter(undefined)}
-            >
-              all {errorLogEntries().length}
-            </button>
-            <For each={logCounts()}>
-              {([level, count]) => (
-                <button
-                  type="button"
-                  class={btn}
-                  classList={{ "bg-v2-background-bg-layer-02 text-v2-text-text-base": levelFilter() === level }}
-                  onClick={() => setLevelFilter(levelFilter() === level ? undefined : level)}
-                >
-                  {level} {count}
-                </button>
-              )}
-            </For>
-            <input
-              type="search"
-              class="ml-auto min-w-0 rounded-md border border-v2-border-border-base bg-transparent px-2 py-1 text-[11px] text-v2-text-text-base placeholder:text-v2-text-text-faint"
-              placeholder={language.t("debug.page.filterText")}
-              aria-label={language.t("debug.page.filterTheErrorLogByText")}
-              data-slot="debug-log-match"
-              value={logMatch()}
-              onInput={(event) => setLogMatch(event.currentTarget.value)}
-            />
-          </div>
-          <div class="max-h-72 overflow-y-auto px-4 pb-3">
-            <Show
-              when={filteredLog().length > 0}
-              fallback={
-                <div class={hint} data-slot="debug-log-empty">
-                  {errorLogEntries().length === 0
-                    ? "nothing captured this session"
-                    : `no entries match — ${errorLogEntries().length} hidden by the filter`}
-                </div>
-              }
-            >
-              <For each={[...filteredLog()].reverse()}>
-                {(entry) => (
-                  <div class="flex gap-2 py-0.5 text-[11px] leading-4">
-                    <span class="shrink-0 tabular-nums text-v2-text-text-faint">
-                      {Timestamp.toDate(entry.at)?.toLocaleTimeString() ?? "—"}
-                    </span>
-                    <span
-                      class="w-14 shrink-0 font-medium"
-                      classList={{
-                        "text-v2-state-fg-danger": entry.level === "error" || entry.level === "uncaught",
-                        "text-v2-state-fg-warning": entry.level === "warn",
-                        "text-v2-text-text-muted": entry.level === "rejection",
-                        // A notice is NOT a fault in the user's install — it is one of our own
-                        // subsystems reporting something worth recording (a first-party file that
-                        // was simply not published, say). Without an entry here it renders in the
-                        // inherited body colour, which reads as a styling bug rather than as the
-                        // quietest level.
-                        "text-v2-text-text-faint": entry.level === "notice",
-                      }}
-                    >
-                      {entry.level}
-                    </span>
-                    <span class="min-w-0 whitespace-pre-wrap break-all font-mono text-v2-text-text-muted">
-                      {entry.text}
-                    </span>
-                  </div>
+            <div class="flex flex-wrap items-center gap-1.5 px-4 pb-2" data-slot="debug-log-filters">
+              <button
+                type="button"
+                class={btn}
+                classList={{ "bg-v2-background-bg-layer-02 text-v2-text-text-base": levelFilter() === undefined }}
+                onClick={() => setLevelFilter(undefined)}
+              >
+                all {errorLogEntries().length}
+              </button>
+              <For each={logCounts()}>
+                {([level, count]) => (
+                  <button
+                    type="button"
+                    class={btn}
+                    classList={{ "bg-v2-background-bg-layer-02 text-v2-text-text-base": levelFilter() === level }}
+                    onClick={() => setLevelFilter(levelFilter() === level ? undefined : level)}
+                  >
+                    {level} {count}
+                  </button>
                 )}
               </For>
-            </Show>
+              <input
+                type="search"
+                class="ml-auto min-w-0 rounded-md border border-v2-border-border-base bg-transparent px-2 py-1 text-[11px] text-v2-text-text-base placeholder:text-v2-text-text-faint"
+                placeholder={language.t("debug.page.filterText")}
+                aria-label={language.t("debug.page.filterTheErrorLogByText")}
+                data-slot="debug-log-match"
+                value={logMatch()}
+                onInput={(event) => setLogMatch(event.currentTarget.value)}
+              />
+            </div>
+            <div class="max-h-72 overflow-y-auto px-4 pb-3">
+              <Show
+                when={filteredLog().length > 0}
+                fallback={
+                  <div class={hint} data-slot="debug-log-empty">
+                    {errorLogEntries().length === 0
+                      ? "nothing captured this session"
+                      : `no entries match — ${errorLogEntries().length} hidden by the filter`}
+                  </div>
+                }
+              >
+                <For each={[...filteredLog()].reverse()}>
+                  {(entry) => (
+                    <div class="flex gap-2 py-0.5 text-[11px] leading-4">
+                      <span class="shrink-0 tabular-nums text-v2-text-text-faint">
+                        {Timestamp.toDate(entry.at)?.toLocaleTimeString() ?? "—"}
+                      </span>
+                      <span
+                        class="w-14 shrink-0 font-medium"
+                        classList={{
+                          "text-v2-state-fg-danger": entry.level === "error" || entry.level === "uncaught",
+                          "text-v2-state-fg-warning": entry.level === "warn",
+                          "text-v2-text-text-muted": entry.level === "rejection",
+                          // A notice is NOT a fault in the user's install — it is one of our own
+                          // subsystems reporting something worth recording (a first-party file that
+                          // was simply not published, say). Without an entry here it renders in the
+                          // inherited body colour, which reads as a styling bug rather than as the
+                          // quietest level.
+                          "text-v2-text-text-faint": entry.level === "notice",
+                        }}
+                      >
+                        {entry.level}
+                      </span>
+                      <span class="min-w-0 whitespace-pre-wrap break-all font-mono text-v2-text-text-muted">
+                        {entry.text}
+                      </span>
+                    </div>
+                  )}
+                </For>
+              </Show>
+            </div>
           </div>
-        </div>
 
-        {/* ── Instance log (the server half) ─────────────────────────────────────────── */}
-        <div class={section} data-panel="server-log" data-debug-tab="logs">
-          <div class={heading}>
-            <span class={title}>{language.t("debug.page.instanceLog")}</span>
-            <span class={hint}>
-              what the OS itself did — keyed, rotated, and read from the instance rather than from this UI
-            </span>
-            <span class="flex-1" />
-            <button type="button" class={btn} onClick={copyServerLog} disabled={(serverLogData()?.lines ?? 0) === 0}>
-              <Icon name="copy" size="normal" class="mr-1 inline-block align-[-2px]" />
-              {language.t("debug.page.copy")}
-            </button>
-            <button type="button" class={btn} onClick={applyServerFilters}>
-              {language.t("debug.page.refresh")}
-            </button>
-          </div>
-          <div class="flex flex-wrap items-center gap-1.5 px-4 pb-2" data-slot="server-log-filters">
-            <button
-              type="button"
-              class={btn}
-              classList={{ "bg-v2-background-bg-layer-02 text-v2-text-text-base": serverLevel() === undefined }}
-              onClick={() => setServerLevel(undefined)}
-            >
-              all levels
-            </button>
-            {/* A FLOOR, unlike the client ring's chips above: the wire's four levels ARE a severity
+          {/* ── Instance log (the server half) ─────────────────────────────────────────── */}
+          <div class={section} data-panel="server-log" data-debug-tab="logs">
+            <div class={heading}>
+              <span class={title}>{language.t("debug.page.instanceLog")}</span>
+              <span class={hint}>
+                what the OS itself did — keyed, rotated, and read from the instance rather than from this UI
+              </span>
+              <span class="flex-1" />
+              <button type="button" class={btn} onClick={copyServerLog} disabled={(serverLogData()?.lines ?? 0) === 0}>
+                <Icon name="copy" size="normal" class="mr-1 inline-block align-[-2px]" />
+                {language.t("debug.page.copy")}
+              </button>
+              <button type="button" class={btn} onClick={applyServerFilters}>
+                {language.t("debug.page.refresh")}
+              </button>
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5 px-4 pb-2" data-slot="server-log-filters">
+              <button
+                type="button"
+                class={btn}
+                classList={{ "bg-v2-background-bg-layer-02 text-v2-text-text-base": serverLevel() === undefined }}
+                onClick={() => setServerLevel(undefined)}
+              >
+                all levels
+              </button>
+              {/* A FLOOR, unlike the client ring's chips above: the wire's four levels ARE a severity
                 scale, so "warn" meaning "warnings and errors" is what every reader expects. The
                 names are the request schema's closed union — send one the instance does not know
                 and it answers a 400 that this panel shows, so a drift is loud rather than silent. */}
-            <For each={LEVELS}>
-              {(level) => (
-                <button
-                  type="button"
-                  class={btn}
-                  classList={{ "bg-v2-background-bg-layer-02 text-v2-text-text-base": serverLevel() === level }}
-                  onClick={() => setServerLevel(serverLevel() === level ? undefined : level)}
-                >
-                  {level}+
-                </button>
-              )}
-            </For>
-            <input
-              type="search"
-              class="min-w-0 rounded-md border border-v2-border-border-base bg-transparent px-2 py-1 text-[11px] text-v2-text-text-base placeholder:text-v2-text-text-faint"
-              placeholder="subsystem…"
-              aria-label={language.t("debug.page.filterTheInstanceLogBySubsystem")}
-              data-slot="server-log-subsystem"
-              value={subsystemDraft()}
-              onInput={(event) => setSubsystemDraft(event.currentTarget.value)}
-              onChange={applyServerFilters}
-              onKeyDown={(event) => event.key === "Enter" && applyServerFilters()}
-            />
-            <input
-              type="search"
-              class="min-w-0 flex-1 rounded-md border border-v2-border-border-base bg-transparent px-2 py-1 text-[11px] text-v2-text-text-base placeholder:text-v2-text-text-faint"
-              placeholder={language.t("debug.page.textInTheLinePressEnter")}
-              aria-label={language.t("debug.page.filterTheInstanceLogByText")}
-              data-slot="server-log-match"
-              value={matchDraft()}
-              onInput={(event) => setMatchDraft(event.currentTarget.value)}
-              onChange={applyServerFilters}
-              onKeyDown={(event) => event.key === "Enter" && applyServerFilters()}
-            />
-          </div>
-          {/* The two planes, in the user's words rather than in ours. AGENTS.md principle 4: the
+              <For each={LEVELS}>
+                {(level) => (
+                  <button
+                    type="button"
+                    class={btn}
+                    classList={{ "bg-v2-background-bg-layer-02 text-v2-text-text-base": serverLevel() === level }}
+                    onClick={() => setServerLevel(serverLevel() === level ? undefined : level)}
+                  >
+                    {level}+
+                  </button>
+                )}
+              </For>
+              <input
+                type="search"
+                class="min-w-0 rounded-md border border-v2-border-border-base bg-transparent px-2 py-1 text-[11px] text-v2-text-text-base placeholder:text-v2-text-text-faint"
+                placeholder="subsystem…"
+                aria-label={language.t("debug.page.filterTheInstanceLogBySubsystem")}
+                data-slot="server-log-subsystem"
+                value={subsystemDraft()}
+                onInput={(event) => setSubsystemDraft(event.currentTarget.value)}
+                onChange={applyServerFilters}
+                onKeyDown={(event) => event.key === "Enter" && applyServerFilters()}
+              />
+              <input
+                type="search"
+                class="min-w-0 flex-1 rounded-md border border-v2-border-border-base bg-transparent px-2 py-1 text-[11px] text-v2-text-text-base placeholder:text-v2-text-text-faint"
+                placeholder={language.t("debug.page.textInTheLinePressEnter")}
+                aria-label={language.t("debug.page.filterTheInstanceLogByText")}
+                data-slot="server-log-match"
+                value={matchDraft()}
+                onInput={(event) => setMatchDraft(event.currentTarget.value)}
+                onChange={applyServerFilters}
+                onKeyDown={(event) => event.key === "Enter" && applyServerFilters()}
+              />
+            </div>
+            {/* The two planes, in the user's words rather than in ours. AGENTS.md principle 4: the
               data plane never egresses and the maintenance plane is scrubbed — so the toggle is
               "what you are looking at" vs "what you would send", never "safe/unsafe". Withheld
               columns are NAMED as `‹class›` by the server; nothing is silently dropped. */}
-          <div class="flex flex-wrap items-center gap-1.5 px-4 pb-2" data-slot="server-log-plane">
-            <button
-              type="button"
-              class={btn}
-              classList={{ "bg-v2-background-bg-layer-02 text-v2-text-text-base": serverPlane() === "local" }}
-              onClick={() => setServerPlane("local")}
-            >
-              {language.t("debug.page.fullDetail")}
-            </button>
-            <button
-              type="button"
-              class={btn}
-              classList={{ "bg-v2-background-bg-layer-02 text-v2-text-text-base": serverPlane() === "maintenance" }}
-              onClick={() => setServerPlane("maintenance")}
-            >
-              {language.t("debug.page.readyToSendOnward")}
-            </button>
-            <span class={hint}>
-              {serverPlane() === "local"
-                ? "everything the log holds — this stays on your computer"
-                : "columns that may not leave this machine are shown as ‹their kind›, never dropped"}
-            </span>
-          </div>
-          <div class="max-h-72 overflow-y-auto px-4 pb-3">
-            <Show
-              when={serverLog()}
-              fallback={
-                <div class={hint} data-slot="server-log-empty">
-                  {serverLog.loading ? "reading the instance log…" : "no instance connected"}
-                </div>
-              }
-            >
+            <div class="flex flex-wrap items-center gap-1.5 px-4 pb-2" data-slot="server-log-plane">
+              <button
+                type="button"
+                class={btn}
+                classList={{ "bg-v2-background-bg-layer-02 text-v2-text-text-base": serverPlane() === "local" }}
+                onClick={() => setServerPlane("local")}
+              >
+                {language.t("debug.page.fullDetail")}
+              </button>
+              <button
+                type="button"
+                class={btn}
+                classList={{ "bg-v2-background-bg-layer-02 text-v2-text-text-base": serverPlane() === "maintenance" }}
+                onClick={() => setServerPlane("maintenance")}
+              >
+                {language.t("debug.page.readyToSendOnward")}
+              </button>
+              <span class={hint}>
+                {serverPlane() === "local"
+                  ? "everything the log holds — this stays on your computer"
+                  : "columns that may not leave this machine are shown as ‹their kind›, never dropped"}
+              </span>
+            </div>
+            <div class="max-h-72 overflow-y-auto px-4 pb-3">
               <Show
-                when={serverLogData()}
+                when={serverLog()}
                 fallback={
-                  <div class="text-[11px] text-v2-state-fg-danger" data-slot="server-log-error">
-                    {serverLogError()}
+                  <div class={hint} data-slot="server-log-empty">
+                    {serverLog.loading ? "reading the instance log…" : "no instance connected"}
                   </div>
                 }
               >
-                {(data) => (
-                  <Show
-                    when={data().lines > 0}
-                    fallback={
-                      // Two different facts, and only one of them is about the instance:
-                      // `scanned === 0` means there is no log file to read yet.
-                      <div class={hint} data-slot="server-log-empty">
-                        {data().scanned === 0
-                          ? `no log file yet under ${serverLogPath() ?? "the instance's log directory"}`
-                          : `no line matches — ${data().scanned} examined`}
-                      </div>
-                    }
-                  >
-                    {/* ⭐ The server's string, displayed. Not parsed, not re-rendered, not
+                <Show
+                  when={serverLogData()}
+                  fallback={
+                    <div class="text-[11px] text-v2-state-fg-danger" data-slot="server-log-error">
+                      {serverLogError()}
+                    </div>
+                  }
+                >
+                  {(data) => (
+                    <Show
+                      when={data().lines > 0}
+                      fallback={
+                        // Two different facts, and only one of them is about the instance:
+                        // `scanned === 0` means there is no log file to read yet.
+                        <div class={hint} data-slot="server-log-empty">
+                          {data().scanned === 0
+                            ? `no log file yet under ${serverLogPath() ?? "the instance's log directory"}`
+                            : `no line matches — ${data().scanned} examined`}
+                        </div>
+                      }
+                    >
+                      {/* ⭐ The server's string, displayed. Not parsed, not re-rendered, not
                           re-coloured per column — there is one renderer of a log line and it ran
                           on the instance. */}
-                    <pre
-                      class="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-4 text-v2-text-text-muted"
-                      data-slot="server-log-text"
-                    >
-                      {data().text}
-                    </pre>
-                    <div class={hint} data-slot="server-log-status">
-                      {data().lines} line{data().lines === 1 ? "" : "s"} of {data().scanned} examined
-                      {data().truncated ? " · scan ceiling reached, older history not examined" : ""}
-                    </div>
-                  </Show>
-                )}
+                      <pre
+                        class="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-4 text-v2-text-text-muted"
+                        data-slot="server-log-text"
+                      >
+                        {data().text}
+                      </pre>
+                      <div class={hint} data-slot="server-log-status">
+                        {data().lines} line{data().lines === 1 ? "" : "s"} of {data().scanned} examined
+                        {data().truncated ? " · scan ceiling reached, older history not examined" : ""}
+                      </div>
+                    </Show>
+                  )}
+                </Show>
               </Show>
-            </Show>
+            </div>
           </div>
-        </div>
 
-        {/* ── Sessions (ps) ───────────────────────────────────────────────────────────── */}
-        <div class={section} id="debug-sessions" data-panel="sessions" data-debug-tab="sessions">
-          <div class={heading}>
-            <span class={title}>{language.t("debug.page.sessions")}</span>
-            {/* Naming the scope is the honest move, the same way the log panel says whose ring it
+          {/* ── Sessions (ps) ───────────────────────────────────────────────────────────── */}
+          <div class={section} id="debug-sessions" data-panel="sessions" data-debug-tab="sessions">
+            <div class={heading}>
+              <span class={title}>{language.t("debug.page.sessions")}</span>
+              {/* Naming the scope is the honest move, the same way the log panel says whose ring it
                 shows: presence answers for THIS instance's own sessions and is not a directory of
                 who is online — a developer view does not widen that. The rows themselves come from
                 the instance's cursor-paginated roster, not this browser's bounded event cache. */}
-            <span class={hint}>
-              durable execution, recovery and attendance state for {sessions().length} session
-              {sessions().length === 1 ? "" : "s"} on this instance
-            </span>
-            <button
-              class="ml-auto text-[11px] text-v2-text-text-muted hover:underline"
-              onClick={() => {
-                setProcessRosterRefresh((v) => v + 1)
-                setExecutionTick((v) => v + 1)
-                refreshPresence()
-              }}
-            >
-              {language.t("debug.page.refresh")}
-            </button>
-          </div>
-          {/* overflow-x too: seven columns outgrow a narrow window, and a table that spills past
+              <span class={hint}>
+                durable execution, recovery and attendance state for {sessions().length} session
+                {sessions().length === 1 ? "" : "s"} on this instance
+              </span>
+              <button
+                class="ml-auto text-[11px] text-v2-text-text-muted hover:underline"
+                onClick={() => {
+                  setProcessRosterRefresh((v) => v + 1)
+                  setExecutionTick((v) => v + 1)
+                  refreshPresence()
+                }}
+              >
+                {language.t("debug.page.refresh")}
+              </button>
+            </div>
+            {/* overflow-x too: seven columns outgrow a narrow window, and a table that spills past
               the viewport drags the whole page wide instead of scrolling inside its panel. */}
-          <div class="max-h-72 overflow-y-auto overflow-x-auto px-4 pb-3">
-            <Show
-              when={!processRoster.failed}
-              fallback={
-                <div class="text-[11px] text-v2-state-fg-danger">could not read the instance session roster</div>
-              }
-            >
+            <div class="max-h-72 overflow-y-auto overflow-x-auto px-4 pb-3">
               <Show
-                when={!processRoster.loading && sessions().length > 0}
+                when={!processRoster.failed}
                 fallback={
-                  <div class={hint}>
-                    {processRoster.loading ? "reading the instance session roster…" : "no sessions"}
-                  </div>
+                  <div class="text-[11px] text-v2-state-fg-danger">could not read the instance session roster</div>
                 }
               >
-                <table class="w-full border-collapse text-[11px]">
-                  <thead>
-                    <tr class="text-left text-v2-text-text-faint">
-                      <th class="py-1 pr-2 font-medium">id</th>
-                      <th class="py-1 pr-2 font-medium">status</th>
-                      <th class="py-1 pr-2 font-medium">presence</th>
-                      <th class="py-1 pr-2 font-medium">phase / recovery</th>
-                      <th class="py-1 pr-2 font-medium">agent</th>
-                      <th class="py-1 pr-2 font-medium">model</th>
-                      <th class="py-1 pr-2 font-medium">tokens</th>
-                      <th class="py-1 pr-2 font-medium">parent</th>
-                      <th class="py-1 font-medium">title</th>
-                      <th class="py-1 font-medium">actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <For each={sessions()}>
-                      {(row) => (
-                        <tr class="align-top">
-                          <td class="py-0.5 pr-2 font-mono">
-                            <A href={row.href} class="text-v2-text-text-muted hover:underline">
-                              {row.id}
-                            </A>
-                          </td>
-                          <td
-                            class="py-0.5 pr-2"
-                            classList={{
-                              "text-v2-state-fg-success": ["busy", "retry"].includes(row.status),
-                              "text-v2-text-text-faint": ["idle", "exited"].includes(row.status),
-                            }}
-                          >
-                            {executionBySession()[row.id]?.state ?? row.status}
-                          </td>
-                          {/* Attendance, composed with the status column's busy signal. The ids ride
+                <Show
+                  when={!processRoster.loading && sessions().length > 0}
+                  fallback={
+                    <div class={hint}>
+                      {processRoster.loading ? "reading the instance session roster…" : "no sessions"}
+                    </div>
+                  }
+                >
+                  <table class="w-full border-collapse text-[11px]">
+                    <thead>
+                      <tr class="text-left text-v2-text-text-faint">
+                        <th class="py-1 pr-2 font-medium">id</th>
+                        <th class="py-1 pr-2 font-medium">status</th>
+                        <th class="py-1 pr-2 font-medium">presence</th>
+                        <th class="py-1 pr-2 font-medium">phase / recovery</th>
+                        <th class="py-1 pr-2 font-medium">agent</th>
+                        <th class="py-1 pr-2 font-medium">model</th>
+                        <th class="py-1 pr-2 font-medium">tokens</th>
+                        <th class="py-1 pr-2 font-medium">parent</th>
+                        <th class="py-1 font-medium">title</th>
+                        <th class="py-1 font-medium">actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <For each={sessions()}>
+                        {(row) => (
+                          <tr class="align-top">
+                            <td class="py-0.5 pr-2 font-mono">
+                              <A href={row.href} class="text-v2-text-text-muted hover:underline">
+                                {row.id}
+                              </A>
+                            </td>
+                            <td
+                              class="py-0.5 pr-2"
+                              classList={{
+                                "text-v2-state-fg-success": ["busy", "retry"].includes(row.status),
+                                "text-v2-text-text-faint": ["idle", "exited"].includes(row.status),
+                              }}
+                            >
+                              {executionBySession()[row.id]?.state ?? row.status}
+                            </td>
+                            {/* Attendance, composed with the status column's busy signal. The ids ride
                             the tooltip because two windows of one browser are honestly both "a
                             browser window" and only the opaque per-surface id separates them. */}
-                          <td class="max-w-72 py-0.5 pr-2">
-                            {(() => {
-                              const cell = presenceFor(row.id, row.busy)
-                              return (
-                                <span
-                                  data-slot="debug-session-presence"
-                                  data-session={row.id}
-                                  data-attached={String(cell.attached)}
-                                  data-unverified={cell.unverified ? "true" : "false"}
-                                  class={cell.attached > 0 ? "text-v2-text-text-muted" : "text-v2-text-text-faint"}
-                                  title={cell.title}
+                            <td class="max-w-72 py-0.5 pr-2">
+                              {(() => {
+                                const cell = presenceFor(row.id, row.busy)
+                                return (
+                                  <span
+                                    data-slot="debug-session-presence"
+                                    data-session={row.id}
+                                    data-attached={String(cell.attached)}
+                                    data-unverified={cell.unverified ? "true" : "false"}
+                                    class={cell.attached > 0 ? "text-v2-text-text-muted" : "text-v2-text-text-faint"}
+                                    title={cell.title}
+                                  >
+                                    {cell.text}
+                                  </span>
+                                )
+                              })()}
+                            </td>
+                            <td class="max-w-72 py-0.5 pr-2 text-v2-text-text-muted">
+                              <Show when={executionBySession()[row.id]} fallback="—">
+                                {(attempt) => (
+                                  <span title={attempt().failureDetail}>
+                                    {attempt().phase}
+                                    {attempt().failureClass ? ` · ${attempt().failureClass}` : ""}
+                                    {attempt().toolName
+                                      ? ` · ${attempt().toolName} (${attempt().toolSideEffect}, ${attempt().toolState})`
+                                      : ""}
+                                    {attempt().failureCount
+                                      ? ` · ${attempt().failureCount} failure${attempt().failureCount === 1 ? "" : "s"}`
+                                      : ""}
+                                  </span>
+                                )}
+                              </Show>
+                            </td>
+                            <td class="py-0.5 pr-2 text-v2-text-text-muted">{row.agent}</td>
+                            <td class="py-0.5 pr-2 font-mono text-v2-text-text-faint">
+                              {row.model ? `${row.model.providerID}/${row.model.id}` : "inherit"}
+                            </td>
+                            <td class="py-0.5 pr-2 font-mono text-v2-text-text-faint">
+                              {row.tokens.input + row.tokens.output + row.tokens.reasoning}
+                            </td>
+                            <td class="py-0.5 pr-2 font-mono text-v2-text-text-faint">{row.parentID ?? "—"}</td>
+                            <td class="max-w-64 truncate py-0.5 text-v2-text-text-muted">{row.title}</td>
+                            <td class="whitespace-nowrap py-0.5 text-v2-text-text-muted">
+                              <Show
+                                when={["paused", "failed", "interrupted"].includes(
+                                  executionBySession()[row.id]?.state ?? "",
+                                )}
+                              >
+                                <button
+                                  class="mr-2 hover:underline"
+                                  onClick={() => void actOnExecution("retry", row.id)}
                                 >
-                                  {cell.text}
-                                </span>
-                              )
-                            })()}
-                          </td>
-                          <td class="max-w-72 py-0.5 pr-2 text-v2-text-text-muted">
-                            <Show when={executionBySession()[row.id]} fallback="—">
-                              {(attempt) => (
-                                <span title={attempt().failureDetail}>
-                                  {attempt().phase}
-                                  {attempt().failureClass ? ` · ${attempt().failureClass}` : ""}
-                                  {attempt().toolName
-                                    ? ` · ${attempt().toolName} (${attempt().toolSideEffect}, ${attempt().toolState})`
-                                    : ""}
-                                  {attempt().failureCount
-                                    ? ` · ${attempt().failureCount} failure${attempt().failureCount === 1 ? "" : "s"}`
-                                    : ""}
-                                </span>
-                              )}
-                            </Show>
-                          </td>
-                          <td class="py-0.5 pr-2 text-v2-text-text-muted">{row.agent}</td>
-                          <td class="py-0.5 pr-2 font-mono text-v2-text-text-faint">
-                            {row.model ? `${row.model.providerID}/${row.model.id}` : "inherit"}
-                          </td>
-                          <td class="py-0.5 pr-2 font-mono text-v2-text-text-faint">
-                            {row.tokens.input + row.tokens.output + row.tokens.reasoning}
-                          </td>
-                          <td class="py-0.5 pr-2 font-mono text-v2-text-text-faint">{row.parentID ?? "—"}</td>
-                          <td class="max-w-64 truncate py-0.5 text-v2-text-text-muted">{row.title}</td>
-                          <td class="whitespace-nowrap py-0.5 text-v2-text-text-muted">
-                            <Show
-                              when={["paused", "failed", "interrupted"].includes(
-                                executionBySession()[row.id]?.state ?? "",
-                              )}
-                            >
-                              <button class="mr-2 hover:underline" onClick={() => void actOnExecution("retry", row.id)}>
-                                {language.t("debug.page.retry")}
+                                  {language.t("debug.page.retry")}
+                                </button>
+                              </Show>
+                              <Show
+                                when={["starting", "busy", "recovering"].includes(
+                                  executionBySession()[row.id]?.state ?? "",
+                                )}
+                              >
+                                <button
+                                  class="mr-2 hover:underline"
+                                  onClick={() => void actOnExecution("stop", row.id)}
+                                >
+                                  {language.t("debug.page.stop")}
+                                </button>
+                              </Show>
+                              <button class="hover:underline" onClick={showModels}>
+                                {language.t("debug.page.models")}
                               </button>
-                            </Show>
-                            <Show
-                              when={["starting", "busy", "recovering"].includes(
-                                executionBySession()[row.id]?.state ?? "",
-                              )}
-                            >
-                              <button class="mr-2 hover:underline" onClick={() => void actOnExecution("stop", row.id)}>
-                                {language.t("debug.page.stop")}
-                              </button>
-                            </Show>
-                            <button class="hover:underline" onClick={showModels}>
-                              {language.t("debug.page.models")}
-                            </button>
-                          </td>
-                        </tr>
-                      )}
-                    </For>
-                  </tbody>
-                </table>
+                            </td>
+                          </tr>
+                        )}
+                      </For>
+                    </tbody>
+                  </table>
+                </Show>
               </Show>
-            </Show>
-            {/* A room outlives the session row when the session is deleted (or was never cached
+              {/* A room outlives the session row when the session is deleted (or was never cached
                 here) while a surface was attached. The table is driven by the session list, so
                 those rooms would be invisible — and a diagnostic panel that silently drops state is
                 the thing it exists to prevent. Reported, never faked into a session row. */}
-            <Show when={debugPresenceOrphanText(presenceOrphans(), presenceUnverified())}>
-              {(text) => (
-                <div class={hint} data-slot="debug-presence-orphans">
-                  {text()}
-                </div>
-              )}
-            </Show>
-          </div>
-        </div>
-
-        {/* ── Memory ─────────────────────────────────────────────────────────────────── */}
-        <div class={section} data-debug-tab="memory">
-          <div class={heading}>
-            <span class={title}>Memory</span>
-            <span class={hint}>per process, measured from outside — commit on Windows, RSS on Linux</span>
-            <button class={`${btn} ml-auto`} onClick={() => setMemoryTick((value) => value + 1)}>
-              {language.t("debug.page.refresh")}
-            </button>
-          </div>
-          <div class="px-4 pb-3">
-            <Show
-              when={memoryLayout()}
-              fallback={
-                <div class={hint}>
-                  {memoryLayout.loading ? "reading…" : "unavailable (older server, or no instance connected)"}
-                </div>
-              }
-            >
-              {(layout) => (
-                <>
-                  {/* The host bar is the boundary every per-process number sits inside. */}
-                  <div class="border-t border-v2-border-border-base py-2 first:border-t-0 first:pt-0">
-                    <div class="mb-1 text-[11px] font-medium text-v2-text-text-base">Host memory</div>
-                    <Show
-                      when={layout().host.known}
-                      fallback={<div class={hint}>unknown — {(layout().host as { reason: string }).reason}</div>}
-                    >
-                      <div class="flex items-center gap-3 text-[12px]">
-                        <span class="font-mono">
-                          {formatBytes((layout().host as { usedBytes: number }).usedBytes)} /{" "}
-                          {formatBytes((layout().host as { limitBytes: number }).limitBytes)}
-                        </span>
-                        <span class={hint}>
-                          {(
-                            ((layout().host as { usedBytes: number }).usedBytes /
-                              Math.max(1, (layout().host as { limitBytes: number }).limitBytes)) *
-                            100
-                          ).toFixed(0)}
-                          % used · {(layout().host as { source: string }).source}
-                        </span>
-                      </div>
-                    </Show>
+              <Show when={debugPresenceOrphanText(presenceOrphans(), presenceUnverified())}>
+                {(text) => (
+                  <div class={hint} data-slot="debug-presence-orphans">
+                    {text()}
                   </div>
-
-                  {/* The server's own process, split where the JS runtime can honestly split it. */}
-                  <div class="border-t border-v2-border-border-base py-2">
-                    <div class="mb-1 text-[11px] font-medium text-v2-text-text-base">
-                      Instance server <span class={hint}>pid {layout().server.pid}</span>
-                    </div>
-                    <div class="grid grid-cols-2 gap-x-6 gap-y-0.5 font-mono text-[11px] text-v2-text-text-muted sm:grid-cols-3">
-                      <div class="flex justify-between gap-2">
-                        <span class={hint}>RSS (self)</span>
-                        <span>{formatBytes(layout().server.rssBytes)}</span>
-                      </div>
-                      <div class="flex justify-between gap-2">
-                        <span class={hint}>heap used</span>
-                        <span>{formatBytes(layout().server.heapUsedBytes)}</span>
-                      </div>
-                      <div class="flex justify-between gap-2">
-                        <span class={hint}>heap total</span>
-                        <span>{formatBytes(layout().server.heapTotalBytes)}</span>
-                      </div>
-                      <div class="flex justify-between gap-2">
-                        <span class={hint}>external</span>
-                        <span>{formatBytes(layout().server.externalBytes)}</span>
-                      </div>
-                      <div class="flex justify-between gap-2">
-                        <span class={hint}>array buffers</span>
-                        <span>{formatBytes(layout().server.arrayBuffersBytes)}</span>
-                      </div>
-                      <div class="flex justify-between gap-2">
-                        <span class={hint}>{layout().metric} (outer)</span>
-                        <span>{formatBytes(layout().server.bytes)}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Every live session worker, with the chat it is running. */}
-                  <div class="border-t border-v2-border-border-base py-2">
-                    <div class="mb-1 text-[11px] font-medium text-v2-text-text-base">
-                      Workers <span class={hint}>{layout().processes.length - 1} live</span>
-                    </div>
-                    <div class="overflow-x-auto">
-                      <table class="w-full border-collapse text-[11px]">
-                        <thead>
-                          <tr class="text-left text-v2-text-text-faint">
-                            <th class="py-1 pr-2 font-medium">pid</th>
-                            <th class="py-1 pr-2 font-medium">role</th>
-                            <th class="py-1 pr-2 font-medium">age</th>
-                            <th class="py-1 pr-2 font-medium">session</th>
-                            <th class="py-1 font-medium">{layout().metric}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          <For each={layout().processes}>
-                            {(row) => (
-                              <tr class="align-top">
-                                <td class="py-0.5 pr-2 font-mono">{row.pid}</td>
-                                <td class="py-0.5 pr-2 text-v2-text-text-muted">{row.role}</td>
-                                <td class="py-0.5 pr-2 font-mono text-v2-text-text-faint">{formatAge(row.startedAt)}</td>
-                                <td class="py-0.5 pr-2 truncate font-mono text-v2-text-text-muted">{row.label}</td>
-                                <td class="py-0.5 font-mono">{formatBytes(row.bytes)}</td>
-                              </tr>
-                            )}
-                          </For>
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  <div class={`${hint} pt-1`} data-slot="debug-memory-note">
-                    {layout().note}
-                  </div>
-                </>
-              )}
-            </Show>
+                )}
+              </Show>
+            </div>
           </div>
-        </div>
 
-        {/* ── Config snapshot ────────────────────────────────────────────────────────── */}
-        <div class={section} data-panel="config" data-debug-tab="config">
-          <div class={heading}>
-            <span class={title}>{language.t("debug.page.configSnapshot")}</span>
-            <span class={hint}>the active server's resolved config (read-only — edit in Settings)</span>
+          {/* ── Memory ─────────────────────────────────────────────────────────────────── */}
+          <div class={section} data-debug-tab="memory">
+            <div class={heading}>
+              <span class={title}>Memory</span>
+              <span class={hint}>per process, measured from outside — commit on Windows, RSS on Linux</span>
+              <button class={`${btn} ml-auto`} onClick={() => setMemoryTick((value) => value + 1)}>
+                {language.t("debug.page.refresh")}
+              </button>
+            </div>
+            <div class="px-4 pb-3">
+              <Show
+                when={memoryLayout()}
+                fallback={
+                  <div class={hint}>
+                    {memoryLayout.loading ? "reading…" : "unavailable (older server, or no instance connected)"}
+                  </div>
+                }
+              >
+                {(layout) => (
+                  <>
+                    {/* The host bar is the boundary every per-process number sits inside. */}
+                    <div class="border-t border-v2-border-border-base py-2 first:border-t-0 first:pt-0">
+                      <div class="mb-1 text-[11px] font-medium text-v2-text-text-base">Host memory</div>
+                      <Show
+                        when={layout().host.known}
+                        fallback={<div class={hint}>unknown — {(layout().host as { reason: string }).reason}</div>}
+                      >
+                        <div class="flex items-center gap-3 text-[12px]">
+                          <span class="font-mono">
+                            {formatBytes((layout().host as { usedBytes: number }).usedBytes)} /{" "}
+                            {formatBytes((layout().host as { limitBytes: number }).limitBytes)}
+                          </span>
+                          <span class={hint}>
+                            {(
+                              ((layout().host as { usedBytes: number }).usedBytes /
+                                Math.max(1, (layout().host as { limitBytes: number }).limitBytes)) *
+                              100
+                            ).toFixed(0)}
+                            % used · {(layout().host as { source: string }).source}
+                          </span>
+                        </div>
+                      </Show>
+                    </div>
+
+                    {/* The server's own process, split where the JS runtime can honestly split it. */}
+                    <div class="border-t border-v2-border-border-base py-2">
+                      <div class="mb-1 text-[11px] font-medium text-v2-text-text-base">
+                        Instance server <span class={hint}>pid {layout().server.pid}</span>
+                      </div>
+                      <div class="grid grid-cols-2 gap-x-6 gap-y-0.5 font-mono text-[11px] text-v2-text-text-muted sm:grid-cols-3">
+                        <div class="flex justify-between gap-2">
+                          <span class={hint}>RSS (self)</span>
+                          <span>{formatBytes(layout().server.rssBytes)}</span>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                          <span class={hint}>heap used</span>
+                          <span>{formatBytes(layout().server.heapUsedBytes)}</span>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                          <span class={hint}>heap total</span>
+                          <span>{formatBytes(layout().server.heapTotalBytes)}</span>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                          <span class={hint}>external</span>
+                          <span>{formatBytes(layout().server.externalBytes)}</span>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                          <span class={hint}>array buffers</span>
+                          <span>{formatBytes(layout().server.arrayBuffersBytes)}</span>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                          <span class={hint}>{layout().metric} (outer)</span>
+                          <span>{formatBytes(layout().server.bytes)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Every live session worker, with the chat it is running. */}
+                    <div class="border-t border-v2-border-border-base py-2">
+                      <div class="mb-1 text-[11px] font-medium text-v2-text-text-base">
+                        Workers <span class={hint}>{layout().processes.length - 1} live</span>
+                      </div>
+                      <div class="overflow-x-auto">
+                        <table class="w-full border-collapse text-[11px]">
+                          <thead>
+                            <tr class="text-left text-v2-text-text-faint">
+                              <th class="py-1 pr-2 font-medium">pid</th>
+                              <th class="py-1 pr-2 font-medium">role</th>
+                              <th class="py-1 pr-2 font-medium">age</th>
+                              <th class="py-1 pr-2 font-medium">session</th>
+                              <th class="py-1 font-medium">{layout().metric}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <For each={layout().processes}>
+                              {(row) => (
+                                <tr class="align-top">
+                                  <td class="py-0.5 pr-2 font-mono">{row.pid}</td>
+                                  <td class="py-0.5 pr-2 text-v2-text-text-muted">{row.role}</td>
+                                  <td class="py-0.5 pr-2 font-mono text-v2-text-text-faint">
+                                    {formatAge(row.startedAt)}
+                                  </td>
+                                  <td class="py-0.5 pr-2 truncate font-mono text-v2-text-text-muted">{row.label}</td>
+                                  <td class="py-0.5 font-mono">{formatBytes(row.bytes)}</td>
+                                </tr>
+                              )}
+                            </For>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div class={`${hint} pt-1`} data-slot="debug-memory-note">
+                      {layout().note}
+                    </div>
+                  </>
+                )}
+              </Show>
+            </div>
           </div>
-          <pre class="overflow-x-auto px-4 pb-4 font-mono text-[11px] leading-4 text-v2-text-text-muted">
-            {config()}
-          </pre>
-        </div>
+
+          {/* ── Config snapshot ────────────────────────────────────────────────────────── */}
+          <div class={section} data-panel="config" data-debug-tab="config">
+            <div class={heading}>
+              <span class={title}>{language.t("debug.page.configSnapshot")}</span>
+              <span class={hint}>the active server's resolved config (read-only — edit in Settings)</span>
+            </div>
+            <pre class="overflow-x-auto px-4 pb-4 font-mono text-[11px] leading-4 text-v2-text-text-muted">
+              {config()}
+            </pre>
+          </div>
         </KobalteTabs.Content>
       </KobalteTabs>
     </AppPage>
