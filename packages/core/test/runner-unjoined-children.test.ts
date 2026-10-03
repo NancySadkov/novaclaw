@@ -9,7 +9,7 @@ import { SessionEvent } from "@novaclaw/core/session/event"
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { UnjoinedChildren } from "@novaclaw/core/session/runner/unjoined-children"
 import { SessionTable } from "@novaclaw/core/session/sql"
-import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, exitTurn, makeRunnerHarness } from "./fixture/runner-harness"
 
 /**
  * 🔴 **THE CALL SITE, not the module.** `unjoined-children.test.ts` beside the source pins every
@@ -42,10 +42,17 @@ const runWithChildren = async (
 ) => {
   // Keep answering each harness steer so the child supervisor, rather than the empty-turn guard,
   // owns when this fixture stops. Four replies cover the initial turn plus the three-round ceiling.
+  // A trailing `exit` lets the officer settle once the bound is reached: the drive demands it at
+  // drain-end, where the supervisor has stopped steering.
   const harness = makeRunnerHarness({
-    turns: Array.from({ length: UnjoinedChildren.MAX_RESTART_ROUNDS + 1 }, (_, index) =>
-      completeTurn(`text-${index}`, "All done — every slice is covered."),
-    ),
+    withExitTool: true,
+    turns: [
+      ...Array.from({ length: UnjoinedChildren.MAX_RESTART_ROUNDS + 1 }, (_, index) =>
+        completeTurn(`text-${index}`, "All done — every slice is covered."),
+      ),
+      exitTurn("done"),
+    ],
+    utilityTurns: [completeTurn("audit", "YES")],
   })
   if (drives !== undefined) harness.controls.harnessDrives = drives
   let transcript: { type: string; text?: string }[] = []
@@ -140,7 +147,14 @@ const runWithChildren = async (
   )
 
   const steers = transcript
-    .filter((message) => message.type === "user" && (message.text ?? "").startsWith(STEER_PREFIX))
+    .filter(
+      (message) =>
+        message.type === "user" &&
+        (message.text ?? "").startsWith(STEER_PREFIX) &&
+        // The officer's own `exit` demand rides the SAME provenance prefix; this file is about the
+        // fan-out supervisor's steer, so the exit demand is excluded by its words.
+        !(message.text ?? "").includes("Call the `exit` tool"),
+    )
     .map((message) => message.text ?? "")
   return { transcript, steers }
 }

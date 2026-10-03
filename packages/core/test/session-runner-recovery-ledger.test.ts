@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Fiber } from "effect"
 import { InvalidProviderOutputReason, LLMError, QuotaExceededReason } from "@novaclaw/llm"
 import { Stream } from "effect"
 import { ModelV2 } from "@novaclaw/core/model"
@@ -14,7 +14,7 @@ import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionRunner } from "@novaclaw/core/session/runner"
 import { ProviderRecovery } from "@novaclaw/core/session/runner/provider-recovery"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness } from "./fixture/runner-harness"
+import { HARNESS_SESSION, completeTurn, drive, makeRunnerHarness, resumeAndStop, resumeUntil } from "./fixture/runner-harness"
 
 /**
  * THE LEDGER IS THE JOIN — three claims about the durable provider-recovery verdict.
@@ -92,7 +92,7 @@ describe("SessionRunnerLLM — the recovery ledger learns what the turn could no
           prompt: Prompt.make({ text: "Continue the task" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Recovered after the stream failed")
         return yield* session.context(HARNESS_SESSION)
       }),
       "claim — an unreadable stream must not halt after its quick retry",
@@ -131,7 +131,7 @@ describe("SessionRunnerLLM — the recovery ledger learns what the turn could no
           prompt: Prompt.make({ text: "Do quota-sensitive work" }),
           resume: false,
         })
-        yield* session.resume(HARNESS_SESSION)
+        yield* resumeUntil("Recovered on the substitute")
       }),
       "claim — a throttled account reroutes the same drain",
     )
@@ -155,7 +155,7 @@ describe("SessionRunnerLLM — the recovery ledger learns what the turn could no
         const events = yield* EventV2.Service
         expect(yield* SessionInput.hasPending(db, HARNESS_SESSION, "steer")).toBe(false)
         expect(yield* SessionInput.hasPending(db, HARNESS_SESSION, "queue")).toBe(false)
-        yield* SessionRunner.Service.use((runner) => runner.run({ sessionID: HARNESS_SESSION, force: false }))
+        yield* resumeAndStop()
         return yield* readRecoveryLedger
       }),
       "claim — a latch older than the stall window is endpoint evidence",
@@ -177,7 +177,7 @@ describe("SessionRunnerLLM — the recovery ledger learns what the turn could no
       harness,
       Effect.gen(function* () {
         yield* publishStrandedAttempt(yield* DateTime.now)
-        yield* SessionRunner.Service.use((runner) => runner.run({ sessionID: HARNESS_SESSION, force: false }))
+        yield* resumeAndStop()
         return yield* readRecoveryLedger
       }),
       "claim — a fresh latch is preemption, not a hang",
