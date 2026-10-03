@@ -1523,8 +1523,7 @@ body[data-new-layout] [data-slot="dialog-container"] {
   color: #d1b57f;
   font-size: 10px;
 }
-.schedule-card-prompt,
-.nudge-card-prompt {
+.schedule-card-prompt {
   padding: 10px 15px 0 32px;
   color: var(--v2-text-text-muted);
   font-size: 12px;
@@ -1834,7 +1833,8 @@ body[data-new-layout] [data-slot="dialog-container"] {
 .nudge-card-top [data-component="switch"] {
   margin-left: auto;
 }
-.nudge-card-prompt {
+/* The card no longer carries a body, so the head row owns the gap above the footer. */
+.nudge-card-top {
   padding-bottom: 14px;
 }
 .nudge-editor {
@@ -1910,7 +1910,6 @@ body[data-new-layout] [data-slot="dialog-container"] {
     font-size: 23px;
   }
   .schedule-card-prompt,
-  .nudge-card-prompt,
   .schedule-card-meta {
     padding-left: 15px;
   }

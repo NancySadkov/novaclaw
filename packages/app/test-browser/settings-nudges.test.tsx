@@ -207,6 +207,9 @@ describe("Officer Nudges", () => {
     expect(saved).toHaveLength(1)
     expect(saved[0]?.name).toBe("Review writes")
     expect(document.body.textContent).toContain("Review writes")
+    // The card is name + switch + actions. The body and the hook summary are Edit-only detail.
+    expect(document.body.textContent).not.toContain("Check the output path.")
+    expect(document.body.textContent).not.toContain(t("settings.nudges.hook.text-match"))
     expect(document.querySelector('[data-component="settings-nudges-editor"]')).toBeNull()
 
     click(t("common.edit"))
@@ -216,6 +219,11 @@ describe("Officer Nudges", () => {
     expect(
       (document.querySelector(`input[placeholder="${t("settings.nudges.field.name")}"]`) as HTMLInputElement).value,
     ).toBe("Review writes")
+    // Edit is where the detail lives: the body is in the editor, not on the card.
+    expect(
+      (document.querySelector(`textarea[placeholder="${t("settings.nudges.field.text")}"]`) as HTMLTextAreaElement)
+        .value,
+    ).toBe("Check the output path.")
     typeInto(`textarea[placeholder="${t("settings.nudges.field.text")}"]`, "Check the destination path.")
     click(t("common.save"))
     await settle()

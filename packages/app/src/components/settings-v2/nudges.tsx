@@ -263,15 +263,10 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
                       <Show when={item.default === true}>
                         <span class="nudge-default-badge">{language.t("settings.nudges.default")}</span>
                       </Show>
+                      {/* Name and switch only: the body, the hook selection and its parameters are
+                          detail a person reads in Edit, not a wall of text on every row. */}
                       <div class="nudge-card-title">
                         <h4>{item.name}</h4>
-                        <p>
-                          {language.t(HOOK_KEY[item.hook.type])}
-                          {"phase" in item.hook ? ` · ${item.hook.phase ?? "after"}` : ""}
-                          {item.hook.type === "interval" ? ` · ${item.hook.minutes} min` : ""}
-                          {item.hook.type === "step-tokens" ? ` · ${item.hook.channel} ≥ ${item.hook.tokens} tok` : ""}
-                          {item.hook.type === "markdown-budget" ? ` · ≤ ${item.hook.count ?? 20} .md` : ""}
-                        </p>
                       </div>
                       <Switch
                         checked={item.enabled !== false}
@@ -283,13 +278,6 @@ export const SettingsNudgesV2: Component<{ fixedAgentID: string }> = (props) => 
                         {item.name}
                       </Switch>
                     </div>
-                    <p class="nudge-card-prompt">
-                      {item.hook.type === "ask"
-                        ? (item.hook as { question: string }).question
-                        : item.hook.type === "prompt"
-                          ? (item.hook as { request: string }).request
-                          : item.text}
-                    </p>
                     <div class="nudge-card-foot">
                       <span>
                         {item.spammable ? "Every matching event" : "Quiet delivery"}
